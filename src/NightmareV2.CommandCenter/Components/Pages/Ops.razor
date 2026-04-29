@@ -52,7 +52,7 @@
                 <div class="stat-value">@_overview.DomainsWith10OrMoreAssets</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">Domains with 10 or fewer assets</div>
+                <div class="stat-label">Domains with &lt;10 assets</div>
                 <div class="stat-value">@_overview.DomainsWith10OrFewerAssets</div>
             </div>
         </div>
@@ -284,7 +284,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await ReloadAllAsync().ConfigureAwait(false);
+        await ReloadAllAsync();
         _ = PollAsync();
     }
 
@@ -295,9 +295,13 @@
             while (!_pollCts.IsCancellationRequested)
             {
                 await Task.Delay(2000, _pollCts.Token).ConfigureAwait(false);
-                await ReloadVolatileAsync().ConfigureAwait(false);
-                await ReloadHttpQueueAsync().ConfigureAwait(false);
-                await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+                await InvokeAsync(async () =>
+                {
+                    await ReloadVolatileAsync();
+                    await ReloadAssetsAsync();
+                    await ReloadHttpQueueAsync();
+                    StateHasChanged();
+                });
             }
         }
         catch (OperationCanceledException)

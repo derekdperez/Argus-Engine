@@ -71,8 +71,9 @@ public static class DataMaintenanceEndpoints
                         return Results.BadRequest($"confirmationPhrase must be exactly: {PhraseClearAllAssets}");
 
                     await dedup.ClearAllAsync(ct).ConfigureAwait(false);
+                    var findings = await db.HighValueFindings.ExecuteDeleteAsync(ct).ConfigureAwait(false);
                     var n = await db.Assets.ExecuteDeleteAsync(ct).ConfigureAwait(false);
-                    return Results.Ok(new MaintenanceDeleteResult("clear-all-assets", n, "Targets and worker switches unchanged."));
+                    return Results.Ok(new MaintenanceDeleteResult("clear-all-assets", n, $"Targets and worker switches unchanged. Deleted high-value findings: {findings}."));
                 })
             .WithName("MaintenanceClearAllAssets")
             .DisableAntiforgery()
@@ -108,8 +109,12 @@ public static class DataMaintenanceEndpoints
                     foreach (var tid in targetIds)
                         await dedup.ClearForTargetAsync(tid, ct).ConfigureAwait(false);
 
+                    var findings = await db.HighValueFindings
+                        .Where(f => targetIds.Contains(f.TargetId))
+                        .ExecuteDeleteAsync(ct)
+                        .ConfigureAwait(false);
                     var n = await db.Assets.Where(a => targetIds.Contains(a.TargetId)).ExecuteDeleteAsync(ct).ConfigureAwait(false);
-                    return Results.Ok(new MaintenanceDeleteResult("clear-assets-for-domain", n, $"Root domain {root}."));
+                    return Results.Ok(new MaintenanceDeleteResult("clear-assets-for-domain", n, $"Root domain {root}. Deleted high-value findings: {findings}."));
                 })
             .WithName("MaintenanceClearAssetsForDomain")
             .DisableAntiforgery()
@@ -160,6 +165,13 @@ public static class DataMaintenanceEndpoints
                         return Results.BadRequest("Provide at least one filter: kind, lifecycleStatus, discoveredByContains.");
 
                     var targetIds = await q.Select(a => a.TargetId).Distinct().ToListAsync(ct).ConfigureAwait(false);
+                    var assetIds = await q.Select(a => a.Id).ToListAsync(ct).ConfigureAwait(false);
+                    var findings = assetIds.Count == 0
+                        ? 0
+                        : await db.HighValueFindings
+                            .Where(f => f.SourceAssetId != null && assetIds.Contains(f.SourceAssetId.Value))
+                            .ExecuteDeleteAsync(ct)
+                            .ConfigureAwait(false);
                     var deleted = await q.ExecuteDeleteAsync(ct).ConfigureAwait(false);
 
                     foreach (var targetId in targetIds)
@@ -169,7 +181,7 @@ public static class DataMaintenanceEndpoints
                         new MaintenanceDeleteResult(
                             "clear-assets-filtered",
                             deleted,
-                            $"Filters: kind={body.Kind ?? "*"}, status={body.LifecycleStatus ?? "*"}, discoveredByContains={body.DiscoveredByContains ?? "*"}"));
+                            $"Filters: kind={body.Kind ?? "*"}, status={body.LifecycleStatus ?? "*"}, discoveredByContains={body.DiscoveredByContains ?? "*"}. Deleted high-value findings: {findings}"));
                 })
             .WithName("MaintenanceClearAssetsFiltered")
             .DisableAntiforgery()

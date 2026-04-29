@@ -20,8 +20,6 @@ public sealed class HttpRequestQueueWorker(
     IDbContextFactory<NightmareDbContext> dbFactory,
     IHttpClientFactory httpFactory,
     IServiceScopeFactory scopeFactory,
-    IEventOutbox outbox,
-    IWorkerToggleReader workerToggles,
     IHttpRequestQueueStateMachine stateMachine,
     ILogger<HttpRequestQueueWorker> logger) : BackgroundService
 {
@@ -39,7 +37,7 @@ public sealed class HttpRequestQueueWorker(
         {
             try
             {
-                if (!await workerToggles.IsWorkerEnabledAsync(WorkerKeys.Spider, stoppingToken).ConfigureAwait(false))
+                if (!await IsSpiderEnabledAsync(stoppingToken).ConfigureAwait(false))
                 {
                     await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken).ConfigureAwait(false);
                     continue;
@@ -72,6 +70,14 @@ public sealed class HttpRequestQueueWorker(
                 }
             }
         }
+    }
+
+
+    private async Task<bool> IsSpiderEnabledAsync(CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var toggles = scope.ServiceProvider.GetRequiredService<IWorkerToggleReader>();
+        return await toggles.IsWorkerEnabledAsync(WorkerKeys.Spider, ct).ConfigureAwait(false);
     }
 
     private async Task ReapExpiredLocksAsync(CancellationToken ct)
@@ -507,10 +513,13 @@ public sealed class HttpRequestQueueWorker(
         var parentPage = baseUri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped);
         var spiderContext = TruncateDiscoveryContext($"Spider: link extracted from fetched page {parentPage}");
         var correlation = NewId.NextGuid();
+        using var scope = scopeFactory.CreateScope();
+        var scopedOutbox = scope.ServiceProvider.GetRequiredService<IEventOutbox>();
+
         foreach (var link in LinkHarvest.Extract(body, contentType, baseUri).Take(MaxLinksPerAsset))
         {
             var kind = LinkHarvest.GuessKindForUrl(link);
-            await outbox.EnqueueAsync(
+            await scopedOutbox.EnqueueAsync(
                     new AssetDiscovered(
                         asset.TargetId,
                         asset.Target?.RootDomain ?? "",

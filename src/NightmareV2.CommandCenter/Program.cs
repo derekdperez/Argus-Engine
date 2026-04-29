@@ -821,6 +821,21 @@ app.MapGet(
                     },
                     StringComparer.Ordinal);
 
+            var spiderRows = await db.HttpRequestQueue.AsNoTracking()
+                .Where(q => q.StartedAtUtc != null && q.StartedAtUtc >= since24)
+                .Select(q => q.StartedAtUtc!.Value)
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+            if (spiderRows.Count > 0)
+            {
+                byKind[WorkerKeys.Spider] = new
+                {
+                    Last = spiderRows.Max(),
+                    Last1h = spiderRows.LongCount(t => t >= since1),
+                    Last24h = spiderRows.LongCount(),
+                };
+            }
+
             var keys = new[]
             {
                 WorkerKeys.Gatekeeper,
@@ -843,8 +858,8 @@ app.MapGet(
                         var reason = !enabled
                             ? "worker toggle is disabled"
                             : healthy
-                                ? "worker consumed events recently"
-                                : "worker has no recent consume activity";
+                                ? (key == WorkerKeys.Spider ? "spider processed HTTP queue rows recently" : "worker consumed events recently")
+                                : (key == WorkerKeys.Spider ? "spider has no recent HTTP queue activity" : "worker has no recent consume activity");
                         return new WorkerHealthDto(key, enabled, last, c1, c24, healthy, reason);
                     })
                 .ToList();
@@ -919,7 +934,7 @@ app.MapGet(
                 .ThenBy(x => x.RootDomain, StringComparer.OrdinalIgnoreCase)
                 .FirstOrDefault();
             var domains10OrMore = domainCounts.LongCount(x => x.Count >= 10);
-            var domains10OrFewer = domainCounts.LongCount(x => x.Count <= 10);
+            var domains10OrFewer = domainCounts.LongCount(x => x.Count < 10);
 
             return Results.Ok(
                 new OpsOverviewDto(

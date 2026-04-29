@@ -36,7 +36,7 @@ public sealed class HighValuePathGuessConsumer(
 
         var max = configuration.GetValue("HighValuePaths:MaxProbesPerHost", 600);
         var host = m.RawValue.Trim().TrimEnd('/');
-        if (host.Length == 0 || host.Contains(' ', StringComparison.Ordinal) || host.Contains("..", StringComparison.Ordinal))
+        if (host.Length == 0 || host.Contains(' ') || host.Contains("..", StringComparison.Ordinal))
             return;
         var causation = m.EventId == Guid.Empty ? m.CorrelationId : m.EventId;
 

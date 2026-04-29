@@ -119,6 +119,9 @@ public sealed class HttpRequestQueueWorker(
         var settings = await db.HttpRequestQueueSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == 1, ct)
             .ConfigureAwait(false) ?? new HttpRequestQueueSettings();
+        if (!settings.Enabled)
+            return null;
+
         var effectiveMaxConcurrency = _adaptiveConcurrency.ResolveEffectiveConcurrency(settings.MaxConcurrency);
 
         var conn = db.Database.GetDbConnection();
@@ -130,9 +133,7 @@ public sealed class HttpRequestQueueWorker(
                           WITH candidate AS (
                               SELECT q.*
                               FROM http_request_queue q
-                              CROSS JOIN http_request_queue_settings s
-                              WHERE s.id = 1
-                                AND s.enabled = true
+                              WHERE @settings_enabled = true
                                 AND (
                                     (q.state IN ('Queued', 'Retry') AND q.next_attempt_at_utc <= @now)
                                     OR (q.state = 'InFlight' AND q.locked_until_utc < @now)
@@ -143,20 +144,20 @@ public sealed class HttpRequestQueueWorker(
                                     FROM http_request_queue running
                                     WHERE running.state = 'InFlight'
                                       AND running.locked_until_utc > @now
-                                ) < LEAST(s.max_concurrency, @effective_max_concurrency)
+                                ) < LEAST(@max_concurrency, @effective_max_concurrency)
                                 AND (
                                     SELECT COUNT(*)
                                     FROM http_request_queue recent_global
                                     WHERE recent_global.started_at_utc IS NOT NULL
                                       AND recent_global.started_at_utc >= @one_minute_ago
-                                ) < s.global_requests_per_minute
+                                ) < @global_requests_per_minute
                                 AND (
                                     SELECT COUNT(*)
                                     FROM http_request_queue recent_domain
                                     WHERE recent_domain.domain_key = q.domain_key
-                                      AND recent_domain.started_at_utc IS NOT NULL
-                                      AND recent_domain.started_at_utc >= @one_minute_ago
-                                ) < s.per_domain_requests_per_minute
+                                    AND recent_domain.started_at_utc IS NOT NULL
+                                    AND recent_domain.started_at_utc >= @one_minute_ago
+                                ) < @per_domain_requests_per_minute
                               ORDER BY q.priority DESC, q.next_attempt_at_utc ASC, q.created_at_utc ASC
                               FOR UPDATE SKIP LOCKED
                               LIMIT 1
@@ -178,6 +179,10 @@ public sealed class HttpRequestQueueWorker(
         AddParameter(cmd, "worker_id", _workerId);
         AddParameter(cmd, "lock_until", lockUntil);
         AddParameter(cmd, "effective_max_concurrency", effectiveMaxConcurrency);
+        AddParameter(cmd, "settings_enabled", settings.Enabled);
+        AddParameter(cmd, "max_concurrency", Math.Clamp(settings.MaxConcurrency, 1, 10_000));
+        AddParameter(cmd, "global_requests_per_minute", Math.Clamp(settings.GlobalRequestsPerMinute, 1, 500_000));
+        AddParameter(cmd, "per_domain_requests_per_minute", Math.Clamp(settings.PerDomainRequestsPerMinute, 1, 100_000));
 
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -389,13 +394,13 @@ public sealed class HttpRequestQueueWorker(
         item.DurationMs = (long?)snapshot.DurationMs;
         item.LastHttpStatus = snapshot.StatusCode;
         item.LastError = error;
-        item.RequestHeadersJson = JsonSerializer.Serialize(snapshot.RequestHeaders, JsonOptions);
-        item.RequestBody = snapshot.RequestBody;
-        item.ResponseHeadersJson = JsonSerializer.Serialize(snapshot.ResponseHeaders, JsonOptions);
-        item.ResponseBody = snapshot.ResponseBody;
-        item.ResponseContentType = snapshot.ContentType;
+        item.RequestHeadersJson = SanitizeForPostgresText(JsonSerializer.Serialize(snapshot.RequestHeaders, JsonOptions));
+        item.RequestBody = SanitizeForPostgresText(snapshot.RequestBody);
+        item.ResponseHeadersJson = SanitizeForPostgresText(JsonSerializer.Serialize(snapshot.ResponseHeaders, JsonOptions));
+        item.ResponseBody = SanitizeForPostgresText(snapshot.ResponseBody);
+        item.ResponseContentType = SanitizeForPostgresText(snapshot.ContentType);
         item.ResponseContentLength = snapshot.ResponseSizeBytes;
-        item.FinalUrl = snapshot.FinalUrl;
+        item.FinalUrl = SanitizeForPostgresText(snapshot.FinalUrl);
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
@@ -422,13 +427,13 @@ public sealed class HttpRequestQueueWorker(
         row.DurationMs = (long?)snapshot.DurationMs;
         row.LastHttpStatus = snapshot.StatusCode;
         row.LastError = Truncate(error, 2048);
-        row.RequestHeadersJson = JsonSerializer.Serialize(snapshot.RequestHeaders, JsonOptions);
-        row.RequestBody = snapshot.RequestBody;
-        row.ResponseHeadersJson = JsonSerializer.Serialize(snapshot.ResponseHeaders, JsonOptions);
-        row.ResponseBody = snapshot.ResponseBody;
-        row.ResponseContentType = snapshot.ContentType;
+        row.RequestHeadersJson = SanitizeForPostgresText(JsonSerializer.Serialize(snapshot.RequestHeaders, JsonOptions));
+        row.RequestBody = SanitizeForPostgresText(snapshot.RequestBody);
+        row.ResponseHeadersJson = SanitizeForPostgresText(JsonSerializer.Serialize(snapshot.ResponseHeaders, JsonOptions));
+        row.ResponseBody = SanitizeForPostgresText(snapshot.ResponseBody);
+        row.ResponseContentType = SanitizeForPostgresText(snapshot.ContentType);
         row.ResponseContentLength = snapshot.ResponseSizeBytes;
-        row.FinalUrl = snapshot.FinalUrl;
+        row.FinalUrl = SanitizeForPostgresText(snapshot.FinalUrl);
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
@@ -548,6 +553,9 @@ public sealed class HttpRequestQueueWorker(
 
     private static string Truncate(string s, int maxChars) =>
         s.Length <= maxChars ? s : s[..maxChars];
+
+    private static string? SanitizeForPostgresText(string? value) =>
+        string.IsNullOrEmpty(value) ? value : value.Replace("\0", string.Empty, StringComparison.Ordinal);
 
     private static string TruncateDiscoveryContext(string s, int maxChars = 512) =>
         s.Length <= maxChars ? s : s[..(maxChars - 1)] + "…";

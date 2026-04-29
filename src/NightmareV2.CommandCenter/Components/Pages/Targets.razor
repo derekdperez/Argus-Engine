@@ -1,6 +1,7 @@
 @page "/targets"
 @rendermode InteractiveServer
 @using System.Net
+@using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.QuickGrid
 @using NightmareV2.CommandCenter.Components.DataGrid
 @using NightmareV2.CommandCenter.Components.DataGrid.Cells
@@ -14,7 +15,7 @@
 
 <section class="panel">
     <h2>Add target</h2>
-    <EditForm Model="_form" OnValidSubmit="CreateAsync">
+    <EditForm Model="_form" OnValidSubmit="CreateAsync" FormName="@AddTargetFormName" method="post">
         <div>
             <label>Root domain</label>
             <InputText @bind-Value="_form.RootDomain" placeholder="example.com" />
@@ -23,7 +24,7 @@
             <label>Max depth</label>
             <InputNumber @bind-Value="_form.GlobalMaxDepth" />
         </div>
-        <button type="submit">Publish TargetCreated</button>
+        <button type="submit" disabled="@_createBusy">@(_createBusy ? "Publishing…" : "Publish TargetCreated")</button>
     </EditForm>
     @if (!string.IsNullOrEmpty(_status))
     {
@@ -47,7 +48,7 @@
 {
     <section class="panel">
         <h2>Edit target</h2>
-        <EditForm Model="_editing" OnValidSubmit="SaveEditAsync">
+        <EditForm Model="_editing" OnValidSubmit="SaveEditAsync" FormName="@EditTargetFormName" method="post">
             <div>
                 <label>Root domain</label>
                 <InputText @bind-Value="_editing.RootDomain" />
@@ -105,13 +106,18 @@ else
 }
 
 @code {
-    private readonly TargetForm _form = new();
+    private const string AddTargetFormName = "add-target";
+    private const string EditTargetFormName = "edit-target";
+
+    [SupplyParameterFromForm(FormName = AddTargetFormName)]
+    private TargetForm _form { get; set; } = new();
     private readonly List<TargetSummary> _rows = new();
     private string _targetSearch = "";
     private string _targetRootFilter = "";
     private string _targetDepthFilter = "";
     private string? _status;
     private string? _bulkStatus;
+    private bool _createBusy;
     private TargetEditForm? _editing;
 
     protected override async Task OnInitializedAsync()
@@ -136,17 +142,32 @@ else
 
     private async Task CreateAsync()
     {
+        if (_createBusy)
+            return;
+
         _status = null;
+        _createBusy = true;
         try
         {
             var response = await Http.PostAsJsonAsync("/api/targets", new CreateTargetRequest(_form.RootDomain, _form.GlobalMaxDepth));
+            if (response.StatusCode == HttpStatusCode.BadRequest || response.StatusCode == HttpStatusCode.Conflict)
+            {
+                _status = await ReadResponseMessageAsync(response, "Target could not be created.");
+                return;
+            }
+
             response.EnsureSuccessStatusCode();
             _status = "Target queued.";
+            _form = new TargetForm { GlobalMaxDepth = _form.GlobalMaxDepth > 0 ? _form.GlobalMaxDepth : 12 };
             await ReloadAsync();
         }
         catch (Exception ex)
         {
             _status = ex.Message;
+        }
+        finally
+        {
+            _createBusy = false;
         }
     }
 
@@ -171,7 +192,7 @@ else
             var response = await Http.PutAsJsonAsync($"/api/targets/{_editing.Id}", new UpdateTargetRequest(_editing.RootDomain, _editing.GlobalMaxDepth));
             if (response.StatusCode == HttpStatusCode.Conflict)
             {
-                _status = await response.Content.ReadAsStringAsync();
+                _status = await ReadResponseMessageAsync(response, "Root domain is already in use.");
                 return;
             }
 
@@ -253,7 +274,13 @@ else
         }
     }
 
-    private sealed class TargetForm
+    private static async Task<string> ReadResponseMessageAsync(HttpResponseMessage response, string fallback)
+    {
+        var message = await response.Content.ReadAsStringAsync();
+        return string.IsNullOrWhiteSpace(message) ? fallback : message;
+    }
+
+    public sealed class TargetForm
     {
         public string RootDomain { get; set; } = "example.com";
         public int GlobalMaxDepth { get; set; } = 12;

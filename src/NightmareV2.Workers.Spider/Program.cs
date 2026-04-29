@@ -6,7 +6,6 @@ using NightmareV2.Infrastructure;
 using NightmareV2.Infrastructure.Data;
 using NightmareV2.Infrastructure.Messaging;
 using NightmareV2.Workers.Spider;
-using NightmareV2.Workers.Spider.Consumers;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -30,7 +29,7 @@ builder.Services.AddHttpClient("spider")
 
         return handler;
     })
-    .AddPolicyHandler(SpiderAssetDiscoveredConsumer.RetryPolicy());
+    .AddPolicyHandler(HttpRetryPolicies.SpiderRetryPolicy());
 
 builder.Services.AddNightmareInfrastructure(builder.Configuration);
 builder.Services.AddHostedService<HttpRequestQueueWorker>();

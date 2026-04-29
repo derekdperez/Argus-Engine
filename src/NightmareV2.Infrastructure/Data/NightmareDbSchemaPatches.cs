@@ -17,8 +17,6 @@ public static class NightmareDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
-        await NormalizeStoredAssetPrimaryKeyAsync(db, cancellationToken).ConfigureAwait(false);
-
         await db.Database.ExecuteSqlRawAsync(
                 """
                 ALTER TABLE bus_journal ADD COLUMN IF NOT EXISTS host_name character varying(256) NOT NULL DEFAULT '';
@@ -76,6 +74,43 @@ public static class NightmareDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS outbox_messages (
+                    id uuid NOT NULL PRIMARY KEY,
+                    message_type character varying(512) NOT NULL,
+                    payload_json text NOT NULL,
+                    event_id uuid NOT NULL,
+                    correlation_id uuid NOT NULL,
+                    causation_id uuid NOT NULL,
+                    occurred_at_utc timestamp with time zone NOT NULL,
+                    producer character varying(128) NOT NULL,
+                    state character varying(32) NOT NULL DEFAULT 'Pending',
+                    attempt_count integer NOT NULL DEFAULT 0,
+                    created_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    updated_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    next_attempt_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    dispatched_at_utc timestamp with time zone NULL,
+                    last_error character varying(2048) NULL,
+                    locked_by character varying(256) NULL,
+                    locked_until_utc timestamp with time zone NULL
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_outbox_messages_event_id ON outbox_messages (event_id);
+                CREATE INDEX IF NOT EXISTS ix_outbox_messages_state_next_attempt ON outbox_messages (state, next_attempt_at_utc);
+                CREATE INDEX IF NOT EXISTS ix_outbox_messages_created_at ON outbox_messages (created_at_utc DESC);
+
+                CREATE TABLE IF NOT EXISTS inbox_messages (
+                    id uuid NOT NULL PRIMARY KEY,
+                    event_id uuid NOT NULL,
+                    consumer character varying(256) NOT NULL,
+                    processed_at_utc timestamp with time zone NOT NULL DEFAULT now()
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_inbox_messages_event_consumer ON inbox_messages (event_id, consumer);
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
 
 
         await db.Database.ExecuteSqlRawAsync(
@@ -104,7 +139,7 @@ public static class NightmareDbSchemaPatches
 
                 CREATE TABLE IF NOT EXISTS http_request_queue (
                     id uuid NOT NULL PRIMARY KEY,
-                    asset_id uuid NOT NULL REFERENCES stored_assets(id) ON DELETE CASCADE,
+                    asset_id uuid NOT NULL REFERENCES stored_assets("Id") ON DELETE CASCADE,
                     target_id uuid NOT NULL,
                     asset_kind integer NOT NULL,
                     method character varying(16) NOT NULL DEFAULT 'GET',
@@ -147,33 +182,6 @@ public static class NightmareDbSchemaPatches
 
 
 
-    private static async Task NormalizeStoredAssetPrimaryKeyAsync(NightmareDbContext db, CancellationToken cancellationToken)
-    {
-        await db.Database.ExecuteSqlRawAsync(
-                """
-                DO $patch$
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_schema = 'public'
-                          AND table_name = 'stored_assets'
-                          AND column_name = 'Id'
-                    )
-                    AND NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_schema = 'public'
-                          AND table_name = 'stored_assets'
-                          AND column_name = 'id'
-                    ) THEN
-                        ALTER TABLE stored_assets RENAME COLUMN "Id" TO id;
-                    END IF;
-                END
-                $patch$;
-                """,
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
     private static async Task BackfillHttpRequestQueueAsync(NightmareDbContext db, CancellationToken cancellationToken)
     {
         await db.Database.ExecuteSqlRawAsync(
@@ -194,7 +202,7 @@ public static class NightmareDbSchemaPatches
                 )
                 SELECT
                     gen_random_uuid(),
-                    a.id,
+                    a."Id",
                     a."TargetId",
                     a."Kind",
                     'GET',
@@ -218,7 +226,7 @@ public static class NightmareDbSchemaPatches
                 WHERE a."LifecycleStatus" = 'Queued'
                   AND a."Kind" IN (0, 1, 10, 11, 12, 33)
                   AND NOT EXISTS (
-                      SELECT 1 FROM http_request_queue q WHERE q.asset_id = a.id
+                      SELECT 1 FROM http_request_queue q WHERE q.asset_id = a."Id"
                   );
                 """,
                 cancellationToken)

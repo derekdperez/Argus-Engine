@@ -16,10 +16,6 @@ public partial class Ops
         _requestQueue.AsQueryable()
             .OrderByDescending(q => q.CreatedAtUtc);
 
-    private IQueryable<BusJournalRowDto> EventQueueRows =>
-        _busRows.AsQueryable()
-            .OrderByDescending(e => e.Id);
-
     private IQueryable<AssetGridRowDto> FilteredAssets =>
         _assets.AsQueryable().Where(a =>
             (GridTextFilter.Matches(a.Kind, _filterAssets)
@@ -49,24 +45,6 @@ public partial class Ops
             && GridTextFilter.Matches(q.AssetKind, _filterQueueKindCol)
             && GridTextFilter.Matches(q.RequestUrl, _filterQueueRawCol)
             && GridTextFilter.Matches(q.State, _filterQueuePipelineCol));
-
-    private IQueryable<BusJournalRowDto> FilteredEventQueue =>
-        EventQueueRows.Where(e =>
-            GridTextFilter.Matches(e.Direction, _filterEvents)
-            || GridTextFilter.Matches(e.MessageType, _filterEvents)
-            || GridTextFilter.Matches(e.ConsumerType, _filterEvents)
-            || GridTextFilter.Matches(e.HostName, _filterEvents)
-            || GridTextFilter.Matches(e.PayloadJson, _filterEvents));
-
-    private static string EventPayloadPreview(string? payload)
-    {
-        if (string.IsNullOrWhiteSpace(payload))
-            return "—";
-        var normalized = payload.Replace("\r", " ", StringComparison.Ordinal)
-            .Replace("\n", " ", StringComparison.Ordinal)
-            .Trim();
-        return normalized.Length <= 240 ? normalized : normalized[..240] + "…";
-    }
 
     private static bool IsUrlOrSubdomain(string kind) =>
         string.Equals(kind, "Url", StringComparison.OrdinalIgnoreCase)

@@ -116,7 +116,10 @@ public sealed class HighValueRegexConsumer(
                     m.SourceUrl,
                     "Critical",
                     DateTimeOffset.UtcNow,
-                    m.CorrelationId),
+                    m.CorrelationId,
+                    EventId: NewId.NextGuid(),
+                    CausationId: m.EventId == Guid.Empty ? m.CorrelationId : m.EventId,
+                    Producer: "worker-highvalue-regex"),
                 ct)
             .ConfigureAwait(false);
 

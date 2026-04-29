@@ -245,42 +245,11 @@
     </NightmareDataGrid>
 </section>
 
-
-<section class="panel">
-    <h2>Event Queue</h2>
-    <div class="row">
-        <label>Event filter</label>
-        <input type="text" class="ops-filter" placeholder="Direction, message type, consumer, host, payload…" @bind="_filterEvents" />
-        <button type="button" @onclick="ClearEventFilters">Clear filter</button>
-    </div>
-    <NightmareDataGrid TGridItem="BusJournalRowDto"
-                       Items="FilteredEventQueue"
-                       @bind-SearchText="_filterEvents"
-                       SearchPlaceholder="Filter events…"
-                       ScrollPreset="NightmareDataGridScrollPreset.Tall"
-                       Virtualize="true"
-                       ItemSize="40"
-                       ItemKey="@(e => e.Id)"
-                       OverscanCount="6"
-                       HostTabIndex="@(-1)">
-        <PropertyColumn Title="Id" Property="@(e => e.Id)" Sortable="true" IsDefaultSortColumn="true" InitialSortDirection="Descending" />
-        <PropertyColumn Title="Occurred (UTC)" Property="@(e => e.OccurredAtUtc)" Format="u" Sortable="true" />
-        <PropertyColumn Title="Direction" Property="@(e => e.Direction)" Sortable="true" />
-        <PropertyColumn Title="Message" Property="@(e => e.MessageType)" Sortable="true" />
-        <PropertyColumn Title="Consumer" Property="@(e => e.ConsumerType)" Sortable="true" />
-        <PropertyColumn Title="Host" Property="@(e => e.HostName)" Sortable="true" />
-        <TemplateColumn Title="Payload" Context="e">
-            <span title="@e.PayloadJson">@EventPayloadPreview(e.PayloadJson)</span>
-        </TemplateColumn>
-    </NightmareDataGrid>
-</section>
-
 @code {
     private readonly CancellationTokenSource _pollCts = new();
     private readonly List<TargetSummary> _targets = [];
     private readonly List<AssetGridRowDto> _assets = [];
     private readonly List<HttpRequestQueueRowDto> _requestQueue = [];
-    private readonly List<BusJournalRowDto> _busRows = [];
     private OpsOverviewDto? _overview;
     private HttpRequestQueueSettingsDto? _queueSettings;
     private string _targetFilter = "";
@@ -294,7 +263,6 @@
     private string _filterQueueKindCol = "";
     private string _filterQueueRawCol = "";
     private string _filterQueuePipelineCol = "";
-    private string _filterEvents = "";
     private MaintenanceStatusDto? _maintenanceStatus;
     private string _maintenanceApiKey = "";
     private string _phraseClearTargets = "";
@@ -328,9 +296,7 @@
             {
                 await Task.Delay(2000, _pollCts.Token).ConfigureAwait(false);
                 await ReloadVolatileAsync().ConfigureAwait(false);
-                await ReloadAssetsAsync().ConfigureAwait(false);
                 await ReloadHttpQueueAsync().ConfigureAwait(false);
-                await ReloadEventsAsync().ConfigureAwait(false);
                 await InvokeAsync(StateHasChanged).ConfigureAwait(false);
             }
         }
@@ -370,7 +336,6 @@
 
         await ReloadAssetsAsync().ConfigureAwait(false);
         await ReloadHttpQueueAsync().ConfigureAwait(false);
-        await ReloadEventsAsync().ConfigureAwait(false);
         await ReloadHttpQueueSettingsAsync().ConfigureAwait(false);
         await ReloadVolatileAsync().ConfigureAwait(false);
         try
@@ -418,21 +383,6 @@
         catch
         {
             _requestQueue.Clear();
-        }
-    }
-
-    private async Task ReloadEventsAsync()
-    {
-        try
-        {
-            var list = await Http.GetFromJsonAsync<List<BusJournalRowDto>>("/api/bus/history?take=800").ConfigureAwait(false);
-            _busRows.Clear();
-            if (list is not null)
-                _busRows.AddRange(list);
-        }
-        catch
-        {
-            _busRows.Clear();
         }
     }
 
@@ -525,11 +475,6 @@
         _filterQueueKindCol = "";
         _filterQueueRawCol = "";
         _filterQueuePipelineCol = "";
-    }
-
-    private void ClearEventFilters()
-    {
-        _filterEvents = "";
     }
 
     private async Task<HttpResponseMessage> MaintenancePostAsync<T>(string relativeUri, T body)

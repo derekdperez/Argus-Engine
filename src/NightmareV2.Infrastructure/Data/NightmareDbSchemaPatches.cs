@@ -139,7 +139,7 @@ public static class NightmareDbSchemaPatches
 
                 CREATE TABLE IF NOT EXISTS http_request_queue (
                     id uuid NOT NULL PRIMARY KEY,
-                    asset_id uuid NOT NULL REFERENCES stored_assets("Id") ON DELETE CASCADE,
+                    asset_id uuid NOT NULL REFERENCES stored_assets(id) ON DELETE CASCADE,
                     target_id uuid NOT NULL,
                     asset_kind integer NOT NULL,
                     method character varying(16) NOT NULL DEFAULT 'GET',
@@ -202,7 +202,7 @@ public static class NightmareDbSchemaPatches
                 )
                 SELECT
                     gen_random_uuid(),
-                    a."Id",
+                    a.id,
                     a."TargetId",
                     a."Kind",
                     'GET',
@@ -226,7 +226,7 @@ public static class NightmareDbSchemaPatches
                 WHERE a."LifecycleStatus" = 'Queued'
                   AND a."Kind" IN (0, 1, 10, 11, 12, 33)
                   AND NOT EXISTS (
-                      SELECT 1 FROM http_request_queue q WHERE q.asset_id = a."Id"
+                      SELECT 1 FROM http_request_queue q WHERE q.asset_id = a.id
                   );
                 """,
                 cancellationToken)

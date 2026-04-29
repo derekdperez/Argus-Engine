@@ -14,6 +14,7 @@ internal static class DockerRuntimeStatusBuilder
     [
         new("command-center", "Command Center", "command-center"),
         new("postgres", "Postgres", "postgres"),
+        new("filestore-db-init", "FileStore DB Init", "filestore-db-init"),
         new("redis", "Redis", "redis"),
         new("rabbitmq", "RabbitMQ", "rabbitmq"),
         new("gatekeeper", "Gatekeeper", "gatekeeper"),
@@ -124,7 +125,7 @@ internal static class DockerRuntimeStatusBuilder
         if (string.IsNullOrWhiteSpace(health))
             health = "unknown";
 
-        var status = ClassifyContainerStatus(row.Status, health);
+        var status = ClassifyContainerStatus(row.Names, row.Status, health);
         var color = StatusToColor(status);
 
         var logLines = logs.Success
@@ -158,7 +159,9 @@ internal static class DockerRuntimeStatusBuilder
             }
 
             var worst = SelectWorstStatus(matches.Select(m => m.Status));
-            var reason = worst switch
+            var reason = component.Key == "filestore-db-init" && worst == "healthy"
+                ? "one-shot init completed successfully"
+                : worst switch
             {
                 "healthy" => "running and healthy",
                 "degraded" => "running with non-healthy signals",
@@ -196,10 +199,11 @@ internal static class DockerRuntimeStatusBuilder
             .ToList();
     }
 
-    private static string ClassifyContainerStatus(string? dockerStatusText, string? health)
+    private static string ClassifyContainerStatus(string? containerName, string? dockerStatusText, string? health)
     {
         var status = dockerStatusText ?? string.Empty;
         var healthStatus = (health ?? string.Empty).Trim();
+        var isOneShotInit = IsOneShotInitContainer(containerName);
 
         if (status.StartsWith("Up", StringComparison.OrdinalIgnoreCase))
         {
@@ -212,13 +216,23 @@ internal static class DockerRuntimeStatusBuilder
             return "critical";
         }
 
-        if (status.StartsWith("Exited", StringComparison.OrdinalIgnoreCase)
-            || status.StartsWith("Dead", StringComparison.OrdinalIgnoreCase)
+        if (status.StartsWith("Exited", StringComparison.OrdinalIgnoreCase))
+        {
+            if (isOneShotInit && status.Contains("(0)", StringComparison.Ordinal))
+                return "healthy";
+            return "critical";
+        }
+
+        if (status.StartsWith("Dead", StringComparison.OrdinalIgnoreCase)
             || status.StartsWith("Created", StringComparison.OrdinalIgnoreCase))
             return "critical";
 
         return "degraded";
     }
+
+    private static bool IsOneShotInitContainer(string? containerName) =>
+        !string.IsNullOrWhiteSpace(containerName)
+        && containerName.Contains("filestore-db-init", StringComparison.OrdinalIgnoreCase);
 
     private static string SelectWorstStatus(IEnumerable<string> statuses)
     {

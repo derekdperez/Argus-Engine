@@ -145,6 +145,7 @@ services:
         APP_DLL: NightmareV2.Gatekeeper.dll
     environment:
       <<: *common-env
+      Nightmare__SkipStartupDatabase: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -163,8 +164,9 @@ services:
         APP_DLL: NightmareV2.Workers.Spider.dll
     environment:
       <<: *common-env
-      # Local stack: accept TLS name mismatches (parked domains, CDN SNI). Set false for strict prod.
-      Spider__Http__AllowInsecureSsl: "true"
+      Nightmare__SkipStartupDatabase: "true"
+      # Non-development startup validation requires this to remain false.
+      Spider__Http__AllowInsecureSsl: "false"
     depends_on:
       postgres:
         condition: service_healthy
@@ -183,6 +185,7 @@ services:
         APP_DLL: NightmareV2.Workers.Enum.dll
     environment:
       <<: *common-env
+      Nightmare__SkipStartupDatabase: "true"
       Enumeration__UseSubfinder: "true"
       Enumeration__SubfinderPath: /usr/local/bin/subfinder
       Enumeration__SubfinderAllSources: "true"
@@ -214,6 +217,7 @@ services:
         APP_DLL: NightmareV2.Workers.PortScan.dll
     environment:
       <<: *common-env
+      Nightmare__SkipStartupDatabase: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -232,6 +236,7 @@ services:
         APP_DLL: NightmareV2.Workers.HighValue.dll
     environment:
       <<: *common-env
+      Nightmare__SkipStartupDatabase: "true"
     depends_on:
       postgres:
         condition: service_healthy

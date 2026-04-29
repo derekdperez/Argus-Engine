@@ -16,3 +16,4 @@
 - Startup DB bootstrap logic is centralized in `StartupDatabaseBootstrap` and reused across services.
 - Command Center now exposes Docker runtime introspection (`/api/ops/docker-status`) and a UI status page (`/status`) backed by shelling out to Docker CLI (`docker ps`, `docker inspect`, `docker logs`).
 - Compose deploy now mounts Docker socket read-only into Command Center and runtime image includes Docker CLI so status endpoint can query host daemon.
+- Compose worker services now skip startup DB bootstrap; schema/bootstrap ownership effectively sits with Command Center startup path in current local-stack orchestration.

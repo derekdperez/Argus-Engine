@@ -46,3 +46,11 @@
   - `deploy/docker-compose.yml` mounts `/var/run/docker.sock` read-only into `command-center`.
   - Why: make `/api/ops/docker-status` functional in containerized runtime.
 - Validation: `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded.
+
+- Stabilized startup/runtime health behavior in compose:
+  - Disabled worker startup DB bootstrap (`Nightmare__SkipStartupDatabase=true`) for gatekeeper + all worker services.
+  - Set `Spider__Http__AllowInsecureSsl=false` for non-development startup validation compliance.
+  - Why: prevent concurrent schema-lock timeout crashes and spider options-validation startup failure.
+- Updated docker status classifier:
+  - Added explicit `filestore-db-init` component and treats one-shot `Exited (0)` as healthy.
+  - Why: avoid false red status for expected init-job completion.

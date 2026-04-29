@@ -92,11 +92,13 @@ case "$CMD" in
     echo "  Redis          localhost:6379"
     echo ""
     echo "Debug commands (run from $ROOT):"
-    echo "  docker compose -f deploy/docker-compose.yml run --rm --entrypoint sh worker-enum -c 'command -v subfinder && command -v amass && test -s /opt/nightmare/wordlists/subdomains.txt'  # Verify enum tools"
+    echo "  ./deploy/smoke-test.sh         # health, static assets, and dependency diagnostics"
+    echo "  ./deploy/logs.sh --errors      # recent error-like log lines"
+    echo "  ./deploy/logs.sh --follow command-center worker-spider"
     echo "  ./deploy/run-local.sh logs     # all services"
     echo "  ./deploy/run-local.sh ps       # container status"
     echo "  ./deploy/run-local.sh down     # stop stack"
     echo "  ./deploy/run-local.sh -fresh   # full image rebuild"
-    echo "  docker compose -f deploy/docker-compose.yml logs -f command-center worker-spider"
+    echo "  docker compose -f deploy/docker-compose.yml run --rm --entrypoint sh worker-enum -c 'command -v subfinder && command -v amass && test -s /opt/nightmare/wordlists/subdomains.txt'  # Verify enum tools"
     ;;
 esac

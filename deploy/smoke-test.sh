@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Smoke-test the running Nightmare v2 Command Center and its dependency diagnostics.
+#
+# Usage:
+#   ./deploy/smoke-test.sh
+#   BASE_URL=http://server:8080 NIGHTMARE_DIAGNOSTICS_API_KEY=... ./deploy/smoke-test.sh
+set -euo pipefail
+
+BASE_URL="${BASE_URL:-http://localhost:8080}"
+DIAGNOSTICS_KEY="${NIGHTMARE_DIAGNOSTICS_API_KEY:-local-dev-diagnostics-key-change-me}"
+CURL_TIMEOUT="${CURL_TIMEOUT:-10}"
+
+pass() { printf 'PASS  %s\n' "$*"; }
+fail() { printf 'FAIL  %s\n' "$*" >&2; exit 1; }
+check_url() {
+  local label="$1"
+  local url="$2"
+  local expected="${3:-200}"
+  local code
+  code="$(curl -k -sS -o /tmp/nightmare-smoke-body.txt -w '%{http_code}' --max-time "$CURL_TIMEOUT" "$url" || true)"
+  if [[ "$code" == "$expected" ]]; then
+    pass "$label ($code) $url"
+  else
+    printf 'Response body from %s:\n' "$url" >&2
+    sed -n '1,120p' /tmp/nightmare-smoke-body.txt >&2 || true
+    fail "$label expected HTTP $expected but got ${code:-curl-failed}: $url"
+  fi
+}
+
+check_diagnostics() {
+  local label="$1"
+  local path="$2"
+  local code
+  code="$(curl -k -sS -o /tmp/nightmare-smoke-body.txt -w '%{http_code}' \
+    --max-time "$CURL_TIMEOUT" \
+    -H "X-Nightmare-Diagnostics-Key: ${DIAGNOSTICS_KEY}" \
+    "${BASE_URL}${path}" || true)"
+  if [[ "$code" == "200" ]]; then
+    pass "$label ($code) ${BASE_URL}${path}"
+    sed -n '1,80p' /tmp/nightmare-smoke-body.txt
+    printf '\n'
+  else
+    printf 'Response body from %s:\n' "${BASE_URL}${path}" >&2
+    sed -n '1,120p' /tmp/nightmare-smoke-body.txt >&2 || true
+    fail "$label expected HTTP 200 but got ${code:-curl-failed}. Check NIGHTMARE_DIAGNOSTICS_API_KEY."
+  fi
+}
+
+printf 'Nightmare smoke test against %s\n' "$BASE_URL"
+check_url "Live health" "${BASE_URL}/health"
+check_url "Ready health" "${BASE_URL}/health/ready"
+check_url "Blazor framework asset" "${BASE_URL}/_framework/blazor.web.js"
+check_url "App stylesheet" "${BASE_URL}/app.css"
+check_diagnostics "Diagnostics self" "/api/diagnostics/self"
+check_diagnostics "Dependency diagnostics" "/api/diagnostics/dependencies"
+
+pass "Smoke test complete"

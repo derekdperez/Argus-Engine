@@ -13,3 +13,5 @@
   - `EventId`: unique identifier for emitted event.
   - `CorrelationId`: trace chain across workflow.
   - `CausationId`: parent event that caused current emission.
+- Outbox message: durable pending event persisted with business state change and dispatched asynchronously to the broker.
+- Inbox message: `(EventId, Consumer)` dedupe record used by consumers to make at-least-once delivery idempotent.

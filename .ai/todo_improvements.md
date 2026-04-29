@@ -1,9 +1,8 @@
 # TODO Improvements
 
-- Implement transactional outbox/inbox tables and dispatcher workers for all critical event emissions.
-- Replace `HttpRequestQueueState` string constants with enum + validated state machine transitions.
-- Break `CommandCenter/Program.cs` into feature endpoint modules by bounded context.
-- Add OpenTelemetry traces/metrics exporters and remove hot-path DB bus journaling dependency.
-- Replace enum and portscan stubs with real implementations behind adapter interfaces and targeted tests.
-- Introduce EF migrations and remove `EnsureCreated` + raw patch drift.
-- Add integration tests with Testcontainers/LocalStack for queue, broker outage, and duplicate delivery scenarios.
+- Enforce enum-backed queue state persistence end-to-end (DB converter/migration away from string states).
+- Add OpenTelemetry exporters and instrument outbox dispatcher latency/retry metrics.
+- Introduce versioned EF migrations and remove remaining startup `EnsureCreated` dependency.
+- Add integration tests with Testcontainers/LocalStack for outbox crash-restart, duplicate delivery, and broker outages.
+- Add explicit authorization policies + rate limits for diagnostics/maintenance/ops mutation endpoints.
+- Add SQS/SNS transport side-by-side configuration and phased cutover plan from RabbitMQ.

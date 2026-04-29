@@ -1,0 +1,13 @@
+[x] Reliability baseline APIs implemented (`/api/http-request-queue/metrics`, `/api/ops/reliability-slo`, `/api/ops/reliability-baseline`)
+[x] Error budget + rollback trigger signals implemented (config-driven via `Nightmare:Reliability`)
+[x] Outbox + inbox idempotency foundation implemented for critical event flows
+[x] Buffered async bus journaling pipeline implemented (no per-event direct DB observer writes)
+[x] Spider execution path unified to durable queue worker only (legacy direct consumer removed)
+[x] Adaptive spider concurrency + queue transition state machine checks implemented
+[x] Enumeration + port scan workers use real services behind interfaces (not stubs)
+[x] CommandCenter routing split into endpoint modules by bounded context
+[x] Startup options validation (`ValidateOnStart`) added for critical runtime config
+[ ] Replace startup schema patching with EF Core migrations + deployment migration job
+[ ] Migrate RabbitMQ transport to MassTransit SQS/SNS with phased dual-run cutover
+[ ] Move diagnostics/maintenance endpoints to auth policy + rate limits + audit logs
+[ ] Add integration/chaos/performance test suite for outbox, duplicate delivery, and failure injection

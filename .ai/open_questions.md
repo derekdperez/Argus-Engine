@@ -5,3 +5,4 @@
 - Should `ScannableContentAvailable` keep `StoredAtUtc` long-term or migrate fully to `OccurredAtUtc` naming?
 - What is the desired health threshold per worker class (current implementation uses generic recent-consume heuristics)?
 - When migrating to SQS/SNS, do we require dual-write transport period or cutover by service group?
+- What default SLO/error-budget thresholds should be enforced for production (current defaults are conservative placeholders in `Nightmare:Reliability`)?

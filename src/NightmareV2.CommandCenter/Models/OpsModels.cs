@@ -217,3 +217,23 @@ public sealed record ReliabilitySloSnapshotDto(
     long QueueCompletedLastHour,
     long WorkerErrorsLast1Hour,
     bool ApiReady);
+
+public sealed record ServiceReliabilityBudgetDto(
+    string ServiceName,
+    decimal MinEventProcessingSuccessRate,
+    long MaxQueueBacklogAgeSeconds,
+    long MinQueueDrainPerHour,
+    long MaxWorkerErrorsPerHour);
+
+public sealed record ReliabilityBaselineSnapshotDto(
+    DateTimeOffset AtUtc,
+    HttpRequestQueueMetricsDto QueueMetrics,
+    long BusPublishesLast1Hour,
+    long BusConsumesLast1Hour,
+    decimal EventProcessingSuccessRate1Hour,
+    long QueueDrainRatePerHour,
+    long WorkerErrorsLast1Hour,
+    bool ApiReady,
+    IReadOnlyList<ServiceReliabilityBudgetDto> ServiceBudgets,
+    bool RollbackRecommended,
+    IReadOnlyList<string> Breaches);

@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NightmareV2.Application.Workers;
+using NightmareV2.CommandCenter;
 using NightmareV2.CommandCenter.Models;
 using NightmareV2.Contracts;
 using NightmareV2.Domain.Entities;
@@ -238,6 +240,100 @@ public static class WorkerOpsEndpoints
                             apiReady));
                 })
             .WithName("ReliabilitySloSnapshot");
+
+        app.MapGet(
+                "/api/ops/reliability-baseline",
+                async (NightmareDbContext db, IOptions<ReliabilityBudgetOptions> budgetOptions, CancellationToken ct) =>
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    var since = now.AddHours(-1);
+
+                    var publishes = await db.BusJournal.AsNoTracking()
+                        .LongCountAsync(e => e.Direction == "Publish" && e.OccurredAtUtc >= since, ct)
+                        .ConfigureAwait(false);
+                    var consumes = await db.BusJournal.AsNoTracking()
+                        .LongCountAsync(e => e.Direction == "Consume" && e.OccurredAtUtc >= since, ct)
+                        .ConfigureAwait(false);
+                    var successRate = publishes <= 0 ? 1m : Math.Min(1m, consumes / (decimal)publishes);
+
+                    var queued = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.State == HttpRequestQueueState.Queued, ct)
+                        .ConfigureAwait(false);
+                    var readyRetry = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now, ct)
+                        .ConfigureAwait(false);
+                    var scheduledRetry = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc > now, ct)
+                        .ConfigureAwait(false);
+                    var inFlight = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.State == HttpRequestQueueState.InFlight, ct)
+                        .ConfigureAwait(false);
+                    var failed = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.State == HttpRequestQueueState.Failed, ct)
+                        .ConfigureAwait(false);
+                    var completedLastHour = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.State == HttpRequestQueueState.Succeeded && q.CompletedAtUtc >= since, ct)
+                        .ConfigureAwait(false);
+                    var failedLastHour = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.State == HttpRequestQueueState.Failed && q.UpdatedAtUtc >= since, ct)
+                        .ConfigureAwait(false);
+                    var oldestQueuedAt = await db.HttpRequestQueue.AsNoTracking()
+                        .Where(q => q.State == HttpRequestQueueState.Queued
+                            || (q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now))
+                        .OrderBy(q => q.CreatedAtUtc)
+                        .Select(q => (DateTimeOffset?)q.CreatedAtUtc)
+                        .FirstOrDefaultAsync(ct)
+                        .ConfigureAwait(false);
+
+                    var queueMetrics = new HttpRequestQueueMetricsDto(
+                        queued,
+                        readyRetry,
+                        scheduledRetry,
+                        inFlight,
+                        failed,
+                        completedLastHour,
+                        queued + readyRetry,
+                        oldestQueuedAt,
+                        oldestQueuedAt is null ? null : (long)(now - oldestQueuedAt.Value).TotalSeconds);
+
+                    var budgets = budgetOptions.Value;
+                    var serviceBudgets = budgets.ServiceNames
+                        .Select(
+                            name => new ServiceReliabilityBudgetDto(
+                                name,
+                                budgets.MinEventProcessingSuccessRate,
+                                budgets.MaxQueueBacklogAgeSeconds,
+                                budgets.MinQueueDrainPerHour,
+                                budgets.MaxWorkerErrorsPerHour))
+                        .ToList();
+
+                    var breaches = new List<string>(capacity: 4);
+                    if (successRate < budgets.MinEventProcessingSuccessRate)
+                        breaches.Add($"event success rate {successRate:P2} below target {budgets.MinEventProcessingSuccessRate:P2}");
+                    if (queueMetrics.OldestQueuedAgeSeconds.GetValueOrDefault() > budgets.MaxQueueBacklogAgeSeconds)
+                        breaches.Add($"queue backlog age {queueMetrics.OldestQueuedAgeSeconds}s exceeds {budgets.MaxQueueBacklogAgeSeconds}s");
+                    if (completedLastHour < budgets.MinQueueDrainPerHour)
+                        breaches.Add($"queue drain {completedLastHour}/h below {budgets.MinQueueDrainPerHour}/h");
+                    if (failedLastHour > budgets.MaxWorkerErrorsPerHour)
+                        breaches.Add($"worker errors {failedLastHour}/h exceed {budgets.MaxWorkerErrorsPerHour}/h");
+
+                    var apiReady = await db.Database.CanConnectAsync(ct).ConfigureAwait(false);
+                    var snapshot = new ReliabilityBaselineSnapshotDto(
+                        now,
+                        queueMetrics,
+                        publishes,
+                        consumes,
+                        successRate,
+                        completedLastHour,
+                        failedLastHour,
+                        apiReady,
+                        serviceBudgets,
+                        RollbackRecommended: breaches.Count > 0,
+                        Breaches: breaches);
+
+                    return Results.Ok(snapshot);
+                })
+            .WithName("ReliabilityBaselineSnapshot");
 
         app.MapPut(
                 "/api/workers/{key}",

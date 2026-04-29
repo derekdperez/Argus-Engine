@@ -40,7 +40,7 @@ public sealed class TargetCreatedConsumer(
             return;
         }
 
-        var enabledProviders = ResolveEnabledProviders(cfg).ToList();
+        var enabledProviders = SubdomainEnumerationProviderSelection.ResolveEnabledProviders(cfg);
         var queuedProviders = new List<string>(capacity: enabledProviders.Count);
 
         var correlation = message.CorrelationId == Guid.Empty ? NewId.NextGuid() : message.CorrelationId;
@@ -72,16 +72,5 @@ public sealed class TargetCreatedConsumer(
             queuedProviders.Count,
             message.RootDomain,
             string.Join(",", queuedProviders));
-    }
-
-    private static IEnumerable<string> ResolveEnabledProviders(SubdomainEnumerationOptions options)
-    {
-        foreach (var provider in options.DefaultProviders.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            if (provider.Equals("subfinder", StringComparison.OrdinalIgnoreCase) && options.Subfinder.Enabled)
-                yield return "subfinder";
-            else if (provider.Equals("amass", StringComparison.OrdinalIgnoreCase) && options.Amass.Enabled)
-                yield return "amass";
-        }
     }
 }

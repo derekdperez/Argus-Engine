@@ -13,3 +13,8 @@ public sealed record MaintenanceClearAssetsFilteredBody(
     string? DiscoveredByContains);
 
 public sealed record MaintenanceDeleteResult(string Operation, long RowsDeleted, string? Note);
+
+public sealed record MaintenanceQueueEnumerationJobBody(
+    Guid TargetId,
+    string Provider,
+    string RequestedBy = "manual");

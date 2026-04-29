@@ -1,10 +1,8 @@
 using MassTransit;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NightmareV2.Application.Workers;
 using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
-using NightmareV2.Infrastructure.Data;
 
 namespace NightmareV2.Workers.Enum.Consumers;
 
@@ -13,7 +11,7 @@ public sealed class SubdomainEnumerationRequestedConsumer(
     IEnumerable<ISubdomainEnumerationProvider> providers,
     IWorkerToggleReader toggles,
     IEventOutbox outbox,
-    IDbContextFactory<NightmareDbContext> dbFactory,
+    ITargetLookup targetLookup,
     IOptions<SubdomainEnumerationOptions> options) : IConsumer<SubdomainEnumerationRequested>
 {
     public async Task Consume(ConsumeContext<SubdomainEnumerationRequested> context)
@@ -29,7 +27,7 @@ public sealed class SubdomainEnumerationRequestedConsumer(
         if (!cfg.Enabled)
             return;
 
-        var target = await ResolveTargetAsync(message.TargetId, context.CancellationToken).ConfigureAwait(false);
+        var target = await targetLookup.FindAsync(message.TargetId, context.CancellationToken).ConfigureAwait(false);
         if (target is null)
         {
             logger.LogWarning(
@@ -141,15 +139,4 @@ public sealed class SubdomainEnumerationRequestedConsumer(
             rawResults.Count - rejectedNormalizationCount - rejectedScopeCount - emittedCount);
     }
 
-    private async Task<TargetDetails?> ResolveTargetAsync(Guid targetId, CancellationToken cancellationToken)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        return await db.Targets.AsNoTracking()
-            .Where(t => t.Id == targetId)
-            .Select(t => new TargetDetails(t.RootDomain, t.GlobalMaxDepth))
-            .FirstOrDefaultAsync(cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private sealed record TargetDetails(string RootDomain, int GlobalMaxDepth);
 }

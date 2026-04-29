@@ -41,9 +41,9 @@ ARG BUILD_SOURCE_STAMP=unknown
 LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
 ENV APP_DLL=${APP_DLL}
 ENV NIGHTMARE_BUILD_STAMP=${BUILD_SOURCE_STAMP}
-ENV Enumeration__SubfinderPath=/usr/local/bin/subfinder
-ENV Enumeration__AmassPath=/usr/local/bin/amass
-ENV Enumeration__SubdomainWordlistPath=/opt/nightmare/wordlists/subdomains.txt
+ENV SubdomainEnumeration__Subfinder__BinaryPath=/usr/local/bin/subfinder
+ENV SubdomainEnumeration__Amass__BinaryPath=/usr/local/bin/amass
+ENV SubdomainEnumeration__Amass__WordlistPath=data/wordlists/subdomains-high-value.txt
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libgssapi-krb5-2 \
     && rm -rf /var/lib/apt/lists/*

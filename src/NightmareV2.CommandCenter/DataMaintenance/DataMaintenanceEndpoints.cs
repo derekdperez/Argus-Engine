@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using NightmareV2.Application.Gatekeeping;
+using NightmareV2.Application.Events;
 using NightmareV2.CommandCenter;
 using NightmareV2.CommandCenter.Models;
 using NightmareV2.Contracts;
+using NightmareV2.Contracts.Events;
 using NightmareV2.Infrastructure.Data;
 
 namespace NightmareV2.CommandCenter.DataMaintenance;
@@ -184,6 +186,58 @@ public static class DataMaintenanceEndpoints
                             $"Filters: kind={body.Kind ?? "*"}, status={body.LifecycleStatus ?? "*"}, discoveredByContains={body.DiscoveredByContains ?? "*"}. Deleted high-value findings: {findings}"));
                 })
             .WithName("MaintenanceClearAssetsFiltered")
+            .DisableAntiforgery()
+            .AllowAnonymous();
+
+        app.MapPost(
+                "/api/maintenance/queue-enumeration-job",
+                async (
+                    MaintenanceQueueEnumerationJobBody body,
+                    HttpRequest http,
+                    IConfiguration config,
+                    NightmareDbContext db,
+                    IEventOutbox outbox,
+                    CancellationToken ct) =>
+                {
+                    if (!IsAllowed(config, http))
+                        return MaintenanceDenied(config);
+
+                    var provider = body.Provider?.Trim().ToLowerInvariant();
+                    if (provider is not ("subfinder" or "amass"))
+                        return Results.BadRequest("provider must be subfinder or amass");
+
+                    var target = await db.Targets.AsNoTracking()
+                        .Where(t => t.Id == body.TargetId)
+                        .Select(t => new { t.Id, t.RootDomain })
+                        .FirstOrDefaultAsync(ct)
+                        .ConfigureAwait(false);
+                    if (target is null)
+                        return Results.NotFound($"Target {body.TargetId} was not found.");
+
+                    var correlation = Guid.NewGuid();
+                    await outbox.EnqueueAsync(
+                            new SubdomainEnumerationRequested(
+                                target.Id,
+                                target.RootDomain,
+                                provider,
+                                RequestedBy: string.IsNullOrWhiteSpace(body.RequestedBy) ? "manual" : body.RequestedBy.Trim(),
+                                RequestedAt: DateTimeOffset.UtcNow,
+                                CorrelationId: correlation,
+                                EventId: Guid.NewGuid(),
+                                CausationId: correlation,
+                                Producer: "command-center"),
+                            ct)
+                        .ConfigureAwait(false);
+
+                    return Results.Ok(new
+                    {
+                        queued = true,
+                        provider,
+                        targetId = target.Id,
+                        rootDomain = target.RootDomain,
+                    });
+                })
+            .WithName("MaintenanceQueueEnumerationJob")
             .DisableAntiforgery()
             .AllowAnonymous();
     }

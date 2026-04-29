@@ -48,6 +48,7 @@ public static class DependencyInjection
         services.AddScoped<IAssetPersistence, EfAssetPersistence>();
         services.AddScoped<IHighValueFindingWriter, EfHighValueFindingWriter>();
         services.AddScoped<IWorkerToggleReader, EfWorkerToggleReader>();
+        services.AddScoped<ITargetLookup, EfTargetLookup>();
         services.AddSingleton<IHttpRequestQueueStateMachine, DefaultHttpRequestQueueStateMachine>();
         services.AddOptions<SubdomainEnumerationOptions>()
             .Bind(configuration.GetSection("SubdomainEnumeration"));

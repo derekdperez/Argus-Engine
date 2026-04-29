@@ -8,4 +8,9 @@
     <ProjectReference Include="..\NightmareV2.Contracts\NightmareV2.Contracts.csproj" />
     <ProjectReference Include="..\NightmareV2.Infrastructure\NightmareV2.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="data\wordlists\subdomains-high-value.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>

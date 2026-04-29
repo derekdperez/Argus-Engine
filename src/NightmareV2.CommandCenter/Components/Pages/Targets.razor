@@ -1,0 +1,297 @@
+@page "/targets"
+@rendermode InteractiveServer
+@using System.Net
+@using Microsoft.AspNetCore.Components.QuickGrid
+@using NightmareV2.CommandCenter.Components.DataGrid
+@using NightmareV2.CommandCenter.Components.DataGrid.Cells
+@using NightmareV2.CommandCenter.Models
+@inject HttpClient Http
+@inject IJSRuntime Js
+
+<PageTitle>Targets · Nightmare v2</PageTitle>
+
+<h1>Recon targets</h1>
+
+<section class="panel">
+    <h2>Add target</h2>
+    <EditForm Model="_form" OnValidSubmit="CreateAsync">
+        <div>
+            <label>Root domain</label>
+            <InputText @bind-Value="_form.RootDomain" placeholder="example.com" />
+        </div>
+        <div>
+            <label>Max depth</label>
+            <InputNumber @bind-Value="_form.GlobalMaxDepth" />
+        </div>
+        <button type="submit">Publish TargetCreated</button>
+    </EditForm>
+    @if (!string.IsNullOrEmpty(_status))
+    {
+        <p role="status">@_status</p>
+    }
+</section>
+
+<section class="panel">
+    <h2>Bulk import</h2>
+    <p class="muted">Plain text file: one root domain per line. Blank lines are ignored. Duplicates in the file or already in the database are skipped. New targets use the <strong>max depth</strong> from the add-target form above.</p>
+    <div class="row">
+        <InputFile OnChange="BulkImportAsync" accept=".txt,text/plain" />
+    </div>
+    @if (!string.IsNullOrEmpty(_bulkStatus))
+    {
+        <p role="status">@_bulkStatus</p>
+    }
+</section>
+
+@if (_editing is not null)
+{
+    <section class="panel">
+        <h2>Edit target</h2>
+        <EditForm Model="_editing" OnValidSubmit="SaveEditAsync">
+            <div>
+                <label>Root domain</label>
+                <InputText @bind-Value="_editing.RootDomain" />
+            </div>
+            <div>
+                <label>Max depth</label>
+                <InputNumber @bind-Value="_editing.GlobalMaxDepth" />
+            </div>
+            <div class="row">
+                <button type="submit">Save</button>
+                <button type="button" @onclick="CancelEdit">Cancel</button>
+            </div>
+        </EditForm>
+    </section>
+}
+
+<h2>Recent targets</h2>
+@if (_rows.Count == 0)
+{
+    <p>No targets yet.</p>
+}
+else
+{
+    <section class="panel">
+        <div class="row">
+            <label>Column filters</label>
+            <input type="text" class="ops-filter" placeholder="Root domain" @bind="_targetRootFilter" />
+            <input type="text" class="ops-filter" placeholder="Max depth" @bind="_targetDepthFilter" />
+            <button type="button" @onclick="ClearTargetFilters">Clear all filters</button>
+        </div>
+        <NightmareDataGrid TGridItem="TargetSummary"
+                           Items="FilteredTargets"
+                           @bind-SearchText="_targetSearch"
+                           SearchPlaceholder="Search root domain or id…"
+                           ScrollPreset="NightmareDataGridScrollPreset.Tall"
+                           Virtualize="true"
+                           ItemSize="44"
+                           ItemKey="@(r => r.Id)"
+                           OverscanCount="8"
+                           RowMatches="@TargetRowMatches"
+                           HostTabIndex="@(-1)">
+            <TemplateColumn Title="Root domain" Context="row" SortBy="@SortTargetRoot">
+                <strong><GridCodeCell Text="@row.RootDomain" /></strong>
+            </TemplateColumn>
+            <PropertyColumn Title="Max depth" Property="@(row => row.GlobalMaxDepth)" Sortable="true" />
+            <TemplateColumn Title="Created (UTC)" Context="row" SortBy="@SortTargetCreated">
+                <GridDateCell Value="@row.CreatedAtUtc" />
+            </TemplateColumn>
+            <TemplateColumn Title="Actions" Context="row">
+                <button type="button" @onclick="@(() => StartEdit(row))">Edit</button>
+                <button type="button" @onclick="@(() => DeleteAsync(row))">Delete</button>
+            </TemplateColumn>
+        </NightmareDataGrid>
+    </section>
+}
+
+@code {
+    private readonly TargetForm _form = new();
+    private readonly List<TargetSummary> _rows = new();
+    private string _targetSearch = "";
+    private string _targetRootFilter = "";
+    private string _targetDepthFilter = "";
+    private string? _status;
+    private string? _bulkStatus;
+    private TargetEditForm? _editing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            var list = await Http.GetFromJsonAsync<List<TargetSummary>>("/api/targets").ConfigureAwait(false);
+            _rows.Clear();
+            if (list is not null)
+                _rows.AddRange(list);
+        }
+        catch
+        {
+            _status = "Could not load targets (is the API running?)";
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        _status = null;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("/api/targets", new CreateTargetRequest(_form.RootDomain, _form.GlobalMaxDepth)).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            _status = "Target queued.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private void StartEdit(TargetSummary row)
+    {
+        _editing = new TargetEditForm(row.Id, row.RootDomain, row.GlobalMaxDepth);
+        _status = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = null;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (_editing is null)
+            return;
+        _status = null;
+        try
+        {
+            var response = await Http.PutAsJsonAsync($"/api/targets/{_editing.Id}", new UpdateTargetRequest(_editing.RootDomain, _editing.GlobalMaxDepth)).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                _status = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            _editing = null;
+            _status = "Target updated.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private async Task DeleteAsync(TargetSummary row)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", $"Delete target {row.RootDomain}? Related assets and findings are removed with the target.").ConfigureAwait(false);
+        if (!ok)
+            return;
+        _status = null;
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/targets/{row.Id}").ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                _status = "Target was already removed.";
+                await ReloadAsync();
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            _status = "Target deleted.";
+            if (_editing?.Id == row.Id)
+                _editing = null;
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private async Task BulkImportAsync(InputFileChangeEventArgs e)
+    {
+        _bulkStatus = null;
+        var file = e.File;
+        if (file is null)
+            return;
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: 5_000_000);
+            using var reader = new StreamReader(stream);
+            var text = await reader.ReadToEndAsync().ConfigureAwait(false);
+            var lines = TargetRootNormalization.SplitLines(text).ToList();
+            var response = await Http.PostAsJsonAsync("/api/targets/bulk", new BulkImportRequest(lines, _form.GlobalMaxDepth)).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.BadRequest)
+            {
+                _bulkStatus = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var result = await response.Content.ReadFromJsonAsync<BulkImportResult>().ConfigureAwait(false);
+            if (result is not null)
+            {
+                _bulkStatus =
+                    $"Created {result.Created}, skipped {result.SkippedAlreadyExist} already in DB, {result.SkippedDuplicateInBatch} duplicate lines in file, {result.SkippedEmptyOrInvalid} empty or invalid lines.";
+            }
+            else
+            {
+                _bulkStatus = "Import finished.";
+            }
+
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _bulkStatus = ex.Message;
+        }
+    }
+
+    private sealed class TargetForm
+    {
+        public string RootDomain { get; set; } = "example.com";
+        public int GlobalMaxDepth { get; set; } = 12;
+    }
+
+    private static readonly GridSort<TargetSummary> SortTargetRoot =
+        GridSort<TargetSummary>.ByAscending(static r => r.RootDomain);
+
+    private static readonly GridSort<TargetSummary> SortTargetCreated =
+        GridSort<TargetSummary>.ByDescending(static r => r.CreatedAtUtc);
+
+    private static bool TargetRowMatches(TargetSummary r, string q) =>
+        GridTextFilter.Matches(r.RootDomain, q)
+        || GridTextFilter.Matches(r.Id.ToString(), q);
+
+    private IQueryable<TargetSummary> FilteredTargets =>
+        _rows.AsQueryable().Where(r =>
+            GridTextFilter.Matches(r.RootDomain, _targetRootFilter)
+            && GridTextFilter.Matches(r.GlobalMaxDepth.ToString(), _targetDepthFilter));
+
+    private void ClearTargetFilters()
+    {
+        _targetSearch = "";
+        _targetRootFilter = "";
+        _targetDepthFilter = "";
+    }
+
+    private sealed class TargetEditForm
+    {
+        public TargetEditForm(Guid id, string rootDomain, int globalMaxDepth)
+        {
+            Id = id;
+            RootDomain = rootDomain;
+            GlobalMaxDepth = globalMaxDepth;
+        }
+
+        public Guid Id { get; }
+        public string RootDomain { get; set; }
+        public int GlobalMaxDepth { get; set; }
+    }
+}

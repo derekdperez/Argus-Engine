@@ -1,0 +1,95 @@
+/* Shared scroll host + QuickGrid table (sticky thead). ::deep crosses this component’s scope boundary. */
+.nightmare-dg-rowcount {
+    margin: 0 0 0.4rem;
+    font-size: 11px;
+}
+
+.nightmare-dg-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 0.35rem 0 0.5rem;
+}
+
+.nightmare-dg-toolbar input[type="search"],
+.nightmare-dg-search {
+    min-width: 200px;
+    max-width: 420px;
+    font-size: 12px;
+    padding: 4px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.nightmare-dg-host {
+    overflow: auto;
+    border: 1px solid #e4e4e4;
+    border-radius: 4px;
+    background: #fff;
+}
+
+.nightmare-dg-host.short {
+    max-height: 220px;
+}
+
+.nightmare-dg-host.mid {
+    max-height: 280px;
+}
+
+.nightmare-dg-host.tall {
+    max-height: 420px;
+}
+
+.nightmare-dg-host.vq {
+    max-height: 420px;
+}
+
+.nightmare-dg-group {
+    margin-bottom: 0.75rem;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem 0.5rem;
+    background: #fafafa;
+}
+
+.nightmare-dg-group-summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+::deep table.nightmare-qg {
+    width: 100%;
+    font-size: 12px;
+    border-collapse: collapse;
+}
+
+::deep table.nightmare-qg th,
+::deep table.nightmare-qg td {
+    border: 1px solid #ddd;
+    padding: 4px 6px;
+    vertical-align: middle;
+}
+
+::deep table.nightmare-qg thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f2f2f2;
+    box-shadow: 0 1px 0 #ccc;
+}
+
+.nightmare-dg-host.vq ::deep table.nightmare-qg tbody td {
+    height: 40px;
+    max-height: 40px;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+::deep table.nightmare-qg td.mono,
+::deep table.nightmare-qg .mono {
+    font-family: ui-monospace, monospace;
+}

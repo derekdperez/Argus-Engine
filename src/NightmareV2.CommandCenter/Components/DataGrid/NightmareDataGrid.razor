@@ -1,0 +1,78 @@
+@typeparam TGridItem
+@using Microsoft.AspNetCore.Components.QuickGrid
+
+<div @attributes="AdditionalAttributes" class="nightmare-dg @CssClass">
+    @if (ToolbarVisible)
+    {
+        <div class="nightmare-dg-toolbar">
+            @if (ShowSearch)
+            {
+                <input type="search"
+                       class="nightmare-dg-search ops-filter"
+                       placeholder="@SearchPlaceholder"
+                       value="@SearchText"
+                       @oninput="OnSearchInput" />
+            }
+            @ToolbarTemplate
+            @if (Pagination is not null && !Virtualize)
+            {
+                <Paginator State="@Pagination" />
+            }
+        </div>
+    }
+
+    @if (ShowRowCount)
+    {
+        <div class="nightmare-dg-rowcount muted small">
+            @if (_visibleRowCount == 1)
+            {
+                <text>1 row</text>
+            }
+            else
+            {
+                <text>@_visibleRowCount.ToString("N0") rows</text>
+            }
+        </div>
+    }
+
+    @if (GroupKeySelector is null)
+    {
+        <div class="@HostCssClasses" style="@HostStyle" tabindex="@HostTabIndex">
+            <QuickGrid Items="@GetEffectiveItems()"
+                       Class="@GridTableClass"
+                       Theme="@Theme"
+                       Virtualize="@Virtualize"
+                       ItemSize="@ItemSize"
+                       ItemKey="@ItemKey"
+                       OverscanCount="@OverscanCount"
+                       Pagination="@EffectivePagination">
+                @ChildContent
+            </QuickGrid>
+        </div>
+    }
+    else if (_groups is { Count: > 0 })
+    {
+        @foreach (var g in _groups)
+        {
+            <details class="nightmare-dg-group" open>
+                <summary class="nightmare-dg-group-summary">@g.Key <span class="muted">(@g.Count())</span></summary>
+                <div class="@HostCssClasses" style="@HostStyle">
+                    <QuickGrid Items="@g.AsQueryable()"
+                               Class="@GridTableClass"
+                               Theme="@Theme"
+                               Virtualize="@Virtualize"
+                               ItemSize="@ItemSize"
+                               ItemKey="@ItemKey"
+                               OverscanCount="@OverscanCount"
+                               Pagination="@EffectivePagination">
+                        @ChildContent
+                    </QuickGrid>
+                </div>
+            </details>
+        }
+    }
+    else if (GroupKeySelector is not null)
+    {
+        <div class="@HostCssClasses muted" style="@HostStyle">No rows to display.</div>
+    }
+</div>

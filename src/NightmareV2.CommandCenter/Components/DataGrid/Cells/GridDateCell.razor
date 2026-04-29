@@ -1,0 +1,14 @@
+@using System.Globalization
+@if (Value is { } v)
+{
+    <span title="@v.ToString("O", CultureInfo.InvariantCulture)">@v.ToString(Format, CultureInfo.InvariantCulture)</span>
+}
+else
+{
+    <span class="muted">—</span>
+}
+
+@code {
+    [Parameter] public DateTimeOffset? Value { get; set; }
+    [Parameter] public string Format { get; set; } = "u";
+}

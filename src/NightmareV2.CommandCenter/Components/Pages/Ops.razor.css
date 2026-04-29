@@ -1,0 +1,55 @@
+/* Grid chrome lives in Components/DataGrid/NightmareDataGrid.razor.css */
+
+.ops-top-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+}
+
+@media (max-width: 992px) {
+    .ops-top-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.ops-stat-pane .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ops-queue-pane h2 {
+    margin-top: 0;
+}
+
+.ops-queue-pane .ops-queue-toolbar {
+    margin-bottom: 0.35rem;
+}
+
+.ops-bottom-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 1.25rem;
+    align-items: start;
+}
+
+@media (max-width: 992px) {
+    .ops-bottom-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.ops-devtools-pane .ops-devtools-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0.75rem;
+}
+
+.ops-events-pane .ops-bus-block {
+    margin-top: 0.75rem;
+}
+
+.ops-events-pane .ops-bus-block:first-of-type {
+    margin-top: 0;
+}

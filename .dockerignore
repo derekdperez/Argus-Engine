@@ -1,9 +1,14 @@
 **/.git
 **/.vs
+**/.vscode
+**/.idea
 **/bin
 **/obj
 **/out
 **/publish
-**/*.user
 **/TestResults
-**/.idea
+**/*.user
+**/.nuget
+deploy/.hot-publish
+deploy/.last-*
+deploy/.current-*

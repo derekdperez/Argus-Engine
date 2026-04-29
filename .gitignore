@@ -13,3 +13,11 @@ deploy/.last-deploy-stamp
 # Fast deploy fingerprints
 deploy/.last-deploy-fingerprints
 deploy/.current-deploy-fingerprints
+
+# Fast debug/deploy local caches
+.nuget/
+deploy/.hot-publish/
+deploy/.last-source-fingerprints
+deploy/.current-source-fingerprints
+deploy/.last-image-fingerprints
+deploy/.current-image-fingerprints

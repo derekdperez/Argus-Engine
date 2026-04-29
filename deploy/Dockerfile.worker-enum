@@ -1,34 +1,40 @@
 # syntax=docker/dockerfile:1.7
-# Generic .NET worker image. Build context: repository root.
-# Recon tools are intentionally excluded here; only worker-enum uses deploy/Dockerfile.worker-enum.
-ARG PROJECT_DIR=NightmareV2.Gatekeeper
-ARG APP_DLL=NightmareV2.Gatekeeper.dll
+# Enum worker image. This is separate from the generic worker Dockerfile so subfinder/amass are not
+# rebuilt or copied into every worker image.
+ARG PROJECT_DIR=NightmareV2.Workers.Enum
+ARG APP_DLL=NightmareV2.Workers.Enum.dll
+
+FROM golang:1.26.2-bookworm AS recon-tools
+ARG SUBFINDER_PACKAGE=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.14.0
+ARG AMASS_PACKAGE=github.com/owasp-amass/amass/v5/cmd/amass@v5.1.1
+ENV GOBIN=/out \
+    CGO_ENABLED=0
+RUN --mount=type=cache,id=nightmare-go-build,target=/root/.cache/go-build \
+    --mount=type=cache,id=nightmare-go-mod,target=/go/pkg/mod \
+    mkdir -p /out \
+    && go install -v "${SUBFINDER_PACKAGE}" \
+    && go install -v "${AMASS_PACKAGE}" \
+    && test -x /out/subfinder \
+    && test -x /out/amass
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG PROJECT_DIR
 WORKDIR /src
 
-# Copy project files first so NuGet restore is cached when only .cs files change.
 COPY Directory.Build.props NightmareV2.slnx ./
 COPY src/NightmareV2.Application/NightmareV2.Application.csproj src/NightmareV2.Application/
 COPY src/NightmareV2.Contracts/NightmareV2.Contracts.csproj src/NightmareV2.Contracts/
 COPY src/NightmareV2.Domain/NightmareV2.Domain.csproj src/NightmareV2.Domain/
 COPY src/NightmareV2.Infrastructure/NightmareV2.Infrastructure.csproj src/NightmareV2.Infrastructure/
-COPY src/NightmareV2.Gatekeeper/NightmareV2.Gatekeeper.csproj src/NightmareV2.Gatekeeper/
-COPY src/NightmareV2.Workers.HighValue/NightmareV2.Workers.HighValue.csproj src/NightmareV2.Workers.HighValue/
-COPY src/NightmareV2.Workers.PortScan/NightmareV2.Workers.PortScan.csproj src/NightmareV2.Workers.PortScan/
-COPY src/NightmareV2.Workers.Spider/NightmareV2.Workers.Spider.csproj src/NightmareV2.Workers.Spider/
+COPY src/NightmareV2.Workers.Enum/NightmareV2.Workers.Enum.csproj src/NightmareV2.Workers.Enum/
 RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 
-# Copy only the shared projects and selected worker. Unrelated worker edits no longer invalidate this image.
 COPY src/NightmareV2.Application/ src/NightmareV2.Application/
 COPY src/NightmareV2.Contracts/ src/NightmareV2.Contracts/
 COPY src/NightmareV2.Domain/ src/NightmareV2.Domain/
 COPY src/NightmareV2.Infrastructure/ src/NightmareV2.Infrastructure/
-COPY src/${PROJECT_DIR}/ src/${PROJECT_DIR}/
-# High-value worker links content from src/Resources; copying it for all generic workers keeps the Dockerfile simple.
-COPY src/Resources/ src/Resources/
+COPY src/NightmareV2.Workers.Enum/ src/NightmareV2.Workers.Enum/
 RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
     -c Release -o /app/publish --no-restore /p:UseAppHost=false
@@ -39,10 +45,15 @@ ARG BUILD_SOURCE_STAMP=unknown
 LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
 ENV APP_DLL=${APP_DLL}
 ENV NIGHTMARE_BUILD_STAMP=${BUILD_SOURCE_STAMP}
+ENV SubdomainEnumeration__Subfinder__BinaryPath=/usr/local/bin/subfinder
+ENV SubdomainEnumeration__Amass__BinaryPath=/usr/local/bin/amass
+ENV SubdomainEnumeration__Amass__WordlistPath=data/wordlists/subdomains-high-value.txt
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libgssapi-krb5-2 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+COPY --from=recon-tools /out/subfinder /usr/local/bin/subfinder
+COPY --from=recon-tools /out/amass /usr/local/bin/amass
+COPY deploy/wordlists/subdomains.txt /opt/nightmare/wordlists/subdomains.txt
 COPY --from=build /app/publish .
-# Default process is the worker DLL. For dotnet CLI probes: docker run --rm --entrypoint dotnet <image> --info
 ENTRYPOINT ["sh", "-c", "exec dotnet /app/${APP_DLL}"]

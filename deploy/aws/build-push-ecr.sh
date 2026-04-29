@@ -23,10 +23,10 @@ build_and_push() {
     --build-arg APP_DLL="$app_dll"
   )
 
-  if [[ "$dockerfile" == "deploy/Dockerfile.worker" ]]; then
+  if [[ "$dockerfile" == "deploy/Dockerfile.worker-enum" ]]; then
     build_args+=(
-      --build-arg SUBFINDER_PACKAGE="${SUBFINDER_PACKAGE:-github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest}"
-      --build-arg AMASS_PACKAGE="${AMASS_PACKAGE:-github.com/owasp-amass/amass/v5/cmd/amass@main}"
+      --build-arg SUBFINDER_PACKAGE="${SUBFINDER_PACKAGE:-github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.14.0}"
+      --build-arg AMASS_PACKAGE="${AMASS_PACKAGE:-github.com/owasp-amass/amass/v5/cmd/amass@v5.1.1}"
     )
   fi
 
@@ -39,6 +39,6 @@ build_and_push() {
 build_and_push "command-center" "deploy/Dockerfile.web" "NightmareV2.CommandCenter" "NightmareV2.CommandCenter.dll"
 build_and_push "gatekeeper" "deploy/Dockerfile.worker" "NightmareV2.Gatekeeper" "NightmareV2.Gatekeeper.dll"
 build_and_push "worker-spider" "deploy/Dockerfile.worker" "NightmareV2.Workers.Spider" "NightmareV2.Workers.Spider.dll"
-build_and_push "worker-enum" "deploy/Dockerfile.worker" "NightmareV2.Workers.Enum" "NightmareV2.Workers.Enum.dll"
+build_and_push "worker-enum" "deploy/Dockerfile.worker-enum" "NightmareV2.Workers.Enum" "NightmareV2.Workers.Enum.dll"
 build_and_push "worker-portscan" "deploy/Dockerfile.worker" "NightmareV2.Workers.PortScan" "NightmareV2.Workers.PortScan.dll"
 build_and_push "worker-highvalue" "deploy/Dockerfile.worker" "NightmareV2.Workers.HighValue" "NightmareV2.Workers.HighValue.dll"

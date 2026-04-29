@@ -1,5 +1,5 @@
 # Run from DotNetSolution: ./deploy/deploy.sh  (installs Docker on Linux if needed; see deploy/lib-install-deps.sh)
-# Or: docker compose -f deploy/docker-compose.yml --project-directory . up -d --build
+# Or: docker compose -f deploy/docker-compose.yml up -d --build
 #
 # Troubleshooting:
 # - "failed to execute bake: exit status 1": deploy scripts default COMPOSE_BAKE=false. If you invoke compose
@@ -13,7 +13,7 @@ name: nightmare-v2
 x-dotnet-build-args: &dotnet-build-args
   BUILD_SOURCE_STAMP: ${BUILD_SOURCE_STAMP:-unknown}
 
-x-worker-build-args: &worker-build-args
+x-enum-build-args: &enum-build-args
   <<: *dotnet-build-args
   SUBFINDER_PACKAGE: ${SUBFINDER_PACKAGE:-github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.14.0}
   AMASS_PACKAGE: ${AMASS_PACKAGE:-github.com/owasp-amass/amass/v5/cmd/amass@v5.1.1}
@@ -99,6 +99,7 @@ services:
       start_period: 30s
 
   command-center:
+    image: nightmare-v2/command-center:local
     build:
       context: ..
       dockerfile: deploy/Dockerfile.web
@@ -136,11 +137,12 @@ services:
         condition: service_healthy
 
   gatekeeper:
+    image: nightmare-v2/gatekeeper:local
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
-        <<: *worker-build-args
+        <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Gatekeeper
         APP_DLL: NightmareV2.Gatekeeper.dll
     environment:
@@ -155,11 +157,12 @@ services:
         condition: service_healthy
 
   worker-spider:
+    image: nightmare-v2/worker-spider:local
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
-        <<: *worker-build-args
+        <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Workers.Spider
         APP_DLL: NightmareV2.Workers.Spider.dll
     environment:
@@ -176,11 +179,12 @@ services:
         condition: service_healthy
 
   worker-enum:
+    image: nightmare-v2/worker-enum:local
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deploy/Dockerfile.worker-enum
       args:
-        <<: *worker-build-args
+        <<: *enum-build-args
         PROJECT_DIR: NightmareV2.Workers.Enum
         APP_DLL: NightmareV2.Workers.Enum.dll
     environment:
@@ -208,11 +212,12 @@ services:
         condition: service_healthy
 
   worker-portscan:
+    image: nightmare-v2/worker-portscan:local
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
-        <<: *worker-build-args
+        <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Workers.PortScan
         APP_DLL: NightmareV2.Workers.PortScan.dll
     environment:
@@ -227,11 +232,12 @@ services:
         condition: service_healthy
 
   worker-highvalue:
+    image: nightmare-v2/worker-highvalue:local
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
-        <<: *worker-build-args
+        <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Workers.HighValue
         APP_DLL: NightmareV2.Workers.HighValue.dll
     environment:

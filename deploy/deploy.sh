@@ -15,6 +15,7 @@
 #   - Docker Compose V1:  standalone "docker-compose" on PATH.
 #
 # Optional environment:
+#   NIGHTMARE_DEPLOY_MODE=image|hot  image=normal cached image deploy (default); hot=publish/copy/restart changed running services.
 #   NIGHTMARE_GIT_PULL=1   Run git pull --ff-only in the repo before building (remote must be ff-only).
 #   NIGHTMARE_NO_CACHE=1      docker compose build --no-cache (also implied by -fresh)
 #   NIGHTMARE_PULL_IMAGES=1    docker compose build --pull. Defaults to 0 for fast deploys.
@@ -37,23 +38,39 @@ ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 cd "$ROOT"
 
 NIGHTMARE_DEPLOY_FRESH="${NIGHTMARE_DEPLOY_FRESH:-0}"
+NIGHTMARE_DEPLOY_MODE="${NIGHTMARE_DEPLOY_MODE:-image}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -fresh | --fresh)
       NIGHTMARE_DEPLOY_FRESH=1
+      NIGHTMARE_DEPLOY_MODE=image
+      shift
+      ;;
+    --hot | -hot)
+      NIGHTMARE_DEPLOY_MODE=hot
+      shift
+      ;;
+    --image | -image)
+      NIGHTMARE_DEPLOY_MODE=image
       shift
       ;;
     -h | --help)
       cat <<'EOF'
-Usage: ./deploy/deploy.sh [-fresh]
+Usage: ./deploy/deploy.sh [--hot] [-fresh]
 
-  (default)  Fast incremental: rebuild only service image(s) whose source/shared
-             dependency fingerprint changed, then run compose up without forcing
-             unchanged containers to restart.
+  (default)  Fast image deploy: rebuild only service image(s) whose source/shared
+             dependency or image recipe fingerprint changed, then run compose up
+             without forcing unchanged containers to restart.
+
+  --hot      For source-only changes in already-running services, publish that .NET
+             project with a cached NuGet folder, copy the publish output into the
+             running container, and restart only that service. Dockerfile/compose/tool
+             changes still fall back to image rebuilds.
 
   -fresh     Rebuild all service images with --pull --no-cache and force recreate.
 
 Environment:
+  NIGHTMARE_DEPLOY_MODE=image|hot
   NIGHTMARE_GIT_PULL=1
   NIGHTMARE_SKIP_INSTALL=1
   NIGHTMARE_DEPLOY_FRESH=1
@@ -70,6 +87,7 @@ EOF
   esac
 done
 export NIGHTMARE_DEPLOY_FRESH
+export NIGHTMARE_DEPLOY_MODE
 
 # shellcheck source=deploy/lib-nightmare-compose.sh
 source "$DEPLOY_DIR/lib-nightmare-compose.sh"
@@ -95,6 +113,8 @@ echo "Subdomain enumeration tools are installed into the worker images:"
 echo "  docker compose -f deploy/docker-compose.yml run --rm --entrypoint sh worker-enum -c 'command -v subfinder && command -v amass && test -s /opt/nightmare/wordlists/subdomains.txt'"
 echo ""
 echo "Useful commands (from $ROOT):"
+echo "  ./deploy/deploy.sh --hot                  # source-only hot-swap into running containers"
+echo "  ./deploy/prebuild-cache.sh              # warm image/NuGet/Go caches before debugging"
 echo "  ./deploy/smoke-test.sh                    # verify health, Blazor static assets, and dependency diagnostics"
 echo "  ./deploy/logs.sh --errors                 # show recent error-like log lines across services"
 echo "  ./deploy/logs.sh --follow worker-spider   # follow one service"

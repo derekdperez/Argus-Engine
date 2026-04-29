@@ -6,12 +6,14 @@
 #
 # Usage:
 #   chmod +x deploy/run-local.sh
-#   ./deploy/run-local.sh              # incremental up (skip build when fingerprint unchanged)
+#   ./deploy/run-local.sh              # incremental image up (skip build when fingerprint unchanged)
+#   ./deploy/run-local.sh --hot        # source-only hot-swap into running containers
 #   ./deploy/run-local.sh -fresh       # full rebuild (--pull --no-cache) then up
 #   ./deploy/run-local.sh logs         # follow all service logs (no build)
 #   ./deploy/run-local.sh down         # stop and remove containers
 #
 # Optional environment (for "up" only):
+#   NIGHTMARE_DEPLOY_MODE=image|hot  image=normal cached image deploy (default); hot=publish/copy/restart changed running services.
 #   NIGHTMARE_GIT_PULL=1   git pull --ff-only before build
 #   NIGHTMARE_NO_CACHE=1   docker compose build --no-cache
 #   NIGHTMARE_SKIP_INSTALL=1   Do not auto-install Docker; fail if missing
@@ -29,18 +31,29 @@ ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 cd "$ROOT"
 
 NIGHTMARE_DEPLOY_FRESH="${NIGHTMARE_DEPLOY_FRESH:-0}"
+NIGHTMARE_DEPLOY_MODE="${NIGHTMARE_DEPLOY_MODE:-image}"
 CMD="up"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -fresh | --fresh)
       NIGHTMARE_DEPLOY_FRESH=1
+      NIGHTMARE_DEPLOY_MODE=image
+      shift
+      ;;
+    --hot | -hot)
+      NIGHTMARE_DEPLOY_MODE=hot
+      shift
+      ;;
+    --image | -image)
+      NIGHTMARE_DEPLOY_MODE=image
       shift
       ;;
     -h | --help)
       cat <<'EOF'
-Usage: ./deploy/run-local.sh [-fresh] [up|down|logs|ps|status]
+Usage: ./deploy/run-local.sh [--hot] [-fresh] [up|down|logs|ps|status]
 
-  up (default)  Incremental: skip docker compose build when fingerprint matches deploy/.last-deploy-stamp.
+  up (default)  Incremental image deploy: skip docker compose build when fingerprints match.
+  --hot         Source-only changes are published, copied into running containers, and restarted.
   -fresh        Full rebuild: build --pull --no-cache, then up.
   down / logs / ps / status   No image build.
 EOF
@@ -57,6 +70,7 @@ EOF
   esac
 done
 export NIGHTMARE_DEPLOY_FRESH
+export NIGHTMARE_DEPLOY_MODE
 
 # shellcheck source=deploy/lib-nightmare-compose.sh
 source "$DEPLOY_DIR/lib-nightmare-compose.sh"
@@ -92,6 +106,8 @@ case "$CMD" in
     echo "  Redis          localhost:6379"
     echo ""
     echo "Debug commands (run from $ROOT):"
+    echo "  ./deploy/run-local.sh --hot    # source-only hot-swap into running containers"
+    echo "  ./deploy/prebuild-cache.sh     # warm image/NuGet/Go caches before debugging"
     echo "  ./deploy/smoke-test.sh         # health, static assets, and dependency diagnostics"
     echo "  ./deploy/logs.sh --errors      # recent error-like log lines"
     echo "  ./deploy/logs.sh --follow command-center worker-spider"

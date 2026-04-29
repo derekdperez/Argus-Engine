@@ -81,6 +81,7 @@ if (!app.Environment.IsDevelopment())
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 if (!listenPlainHttp)
     app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseAntiforgery();
 
 DiagnosticsEndpoints.Map(app);

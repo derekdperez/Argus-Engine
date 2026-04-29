@@ -278,20 +278,13 @@ internal static class OpsSnapshotBuilder
             return (0, 0);
 
         var assets = db.Assets.AsNoTracking();
-        var a1 = await assets
-            .LongCountAsync(
-                a => ((by is not null && a.DiscoveredBy == by)
-                      || (byPrefix is not null && EF.Functions.ILike(a.DiscoveredBy, byPrefix + "%")))
-                     && a.DiscoveredAtUtc >= h1,
-                ct)
-            .ConfigureAwait(false);
-        var a24 = await assets
-            .LongCountAsync(
-                a => ((by is not null && a.DiscoveredBy == by)
-                      || (byPrefix is not null && EF.Functions.ILike(a.DiscoveredBy, byPrefix + "%")))
-                     && a.DiscoveredAtUtc >= h24,
-                ct)
-            .ConfigureAwait(false);
+        var attributed = by is not null && byPrefix is not null
+            ? assets.Where(a => a.DiscoveredBy == by || EF.Functions.ILike(a.DiscoveredBy, byPrefix + "%"))
+            : by is not null
+                ? assets.Where(a => a.DiscoveredBy == by)
+                : assets.Where(a => EF.Functions.ILike(a.DiscoveredBy, byPrefix + "%"));
+        var a1 = await attributed.LongCountAsync(a => a.DiscoveredAtUtc >= h1, ct).ConfigureAwait(false);
+        var a24 = await attributed.LongCountAsync(a => a.DiscoveredAtUtc >= h24, ct).ConfigureAwait(false);
         return (a1, a24);
     }
 

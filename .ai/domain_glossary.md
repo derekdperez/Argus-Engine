@@ -15,3 +15,5 @@
   - `CausationId`: parent event that caused current emission.
 - Outbox message: durable pending event persisted with business state change and dispatched asynchronously to the broker.
 - Inbox message: `(EventId, Consumer)` dedupe record used by consumers to make at-least-once delivery idempotent.
+- Subdomain enumeration job: provider-scoped work item (`SubdomainEnumerationRequested`) for one root domain and one tool provider (`subfinder` or `amass`).
+- Enumeration provider provenance: source attribution written to `DiscoveredBy`/`DiscoveryContext` on emitted raw subdomain assets so downstream triage can distinguish passive vs active-bruteforce discovery.

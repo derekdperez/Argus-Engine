@@ -7,3 +7,4 @@
 - When migrating to SQS/SNS, do we require dual-write transport period or cutover by service group?
 - What default SLO/error-budget thresholds should be enforced for production (current defaults are conservative placeholders in `Nightmare:Reliability`)?
 - For `/api/ops/docker-status`, should Command Center run with Docker daemon access (socket mount + CLI), or should runtime status move to a sidecar/agent service?
+- Should we persist per-provider enumeration job status (`queued/running/completed/failed`) as first-class data, or keep provider execution visibility log-only for now?

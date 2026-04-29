@@ -14,3 +14,7 @@
 - CommandCenter route organization:
   - Register feature modules from `NightmareV2.CommandCenter.Endpoints` in `Program.cs`.
   - Keep route definitions out of `Program.cs` when a bounded context has more than trivial handlers.
+- Enumeration conventions:
+  - Queue enumeration via `SubdomainEnumerationRequested`; do not invoke provider binaries directly from `TargetCreated` consumers.
+  - Implement each enumeration tool as its own `ISubdomainEnumerationProvider` and execute only the requested provider per message.
+  - Emit provider provenance on `AssetDiscovered` as `DiscoveredBy=enum-worker:<provider>` with method details in `DiscoveryContext`.

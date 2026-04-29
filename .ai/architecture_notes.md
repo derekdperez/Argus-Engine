@@ -17,3 +17,10 @@
 - Command Center now exposes Docker runtime introspection (`/api/ops/docker-status`) and a UI status page (`/status`) backed by shelling out to Docker CLI (`docker ps`, `docker inspect`, `docker logs`).
 - Compose deploy now mounts Docker socket read-only into Command Center and runtime image includes Docker CLI so status endpoint can query host daemon.
 - Compose worker services now skip startup DB bootstrap; schema/bootstrap ownership effectively sits with Command Center startup path in current local-stack orchestration.
+- Subdomain enumeration is now event-driven and provider-specific:
+  - `TargetCreated` no longer executes tools directly.
+  - It enqueues provider jobs (`SubdomainEnumerationRequested`) per configured defaults.
+  - Enum worker consumes one provider job at a time and emits `AssetDiscovered` back into Gatekeeper path.
+- Provider execution boundary:
+  - `subfinder` and `amass` run in separate jobs with isolated failure/retry behavior.
+  - Job outputs are normalized and scope-filtered before emission, then globally deduped downstream by existing canonical asset/gatekeeper flow.

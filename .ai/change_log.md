@@ -16,3 +16,22 @@
 - Removed silent event-loss behavior in `EfAssetPersistence` by adding publish retries and terminal failure.
   - Why: eliminate unobservable publish drops for scanner-trigger events.
 - Validation: `dotnet build NightmareV2.slnx -c Release` succeeded.
+
+- Added transactional messaging foundations:
+  - `outbox_messages` + `inbox_messages` entities and schema patches.
+  - `IEventOutbox` + `EfEventOutbox` + `OutboxDispatcherWorker` retry/poison flow.
+  - `IInboxDeduplicator` + `EfInboxDeduplicator` used in key consumers.
+  - Why: prevent silent publish loss and support idempotent consumption.
+- Replaced direct bus-journal hot-path writes with bounded async batch pipeline (`BusJournalBuffer` + observers).
+  - Why: remove per-event DB write contention and preserve observability under load.
+- Implemented pipeline upgrades:
+  - adaptive spider concurrency controller and queue state-machine enforcement.
+  - real enumeration + port scan services behind interfaces.
+  - removed legacy `SpiderAssetDiscoveredConsumer` duplicate path.
+  - Why: single execution path, higher throughput, and less divergence risk.
+- Refactored CommandCenter route registration into endpoint modules:
+  - `TargetEndpoints`, `HttpRequestQueueEndpoints`, `BusJournalEndpoints`, `WorkerOpsEndpoints`.
+  - Why: reduce `Program.cs` sprawl and make bounded-context ownership explicit.
+- Added reliability baseline endpoint `/api/ops/reliability-baseline` with configurable error budget thresholds and rollback recommendation signal.
+  - Why: capture operational baseline and define explicit SLO breach triggers.
+- Validation: `dotnet build NightmareV2.slnx -c Release` succeeded after all changes.

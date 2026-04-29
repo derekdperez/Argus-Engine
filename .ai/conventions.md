@@ -9,3 +9,8 @@
 - Maintenance/diagnostics safety:
   - Endpoint enable flags alone are insufficient.
   - When enabled, corresponding API key must be configured; otherwise endpoint reports misconfiguration.
+- Event emitters in services should enqueue to `IEventOutbox` rather than calling MassTransit publish directly from domain/application flows.
+- Consumers handling cross-service events should call `IInboxDeduplicator` early in `Consume` and short-circuit duplicate deliveries.
+- CommandCenter route organization:
+  - Register feature modules from `NightmareV2.CommandCenter.Endpoints` in `Program.cs`.
+  - Keep route definitions out of `Program.cs` when a bounded context has more than trivial handlers.

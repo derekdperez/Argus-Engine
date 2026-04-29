@@ -109,6 +109,9 @@ services:
       Nightmare__Diagnostics__ApiKey: ${NIGHTMARE_DIAGNOSTICS_API_KEY:-local-dev-diagnostics-key-change-me}
       # POST /api/maintenance/* (destructive). Set Nightmare__DataMaintenance__ApiKey and header X-Nightmare-Maintenance-Key when enabling.
       # Nightmare__DataMaintenance__Enabled: "true"
+    volumes:
+      # Required for /api/ops/docker-status to inspect container/image/log state.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "8080:8080"
     healthcheck:

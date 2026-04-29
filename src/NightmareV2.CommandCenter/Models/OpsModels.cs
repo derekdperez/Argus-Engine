@@ -237,3 +237,39 @@ public sealed record ReliabilityBaselineSnapshotDto(
     IReadOnlyList<ServiceReliabilityBudgetDto> ServiceBudgets,
     bool RollbackRecommended,
     IReadOnlyList<string> Breaches);
+
+public sealed record DockerComponentHealthDto(
+    string ComponentKey,
+    string DisplayName,
+    string Status,
+    string Color,
+    string Reason);
+
+public sealed record DockerImageStatusDto(
+    string Image,
+    long ContainerCount,
+    long HealthyContainers,
+    long DegradedContainers,
+    long CriticalContainers,
+    string Status,
+    string Color);
+
+public sealed record DockerContainerStatusDto(
+    string ContainerId,
+    string Name,
+    string Image,
+    string DockerStatusText,
+    string HealthCheckStatus,
+    string Status,
+    string Color,
+    IReadOnlyList<string> LogTail);
+
+public sealed record DockerRuntimeStatusDto(
+    DateTimeOffset AtUtc,
+    bool DockerAvailable,
+    string Status,
+    string Color,
+    string? Error,
+    IReadOnlyList<DockerComponentHealthDto> Components,
+    IReadOnlyList<DockerImageStatusDto> Images,
+    IReadOnlyList<DockerContainerStatusDto> Containers);

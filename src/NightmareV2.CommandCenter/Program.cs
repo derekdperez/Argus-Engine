@@ -987,6 +987,15 @@ app.MapGet(
         })
     .WithName("ReliabilitySloSnapshot");
 
+app.MapGet(
+        "/api/ops/docker-status",
+        async (CancellationToken ct) =>
+        {
+            var snapshot = await DockerRuntimeStatusBuilder.BuildAsync(ct).ConfigureAwait(false);
+            return Results.Ok(snapshot);
+        })
+    .WithName("DockerRuntimeStatus");
+
 app.MapPut(
         "/api/workers/{key}",
         async (string key, WorkerPatchRequest body, NightmareDbContext db, CancellationToken ct) =>

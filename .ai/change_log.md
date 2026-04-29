@@ -35,3 +35,14 @@
 - Added reliability baseline endpoint `/api/ops/reliability-baseline` with configurable error budget thresholds and rollback recommendation signal.
   - Why: capture operational baseline and define explicit SLO breach triggers.
 - Validation: `dotnet build NightmareV2.slnx -c Release` succeeded after all changes.
+
+- Added Docker runtime status feature for operations:
+  - API: `GET /api/ops/docker-status`
+  - UI page: `/status`
+  - Includes container/image rollups, per-component health (green/yellow/red/gray), and last 300 log lines per container.
+  - Why: provide immediate runtime visibility for compose/ECS troubleshooting from Command Center.
+- Added deployment wiring for Docker runtime introspection:
+  - `deploy/Dockerfile.web` installs Docker CLI (`docker.io`).
+  - `deploy/docker-compose.yml` mounts `/var/run/docker.sock` read-only into `command-center`.
+  - Why: make `/api/ops/docker-status` functional in containerized runtime.
+- Validation: `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded.

@@ -26,8 +26,9 @@ LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
 ENV NIGHTMARE_BUILD_STAMP=${BUILD_SOURCE_STAMP}
 # Npgsql can dlopen Kerberos for Postgres auth negotiation; slim runtime image omits it by default.
 # curl: Docker HEALTHCHECK + manual probes.
+# docker.io: CLI used by /api/ops/docker-status for runtime container/image/log inspection.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgssapi-krb5-2 curl \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 curl docker.io \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080

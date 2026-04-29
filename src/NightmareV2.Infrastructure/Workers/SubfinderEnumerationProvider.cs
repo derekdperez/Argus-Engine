@@ -1,5 +1,6 @@
 using NightmareV2.Application.Workers;
 using NightmareV2.Contracts.Events;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace NightmareV2.Infrastructure.Workers;

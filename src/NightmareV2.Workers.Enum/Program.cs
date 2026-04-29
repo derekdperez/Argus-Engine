@@ -13,7 +13,7 @@ builder.Services.AddNightmareRabbitMq(
     x =>
     {
         x.AddConsumer<TargetCreatedConsumer>();
-        x.AddConsumer<SubdomainEnumerationRequestedConsumer, SubdomainEnumerationRequestedConsumerDefinition>();
+        x.AddConsumer<SubdomainEnumerationRequestedConsumer>();
     });
 
 var host = builder.Build();

@@ -1,5 +1,6 @@
 using MassTransit;
 using Microsoft.Extensions.Options;
+using NightmareV2.Application.Events;
 using NightmareV2.Application.Workers;
 using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;

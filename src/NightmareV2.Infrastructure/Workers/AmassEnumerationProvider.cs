@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NightmareV2.Application.Workers;
 using NightmareV2.Contracts.Events;

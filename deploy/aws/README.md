@@ -42,6 +42,27 @@ ${COMMAND_CENTER_URL}/api/http-request-queue
 
 and adjusts the spider worker ECS service because the spider worker drains the durable HTTP request queue.
 
+
+
+## Subdomain enumeration tooling
+
+`deploy/Dockerfile.worker` builds `subfinder` and `amass` into every worker image so the `worker-enum` ECS service can run both tools without host-level installation.
+
+Defaults:
+
+- `subfinder` runs with all passive sources enabled and recursive discovery.
+- `amass` runs active enumeration with brute-force enabled against the bundled wordlist at `/opt/nightmare/wordlists/subdomains.txt`.
+- DNS fallback remains enabled so basic enumeration still works if a tool fails or times out.
+
+When changing tool versions, set these before running `deploy/aws/build-push-ecr.sh`:
+
+```bash
+export SUBFINDER_PACKAGE=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+export AMASS_PACKAGE=github.com/owasp-amass/amass/v5/cmd/amass@main
+```
+
+For ECS, copy the `Enumeration__*` variables from `deploy/aws/service-env.example` into the `worker-enum` task definition.
+
 ## ECS service model
 
 Recommended services:

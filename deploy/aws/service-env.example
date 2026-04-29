@@ -8,3 +8,19 @@ RabbitMq__Password=nightmare
 RabbitMq__VirtualHost=/
 RabbitMq__ManagementUrl=http://rabbitmq:15672
 Nightmare__ListenPlainHttp=true
+
+
+# Worker-enum subdomain enumeration defaults. Keep these in the worker-enum ECS task definition.
+Enumeration__UseSubfinder=true
+Enumeration__SubfinderPath=/usr/local/bin/subfinder
+Enumeration__SubfinderAllSources=true
+Enumeration__SubfinderRecursive=true
+Enumeration__SubfinderTimeoutSeconds=180
+Enumeration__UseAmass=true
+Enumeration__AmassPath=/usr/local/bin/amass
+Enumeration__AmassActive=true
+Enumeration__AmassBruteForce=true
+Enumeration__AmassTimeoutSeconds=900
+Enumeration__UseDnsFallback=true
+Enumeration__DnsFallbackMaxCandidates=300
+Enumeration__SubdomainWordlistPath=/opt/nightmare/wordlists/subdomains.txt

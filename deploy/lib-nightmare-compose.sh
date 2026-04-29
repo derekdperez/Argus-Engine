@@ -100,6 +100,10 @@ nightmare_service_fingerprint() {
     "$project_path"
   )
 
+  if [[ "$service" != "command-center" ]]; then
+    inputs+=("deploy/wordlists")
+  fi
+
   nightmare_sha256_file_list "$root" "${inputs[@]}"
 }
 
@@ -173,7 +177,7 @@ nightmare_commit_current_fingerprints() {
 nightmare_recipe_bundle_hash() {
   local root="${1:-}"
   [[ -n "$root" ]] || return 1
-  nightmare_sha256_file_list "$root" deploy/docker-compose.yml deploy/Dockerfile.web deploy/Dockerfile.worker
+  nightmare_sha256_file_list "$root" deploy/docker-compose.yml deploy/Dockerfile.web deploy/Dockerfile.worker deploy/wordlists
 }
 
 nightmare_export_build_stamp() {

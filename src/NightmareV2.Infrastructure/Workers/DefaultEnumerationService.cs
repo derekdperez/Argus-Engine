@@ -38,6 +38,7 @@ public sealed class DefaultEnumerationService(
         "mail",
         "smtp",
         "imap",
+        "pop",
         "vpn",
         "remote",
         "git",
@@ -51,15 +52,15 @@ public sealed class DefaultEnumerationService(
         CancellationToken cancellationToken = default)
     {
         var discovered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var root = NormalizeRoot(target.RootDomain);
+        var root = NormalizeHostCandidate(target.RootDomain);
         if (string.IsNullOrWhiteSpace(root))
             return [];
 
         if (configuration.GetValue("Enumeration:UseSubfinder", true))
         {
             await RunToolAsync(
-                    "subfinder",
-                    ["-silent", "-d", root],
+                    ResolveConfiguredPath("Enumeration:SubfinderPath", "subfinder"),
+                    BuildSubfinderArguments(root),
                     root,
                     discovered,
                     ResolveTimeout("Enumeration:SubfinderTimeoutSeconds", 180),
@@ -70,11 +71,11 @@ public sealed class DefaultEnumerationService(
         if (configuration.GetValue("Enumeration:UseAmass", true))
         {
             await RunToolAsync(
-                    "amass",
-                    ["enum", "-d", root],
+                    ResolveConfiguredPath("Enumeration:AmassPath", "amass"),
+                    BuildAmassArguments(root),
                     root,
                     discovered,
-                    ResolveTimeout("Enumeration:AmassTimeoutSeconds", 600),
+                    ResolveTimeout("Enumeration:AmassTimeoutSeconds", 900),
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -87,12 +88,53 @@ public sealed class DefaultEnumerationService(
         return discovered.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
+    private IReadOnlyList<string> BuildSubfinderArguments(string root)
+    {
+        var args = new List<string> { "-silent" };
+        if (configuration.GetValue("Enumeration:SubfinderAllSources", true))
+            args.Add("-all");
+        if (configuration.GetValue("Enumeration:SubfinderRecursive", true))
+            args.Add("-recursive");
+
+        args.Add("-d");
+        args.Add(root);
+        return args;
+    }
+
+    private IReadOnlyList<string> BuildAmassArguments(string root)
+    {
+        var args = new List<string> { "enum" };
+
+        if (configuration.GetValue("Enumeration:AmassActive", true))
+            args.Add("-active");
+        if (configuration.GetValue("Enumeration:AmassBruteForce", true))
+            args.Add("-brute");
+
+        var wordlistPath = configuration["Enumeration:SubdomainWordlistPath"] ?? "/opt/nightmare/wordlists/subdomains.txt";
+        if (!string.IsNullOrWhiteSpace(wordlistPath) && File.Exists(wordlistPath))
+        {
+            args.Add("-w");
+            args.Add(wordlistPath);
+        }
+        else if (configuration.GetValue("Enumeration:AmassBruteForce", true))
+        {
+            logger.LogWarning(
+                "Enumeration:SubdomainWordlistPath was not found ({WordlistPath}); amass will run without the bundled brute-force wordlist.",
+                string.IsNullOrWhiteSpace(wordlistPath) ? "<not configured>" : wordlistPath);
+        }
+
+        args.Add("-d");
+        args.Add(root);
+        return args;
+    }
+
     private async Task DiscoverCommonDnsNamesAsync(
         string root,
         ISet<string> discovered,
         CancellationToken cancellationToken)
     {
-        foreach (var prefix in CandidatePrefixes)
+        var maxCandidates = Math.Clamp(configuration.GetValue("Enumeration:DnsFallbackMaxCandidates", 300), 1, 10_000);
+        foreach (var prefix in ResolveFallbackPrefixes(maxCandidates))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = $"{prefix}.{root}".Trim().TrimEnd('.');
@@ -106,6 +148,30 @@ public sealed class DefaultEnumerationService(
             {
                 // Resolution failures are expected for most candidate names.
             }
+        }
+    }
+
+    private IEnumerable<string> ResolveFallbackPrefixes(int maxCandidates)
+    {
+        var yielded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var prefix in CandidatePrefixes)
+        {
+            if (yielded.Add(prefix))
+                yield return prefix;
+        }
+
+        var wordlistPath = configuration["Enumeration:SubdomainWordlistPath"] ?? "/opt/nightmare/wordlists/subdomains.txt";
+        if (string.IsNullOrWhiteSpace(wordlistPath) || !File.Exists(wordlistPath))
+            yield break;
+
+        foreach (var raw in File.ReadLines(wordlistPath))
+        {
+            if (yielded.Count >= maxCandidates)
+                yield break;
+
+            var prefix = NormalizePrefix(raw);
+            if (!string.IsNullOrWhiteSpace(prefix) && yielded.Add(prefix))
+                yield return prefix;
         }
     }
 
@@ -134,6 +200,12 @@ public sealed class DefaultEnumerationService(
             foreach (var arg in arguments)
                 psi.ArgumentList.Add(arg);
 
+            logger.LogInformation(
+                "Starting enumeration tool {Tool} for {Root} with timeout {TimeoutSeconds}s.",
+                fileName,
+                root,
+                timeout.TotalSeconds);
+
             process = Process.Start(psi);
             if (process is null)
                 return;
@@ -142,9 +214,20 @@ public sealed class DefaultEnumerationService(
             var stderrTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
             await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
 
-            AddToolOutput(stdoutTask.IsCompletedSuccessfully ? stdoutTask.Result : "", root, discovered);
-            var stderr = stderrTask.IsCompletedSuccessfully ? stderrTask.Result : "";
-            if (process.ExitCode != 0 && !string.IsNullOrWhiteSpace(stderr))
+            var beforeCount = discovered.Count;
+            AddToolOutput(stdoutTask.IsCompletedSuccessfully ? stdoutTask.Result : string.Empty, root, discovered);
+            var addedCount = discovered.Count - beforeCount;
+            var stderr = stderrTask.IsCompletedSuccessfully ? stderrTask.Result : string.Empty;
+
+            if (process.ExitCode == 0)
+            {
+                logger.LogInformation(
+                    "Enumeration tool {Tool} finished for {Root}; added {AddedCount} scoped host(s).",
+                    fileName,
+                    root,
+                    addedCount);
+            }
+            else if (!string.IsNullOrWhiteSpace(stderr))
             {
                 logger.LogDebug(
                     "Enumeration tool {Tool} exited with {ExitCode}: {Stderr}",
@@ -160,7 +243,7 @@ public sealed class DefaultEnumerationService(
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
-            logger.LogDebug("Enumeration tool {Tool} is not available; DNS fallback will still run.", fileName);
+            logger.LogWarning("Enumeration tool {Tool} is not available; continuing with remaining enumeration methods.", fileName);
         }
         finally
         {
@@ -189,17 +272,52 @@ public sealed class DefaultEnumerationService(
     {
         foreach (var raw in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            var host = NormalizeRoot(raw);
+            var host = NormalizeHostCandidate(raw);
             if (HostAllowed(host, root))
                 discovered.Add(host);
         }
     }
 
+    private string ResolveConfiguredPath(string key, string fallback) =>
+        string.IsNullOrWhiteSpace(configuration[key]) ? fallback : configuration[key]!;
+
     private TimeSpan ResolveTimeout(string key, int fallbackSeconds) =>
         TimeSpan.FromSeconds(Math.Clamp(configuration.GetValue(key, fallbackSeconds), 5, 3600));
 
-    private static string NormalizeRoot(string value) =>
-        value.Trim().TrimEnd('.').ToLowerInvariant();
+    private static string NormalizeHostCandidate(string value)
+    {
+        var text = value.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+            return string.Empty;
+
+        // Tool output can contain sources, comments, or other columns. Keep the first plausible token.
+        text = text.Split([' ', '\t', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault() ?? string.Empty;
+
+        if (text.StartsWith("*."))
+            text = text[2..];
+
+        if (text.StartsWith("//", StringComparison.Ordinal))
+            text = "http:" + text;
+
+        if (Uri.TryCreate(text, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host))
+            text = uri.Host;
+
+        text = text.Trim().TrimEnd('.').ToLowerInvariant();
+        if (text.Length == 0 || text.Length > 253 || text.Contains(' ') || text.Contains("..", StringComparison.Ordinal))
+            return string.Empty;
+
+        return text;
+    }
+
+    private static string NormalizePrefix(string value)
+    {
+        var prefix = value.Trim().TrimStart('.').TrimEnd('.').ToLowerInvariant();
+        if (prefix.Length == 0 || prefix.StartsWith('#') || prefix.Contains('/') || prefix.Contains(' ') || prefix.Contains("..", StringComparison.Ordinal))
+            return string.Empty;
+
+        return prefix;
+    }
 
     private static bool HostAllowed(string host, string root) =>
         !string.IsNullOrWhiteSpace(host)

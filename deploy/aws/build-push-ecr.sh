@@ -17,8 +17,21 @@ build_and_push() {
   local app_dll="$4"
   local image="${registry}/${ECR_PREFIX}/${service}:${IMAGE_TAG}"
 
+  local build_args=(
+    -f "$dockerfile"
+    --build-arg PROJECT_DIR="$project_dir"
+    --build-arg APP_DLL="$app_dll"
+  )
+
+  if [[ "$dockerfile" == "deploy/Dockerfile.worker" ]]; then
+    build_args+=(
+      --build-arg SUBFINDER_PACKAGE="${SUBFINDER_PACKAGE:-github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest}"
+      --build-arg AMASS_PACKAGE="${AMASS_PACKAGE:-github.com/owasp-amass/amass/v5/cmd/amass@main}"
+    )
+  fi
+
   echo "Building ${image}"
-  docker build     -f "$dockerfile"     --build-arg PROJECT_DIR="$project_dir"     --build-arg APP_DLL="$app_dll"     -t "$image"     .
+  docker build "${build_args[@]}" -t "$image" .
 
   docker push "$image"
 }

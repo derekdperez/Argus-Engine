@@ -13,6 +13,11 @@ name: nightmare-v2
 x-dotnet-build-args: &dotnet-build-args
   BUILD_SOURCE_STAMP: ${BUILD_SOURCE_STAMP:-unknown}
 
+x-worker-build-args: &worker-build-args
+  <<: *dotnet-build-args
+  SUBFINDER_PACKAGE: ${SUBFINDER_PACKAGE:-github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest}
+  AMASS_PACKAGE: ${AMASS_PACKAGE:-github.com/owasp-amass/amass/v5/cmd/amass@main}
+
 x-common-env: &common-env
   ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=nightmare_v2;Username=nightmare;Password=nightmare
   ConnectionStrings__FileStore: Host=postgres;Port=5432;Database=nightmare_v2_files;Username=nightmare;Password=nightmare
@@ -135,7 +140,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
-        <<: *dotnet-build-args
+        <<: *worker-build-args
         PROJECT_DIR: NightmareV2.Gatekeeper
         APP_DLL: NightmareV2.Gatekeeper.dll
     environment:
@@ -153,7 +158,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
-        <<: *dotnet-build-args
+        <<: *worker-build-args
         PROJECT_DIR: NightmareV2.Workers.Spider
         APP_DLL: NightmareV2.Workers.Spider.dll
     environment:
@@ -173,11 +178,24 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
-        <<: *dotnet-build-args
+        <<: *worker-build-args
         PROJECT_DIR: NightmareV2.Workers.Enum
         APP_DLL: NightmareV2.Workers.Enum.dll
     environment:
       <<: *common-env
+      Enumeration__UseSubfinder: "true"
+      Enumeration__SubfinderPath: /usr/local/bin/subfinder
+      Enumeration__SubfinderAllSources: "true"
+      Enumeration__SubfinderRecursive: "true"
+      Enumeration__SubfinderTimeoutSeconds: "180"
+      Enumeration__UseAmass: "true"
+      Enumeration__AmassPath: /usr/local/bin/amass
+      Enumeration__AmassActive: "true"
+      Enumeration__AmassBruteForce: "true"
+      Enumeration__AmassTimeoutSeconds: "900"
+      Enumeration__UseDnsFallback: "true"
+      Enumeration__DnsFallbackMaxCandidates: "300"
+      Enumeration__SubdomainWordlistPath: /opt/nightmare/wordlists/subdomains.txt
     depends_on:
       postgres:
         condition: service_healthy
@@ -191,7 +209,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
-        <<: *dotnet-build-args
+        <<: *worker-build-args
         PROJECT_DIR: NightmareV2.Workers.PortScan
         APP_DLL: NightmareV2.Workers.PortScan.dll
     environment:
@@ -209,7 +227,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
-        <<: *dotnet-build-args
+        <<: *worker-build-args
         PROJECT_DIR: NightmareV2.Workers.HighValue
         APP_DLL: NightmareV2.Workers.HighValue.dll
     environment:

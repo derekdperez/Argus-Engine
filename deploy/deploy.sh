@@ -21,6 +21,8 @@
 #   NIGHTMARE_FORCE_RECREATE=1 Force recreate containers. Defaults to 0 for fast deploys.
 #   NIGHTMARE_SKIP_INSTALL=1   Do not install Docker / curl / git; fail if docker or compose is missing.
 #   NIGHTMARE_DEPLOY_FRESH=1   Same as passing -fresh on the command line.
+#   SUBFINDER_PACKAGE=...  Optional go install package for the worker image subfinder binary.
+#   AMASS_PACKAGE=...      Optional go install package for the worker image amass binary.
 #   COMPOSE_BAKE=true|false    Multi-service compose builds may use "bake"; scripts default to false for stability.
 #
 # If you see: unknown shorthand flag: 'd' in -d
@@ -88,6 +90,9 @@ echo "Nightmare v2 is running."
 echo "  Command Center:  http://localhost:8080/  (use host public IP on EC2)"
 echo "  RabbitMQ admin:  http://localhost:15672/  (user/pass: nightmare / nightmare)"
 echo "  Postgres:        localhost:5432  db=nightmare_v2 (+ file blobs db nightmare_v2_files)  user=nightmare"
+echo ""
+echo "Subdomain enumeration tools are installed into the worker images:"
+echo "  docker compose -f deploy/docker-compose.yml run --rm --entrypoint sh worker-enum -c 'command -v subfinder && command -v amass && test -s /opt/nightmare/wordlists/subdomains.txt'"
 echo ""
 echo "Useful commands (from $ROOT):"
 echo "  docker compose -f deploy/docker-compose.yml logs -f worker-spider"

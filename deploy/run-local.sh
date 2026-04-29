@@ -16,6 +16,8 @@
 #   NIGHTMARE_NO_CACHE=1   docker compose build --no-cache
 #   NIGHTMARE_SKIP_INSTALL=1   Do not auto-install Docker; fail if missing
 #   NIGHTMARE_DEPLOY_FRESH=1   Same as -fresh
+#   SUBFINDER_PACKAGE=...  Optional go install package for the worker image subfinder binary.
+#   AMASS_PACKAGE=...      Optional go install package for the worker image amass binary.
 #   COMPOSE_BAKE=true|false   deploy/lib-nightmare-compose.sh defaults to false (see docker-compose.yml header).
 #
 # Requires: Docker Engine + Compose V2 ("docker compose") or V1 ("docker-compose").
@@ -90,6 +92,7 @@ case "$CMD" in
     echo "  Redis          localhost:6379"
     echo ""
     echo "Debug commands (run from $ROOT):"
+    echo "  docker compose -f deploy/docker-compose.yml run --rm --entrypoint sh worker-enum -c 'command -v subfinder && command -v amass && test -s /opt/nightmare/wordlists/subdomains.txt'  # Verify enum tools"
     echo "  ./deploy/run-local.sh logs     # all services"
     echo "  ./deploy/run-local.sh ps       # container status"
     echo "  ./deploy/run-local.sh down     # stop stack"

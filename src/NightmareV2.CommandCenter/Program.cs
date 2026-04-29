@@ -16,7 +16,6 @@ using NightmareV2.CommandCenter;
 using NightmareV2.CommandCenter.Components;
 using NightmareV2.CommandCenter.DataMaintenance;
 using NightmareV2.CommandCenter.Diagnostics;
-using NightmareV2.CommandCenter.Endpoints;
 using NightmareV2.CommandCenter.Hubs;
 using NightmareV2.CommandCenter.Models;
 using NightmareV2.Contracts;
@@ -50,13 +49,6 @@ builder.Services.AddOptions<NightmareRuntimeOptions>()
     .Validate(
         o => !o.DataMaintenance.Enabled || !string.IsNullOrWhiteSpace(o.DataMaintenance.ApiKey),
         "Nightmare:DataMaintenance:Enabled=true requires Nightmare:DataMaintenance:ApiKey.")
-    .ValidateOnStart();
-builder.Services.AddOptions<ReliabilityBudgetOptions>()
-    .Bind(builder.Configuration.GetSection("Nightmare:Reliability"))
-    .Validate(o => o.MinEventProcessingSuccessRate is >= 0m and <= 1m, "Nightmare:Reliability:MinEventProcessingSuccessRate must be in [0,1].")
-    .Validate(o => o.MaxQueueBacklogAgeSeconds >= 0, "Nightmare:Reliability:MaxQueueBacklogAgeSeconds must be >= 0.")
-    .Validate(o => o.MinQueueDrainPerHour >= 0, "Nightmare:Reliability:MinQueueDrainPerHour must be >= 0.")
-    .Validate(o => o.MaxWorkerErrorsPerHour >= 0, "Nightmare:Reliability:MaxWorkerErrorsPerHour must be >= 0.")
     .ValidateOnStart();
 
 var app = builder.Build();
@@ -92,9 +84,402 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapHub<DiscoveryHub>("/hubs/discovery");
-TargetEndpoints.Map(app);
-HttpRequestQueueEndpoints.Map(app);
-BusJournalEndpoints.Map(app);
+
+app.MapGet(
+        "/api/targets",
+        async (NightmareDbContext db, CancellationToken ct) =>
+        {
+            var rows = await db.Targets.AsNoTracking()
+                .OrderByDescending(t => t.CreatedAtUtc)
+                .Select(t => new TargetSummary(t.Id, t.RootDomain, t.GlobalMaxDepth, t.CreatedAtUtc))
+                .Take(5000)
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+            return Results.Ok(rows);
+        })
+    .WithName("ListTargets");
+
+app.MapPost(
+        "/api/targets",
+        async (
+            CreateTargetRequest dto,
+            NightmareDbContext db,
+            IEventOutbox outbox,
+            IHubContext<DiscoveryHub> hub,
+            CancellationToken ct) =>
+        {
+            if (!TargetRootNormalization.TryNormalize(dto.RootDomain, out var root))
+                return Results.BadRequest("root domain required");
+
+            var target = new ReconTarget
+            {
+                Id = Guid.NewGuid(),
+                RootDomain = root,
+                GlobalMaxDepth = dto.GlobalMaxDepth > 0 ? dto.GlobalMaxDepth : 12,
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+            };
+
+            db.Targets.Add(target);
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            var correlation = NewId.NextGuid();
+            var eventId = NewId.NextGuid();
+            await outbox.EnqueueAsync(
+                    new TargetCreated(
+                        target.Id,
+                        target.RootDomain,
+                        target.GlobalMaxDepth,
+                        target.CreatedAtUtc,
+                        correlation,
+                        EventId: eventId,
+                        CausationId: correlation,
+                        Producer: "command-center"),
+                    ct)
+                .ConfigureAwait(false);
+
+            await hub.Clients.All.SendAsync("TargetQueued", target.Id, target.RootDomain, cancellationToken: ct)
+                .ConfigureAwait(false);
+
+            return Results.Created($"/api/targets/{target.Id}", new TargetSummary(target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc));
+        })
+    .WithName("CreateTarget");
+
+app.MapPut(
+        "/api/targets/{id:guid}",
+        async (Guid id, UpdateTargetRequest dto, NightmareDbContext db, CancellationToken ct) =>
+        {
+            if (!TargetRootNormalization.TryNormalize(dto.RootDomain, out var root))
+                return Results.BadRequest("root domain required");
+
+            var depth = dto.GlobalMaxDepth > 0 ? dto.GlobalMaxDepth : 12;
+            var target = await db.Targets.FirstOrDefaultAsync(t => t.Id == id, ct).ConfigureAwait(false);
+            if (target is null)
+                return Results.NotFound();
+
+            if (!string.Equals(target.RootDomain, root, StringComparison.Ordinal))
+            {
+                var taken = await db.Targets.AnyAsync(t => t.RootDomain == root && t.Id != id, ct).ConfigureAwait(false);
+                if (taken)
+                    return Results.Conflict("root domain already in use");
+            }
+
+            target.RootDomain = root;
+            target.GlobalMaxDepth = depth;
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            return Results.Ok(new TargetSummary(target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc));
+        })
+    .WithName("UpdateTarget");
+
+app.MapDelete(
+        "/api/targets/{id:guid}",
+        async (Guid id, NightmareDbContext db, CancellationToken ct) =>
+        {
+            var target = await db.Targets.FirstOrDefaultAsync(t => t.Id == id, ct).ConfigureAwait(false);
+            if (target is null)
+                return Results.NotFound();
+            db.Targets.Remove(target);
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            return Results.NoContent();
+        })
+    .WithName("DeleteTarget");
+
+app.MapPost(
+        "/api/targets/bulk",
+        async (HttpRequest httpRequest, NightmareDbContext db, IEventOutbox outbox, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+        {
+            const int maxLines = 50_000;
+            var rawLines = new List<string>();
+            var globalDepth = 12;
+            var contentType = httpRequest.ContentType ?? "";
+
+            if (contentType.Contains("multipart/form-data", StringComparison.OrdinalIgnoreCase))
+            {
+                var form = await httpRequest.ReadFormAsync(ct).ConfigureAwait(false);
+                if (form.TryGetValue("globalMaxDepth", out var depthVals) && int.TryParse(depthVals.ToString(), out var parsedDepth) && parsedDepth > 0)
+                    globalDepth = parsedDepth;
+                var file = form.Files.GetFile("file");
+                if (file is null || file.Length == 0)
+                    return Results.BadRequest("multipart field \"file\" is required");
+                await using var stream = file.OpenReadStream();
+                using var reader = new StreamReader(stream);
+                var text = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+                rawLines.AddRange(TargetRootNormalization.SplitLines(text));
+            }
+            else
+            {
+                var dto = await httpRequest.ReadFromJsonAsync<BulkImportRequest>(cancellationToken: ct).ConfigureAwait(false);
+                if (dto is null)
+                    return Results.BadRequest("expected JSON body or multipart/form-data with field \"file\"");
+                globalDepth = dto.GlobalMaxDepth > 0 ? dto.GlobalMaxDepth : 12;
+                if (dto.Domains is not null)
+                    rawLines.AddRange(dto.Domains);
+            }
+
+            if (rawLines.Count > maxLines)
+                return Results.BadRequest($"maximum {maxLines} lines per import");
+
+            var firstOrder = new List<string>();
+            var batchSeen = new HashSet<string>(StringComparer.Ordinal);
+            var skippedEmpty = 0;
+            var skippedDupBatch = 0;
+            var skippedInvalid = 0;
+            foreach (var line in rawLines)
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Length == 0)
+                {
+                    skippedEmpty++;
+                    continue;
+                }
+
+                if (!TargetRootNormalization.TryNormalize(trimmed, out var n))
+                {
+                    skippedInvalid++;
+                    continue;
+                }
+
+                if (!batchSeen.Add(n))
+                {
+                    skippedDupBatch++;
+                    continue;
+                }
+
+                firstOrder.Add(n);
+            }
+
+            if (firstOrder.Count == 0)
+            {
+                return Results.Ok(
+                    new BulkImportResult(
+                        0,
+                        0,
+                        skippedInvalid + skippedEmpty,
+                        skippedDupBatch));
+            }
+
+            var existing = await db.Targets.AsNoTracking()
+                .Where(t => firstOrder.Contains(t.RootDomain))
+                .Select(t => t.RootDomain)
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+            var existingSet = existing.ToHashSet(StringComparer.Ordinal);
+
+            var skippedExist = 0;
+            var newTargets = new List<ReconTarget>();
+            foreach (var n in firstOrder)
+            {
+                if (existingSet.Contains(n))
+                {
+                    skippedExist++;
+                    continue;
+                }
+
+                existingSet.Add(n);
+                var target = new ReconTarget
+                {
+                    Id = Guid.NewGuid(),
+                    RootDomain = n,
+                    GlobalMaxDepth = globalDepth,
+                    CreatedAtUtc = DateTimeOffset.UtcNow,
+                };
+                newTargets.Add(target);
+                db.Targets.Add(target);
+            }
+
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            foreach (var target in newTargets)
+            {
+                var correlation = NewId.NextGuid();
+                var eventId = NewId.NextGuid();
+                await outbox.EnqueueAsync(
+                        new TargetCreated(
+                            target.Id,
+                            target.RootDomain,
+                            target.GlobalMaxDepth,
+                            target.CreatedAtUtc,
+                            correlation,
+                            EventId: eventId,
+                            CausationId: correlation,
+                            Producer: "command-center"),
+                        ct)
+                    .ConfigureAwait(false);
+                await hub.Clients.All.SendAsync("TargetQueued", target.Id, target.RootDomain, cancellationToken: ct)
+                    .ConfigureAwait(false);
+            }
+
+            return Results.Ok(
+                new BulkImportResult(
+                    newTargets.Count,
+                    skippedExist,
+                    skippedInvalid + skippedEmpty,
+                    skippedDupBatch));
+        })
+    .WithName("BulkImportTargets");
+
+
+app.MapGet(
+        "/api/http-request-queue/settings",
+        async (NightmareDbContext db, CancellationToken ct) =>
+        {
+            var row = await db.HttpRequestQueueSettings.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == 1, ct)
+                .ConfigureAwait(false)
+                ?? new HttpRequestQueueSettings();
+
+            return Results.Ok(
+                new HttpRequestQueueSettingsDto(
+                    row.Enabled,
+                    row.GlobalRequestsPerMinute,
+                    row.PerDomainRequestsPerMinute,
+                    row.MaxConcurrency,
+                    row.RequestTimeoutSeconds,
+                    row.UpdatedAtUtc));
+        })
+    .WithName("GetHttpRequestQueueSettings");
+
+app.MapPut(
+        "/api/http-request-queue/settings",
+        async (HttpRequestQueueSettingsPatch body, NightmareDbContext db, CancellationToken ct) =>
+        {
+            var row = await db.HttpRequestQueueSettings.FirstOrDefaultAsync(s => s.Id == 1, ct).ConfigureAwait(false);
+            if (row is null)
+            {
+                row = new HttpRequestQueueSettings { Id = 1 };
+                db.HttpRequestQueueSettings.Add(row);
+            }
+
+            row.Enabled = body.Enabled;
+            row.GlobalRequestsPerMinute = Math.Clamp(body.GlobalRequestsPerMinute, 1, 100_000);
+            row.PerDomainRequestsPerMinute = Math.Clamp(body.PerDomainRequestsPerMinute, 1, 10_000);
+            row.MaxConcurrency = Math.Clamp(body.MaxConcurrency, 1, 1_000);
+            row.RequestTimeoutSeconds = Math.Clamp(body.RequestTimeoutSeconds, 5, 300);
+            row.UpdatedAtUtc = DateTimeOffset.UtcNow;
+
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            return Results.NoContent();
+        })
+    .WithName("UpdateHttpRequestQueueSettings");
+
+app.MapGet(
+        "/api/http-request-queue",
+        async (NightmareDbContext db, Guid? targetId, int? take, CancellationToken ct) =>
+        {
+            var limit = Math.Clamp(take ?? 800, 1, 5000);
+            var q = db.HttpRequestQueue.AsNoTracking().OrderByDescending(r => r.CreatedAtUtc).AsQueryable();
+            if (targetId is { } tid)
+                q = q.Where(r => r.TargetId == tid);
+
+            var rows = await q.Take(limit)
+                .Select(r => new HttpRequestQueueRowDto(
+                    r.Id,
+                    r.AssetId,
+                    r.TargetId,
+                    r.AssetKind.ToString(),
+                    r.Method,
+                    r.RequestUrl,
+                    r.DomainKey,
+                    r.State,
+                    r.AttemptCount,
+                    r.MaxAttempts,
+                    r.Priority,
+                    r.CreatedAtUtc,
+                    r.UpdatedAtUtc,
+                    r.NextAttemptAtUtc,
+                    r.StartedAtUtc,
+                    r.CompletedAtUtc,
+                    r.LastHttpStatus,
+                    r.LastError,
+                    r.DurationMs,
+                    r.ResponseContentType,
+                    r.ResponseContentLength,
+                    r.FinalUrl))
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+
+            return Results.Ok(rows);
+        })
+    .WithName("ListHttpRequestQueue");
+
+app.MapGet(
+        "/api/http-request-queue/metrics",
+        async (NightmareDbContext db, CancellationToken ct) =>
+        {
+            var now = DateTimeOffset.UtcNow;
+            var oneHourAgo = now.AddHours(-1);
+
+            var queued = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.Queued, ct)
+                .ConfigureAwait(false);
+            var retry = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now, ct)
+                .ConfigureAwait(false);
+            var scheduledRetry = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc > now, ct)
+                .ConfigureAwait(false);
+            var inFlight = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.InFlight, ct)
+                .ConfigureAwait(false);
+            var failed = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.Failed, ct)
+                .ConfigureAwait(false);
+            var completedLastHour = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.Succeeded && q.CompletedAtUtc >= oneHourAgo, ct)
+                .ConfigureAwait(false);
+            var oldestQueuedAt = await db.HttpRequestQueue.AsNoTracking()
+                .Where(q => q.State == HttpRequestQueueState.Queued
+                    || (q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now))
+                .OrderBy(q => q.CreatedAtUtc)
+                .Select(q => (DateTimeOffset?)q.CreatedAtUtc)
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+
+            return Results.Ok(
+                new HttpRequestQueueMetricsDto(
+                    queued,
+                    retry,
+                    scheduledRetry,
+                    inFlight,
+                    failed,
+                    completedLastHour,
+                    queued + retry,
+                    oldestQueuedAt,
+                    oldestQueuedAt is null ? null : (long)(now - oldestQueuedAt.Value).TotalSeconds));
+        })
+    .WithName("GetHttpRequestQueueMetrics");
+
+app.MapGet(
+        "/api/bus/live",
+        async (NightmareDbContext db, int? minutes, int? take, CancellationToken ct) =>
+        {
+            var window = TimeSpan.FromMinutes(Math.Clamp(minutes ?? 3, 1, 60));
+            var limit = Math.Clamp(take ?? 150, 1, 500);
+            var since = DateTimeOffset.UtcNow - window;
+            var rows = await db.BusJournal.AsNoTracking()
+                .Where(e => e.Direction == "Publish" && e.OccurredAtUtc >= since)
+                .OrderByDescending(e => e.OccurredAtUtc)
+                .Take(limit)
+                .Select(e => new BusJournalRowDto(e.Id, e.Direction, e.MessageType, e.PayloadJson, e.OccurredAtUtc, e.ConsumerType, e.HostName))
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+            return Results.Ok(rows);
+        })
+    .WithName("BusLive");
+
+app.MapGet(
+        "/api/bus/history",
+        async (NightmareDbContext db, int? take, CancellationToken ct) =>
+        {
+            var limit = Math.Clamp(take ?? 400, 1, 2000);
+            var rows = await db.BusJournal.AsNoTracking()
+                .OrderByDescending(e => e.Id)
+                .Take(limit)
+                .Select(e => new BusJournalRowDto(e.Id, e.Direction, e.MessageType, e.PayloadJson, e.OccurredAtUtc, e.ConsumerType, e.HostName))
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+            return Results.Ok(rows);
+        })
+    .WithName("BusHistory");
 
 app.MapGet(
         "/api/assets",
@@ -374,7 +759,247 @@ static bool LooksLikeSoft404(UrlFetchSnapshot? snap)
         || normalized.Contains("the page you are looking for", StringComparison.Ordinal);
 }
 
-WorkerOpsEndpoints.Map(app);
+app.MapGet(
+        "/api/workers",
+        async (NightmareDbContext db, CancellationToken ct) =>
+        {
+            var rows = await db.WorkerSwitches.AsNoTracking()
+                .OrderBy(w => w.WorkerKey)
+                .Select(w => new WorkerSwitchDto(w.WorkerKey, w.IsEnabled, w.UpdatedAtUtc))
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+            return Results.Ok(rows);
+        })
+    .WithName("ListWorkers");
+
+app.MapGet(
+        "/api/workers/capabilities",
+        () =>
+        {
+            var rows = new[]
+            {
+                new WorkerCapabilityDto(WorkerKeys.Gatekeeper, "Gatekeeper", "v1", true, true, false, false),
+                new WorkerCapabilityDto(WorkerKeys.Spider, "Spider HTTP Queue", "v1", false, true, true, false),
+                new WorkerCapabilityDto(WorkerKeys.Enumeration, "Enumeration", "v1", true, true, false, true),
+                new WorkerCapabilityDto(WorkerKeys.PortScan, "Port Scan", "v1", true, false, true, true),
+                new WorkerCapabilityDto(WorkerKeys.HighValueRegex, "High Value Regex", "v1", true, false, false, false),
+                new WorkerCapabilityDto(WorkerKeys.HighValuePaths, "High Value Paths", "v1", true, true, false, false),
+            };
+            return Results.Ok(rows);
+        })
+    .WithName("WorkerCapabilities");
+
+app.MapGet(
+        "/api/workers/health",
+        async (NightmareDbContext db, CancellationToken ct) =>
+        {
+            var now = DateTimeOffset.UtcNow;
+            var since1 = now.AddHours(-1);
+            var since24 = now.AddHours(-24);
+
+            var toggles = await db.WorkerSwitches.AsNoTracking()
+                .ToDictionaryAsync(w => w.WorkerKey, w => w.IsEnabled, ct)
+                .ConfigureAwait(false);
+
+            var consumeRows = await db.BusJournal.AsNoTracking()
+                .Where(e => e.Direction == "Consume" && e.ConsumerType != null && e.OccurredAtUtc >= since24)
+                .Select(e => new { e.ConsumerType, e.OccurredAtUtc })
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+
+            var byKind = consumeRows
+                .Select(r => new { Kind = WorkerConsumerKindResolver.KindFromConsumerType(r.ConsumerType), r.OccurredAtUtc })
+                .Where(r => !string.IsNullOrWhiteSpace(r.Kind))
+                .GroupBy(r => r.Kind!)
+                .ToDictionary(
+                    g => g.Key,
+                    g => new
+                    {
+                        Last = g.Max(x => x.OccurredAtUtc),
+                        Last1h = g.LongCount(x => x.OccurredAtUtc >= since1),
+                        Last24h = g.LongCount(),
+                    },
+                    StringComparer.Ordinal);
+
+            var keys = new[]
+            {
+                WorkerKeys.Gatekeeper,
+                WorkerKeys.Spider,
+                WorkerKeys.Enumeration,
+                WorkerKeys.PortScan,
+                WorkerKeys.HighValueRegex,
+                WorkerKeys.HighValuePaths,
+            };
+
+            var rows = keys.Select(
+                    key =>
+                    {
+                        var enabled = toggles.GetValueOrDefault(key, true);
+                        var has = byKind.TryGetValue(key, out var stats);
+                        var last = has ? stats!.Last : (DateTimeOffset?)null;
+                        var c1 = has ? stats!.Last1h : 0;
+                        var c24 = has ? stats!.Last24h : 0;
+                        var healthy = !enabled || c1 > 0 || (last is not null && (now - last.Value) <= TimeSpan.FromMinutes(15));
+                        var reason = !enabled
+                            ? "worker toggle is disabled"
+                            : healthy
+                                ? "worker consumed events recently"
+                                : "worker has no recent consume activity";
+                        return new WorkerHealthDto(key, enabled, last, c1, c24, healthy, reason);
+                    })
+                .ToList();
+
+            return Results.Ok(rows);
+        })
+    .WithName("WorkerHealth");
+
+app.MapGet(
+        "/api/workers/activity",
+        async (NightmareDbContext db, CancellationToken ct) =>
+        {
+            var snap = await WorkerActivityQuery.BuildSnapshotAsync(db, ct).ConfigureAwait(false);
+            return Results.Ok(snap);
+        })
+    .WithName("WorkerActivity");
+
+app.MapGet(
+        "/api/ops/snapshot",
+        async (NightmareDbContext db, IHttpClientFactory httpFactory, IConfiguration configuration, CancellationToken ct) =>
+        {
+            var snap = await OpsSnapshotBuilder.BuildAsync(db, httpFactory, configuration, ct).ConfigureAwait(false);
+            return Results.Ok(snap);
+        })
+    .WithName("OpsSnapshot");
+
+app.MapGet(
+        "/api/ops/overview",
+        async (NightmareDbContext db, CancellationToken ct) =>
+        {
+            var totalTargets = await db.Targets.AsNoTracking().LongCountAsync(ct).ConfigureAwait(false);
+            var totalAssetsConfirmed = await db.Assets.AsNoTracking()
+                .LongCountAsync(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed, ct)
+                .ConfigureAwait(false);
+            var totalUrls = await db.Assets.AsNoTracking()
+                .LongCountAsync(a => a.Kind == AssetKind.Url, ct)
+                .ConfigureAwait(false);
+
+            var urlsFromFetchedPages = await db.Assets.AsNoTracking()
+                .LongCountAsync(
+                    a => a.Kind == AssetKind.Url
+                        && a.DiscoveredBy == "spider-worker"
+                        && EF.Functions.Like(a.DiscoveryContext, "Spider: link extracted from fetched page %"),
+                    ct)
+                .ConfigureAwait(false);
+
+            var urlsFromScripts = await db.Assets.AsNoTracking()
+                .LongCountAsync(
+                    a => a.Kind == AssetKind.Url
+                        && a.DiscoveredBy == "spider-worker"
+                        && (EF.Functions.ILike(a.DiscoveryContext, "%.js%")
+                            || EF.Functions.ILike(a.DiscoveryContext, "%javascript%")),
+                    ct)
+                .ConfigureAwait(false);
+
+            var urlsGuessedWithWordlist = await db.Assets.AsNoTracking()
+                .LongCountAsync(
+                    a => a.Kind == AssetKind.Url
+                        && EF.Functions.ILike(a.DiscoveredBy, "hvpath:%"),
+                    ct)
+                .ConfigureAwait(false);
+
+            var domainCounts = await db.Assets.AsNoTracking()
+                .Join(db.Targets.AsNoTracking(), a => a.TargetId, t => t.Id, (_, t) => t.RootDomain)
+                .GroupBy(d => d)
+                .Select(g => new { RootDomain = g.Key, Count = g.LongCount() })
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+
+            var top = domainCounts
+                .OrderByDescending(x => x.Count)
+                .ThenBy(x => x.RootDomain, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+            var domains10OrMore = domainCounts.LongCount(x => x.Count >= 10);
+            var domains10OrFewer = domainCounts.LongCount(x => x.Count <= 10);
+
+            return Results.Ok(
+                new OpsOverviewDto(
+                    totalTargets,
+                    totalAssetsConfirmed,
+                    totalUrls,
+                    urlsFromFetchedPages,
+                    urlsFromScripts,
+                    urlsGuessedWithWordlist,
+                    top?.RootDomain,
+                    top?.Count ?? 0,
+                    domains10OrMore,
+                    domains10OrFewer));
+        })
+    .WithName("OpsOverview");
+
+app.MapGet(
+        "/api/ops/reliability-slo",
+        async (NightmareDbContext db, CancellationToken ct) =>
+        {
+            var now = DateTimeOffset.UtcNow;
+            var since = now.AddHours(-1);
+
+            var publishes = await db.BusJournal.AsNoTracking()
+                .LongCountAsync(e => e.Direction == "Publish" && e.OccurredAtUtc >= since, ct)
+                .ConfigureAwait(false);
+            var consumes = await db.BusJournal.AsNoTracking()
+                .LongCountAsync(e => e.Direction == "Consume" && e.OccurredAtUtc >= since, ct)
+                .ConfigureAwait(false);
+            var successRate = publishes <= 0 ? 1m : Math.Min(1m, consumes / (decimal)publishes);
+
+            var queued = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.Queued, ct)
+                .ConfigureAwait(false);
+            var readyRetry = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now, ct)
+                .ConfigureAwait(false);
+            var backlog = queued + readyRetry;
+            var completed = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.Succeeded && q.CompletedAtUtc >= since, ct)
+                .ConfigureAwait(false);
+            var failedLastHour = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.Failed && q.UpdatedAtUtc >= since, ct)
+                .ConfigureAwait(false);
+            var oldestQueuedAt = await db.HttpRequestQueue.AsNoTracking()
+                .Where(q => q.State == HttpRequestQueueState.Queued
+                    || (q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now))
+                .OrderBy(q => q.CreatedAtUtc)
+                .Select(q => (DateTimeOffset?)q.CreatedAtUtc)
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+
+            var apiReady = await db.Database.CanConnectAsync(ct).ConfigureAwait(false);
+            return Results.Ok(
+                new ReliabilitySloSnapshotDto(
+                    now,
+                    publishes,
+                    consumes,
+                    successRate,
+                    backlog,
+                    oldestQueuedAt is null ? null : (long)(now - oldestQueuedAt.Value).TotalSeconds,
+                    completed,
+                    failedLastHour,
+                    apiReady));
+        })
+    .WithName("ReliabilitySloSnapshot");
+
+app.MapPut(
+        "/api/workers/{key}",
+        async (string key, WorkerPatchRequest body, NightmareDbContext db, CancellationToken ct) =>
+        {
+            var row = await db.WorkerSwitches.FirstOrDefaultAsync(w => w.WorkerKey == key, ct).ConfigureAwait(false);
+            if (row is null)
+                return Results.NotFound();
+            row.IsEnabled = body.Enabled;
+            row.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            return Results.NoContent();
+        })
+    .WithName("PatchWorker");
 
 
 static async Task InitializeStartupDatabasesAsync(WebApplication app, bool skipStartupDatabase)

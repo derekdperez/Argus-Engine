@@ -10,6 +10,10 @@ public static class NightmareDbSchemaPatches
 {
     public static async Task ApplyAfterEnsureCreatedAsync(NightmareDbContext db, CancellationToken cancellationToken = default)
     {
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(542017296183746291);", cancellationToken)
+            .ConfigureAwait(false);
+
         await db.Database.ExecuteSqlRawAsync(
                 """
                 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -139,7 +143,7 @@ public static class NightmareDbSchemaPatches
 
                 CREATE TABLE IF NOT EXISTS http_request_queue (
                     id uuid NOT NULL PRIMARY KEY,
-                    asset_id uuid NOT NULL REFERENCES stored_assets(id) ON DELETE CASCADE,
+                    asset_id uuid NOT NULL REFERENCES stored_assets("Id") ON DELETE CASCADE,
                     target_id uuid NOT NULL,
                     asset_kind integer NOT NULL,
                     method character varying(16) NOT NULL DEFAULT 'GET',
@@ -178,6 +182,7 @@ public static class NightmareDbSchemaPatches
 
         await BackfillLegacyDiscoveredAssetsAsync(db, cancellationToken).ConfigureAwait(false);
         await BackfillHttpRequestQueueAsync(db, cancellationToken).ConfigureAwait(false);
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
 
@@ -186,6 +191,16 @@ public static class NightmareDbSchemaPatches
     {
         await db.Database.ExecuteSqlRawAsync(
                 """
+                WITH asset_projection AS (
+                    SELECT
+                        COALESCE((to_jsonb(a) ->> 'Id')::uuid, (to_jsonb(a) ->> 'id')::uuid) AS asset_id,
+                        COALESCE((to_jsonb(a) ->> 'TargetId')::uuid, (to_jsonb(a) ->> 'target_id')::uuid) AS target_id,
+                        COALESCE((to_jsonb(a) ->> 'Kind')::integer, (to_jsonb(a) ->> 'kind')::integer) AS asset_kind,
+                        COALESCE(to_jsonb(a) ->> 'RawValue', to_jsonb(a) ->> 'raw_value') AS raw_value,
+                        COALESCE(to_jsonb(a) ->> 'LifecycleStatus', to_jsonb(a) ->> 'lifecycle_status') AS lifecycle_status,
+                        COALESCE((to_jsonb(a) ->> 'DiscoveredAtUtc')::timestamp with time zone, (to_jsonb(a) ->> 'discovered_at_utc')::timestamp with time zone) AS discovered_at_utc
+                    FROM stored_assets a
+                )
                 INSERT INTO http_request_queue (
                     id,
                     asset_id,
@@ -202,31 +217,35 @@ public static class NightmareDbSchemaPatches
                 )
                 SELECT
                     gen_random_uuid(),
-                    a.id,
-                    a."TargetId",
-                    a."Kind",
+                    a.asset_id,
+                    a.target_id,
+                    a.asset_kind,
                     'GET',
                     CASE
-                        WHEN a."Kind" IN (0, 1) THEN 'https://' || trim(trailing '/' from a."RawValue") || '/'
-                        WHEN position('://' in a."RawValue") > 0 THEN a."RawValue"
-                        ELSE 'https://' || a."RawValue"
+                        WHEN a.asset_kind IN (0, 1) THEN 'https://' || trim(trailing '/' from a.raw_value) || '/'
+                        WHEN position('://' in a.raw_value) > 0 THEN a.raw_value
+                        ELSE 'https://' || a.raw_value
                     END,
                     lower(
                         CASE
-                            WHEN a."Kind" IN (0, 1) THEN trim(trailing '/' from a."RawValue")
-                            ELSE regexp_replace(regexp_replace(a."RawValue", '^[a-zA-Z][a-zA-Z0-9+.-]*://', ''), '[:/].*$', '')
+                            WHEN a.asset_kind IN (0, 1) THEN trim(trailing '/' from a.raw_value)
+                            ELSE regexp_replace(regexp_replace(a.raw_value, '^[a-zA-Z][a-zA-Z0-9+.-]*://', ''), '[:/].*$', '')
                         END
                     ),
                     'Queued',
                     0,
-                    COALESCE(a."DiscoveredAtUtc", now()),
+                    COALESCE(a.discovered_at_utc, now()),
                     now(),
                     now()
-                FROM stored_assets a
-                WHERE a."LifecycleStatus" = 'Queued'
-                  AND a."Kind" IN (0, 1, 10, 11, 12, 33)
+                FROM asset_projection a
+                WHERE a.asset_id IS NOT NULL
+                  AND a.target_id IS NOT NULL
+                  AND a.asset_kind IS NOT NULL
+                  AND a.raw_value IS NOT NULL
+                  AND a.lifecycle_status = 'Queued'
+                  AND a.asset_kind IN (0, 1, 10, 11, 12, 33)
                   AND NOT EXISTS (
-                      SELECT 1 FROM http_request_queue q WHERE q.asset_id = a.id
+                      SELECT 1 FROM http_request_queue q WHERE q.asset_id = a.asset_id
                   );
                 """,
                 cancellationToken)

@@ -155,8 +155,8 @@ public sealed class HttpRequestQueueWorker(
                                     SELECT COUNT(*)
                                     FROM http_request_queue recent_domain
                                     WHERE recent_domain.domain_key = q.domain_key
-                                    AND recent_domain.started_at_utc IS NOT NULL
-                                    AND recent_domain.started_at_utc >= @one_minute_ago
+                                      AND recent_domain.started_at_utc IS NOT NULL
+                                      AND recent_domain.started_at_utc >= @one_minute_ago
                                 ) < @per_domain_requests_per_minute
                               ORDER BY q.priority DESC, q.next_attempt_at_utc ASC, q.created_at_utc ASC
                               FOR UPDATE SKIP LOCKED
@@ -180,9 +180,9 @@ public sealed class HttpRequestQueueWorker(
         AddParameter(cmd, "lock_until", lockUntil);
         AddParameter(cmd, "effective_max_concurrency", effectiveMaxConcurrency);
         AddParameter(cmd, "settings_enabled", settings.Enabled);
-        AddParameter(cmd, "max_concurrency", Math.Clamp(settings.MaxConcurrency, 1, 10_000));
-        AddParameter(cmd, "global_requests_per_minute", Math.Clamp(settings.GlobalRequestsPerMinute, 1, 500_000));
-        AddParameter(cmd, "per_domain_requests_per_minute", Math.Clamp(settings.PerDomainRequestsPerMinute, 1, 100_000));
+        AddParameter(cmd, "max_concurrency", Math.Clamp(settings.MaxConcurrency, 1, 512));
+        AddParameter(cmd, "global_requests_per_minute", Math.Clamp(settings.GlobalRequestsPerMinute, 1, 60_000));
+        AddParameter(cmd, "per_domain_requests_per_minute", Math.Clamp(settings.PerDomainRequestsPerMinute, 1, 60_000));
 
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -394,9 +394,9 @@ public sealed class HttpRequestQueueWorker(
         item.DurationMs = (long?)snapshot.DurationMs;
         item.LastHttpStatus = snapshot.StatusCode;
         item.LastError = error;
-        item.RequestHeadersJson = SanitizeForPostgresText(JsonSerializer.Serialize(snapshot.RequestHeaders, JsonOptions));
+        item.RequestHeadersJson = JsonSerializer.Serialize(snapshot.RequestHeaders, JsonOptions);
         item.RequestBody = SanitizeForPostgresText(snapshot.RequestBody);
-        item.ResponseHeadersJson = SanitizeForPostgresText(JsonSerializer.Serialize(snapshot.ResponseHeaders, JsonOptions));
+        item.ResponseHeadersJson = JsonSerializer.Serialize(snapshot.ResponseHeaders, JsonOptions);
         item.ResponseBody = SanitizeForPostgresText(snapshot.ResponseBody);
         item.ResponseContentType = SanitizeForPostgresText(snapshot.ContentType);
         item.ResponseContentLength = snapshot.ResponseSizeBytes;
@@ -427,9 +427,9 @@ public sealed class HttpRequestQueueWorker(
         row.DurationMs = (long?)snapshot.DurationMs;
         row.LastHttpStatus = snapshot.StatusCode;
         row.LastError = Truncate(error, 2048);
-        row.RequestHeadersJson = SanitizeForPostgresText(JsonSerializer.Serialize(snapshot.RequestHeaders, JsonOptions));
+        row.RequestHeadersJson = JsonSerializer.Serialize(snapshot.RequestHeaders, JsonOptions);
         row.RequestBody = SanitizeForPostgresText(snapshot.RequestBody);
-        row.ResponseHeadersJson = SanitizeForPostgresText(JsonSerializer.Serialize(snapshot.ResponseHeaders, JsonOptions));
+        row.ResponseHeadersJson = JsonSerializer.Serialize(snapshot.ResponseHeaders, JsonOptions);
         row.ResponseBody = SanitizeForPostgresText(snapshot.ResponseBody);
         row.ResponseContentType = SanitizeForPostgresText(snapshot.ContentType);
         row.ResponseContentLength = snapshot.ResponseSizeBytes;
@@ -555,7 +555,9 @@ public sealed class HttpRequestQueueWorker(
         s.Length <= maxChars ? s : s[..maxChars];
 
     private static string? SanitizeForPostgresText(string? value) =>
-        string.IsNullOrEmpty(value) ? value : value.Replace("\0", string.Empty, StringComparison.Ordinal);
+        string.IsNullOrEmpty(value)
+            ? value
+            : value.Replace("\0", string.Empty, StringComparison.Ordinal);
 
     private static string TruncateDiscoveryContext(string s, int maxChars = 512) =>
         s.Length <= maxChars ? s : s[..(maxChars - 1)] + "…";

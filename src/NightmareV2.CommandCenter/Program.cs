@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NightmareV2.Application.Assets;
 using NightmareV2.Application.Events;
 using NightmareV2.Application.FileStore;
@@ -40,6 +41,15 @@ builder.Services.AddScoped(sp =>
 builder.Services.AddNightmareInfrastructure(builder.Configuration);
 builder.Services.AddSignalR();
 builder.Services.AddNightmareRabbitMq(builder.Configuration, _ => { });
+builder.Services.AddOptions<NightmareRuntimeOptions>()
+    .Bind(builder.Configuration.GetSection("Nightmare"))
+    .Validate(
+        o => !o.Diagnostics.Enabled || !string.IsNullOrWhiteSpace(o.Diagnostics.ApiKey),
+        "Nightmare:Diagnostics:Enabled=true requires Nightmare:Diagnostics:ApiKey.")
+    .Validate(
+        o => !o.DataMaintenance.Enabled || !string.IsNullOrWhiteSpace(o.DataMaintenance.ApiKey),
+        "Nightmare:DataMaintenance:Enabled=true requires Nightmare:DataMaintenance:ApiKey.")
+    .ValidateOnStart();
 
 var app = builder.Build();
 

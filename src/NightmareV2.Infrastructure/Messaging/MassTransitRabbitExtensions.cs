@@ -2,6 +2,7 @@ using MassTransit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace NightmareV2.Infrastructure.Messaging;
 
@@ -15,12 +16,16 @@ public static class MassTransitRabbitExtensions
         IConfiguration configuration,
         Action<IBusRegistrationConfigurator> configureConsumers)
     {
-        var host = configuration["RabbitMq:Host"] ?? "localhost";
-        var user = configuration["RabbitMq:Username"] ?? "guest";
-        var pass = configuration["RabbitMq:Password"] ?? "guest";
-        var vhost = string.IsNullOrWhiteSpace(configuration["RabbitMq:VirtualHost"])
-            ? "/"
-            : configuration["RabbitMq:VirtualHost"]!;
+        services.AddOptions<RabbitMqOptions>()
+            .Bind(configuration.GetSection("RabbitMq"))
+            .Validate(
+                o => !string.IsNullOrWhiteSpace(o.Host)
+                     && !string.IsNullOrWhiteSpace(o.Username)
+                     && !string.IsNullOrWhiteSpace(o.Password),
+                "RabbitMq Host/Username/Password are required.")
+            .Validate(o => o.StartTimeoutSeconds is >= 1 and <= 120, "RabbitMq StartTimeoutSeconds must be in [1,120].")
+            .Validate(o => o.StopTimeoutSeconds is >= 1 and <= 120, "RabbitMq StopTimeoutSeconds must be in [1,120].")
+            .ValidateOnStart();
 
         services.TryAddSingleton<BusJournalPublishObserver>();
         services.TryAddSingleton<BusJournalConsumeObserver>();
@@ -28,10 +33,9 @@ public static class MassTransitRabbitExtensions
         services.Configure<MassTransitHostOptions>(options =>
         {
             options.WaitUntilStarted = false;
-            options.StartTimeout = TimeSpan.FromSeconds(
-                GetClampedSeconds(configuration, "RabbitMq:StartTimeoutSeconds", 15, 1, 120));
-            options.StopTimeout = TimeSpan.FromSeconds(
-                GetClampedSeconds(configuration, "RabbitMq:StopTimeoutSeconds", 30, 1, 120));
+            var rabbit = configuration.GetSection("RabbitMq").Get<RabbitMqOptions>() ?? new RabbitMqOptions();
+            options.StartTimeout = TimeSpan.FromSeconds(Math.Clamp(rabbit.StartTimeoutSeconds, 1, 120));
+            options.StopTimeout = TimeSpan.FromSeconds(Math.Clamp(rabbit.StopTimeoutSeconds, 1, 120));
         });
 
         services.AddMassTransit(x =>
@@ -40,10 +44,12 @@ public static class MassTransitRabbitExtensions
             x.SetKebabCaseEndpointNameFormatter();
             x.UsingRabbitMq((context, cfg) =>
             {
-                cfg.Host(host, vhost, h =>
+                var rabbit = context.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
+                var vhost = string.IsNullOrWhiteSpace(rabbit.VirtualHost) ? "/" : rabbit.VirtualHost;
+                cfg.Host(rabbit.Host, vhost, h =>
                 {
-                    h.Username(user);
-                    h.Password(pass);
+                    h.Username(rabbit.Username);
+                    h.Password(rabbit.Password);
                 });
                 cfg.ConnectPublishObserver(context.GetRequiredService<BusJournalPublishObserver>());
                 cfg.ConnectConsumeObserver(context.GetRequiredService<BusJournalConsumeObserver>());
@@ -52,21 +58,5 @@ public static class MassTransitRabbitExtensions
         });
 
         return services;
-    }
-
-    private static int GetClampedSeconds(
-        IConfiguration configuration,
-        string key,
-        int defaultValue,
-        int minValue,
-        int maxValue)
-    {
-        var configuredValue = configuration[key];
-        if (!int.TryParse(configuredValue, out var parsedValue))
-        {
-            parsedValue = defaultValue;
-        }
-
-        return Math.Clamp(parsedValue, minValue, maxValue);
     }
 }

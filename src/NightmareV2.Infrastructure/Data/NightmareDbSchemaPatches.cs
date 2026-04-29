@@ -14,6 +14,8 @@ public static class NightmareDbSchemaPatches
         await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(542017296183746291);", cancellationToken)
             .ConfigureAwait(false);
 
+        await NormalizeStoredAssetIdColumnAsync(db, cancellationToken).ConfigureAwait(false);
+
         await db.Database.ExecuteSqlRawAsync(
                 """
                 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -186,6 +188,32 @@ public static class NightmareDbSchemaPatches
     }
 
 
+
+    private static async Task NormalizeStoredAssetIdColumnAsync(NightmareDbContext db, CancellationToken cancellationToken)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                DO $patch$
+                BEGIN
+                    -- A prior compatibility change mapped StoredAsset.Id to an unquoted lower-case id column.
+                    -- Existing and fresh EnsureCreated databases use the quoted "Id" column, and the HTTP queue
+                    -- foreign key also references stored_assets("Id"). Rename accidental lower-case deployments back
+                    -- so EF queries, queue joins, and cascade deletes all use one schema shape.
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'stored_assets' AND column_name = 'id'
+                    ) AND NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'stored_assets' AND column_name = 'Id'
+                    ) THEN
+                        ALTER TABLE stored_assets RENAME COLUMN id TO "Id";
+                    END IF;
+                END
+                $patch$;
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     private static async Task BackfillHttpRequestQueueAsync(NightmareDbContext db, CancellationToken cancellationToken)
     {

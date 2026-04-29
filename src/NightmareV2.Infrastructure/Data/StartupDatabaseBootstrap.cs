@@ -14,6 +14,13 @@ public static class StartupDatabaseBootstrap
         bool includeFileStore,
         CancellationToken cancellationToken = default)
     {
+        if (ShouldSkipStartupDatabase(configuration))
+        {
+            logger.LogInformation(
+                "Startup database bootstrap skipped (Nightmare:SkipStartupDatabase or NIGHTMARE_SKIP_STARTUP_DATABASE=1).");
+            return;
+        }
+
         var mode = (configuration["Nightmare:Database:BootstrapMode"] ?? "EnsureCreated").Trim();
         using var scope = services.CreateScope();
 
@@ -45,5 +52,20 @@ public static class StartupDatabaseBootstrap
 
         logger.LogWarning(
             "Startup database bootstrap used EnsureCreated compatibility mode. Set Nightmare:Database:BootstrapMode=Migrate after adding migrations.");
+    }
+
+    private static bool ShouldSkipStartupDatabase(IConfiguration configuration)
+    {
+        var configuredSkip = configuration["Nightmare:SkipStartupDatabase"] ?? configuration["NIGHTMARE_SKIP_STARTUP_DATABASE"];
+        if (string.Equals(configuredSkip, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(configuredSkip, "1", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return string.Equals(
+            Environment.GetEnvironmentVariable("NIGHTMARE_SKIP_STARTUP_DATABASE"),
+            "1",
+            StringComparison.OrdinalIgnoreCase);
     }
 }

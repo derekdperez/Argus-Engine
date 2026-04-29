@@ -83,7 +83,7 @@ else
                            @bind-SearchText="_targetSearch"
                            SearchPlaceholder="Search root domain or id…"
                            ScrollPreset="NightmareDataGridScrollPreset.Tall"
-                           Virtualize="true"
+                           Virtualize="false"
                            ItemSize="44"
                            ItemKey="@(r => r.Id)"
                            OverscanCount="8"
@@ -123,7 +123,7 @@ else
     {
         try
         {
-            var list = await Http.GetFromJsonAsync<List<TargetSummary>>("/api/targets").ConfigureAwait(false);
+            var list = await Http.GetFromJsonAsync<List<TargetSummary>>("/api/targets");
             _rows.Clear();
             if (list is not null)
                 _rows.AddRange(list);
@@ -139,7 +139,7 @@ else
         _status = null;
         try
         {
-            var response = await Http.PostAsJsonAsync("/api/targets", new CreateTargetRequest(_form.RootDomain, _form.GlobalMaxDepth)).ConfigureAwait(false);
+            var response = await Http.PostAsJsonAsync("/api/targets", new CreateTargetRequest(_form.RootDomain, _form.GlobalMaxDepth));
             response.EnsureSuccessStatusCode();
             _status = "Target queued.";
             await ReloadAsync();
@@ -168,10 +168,10 @@ else
         _status = null;
         try
         {
-            var response = await Http.PutAsJsonAsync($"/api/targets/{_editing.Id}", new UpdateTargetRequest(_editing.RootDomain, _editing.GlobalMaxDepth)).ConfigureAwait(false);
+            var response = await Http.PutAsJsonAsync($"/api/targets/{_editing.Id}", new UpdateTargetRequest(_editing.RootDomain, _editing.GlobalMaxDepth));
             if (response.StatusCode == HttpStatusCode.Conflict)
             {
-                _status = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                _status = await response.Content.ReadAsStringAsync();
                 return;
             }
 
@@ -188,13 +188,13 @@ else
 
     private async Task DeleteAsync(TargetSummary row)
     {
-        var ok = await Js.InvokeAsync<bool>("confirm", $"Delete target {row.RootDomain}? Related assets and findings are removed with the target.").ConfigureAwait(false);
+        var ok = await Js.InvokeAsync<bool>("confirm", $"Delete target {row.RootDomain}? Related assets and findings are removed with the target.");
         if (!ok)
             return;
         _status = null;
         try
         {
-            var response = await Http.DeleteAsync($"/api/targets/{row.Id}").ConfigureAwait(false);
+            var response = await Http.DeleteAsync($"/api/targets/{row.Id}");
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 _status = "Target was already removed.";
@@ -224,17 +224,17 @@ else
         {
             await using var stream = file.OpenReadStream(maxAllowedSize: 5_000_000);
             using var reader = new StreamReader(stream);
-            var text = await reader.ReadToEndAsync().ConfigureAwait(false);
+            var text = await reader.ReadToEndAsync();
             var lines = TargetRootNormalization.SplitLines(text).ToList();
-            var response = await Http.PostAsJsonAsync("/api/targets/bulk", new BulkImportRequest(lines, _form.GlobalMaxDepth)).ConfigureAwait(false);
+            var response = await Http.PostAsJsonAsync("/api/targets/bulk", new BulkImportRequest(lines, _form.GlobalMaxDepth));
             if (response.StatusCode == HttpStatusCode.BadRequest)
             {
-                _bulkStatus = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                _bulkStatus = await response.Content.ReadAsStringAsync();
                 return;
             }
 
             response.EnsureSuccessStatusCode();
-            var result = await response.Content.ReadFromJsonAsync<BulkImportResult>().ConfigureAwait(false);
+            var result = await response.Content.ReadFromJsonAsync<BulkImportResult>();
             if (result is not null)
             {
                 _bulkStatus =

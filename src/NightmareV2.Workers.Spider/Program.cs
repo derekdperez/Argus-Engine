@@ -9,15 +9,16 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddOptions<SpiderHttpOptions>()
     .Bind(builder.Configuration.GetSection("Spider:Http"))
-    .Validate(
-        o => !o.AllowInsecureSsl || builder.Environment.IsDevelopment(),
-        "Spider:Http:AllowInsecureSsl=true is allowed only in Development environment.")
     .ValidateOnStart();
 
 var allowInsecureSpiderSsl = builder.Configuration.GetValue("Spider:Http:AllowInsecureSsl", false);
 if (allowInsecureSpiderSsl)
 {
     Console.WriteLine("Spider: Spider:Http:AllowInsecureSsl=true — TLS server certificate validation is disabled for HTTP fetches.");
+    if (!builder.Environment.IsDevelopment())
+    {
+        Console.WriteLine("Spider: AllowInsecureSsl is enabled outside Development because scanners often need to fetch misconfigured TLS endpoints. Disable Spider:Http:AllowInsecureSsl for strict certificate validation.");
+    }
 }
 
 builder.Services.AddHttpClient("spider")

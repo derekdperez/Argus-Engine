@@ -9,6 +9,10 @@ RabbitMq__VirtualHost=/
 RabbitMq__ManagementUrl=http://rabbitmq:15672
 Nightmare__ListenPlainHttp=true
 
+# Worker task definitions should set this to true. Let command-center perform schema bootstrap once.
+# Nightmare__SkipStartupDatabase=true
+# NIGHTMARE_SKIP_STARTUP_DATABASE=1
+
 
 # Worker-enum subdomain enumeration defaults. Keep these in the worker-enum ECS task definition.
 Enumeration__UseSubfinder=true

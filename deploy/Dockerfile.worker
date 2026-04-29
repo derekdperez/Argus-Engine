@@ -2,9 +2,9 @@
 ARG PROJECT_DIR=NightmareV2.Gatekeeper
 ARG APP_DLL=NightmareV2.Gatekeeper.dll
 
-FROM golang:1.24-bookworm AS recon-tools
-ARG SUBFINDER_PACKAGE=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-ARG AMASS_PACKAGE=github.com/owasp-amass/amass/v5/cmd/amass@main
+FROM golang:1.26.2-bookworm AS recon-tools
+ARG SUBFINDER_PACKAGE=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.14.0
+ARG AMASS_PACKAGE=github.com/owasp-amass/amass/v5/cmd/amass@v5.1.1
 ENV GOBIN=/out \
     CGO_ENABLED=0
 RUN mkdir -p /out \

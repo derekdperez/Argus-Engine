@@ -48,6 +48,7 @@ public static class DependencyInjection
         services.AddScoped<IAssetPersistence, EfAssetPersistence>();
         services.AddScoped<IHighValueFindingWriter, EfHighValueFindingWriter>();
         services.AddScoped<IWorkerToggleReader, EfWorkerToggleReader>();
+        services.AddSingleton<IHttpRequestQueueStateMachine, DefaultHttpRequestQueueStateMachine>();
         services.AddSingleton<IEnumerationService, DefaultEnumerationService>();
         services.AddSingleton<IPortScanService, DefaultPortScanService>();
         services.AddScoped<IEventOutbox, EfEventOutbox>();

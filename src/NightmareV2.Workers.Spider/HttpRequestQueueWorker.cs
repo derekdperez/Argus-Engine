@@ -22,12 +22,14 @@ public sealed class HttpRequestQueueWorker(
     IServiceScopeFactory scopeFactory,
     IEventOutbox outbox,
     IWorkerToggleReader workerToggles,
+    IHttpRequestQueueStateMachine stateMachine,
     ILogger<HttpRequestQueueWorker> logger) : BackgroundService
 {
     private const int MaxLinksPerAsset = 500;
     private const int MaxBodyCaptureChars = 200_000;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
     private readonly string _workerId = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
+    private readonly AdaptiveConcurrencyController _adaptiveConcurrency = new();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -114,6 +116,10 @@ public sealed class HttpRequestQueueWorker(
         var now = DateTimeOffset.UtcNow;
         var oneMinuteAgo = now.AddMinutes(-1);
         var lockUntil = now.AddMinutes(5);
+        var settings = await db.HttpRequestQueueSettings.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == 1, ct)
+            .ConfigureAwait(false) ?? new HttpRequestQueueSettings();
+        var effectiveMaxConcurrency = _adaptiveConcurrency.ResolveEffectiveConcurrency(settings.MaxConcurrency);
 
         var conn = db.Database.GetDbConnection();
         if (conn.State != System.Data.ConnectionState.Open)
@@ -137,7 +143,7 @@ public sealed class HttpRequestQueueWorker(
                                     FROM http_request_queue running
                                     WHERE running.state = 'InFlight'
                                       AND running.locked_until_utc > @now
-                                ) < s.max_concurrency
+                                ) < LEAST(s.max_concurrency, @effective_max_concurrency)
                                 AND (
                                     SELECT COUNT(*)
                                     FROM http_request_queue recent_global
@@ -171,6 +177,7 @@ public sealed class HttpRequestQueueWorker(
         AddParameter(cmd, "one_minute_ago", oneMinuteAgo);
         AddParameter(cmd, "worker_id", _workerId);
         AddParameter(cmd, "lock_until", lockUntil);
+        AddParameter(cmd, "effective_max_concurrency", effectiveMaxConcurrency);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -285,6 +292,7 @@ public sealed class HttpRequestQueueWorker(
                 ? HttpRequestQueueState.Failed
                 : HttpRequestQueueState.Succeeded;
             await SaveResponseAsync(item.Id, snapshot, terminalState, null, terminal: true, ct).ConfigureAwait(false);
+            _adaptiveConcurrency.ReportResult(terminalState == HttpRequestQueueState.Succeeded);
 
             using (var scope = scopeFactory.CreateScope())
             {
@@ -298,15 +306,18 @@ public sealed class HttpRequestQueueWorker(
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             await RetryOrFailAsync(item, "HTTP request timed out.", ct).ConfigureAwait(false);
+            _adaptiveConcurrency.ReportResult(false);
         }
         catch (Exception ex) when (IsHttpTransient(ex))
         {
             await RetryOrFailAsync(item, ex.Message, ct).ConfigureAwait(false);
+            _adaptiveConcurrency.ReportResult(false);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "HTTP request queue item {QueueItemId} failed with an unexpected worker error.", item.Id);
             await RetryOrFailAsync(item, ex.Message, ct).ConfigureAwait(false);
+            _adaptiveConcurrency.ReportResult(false);
         }
     }
 
@@ -360,6 +371,15 @@ public sealed class HttpRequestQueueWorker(
         var item = await db.HttpRequestQueue.FirstOrDefaultAsync(q => q.Id == queueItemId, ct).ConfigureAwait(false);
         if (item is null)
             return;
+        if (!stateMachine.CanTransition(HttpRequestQueueState.ToKind(item.State), HttpRequestQueueState.ToKind(state)))
+        {
+            logger.LogWarning(
+                "Invalid queue transition {From} -> {To} for item {QueueItemId}.",
+                item.State,
+                state,
+                queueItemId);
+            return;
+        }
 
         item.State = state;
         item.UpdatedAtUtc = now;
@@ -388,6 +408,11 @@ public sealed class HttpRequestQueueWorker(
         var row = await db.HttpRequestQueue.FirstOrDefaultAsync(q => q.Id == item.Id, ct).ConfigureAwait(false);
         if (row is null)
             return;
+        if (!stateMachine.CanTransition(HttpRequestQueueState.ToKind(row.State), HttpRequestQueueStateKind.Retry))
+        {
+            logger.LogWarning("Invalid queue transition {From} -> Retry for item {QueueItemId}.", row.State, item.Id);
+            return;
+        }
 
         row.State = HttpRequestQueueState.Retry;
         row.UpdatedAtUtc = now;

@@ -24,7 +24,7 @@ internal static class OpsSnapshotBuilder
     [
         (WorkerKeys.Gatekeeper, "Gatekeeper.Consumers.AssetDiscoveredConsumer"),
         (WorkerKeys.Spider, "SpiderAssetDiscoveredConsumer"),
-        (WorkerKeys.Enumeration, "Workers.Enum.Consumers.TargetCreatedConsumer"),
+        (WorkerKeys.Enumeration, "Workers.Enum.Consumers.SubdomainEnumerationRequestedConsumer"),
         (WorkerKeys.PortScan, "PortScanRequestedConsumer"),
         (WorkerKeys.HighValueRegex, "Workers.HighValue.Consumers.HighValueRegexConsumer"),
         (WorkerKeys.HighValuePaths, "Workers.HighValue.Consumers.HighValuePathGuessConsumer"),
@@ -273,14 +273,24 @@ internal static class OpsSnapshotBuilder
         CancellationToken ct)
     {
         var by = DiscoveredByForWorker(workerKey);
-        if (by is null)
+        var byPrefix = DiscoveredByPrefixForWorker(workerKey);
+        if (by is null && byPrefix is null)
             return (0, 0);
 
-        var a1 = await db.Assets.AsNoTracking()
-            .LongCountAsync(a => a.DiscoveredBy == by && a.DiscoveredAtUtc >= h1, ct)
+        var assets = db.Assets.AsNoTracking();
+        var a1 = await assets
+            .LongCountAsync(
+                a => ((by is not null && a.DiscoveredBy == by)
+                      || (byPrefix is not null && EF.Functions.ILike(a.DiscoveredBy, byPrefix + "%")))
+                     && a.DiscoveredAtUtc >= h1,
+                ct)
             .ConfigureAwait(false);
-        var a24 = await db.Assets.AsNoTracking()
-            .LongCountAsync(a => a.DiscoveredBy == by && a.DiscoveredAtUtc >= h24, ct)
+        var a24 = await assets
+            .LongCountAsync(
+                a => ((by is not null && a.DiscoveredBy == by)
+                      || (byPrefix is not null && EF.Functions.ILike(a.DiscoveredBy, byPrefix + "%")))
+                     && a.DiscoveredAtUtc >= h24,
+                ct)
             .ConfigureAwait(false);
         return (a1, a24);
     }
@@ -290,7 +300,14 @@ internal static class OpsSnapshotBuilder
         {
             WorkerKeys.Gatekeeper => "gatekeeper",
             WorkerKeys.Spider => "spider-worker",
-            WorkerKeys.Enumeration => "enum-worker-stub",
+            WorkerKeys.Enumeration => null,
+            _ => null,
+        };
+
+    private static string? DiscoveredByPrefixForWorker(string workerKey) =>
+        workerKey switch
+        {
+            WorkerKeys.Enumeration => "enum-worker:",
             _ => null,
         };
 

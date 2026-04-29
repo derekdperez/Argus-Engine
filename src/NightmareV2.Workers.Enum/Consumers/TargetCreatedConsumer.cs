@@ -1,21 +1,17 @@
 using MassTransit;
+using Microsoft.Extensions.Options;
 using NightmareV2.Application.Events;
 using NightmareV2.Application.Workers;
-using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
 
 namespace NightmareV2.Workers.Enum.Consumers;
 
-/// <summary>
-/// Passive discovery entry point. Stub emits subdomains as Raw assets for Gatekeeper.
-/// </summary>
 public sealed class TargetCreatedConsumer(
     ILogger<TargetCreatedConsumer> logger,
     IWorkerToggleReader toggles,
-    IEnumerationService enumeration,
     IInboxDeduplicator inbox,
-    IEventOutbox outbox)
-    : IConsumer<TargetCreated>
+    IEventOutbox outbox,
+    IOptions<SubdomainEnumerationOptions> options) : IConsumer<TargetCreated>
 {
     public async Task Consume(ConsumeContext<TargetCreated> context)
     {
@@ -28,39 +24,64 @@ public sealed class TargetCreatedConsumer(
             return;
         }
 
-        var m = context.Message;
-        logger.LogInformation("Enumeration starting for {Domain} target {TargetId}", m.RootDomain, m.TargetId);
+        var cfg = options.Value;
+        var message = context.Message;
+        logger.LogInformation(
+            "TargetCreated consumed. TargetId={TargetId}, RootDomain={RootDomain}",
+            message.TargetId,
+            message.RootDomain);
 
-        var correlation = m.CorrelationId == Guid.Empty ? NewId.NextGuid() : m.CorrelationId;
-        var causation = m.EventId == Guid.Empty ? correlation : m.EventId;
-        var subs = await enumeration.DiscoverSubdomainsAsync(m, context.CancellationToken).ConfigureAwait(false);
-        if (subs.Count == 0)
+        if (!cfg.Enabled || !cfg.QueueProvidersOnTargetCreated)
         {
-            logger.LogInformation("Enumeration found no resolvable subdomains for {Domain}.", m.RootDomain);
+            logger.LogInformation(
+                "Subdomain enumeration queueing disabled. TargetId={TargetId}, RootDomain={RootDomain}",
+                message.TargetId,
+                message.RootDomain);
             return;
         }
 
-        foreach (var sub in subs)
+        var enabledProviders = ResolveEnabledProviders(cfg).ToList();
+        var queuedProviders = new List<string>(capacity: enabledProviders.Count);
+
+        var correlation = message.CorrelationId == Guid.Empty ? NewId.NextGuid() : message.CorrelationId;
+        var causation = message.EventId == Guid.Empty ? correlation : message.EventId;
+        foreach (var provider in enabledProviders)
         {
-            await outbox.EnqueueAsync(
-                    new AssetDiscovered(
-                        m.TargetId,
-                        m.RootDomain,
-                        m.GlobalMaxDepth,
-                        Depth: 1,
-                        Kind: AssetKind.Subdomain,
-                        RawValue: sub,
-                        DiscoveredBy: "enum-worker-stub",
-                        OccurredAt: DateTimeOffset.UtcNow,
-                        CorrelationId: correlation,
-                        AdmissionStage: AssetAdmissionStage.Raw,
-                        AssetId: null,
-                        DiscoveryContext: "Enumeration stub: suggested subdomain emitted when target was created",
-                        EventId: NewId.NextGuid(),
-                        CausationId: causation,
-                        Producer: "worker-enum"),
-                    context.CancellationToken)
-                .ConfigureAwait(false);
+            var requested = new SubdomainEnumerationRequested(
+                message.TargetId,
+                message.RootDomain,
+                provider,
+                RequestedBy: "target-created-consumer",
+                RequestedAt: DateTimeOffset.UtcNow,
+                CorrelationId: correlation,
+                EventId: NewId.NextGuid(),
+                CausationId: causation,
+                Producer: "worker-enum");
+
+            await outbox.EnqueueAsync(requested, context.CancellationToken).ConfigureAwait(false);
+            queuedProviders.Add(provider);
+            logger.LogInformation(
+                "Queued subdomain enumeration job. Provider={Provider}, TargetId={TargetId}, RootDomain={RootDomain}",
+                provider,
+                message.TargetId,
+                message.RootDomain);
+        }
+
+        logger.LogInformation(
+            "Queued {Count} subdomain enumeration jobs for {RootDomain}: {Providers}",
+            queuedProviders.Count,
+            message.RootDomain,
+            string.Join(",", queuedProviders));
+    }
+
+    private static IEnumerable<string> ResolveEnabledProviders(SubdomainEnumerationOptions options)
+    {
+        foreach (var provider in options.DefaultProviders.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (provider.Equals("subfinder", StringComparison.OrdinalIgnoreCase) && options.Subfinder.Enabled)
+                yield return "subfinder";
+            else if (provider.Equals("amass", StringComparison.OrdinalIgnoreCase) && options.Amass.Enabled)
+                yield return "amass";
         }
     }
 }

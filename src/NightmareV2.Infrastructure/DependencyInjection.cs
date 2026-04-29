@@ -49,7 +49,12 @@ public static class DependencyInjection
         services.AddScoped<IHighValueFindingWriter, EfHighValueFindingWriter>();
         services.AddScoped<IWorkerToggleReader, EfWorkerToggleReader>();
         services.AddSingleton<IHttpRequestQueueStateMachine, DefaultHttpRequestQueueStateMachine>();
-        services.AddSingleton<IEnumerationService, DefaultEnumerationService>();
+        services.AddOptions<SubdomainEnumerationOptions>()
+            .Bind(configuration.GetSection("SubdomainEnumeration"));
+        services.AddSingleton<ToolProcessRunner>();
+        services.AddSingleton<IHostResolver, DefaultHostResolver>();
+        services.AddSingleton<ISubdomainEnumerationProvider, SubfinderEnumerationProvider>();
+        services.AddSingleton<ISubdomainEnumerationProvider, AmassEnumerationProvider>();
         services.AddSingleton<IPortScanService, DefaultPortScanService>();
         services.AddScoped<IEventOutbox, EfEventOutbox>();
         services.AddScoped<IInboxDeduplicator, EfInboxDeduplicator>();

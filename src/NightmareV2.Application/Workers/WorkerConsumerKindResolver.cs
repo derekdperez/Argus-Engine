@@ -12,7 +12,8 @@ public static class WorkerConsumerKindResolver
             return WorkerKeys.Gatekeeper;
         if (consumerTypeFullName.Contains("Workers.Spider.Consumers.SpiderAssetDiscoveredConsumer", StringComparison.Ordinal))
             return WorkerKeys.Spider;
-        if (consumerTypeFullName.Contains("Workers.Enum.Consumers.TargetCreatedConsumer", StringComparison.Ordinal))
+        if (consumerTypeFullName.Contains("Workers.Enum.Consumers.TargetCreatedConsumer", StringComparison.Ordinal)
+            || consumerTypeFullName.Contains("Workers.Enum.Consumers.SubdomainEnumerationRequestedConsumer", StringComparison.Ordinal))
             return WorkerKeys.Enumeration;
         if (consumerTypeFullName.Contains("Workers.PortScan.Consumers.PortScanRequestedConsumer", StringComparison.Ordinal))
             return WorkerKeys.PortScan;

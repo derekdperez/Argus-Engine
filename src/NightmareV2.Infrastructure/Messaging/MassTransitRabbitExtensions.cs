@@ -16,8 +16,18 @@ public static class MassTransitRabbitExtensions
         IConfiguration configuration,
         Action<IBusRegistrationConfigurator> configureConsumers)
     {
+        var rabbitSection = configuration.GetSection("RabbitMq");
+
         services.AddOptions<RabbitMqOptions>()
-            .Bind(configuration.GetSection("RabbitMq"))
+            .Configure(options =>
+            {
+                options.Host = GetString(rabbitSection, nameof(RabbitMqOptions.Host), options.Host);
+                options.Username = GetString(rabbitSection, nameof(RabbitMqOptions.Username), options.Username);
+                options.Password = GetString(rabbitSection, nameof(RabbitMqOptions.Password), options.Password);
+                options.VirtualHost = GetString(rabbitSection, nameof(RabbitMqOptions.VirtualHost), options.VirtualHost);
+                options.StartTimeoutSeconds = GetInt(rabbitSection, nameof(RabbitMqOptions.StartTimeoutSeconds), options.StartTimeoutSeconds);
+                options.StopTimeoutSeconds = GetInt(rabbitSection, nameof(RabbitMqOptions.StopTimeoutSeconds), options.StopTimeoutSeconds);
+            })
             .Validate(
                 o => !string.IsNullOrWhiteSpace(o.Host)
                      && !string.IsNullOrWhiteSpace(o.Username)
@@ -30,13 +40,15 @@ public static class MassTransitRabbitExtensions
         services.TryAddSingleton<BusJournalPublishObserver>();
         services.TryAddSingleton<BusJournalConsumeObserver>();
 
-        services.Configure<MassTransitHostOptions>(options =>
-        {
-            options.WaitUntilStarted = false;
-            var rabbit = configuration.GetSection("RabbitMq").Get<RabbitMqOptions>() ?? new RabbitMqOptions();
-            options.StartTimeout = TimeSpan.FromSeconds(Math.Clamp(rabbit.StartTimeoutSeconds, 1, 120));
-            options.StopTimeout = TimeSpan.FromSeconds(Math.Clamp(rabbit.StopTimeoutSeconds, 1, 120));
-        });
+        services.AddOptions<MassTransitHostOptions>()
+            .Configure<IOptions<RabbitMqOptions>>(
+                (options, rabbitOptions) =>
+                {
+                    var rabbit = rabbitOptions.Value;
+                    options.WaitUntilStarted = false;
+                    options.StartTimeout = TimeSpan.FromSeconds(Math.Clamp(rabbit.StartTimeoutSeconds, 1, 120));
+                    options.StopTimeout = TimeSpan.FromSeconds(Math.Clamp(rabbit.StopTimeoutSeconds, 1, 120));
+                });
 
         services.AddMassTransit(x =>
         {
@@ -58,5 +70,17 @@ public static class MassTransitRabbitExtensions
         });
 
         return services;
+    }
+
+    private static string GetString(IConfiguration section, string key, string fallback)
+    {
+        var value = section[key];
+        return string.IsNullOrWhiteSpace(value) ? fallback : value;
+    }
+
+    private static int GetInt(IConfiguration section, string key, int fallback)
+    {
+        var value = section[key];
+        return int.TryParse(value, out var parsed) ? parsed : fallback;
     }
 }

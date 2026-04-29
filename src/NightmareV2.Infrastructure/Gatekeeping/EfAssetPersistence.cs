@@ -262,7 +262,7 @@ public sealed class EfAssetPersistence(
         if (!isConfirmedResponse)
             return;
 
-        var correlation = correlationId == Guid.Empty ? NewId.NextGuid() : correlationId;
+        var correlation = correlationId == Guid.Empty ? Guid.NewGuid() : correlationId;
         var causation = correlation;
 
         async Task DelayAsync(int failedAttempt)
@@ -284,7 +284,7 @@ public sealed class EfAssetPersistence(
                             correlation,
                             DateTimeOffset.UtcNow,
                             ScannableContentSource.UrlHttpResponse,
-                            EventId: NewId.NextGuid(),
+                            EventId: Guid.NewGuid(),
                             CausationId: causation,
                             Producer: "gatekeeper"),
                         cancellationToken)

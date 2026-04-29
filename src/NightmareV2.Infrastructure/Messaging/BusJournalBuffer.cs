@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -12,6 +13,10 @@ public sealed class BusJournalBuffer(
     IConfiguration configuration,
     ILogger<BusJournalBuffer> logger) : BackgroundService
 {
+    private const string JournalEnabledKey = "Nightmare:BusJournal:Enabled";
+    private const string JournalBatchSizeKey = "Nightmare:BusJournal:BatchSize";
+    private const string JournalFlushIntervalKey = "Nightmare:BusJournal:FlushIntervalMs";
+
     private readonly Channel<BusJournalEntry> _channel = Channel.CreateBounded<BusJournalEntry>(
         new BoundedChannelOptions(5000)
         {
@@ -19,10 +24,10 @@ public sealed class BusJournalBuffer(
             SingleReader = true,
             SingleWriter = false,
         });
-    private readonly bool _enabled = configuration.GetValue("Nightmare:BusJournal:Enabled", true);
-    private readonly int _batchSize = Math.Clamp(configuration.GetValue("Nightmare:BusJournal:BatchSize", 100), 10, 500);
+    private readonly bool _enabled = ReadBool(configuration, JournalEnabledKey, true);
+    private readonly int _batchSize = Math.Clamp(ReadInt(configuration, JournalBatchSizeKey, 100), 10, 500);
     private readonly TimeSpan _flushInterval = TimeSpan.FromMilliseconds(
-        Math.Clamp(configuration.GetValue("Nightmare:BusJournal:FlushIntervalMs", 250), 50, 2000));
+        Math.Clamp(ReadInt(configuration, JournalFlushIntervalKey, 250), 50, 2000));
 
     public void TryEnqueue(string direction, string messageType, string payloadJson, string? consumerType)
     {
@@ -92,4 +97,16 @@ public sealed class BusJournalBuffer(
 
     private static string Truncate(string value, int maxChars) =>
         value.Length <= maxChars ? value : value[..maxChars];
+
+    private static bool ReadBool(IConfiguration configuration, string key, bool fallback)
+    {
+        var raw = configuration[key];
+        return bool.TryParse(raw, out var parsed) ? parsed : fallback;
+    }
+
+    private static int ReadInt(IConfiguration configuration, string key, int fallback)
+    {
+        var raw = configuration[key];
+        return int.TryParse(raw, out var parsed) ? parsed : fallback;
+    }
 }

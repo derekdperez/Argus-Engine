@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NightmareV2.Application.Events;
 using NightmareV2.Contracts.Events;
 using NightmareV2.Domain.Entities;

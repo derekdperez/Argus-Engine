@@ -11,4 +11,7 @@
     <Project Path="src/NightmareV2.Workers.Spider/NightmareV2.Workers.Spider.csproj" />
     <Project Path="src/NightmareV2.Workers.HighValue/NightmareV2.Workers.HighValue.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NightmareV2.Workers.Enum.Tests/NightmareV2.Workers.Enum.Tests.csproj" />
+  </Folder>
 </Solution>

@@ -11,14 +11,15 @@ builder.Services.AddOptions<SpiderHttpOptions>()
     .Bind(builder.Configuration.GetSection("Spider:Http"))
     .ValidateOnStart();
 
-var allowInsecureSpiderSsl = builder.Configuration.GetValue("Spider:Http:AllowInsecureSsl", false);
-if (allowInsecureSpiderSsl)
+var configuredAllowInsecureSpiderSsl = builder.Configuration.GetValue("Spider:Http:AllowInsecureSsl", false);
+var allowInsecureSpiderSsl = configuredAllowInsecureSpiderSsl && builder.Environment.IsDevelopment();
+if (configuredAllowInsecureSpiderSsl && !builder.Environment.IsDevelopment())
+{
+    Console.WriteLine("Spider: Spider:Http:AllowInsecureSsl=true was ignored because TLS bypass is allowed only in Development. Set DOTNET_ENVIRONMENT=Development for local scanners or set Spider:Http:AllowInsecureSsl=false for deployed environments.");
+}
+else if (allowInsecureSpiderSsl)
 {
     Console.WriteLine("Spider: Spider:Http:AllowInsecureSsl=true — TLS server certificate validation is disabled for HTTP fetches.");
-    if (!builder.Environment.IsDevelopment())
-    {
-        Console.WriteLine("Spider: AllowInsecureSsl is enabled outside Development because scanners often need to fetch misconfigured TLS endpoints. Disable Spider:Http:AllowInsecureSsl for strict certificate validation.");
-    }
 }
 
 builder.Services.AddHttpClient("spider")

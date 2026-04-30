@@ -334,6 +334,12 @@ internal static class OpsSnapshotBuilder
         return d;
     }
 
+    public static Task<(List<RabbitQueueBriefDto> Queues, bool Ok)> LoadRabbitQueuesAsync(
+        IHttpClientFactory httpFactory,
+        IConfiguration configuration,
+        CancellationToken ct) =>
+        TryLoadRabbitQueuesAsync(httpFactory, configuration, ct);
+
     private static async Task<(List<RabbitQueueBriefDto> Queues, bool Ok)> TryLoadRabbitQueuesAsync(
         IHttpClientFactory httpFactory,
         IConfiguration configuration,

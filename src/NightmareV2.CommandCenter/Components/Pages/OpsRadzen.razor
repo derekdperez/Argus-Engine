@@ -1,7 +1,6 @@
 @using NightmareV2.CommandCenter.Models
 @page "/"
 @page "/ops"
-@page "/ops-radzen"
 @rendermode InteractiveServer
 @using System.Globalization
 @using System.Net
@@ -38,7 +37,6 @@
                 <input type="checkbox" @bind="_autoRefresh" />
                 <span>Auto-apply live updates</span>
             </label>
-            <a class="btn" href="/ops-radzen">Radzen controls</a>
         </div>
     </section>
 
@@ -94,7 +92,8 @@
             <button type="button" class="btn ghost" disabled="@(_selectedToolTargetIds.Count == 0)" @onclick="ClearToolTargetSelection">Clear selection</button>
         </div>
     </section>
-    <section class="ops-layout-grid">        <section class="panel ops-primary-panel">
+    <section class="ops-layout-grid">
+        <section class="panel ops-primary-panel">
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Scope</p>
@@ -223,34 +222,7 @@
                 </Columns>
             </RadzenDataGrid>
         </section>
-
-        <aside class="panel ops-side-panel">
-            <div class="section-heading">
-                <div>
-                    <p class="eyebrow">Realtime</p>
-                    <h2>Event feed</h2>
-                </div>
-                <span class="muted">@_liveEvents.Count.ToString("N0") retained</span>
-            </div>
-            @if (_liveEvents.Count == 0)
-            {
-                <p class="muted">No pushed events received in this browser session yet.</p>
-            }
-            else
-            {
-                <ol class="event-feed">
-                    @foreach (var evt in _liveEvents.Take(12))
-                    {
-                        <li>
-                            <span class="event-kind">@evt.Kind</span>
-                            <span class="event-summary">@evt.Summary</span>
-                            <time>@FormatOpsTime(evt.OccurredAtUtc)</time>
-                        </li>
-                    }
-                </ol>
-            }
-        </aside>
-    </section>
+</section>
 
     <section class="panel">
             <div class="section-heading">
@@ -664,7 +636,8 @@
     private readonly List<TargetSummary> _targets = [];
     private readonly List<AssetGridRowDto> _assets = [];
     private readonly List<HttpRequestQueueRowDto> _requestQueue = [];
-    private readonly List<LiveUiEventDto> _liveEvents = [];
+    private readonly List<WorkerKindSummaryDto> _workerSummaries = [];
+    private readonly List<RabbitQueueBriefDto> _rabbitQueues = [];
     private readonly HashSet<Guid> _selectedToolTargetIds = [];
 
     private OpsOverviewDto? _overview;
@@ -743,7 +716,6 @@
     private DateTimeOffset? _assetsLoadedAtUtc;
     private DateTimeOffset? _queueLoadedAtUtc;
     private DateTimeOffset? _snapshotLoadedAtUtc;
-    private int _liveEventCount;
 
     private int _queueGlobalRequestsPerMinute = 120;
     private int _queuePerDomainRequestsPerMinute = 6;
@@ -802,19 +774,19 @@
         .Where(q => GridTextFilter.Matches(q.State, _filterQueuePipelineCol));
 
     private IEnumerable<WorkerKindSummaryDto> RadzenWorkers =>
-        (_snapshot?.Activity.WorkerSummaries ?? [])
-        .Where(w =>
-            GridTextFilter.Matches(w.WorkerKey, _workerSearch)
-            || GridTextFilter.Matches(w.RollupActivityLabel, _workerSearch)
-            || GridTextFilter.Matches(FormatOpsTime(w.LastActivityUtc), _workerSearch));
+        _workerSummaries
+            .Where(w =>
+                GridTextFilter.Matches(w.WorkerKey, _workerSearch)
+                || GridTextFilter.Matches(w.RollupActivityLabel, _workerSearch)
+                || GridTextFilter.Matches(FormatOpsTime(w.LastActivityUtc), _workerSearch));
 
     private IEnumerable<RabbitQueueBriefDto> RadzenRabbitQueues =>
-        (_snapshot?.RabbitQueues ?? [])
-        .Where(q =>
-            GridTextFilter.Matches(q.Name, _rabbitSearch)
-            || GridTextFilter.Matches(q.LikelyWorkerKey, _rabbitSearch)
-            || GridTextFilter.Matches(q.MessagesReady.ToString(CultureInfo.InvariantCulture), _rabbitSearch)
-            || GridTextFilter.Matches(q.MessagesUnacknowledged.ToString(CultureInfo.InvariantCulture), _rabbitSearch));
+        _rabbitQueues
+            .Where(q =>
+                GridTextFilter.Matches(q.Name, _rabbitSearch)
+                || GridTextFilter.Matches(q.LikelyWorkerKey, _rabbitSearch)
+                || GridTextFilter.Matches(q.MessagesReady.ToString(CultureInfo.InvariantCulture), _rabbitSearch)
+                || GridTextFilter.Matches(q.MessagesUnacknowledged.ToString(CultureInfo.InvariantCulture), _rabbitSearch));
 
     private string LiveStateCss => Realtime.IsConnected ? "connected" : "disconnected";
     private string LiveStatusText => Realtime.IsConnected
@@ -860,11 +832,7 @@
     {
         _ = InvokeAsync(() =>
         {
-            _liveEventCount++;
             _lastLiveEventUtc = DateTimeOffset.UtcNow;
-            _liveEvents.Insert(0, evt);
-            if (_liveEvents.Count > 100)
-                _liveEvents.RemoveRange(100, _liveEvents.Count - 100);
             ScheduleLiveReload(evt);
             StateHasChanged();
         });
@@ -990,18 +958,94 @@
             try
             {
                 _snapshot = await Http.GetFromJsonAsync<OpsSnapshotDto>("/api/ops/snapshot");
+                ApplySnapshotRows();
             }
             catch
             {
-                // Rabbit management may be unavailable; keep last good snapshot.
+                // Rabbit management may be unavailable; keep last good snapshot and fall back to focused endpoints.
             }
 
+            await ReloadWorkerRowsAsync();
+            await ReloadRabbitQueuesAsync();
             await ReloadHttpQueueMetricsAsync();
             _snapshotLoadedAtUtc = DateTimeOffset.UtcNow;
         }
         finally
         {
             _snapshotLoading = false;
+        }
+    }
+
+    private void ApplySnapshotRows()
+    {
+        if (_snapshot is null)
+            return;
+
+        _workerSummaries.Clear();
+        _workerSummaries.AddRange(_snapshot.Activity.WorkerSummaries);
+
+        _rabbitQueues.Clear();
+        _rabbitQueues.AddRange(_snapshot.RabbitQueues);
+    }
+
+    private async Task ReloadWorkerRowsAsync()
+    {
+        if (_workerSummaries.Count > 0)
+            return;
+
+        try
+        {
+            var activity = await Http.GetFromJsonAsync<WorkerActivitySnapshotDto>("/api/workers/activity");
+            if (activity is not null)
+            {
+                _workerSummaries.Clear();
+                _workerSummaries.AddRange(activity.WorkerSummaries);
+                return;
+            }
+        }
+        catch
+        {
+            // Fall back to configured worker switches below.
+        }
+
+        try
+        {
+            var switches = await Http.GetFromJsonAsync<List<WorkerSwitchDto>>("/api/workers");
+            if (switches is not null)
+            {
+                _workerSummaries.Clear();
+                _workerSummaries.AddRange(
+                    switches.Select(w => new WorkerKindSummaryDto(
+                        w.WorkerKey,
+                        w.IsEnabled,
+                        0,
+                        null,
+                        "No journal data loaded")));
+            }
+        }
+        catch
+        {
+            // Keep last good rows.
+        }
+    }
+
+    private async Task ReloadRabbitQueuesAsync()
+    {
+        if (_rabbitQueues.Count > 0)
+            return;
+
+        try
+        {
+            var queues = await Http.GetFromJsonAsync<List<RabbitQueueBriefDto>>("/api/ops/rabbit-queues");
+            if (queues is not null)
+            {
+                _rabbitQueues.Clear();
+                _rabbitQueues.AddRange(queues);
+            }
+        }
+        catch
+        {
+            // Keep last good rows.
         }
     }
 

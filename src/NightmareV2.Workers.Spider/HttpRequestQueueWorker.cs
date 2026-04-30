@@ -139,6 +139,7 @@ public sealed class HttpRequestQueueWorker(
                           WITH candidate AS (
                               SELECT q.*
                               FROM http_request_queue q
+                              JOIN recon_targets t ON t."Id" = q.target_id
                               WHERE @settings_enabled = true
                                 AND (
                                     (q.state IN ('Queued', 'Retry') AND q.next_attempt_at_utc <= @now)
@@ -164,7 +165,31 @@ public sealed class HttpRequestQueueWorker(
                                       AND recent_domain.started_at_utc IS NOT NULL
                                       AND recent_domain.started_at_utc >= @one_minute_ago
                                 ) < @per_domain_requests_per_minute
-                              ORDER BY q.priority DESC, q.next_attempt_at_utc ASC, q.created_at_utc ASC
+                              ORDER BY
+                                  q.priority DESC,
+                                  CASE
+                                      WHEN lower(q.domain_key) = lower(t."RootDomain") THEN 0
+                                      WHEN lower(q.domain_key) LIKE '%.' || lower(t."RootDomain") THEN 1
+                                      ELSE 2
+                                  END ASC,
+                                  CASE
+                                      WHEN lower(q.domain_key) = lower(t."RootDomain") THEN 0
+                                      WHEN lower(q.domain_key) LIKE '%.' || lower(t."RootDomain") THEN
+                                          array_length(
+                                              string_to_array(
+                                                  left(lower(q.domain_key), GREATEST(length(q.domain_key) - length(t."RootDomain") - 1, 0)),
+                                                  '.'),
+                                              1)
+                                      ELSE array_length(string_to_array(lower(q.domain_key), '.'), 1)
+                                  END ASC,
+                                  CASE
+                                      WHEN lower(q.domain_key) = lower(t."RootDomain") THEN 0
+                                      WHEN lower(q.domain_key) LIKE '%.' || lower(t."RootDomain") THEN
+                                          length(left(lower(q.domain_key), GREATEST(length(q.domain_key) - length(t."RootDomain") - 1, 0)))
+                                      ELSE length(q.domain_key)
+                                  END ASC,
+                                  q.next_attempt_at_utc ASC,
+                                  q.created_at_utc ASC
                               FOR UPDATE SKIP LOCKED
                               LIMIT 1
                           )
@@ -516,16 +541,9 @@ public sealed class HttpRequestQueueWorker(
         using var scope = scopeFactory.CreateScope();
         var scopedOutbox = scope.ServiceProvider.GetRequiredService<IEventOutbox>();
 
-        await EmitObservedUrlParametersAsync(asset, baseUri, scopedOutbox, correlation, ct).ConfigureAwait(false);
-
         foreach (var link in LinkHarvest.Extract(body, contentType, baseUri).Take(MaxLinksPerAsset))
         {
-            if (!Uri.TryCreate(link, UriKind.Absolute, out var linkUri))
-                continue;
-
             var kind = LinkHarvest.GuessKindForUrl(link);
-            var relationship = await ResolveRelationshipForDiscoveredLinkAsync(asset, linkUri, kind, ct).ConfigureAwait(false);
-
             await scopedOutbox.EnqueueAsync(
                     new AssetDiscovered(
                         asset.TargetId,
@@ -540,78 +558,6 @@ public sealed class HttpRequestQueueWorker(
                         AssetAdmissionStage.Raw,
                         null,
                         spiderContext,
-                        ParentAssetId: relationship.ParentAssetId,
-                        RelationshipType: relationship.RelationshipType,
-                        IsPrimaryRelationship: relationship.RelationshipType == AssetRelationshipType.Contains,
-                        EventId: NewId.NextGuid(),
-                        CausationId: correlation,
-                        Producer: "worker-spider"),
-                    ct)
-                .ConfigureAwait(false);
-
-            if (ApiRouteInference.TryInferEndpoint(linkUri, out var endpointUrl))
-            {
-                var endpointRelationship = ResolveApiEndpointRelationship(asset, relationship.ParentAssetId);
-                await scopedOutbox.EnqueueAsync(
-                        new AssetDiscovered(
-                            asset.TargetId,
-                            asset.Target?.RootDomain ?? "",
-                            asset.Target?.GlobalMaxDepth ?? asset.Depth + 10,
-                            asset.Depth + 1,
-                            AssetKind.ApiEndpoint,
-                            endpointUrl,
-                            "spider-worker",
-                            DateTimeOffset.UtcNow,
-                            correlation,
-                            AssetAdmissionStage.Raw,
-                            null,
-                            TruncateDiscoveryContext($"Spider: API-like route inferred from {link}"),
-                            ParentAssetId: endpointRelationship.ParentAssetId,
-                            RelationshipType: endpointRelationship.RelationshipType,
-                            IsPrimaryRelationship: endpointRelationship.RelationshipType == AssetRelationshipType.Contains,
-                            EventId: NewId.NextGuid(),
-                            CausationId: correlation,
-                            Producer: "worker-spider"),
-                        ct)
-                    .ConfigureAwait(false);
-            }
-        }
-    }
-
-    private async Task EmitObservedUrlParametersAsync(
-        StoredAsset asset,
-        Uri uri,
-        IEventOutbox scopedOutbox,
-        Guid correlation,
-        CancellationToken ct)
-    {
-        if (asset.Kind != AssetKind.Url)
-            return;
-
-        var parameterNames = ApiRouteInference.QueryParameterNames(uri);
-        if (parameterNames.Count == 0)
-            return;
-
-        var urlKey = "url:" + uri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped);
-        foreach (var name in parameterNames)
-        {
-            await scopedOutbox.EnqueueAsync(
-                    new AssetDiscovered(
-                        asset.TargetId,
-                        asset.Target?.RootDomain ?? "",
-                        asset.Target?.GlobalMaxDepth ?? asset.Depth + 10,
-                        asset.Depth + 1,
-                        AssetKind.Parameter,
-                        $"{urlKey}|query|{name}",
-                        "spider-worker",
-                        DateTimeOffset.UtcNow,
-                        correlation,
-                        AssetAdmissionStage.Raw,
-                        null,
-                        TruncateDiscoveryContext($"Spider: query parameter {name} observed on {uri}"),
-                        ParentAssetId: asset.Id,
-                        RelationshipType: AssetRelationshipType.Contains,
-                        IsPrimaryRelationship: false,
                         EventId: NewId.NextGuid(),
                         CausationId: correlation,
                         Producer: "worker-spider"),
@@ -619,59 +565,6 @@ public sealed class HttpRequestQueueWorker(
                 .ConfigureAwait(false);
         }
     }
-
-    private async Task<LinkRelationship> ResolveRelationshipForDiscoveredLinkAsync(
-        StoredAsset sourceAsset,
-        Uri linkUri,
-        AssetKind childKind,
-        CancellationToken ct)
-    {
-        if (sourceAsset.Kind is AssetKind.Domain or AssetKind.Subdomain)
-            return new LinkRelationship(sourceAsset.Id, AssetRelationshipType.Contains);
-
-        if (sourceAsset.Kind is AssetKind.JavaScriptFile or AssetKind.MarkdownBody)
-            return new LinkRelationship(sourceAsset.Id, AssetRelationshipType.References);
-
-        if (sourceAsset.Kind == AssetKind.Url
-            && childKind is AssetKind.JavaScriptFile or AssetKind.MarkdownBody)
-        {
-            return new LinkRelationship(sourceAsset.Id, AssetRelationshipType.Contains);
-        }
-
-        var hostAssetId = await FindHostAssetIdAsync(sourceAsset.TargetId, linkUri.IdnHost, ct).ConfigureAwait(false);
-        if (hostAssetId is { } hostId)
-            return new LinkRelationship(hostId, AssetRelationshipType.Contains);
-
-        return new LinkRelationship(null, null);
-    }
-
-    private LinkRelationship ResolveApiEndpointRelationship(StoredAsset sourceAsset, Guid? hostParentAssetId)
-    {
-        if (sourceAsset.Kind is AssetKind.Domain or AssetKind.Subdomain)
-            return new LinkRelationship(sourceAsset.Id, AssetRelationshipType.Contains);
-
-        if (sourceAsset.Kind is AssetKind.Url or AssetKind.JavaScriptFile or AssetKind.MarkdownBody)
-            return new LinkRelationship(sourceAsset.Id, AssetRelationshipType.References);
-
-        return hostParentAssetId is { } hostId
-            ? new LinkRelationship(hostId, AssetRelationshipType.Contains)
-            : new LinkRelationship(null, null);
-    }
-
-    private async Task<Guid?> FindHostAssetIdAsync(Guid targetId, string host, CancellationToken ct)
-    {
-        var key = "host:" + host.Trim().TrimEnd('.').ToLowerInvariant();
-        await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
-        return await db.Assets.AsNoTracking()
-            .Where(a => a.TargetId == targetId
-                && (a.Kind == AssetKind.Domain || a.Kind == AssetKind.Subdomain)
-                && a.CanonicalKey == key)
-            .Select(a => (Guid?)a.Id)
-            .FirstOrDefaultAsync(ct)
-            .ConfigureAwait(false);
-    }
-
-    private sealed record LinkRelationship(Guid? ParentAssetId, AssetRelationshipType? RelationshipType);
 
     private static bool ShouldQueueRetry(HttpStatusCode statusCode) =>
         statusCode is HttpStatusCode.RequestTimeout

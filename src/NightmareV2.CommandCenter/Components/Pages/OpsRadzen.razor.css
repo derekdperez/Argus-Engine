@@ -73,7 +73,7 @@
 
 .ops-layout-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.55fr) minmax(22rem, 0.85fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 1.25rem;
     align-items: start;
 }
@@ -203,41 +203,6 @@
     display: inline-flex;
     gap: 0.35rem;
     align-items: center;
-}
-
-.event-feed {
-    list-style: none;
-    display: grid;
-    gap: 0.55rem;
-    margin: 0;
-    padding: 0;
-}
-
-.event-feed li {
-    display: grid;
-    gap: 0.2rem;
-    padding: 0.65rem 0.75rem;
-    border: 1px solid var(--border);
-    border-radius: 0.8rem;
-    background: var(--surface);
-}
-
-.event-kind {
-    color: var(--primary);
-    font-size: 0.74rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.event-summary {
-    color: var(--text);
-    overflow-wrap: anywhere;
-}
-
-.event-feed time {
-    color: var(--muted);
-    font-size: 0.78rem;
 }
 
 .danger-zone {

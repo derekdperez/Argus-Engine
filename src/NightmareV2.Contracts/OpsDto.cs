@@ -1,17 +1,3 @@
-import os
-from pathlib import Path
-
-def fix_missing_contracts():
-    repo_root = Path(os.getcwd())
-    
-    # 1. Recreate/Update the Contracts file
-    contracts_dir = repo_root / "src/NightmareV2.Contracts"
-    contracts_file = contracts_dir / "OpsDto.cs"
-    
-    # Ensure directory exists
-    contracts_dir.mkdir(parents=True, exist_ok=True)
-    
-    contracts_content = """
 namespace NightmareV2.Contracts;
 
 public record OpsSnapshotDto(
@@ -37,21 +23,3 @@ public record OpsOverviewDto(int ActiveWorkers, int PendingTasks);
 public record HttpRequestQueueMetricsDto(int Total, int Pending, int Processing, int Failed);
 public record HttpRequestQueueSettingsDto(int MaxConcurrency, bool Paused);
 public record HighValueFindingRowDto(string Severity, string Title, string Target, DateTime Detected);
-"""
-    contracts_file.write_text(contracts_content.strip())
-    print(f"Restored contracts in: {contracts_file}")
-
-    # 2. Ensure CommandCenter has the correct 'using' directive
-    builder_path = repo_root / "src/NightmareV2.CommandCenter/OpsSnapshotBuilder.cs"
-    if builder_path.exists():
-        content = builder_path.read_text()
-        if "using NightmareV2.Contracts;" not in content:
-            builder_path.write_text("using NightmareV2.Contracts;\n" + content)
-            print(f"Added namespace import to: {builder_path}")
-
-    # 3. Clean NuGet cache and rebuild
-    print("Cleaning build artifacts...")
-    os.system("dotnet clean src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj")
-
-if __name__ == "__main__":
-    fix_missing_contracts()

@@ -7,6 +7,7 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
 {
     public DbSet<ReconTarget> Targets => Set<ReconTarget>();
     public DbSet<StoredAsset> Assets => Set<StoredAsset>();
+    public DbSet<AssetRelationship> AssetRelationships => Set<AssetRelationship>();
     public DbSet<BusJournalEntry> BusJournal => Set<BusJournalEntry>();
     public DbSet<WorkerSwitch> WorkerSwitches => Set<WorkerSwitch>();
     public DbSet<HighValueFinding> HighValueFindings => Set<HighValueFinding>();
@@ -33,16 +34,62 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
             // NightmareDbSchemaPatches normalizes accidental lower-case id columns back to this shape.
             e.Property(x => x.CanonicalKey).HasMaxLength(2048).IsRequired();
             e.Property(x => x.RawValue).HasMaxLength(4096).IsRequired();
+            e.Property(x => x.Category).HasColumnName("asset_category").HasConversion<short>().HasColumnType("smallint");
+            e.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(512);
+            e.Property(x => x.LastSeenAtUtc).HasColumnName("last_seen_at_utc");
+            e.Property(x => x.Confidence).HasColumnName("confidence").HasPrecision(5, 4);
             e.Property(x => x.DiscoveredBy).HasMaxLength(128).IsRequired();
             e.Property(x => x.DiscoveryContext).HasMaxLength(512).IsRequired().HasColumnName("discovery_context");
             e.Property(x => x.LifecycleStatus).HasMaxLength(32).IsRequired();
             e.Property(x => x.TypeDetailsJson);
             e.HasIndex(x => new { x.TargetId, x.CanonicalKey }).IsUnique();
+            e.HasIndex(x => new { x.TargetId, x.Kind });
+            e.HasIndex(x => new { x.TargetId, x.Category });
             e.HasOne(x => x.Target)
                 .WithMany()
                 .HasForeignKey(x => x.TargetId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+
+
+
+        modelBuilder.Entity<AssetRelationship>(e =>
+        {
+            e.ToTable("asset_relationships");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TargetId).HasColumnName("target_id");
+            e.Property(x => x.ParentAssetId).HasColumnName("parent_asset_id");
+            e.Property(x => x.ChildAssetId).HasColumnName("child_asset_id");
+            e.Property(x => x.RelationshipType).HasColumnName("relationship_type").HasConversion<short>().HasColumnType("smallint");
+            e.Property(x => x.IsPrimary).HasColumnName("is_primary");
+            e.Property(x => x.Confidence).HasColumnName("confidence").HasPrecision(5, 4);
+            e.Property(x => x.DiscoveredBy).HasColumnName("discovered_by").HasMaxLength(128).IsRequired();
+            e.Property(x => x.DiscoveryContext).HasColumnName("discovery_context").HasMaxLength(512).IsRequired();
+            e.Property(x => x.PropertiesJson).HasColumnName("properties_json").HasColumnType("jsonb");
+            e.Property(x => x.FirstSeenAtUtc).HasColumnName("first_seen_at_utc");
+            e.Property(x => x.LastSeenAtUtc).HasColumnName("last_seen_at_utc");
+            e.HasCheckConstraint("ck_asset_relationship_no_self", "parent_asset_id <> child_asset_id");
+            e.HasIndex(x => new { x.TargetId, x.ParentAssetId, x.ChildAssetId, x.RelationshipType }).IsUnique();
+            e.HasIndex(x => new { x.TargetId, x.ParentAssetId, x.RelationshipType });
+            e.HasIndex(x => new { x.TargetId, x.ChildAssetId, x.RelationshipType });
+            e.HasIndex(x => new { x.TargetId, x.ChildAssetId })
+                .IsUnique()
+                .HasFilter("is_primary = true AND relationship_type = 0");
+            e.HasOne(x => x.Target)
+                .WithMany()
+                .HasForeignKey(x => x.TargetId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.ParentAsset)
+                .WithMany()
+                .HasForeignKey(x => x.ParentAssetId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.ChildAsset)
+                .WithMany()
+                .HasForeignKey(x => x.ChildAssetId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
 
         modelBuilder.Entity<BusJournalEntry>(e =>
         {

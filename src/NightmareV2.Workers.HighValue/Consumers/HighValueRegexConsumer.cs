@@ -81,6 +81,8 @@ public sealed class HighValueRegexConsumer(
                         hit.ImportanceScore),
                     ct)
                 .ConfigureAwait(false);
+            await EmitSignalAssetAsync(m, hit, ct).ConfigureAwait(false);
+
             if (severity == "Critical")
                 await RaiseCriticalAsync(id, m, hit.PatternName, ct).ConfigureAwait(false);
         }
@@ -104,6 +106,59 @@ public sealed class HighValueRegexConsumer(
                 .ConfigureAwait(false);
             await RaiseCriticalAsync(id, m, "critical_path_http_2xx", ct).ConfigureAwait(false);
         }
+    }
+
+    private async Task EmitSignalAssetAsync(
+        ScannableContentAvailable message,
+        RegexMatchHit hit,
+        CancellationToken ct)
+    {
+        var kind = ClassifySignalKind(hit);
+        var rawValue = kind switch
+        {
+            AssetKind.Secret => $"{hit.PatternName}:{hit.MatchedSnippet}",
+            AssetKind.CloudBucket => $"unknown:{hit.MatchedSnippet}",
+            _ => hit.MatchedSnippet,
+        };
+
+        await outbox.EnqueueAsync(
+                new AssetDiscovered(
+                    message.TargetId,
+                    "",
+                    64,
+                    0,
+                    kind,
+                    rawValue,
+                    WorkerKeys.HighValueRegex,
+                    DateTimeOffset.UtcNow,
+                    message.CorrelationId,
+                    AssetAdmissionStage.Raw,
+                    AssetId: null,
+                    DiscoveryContext: $"High-value regex {hit.PatternName} extracted from {message.SourceUrl}",
+                    ParentAssetId: message.AssetId,
+                    RelationshipType: AssetRelationshipType.ExtractedFrom,
+                    IsPrimaryRelationship: false,
+                    EventId: NewId.NextGuid(),
+                    CausationId: message.EventId == Guid.Empty ? message.CorrelationId : message.EventId,
+                    Producer: "worker-highvalue-regex"),
+                ct)
+            .ConfigureAwait(false);
+    }
+
+    private static AssetKind ClassifySignalKind(RegexMatchHit hit)
+    {
+        var text = $"{hit.PatternName} {hit.Scope} {hit.MatchedSnippet}";
+        if (text.Contains('@', StringComparison.Ordinal) && text.Contains('.', StringComparison.Ordinal))
+            return AssetKind.Email;
+        if (text.Contains("bucket", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("s3", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("blob.core.windows.net", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("storage.googleapis.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return AssetKind.CloudBucket;
+        }
+
+        return AssetKind.Secret;
     }
 
     private async Task RaiseCriticalAsync(

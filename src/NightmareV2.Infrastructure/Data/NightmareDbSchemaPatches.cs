@@ -60,6 +60,52 @@ public static class NightmareDbSchemaPatches
 
         await db.Database.ExecuteSqlRawAsync(
                 """
+                ALTER TABLE stored_assets
+                    ADD COLUMN IF NOT EXISTS asset_category smallint NOT NULL DEFAULT 0,
+                    ADD COLUMN IF NOT EXISTS display_name character varying(512) NULL,
+                    ADD COLUMN IF NOT EXISTS last_seen_at_utc timestamp with time zone NULL,
+                    ADD COLUMN IF NOT EXISTS confidence numeric(5,4) NOT NULL DEFAULT 1.0;
+
+                CREATE INDEX IF NOT EXISTS ix_stored_assets_target_kind
+                    ON stored_assets ("TargetId", "Kind");
+
+                CREATE INDEX IF NOT EXISTS ix_stored_assets_target_category
+                    ON stored_assets ("TargetId", asset_category);
+
+                CREATE TABLE IF NOT EXISTS asset_relationships (
+                    id uuid PRIMARY KEY,
+                    target_id uuid NOT NULL REFERENCES recon_targets("Id") ON DELETE CASCADE,
+                    parent_asset_id uuid NOT NULL REFERENCES stored_assets("Id") ON DELETE CASCADE,
+                    child_asset_id uuid NOT NULL REFERENCES stored_assets("Id") ON DELETE CASCADE,
+                    relationship_type smallint NOT NULL,
+                    is_primary boolean NOT NULL DEFAULT false,
+                    confidence numeric(5,4) NOT NULL DEFAULT 1.0,
+                    discovered_by character varying(128) NOT NULL,
+                    discovery_context character varying(512) NOT NULL DEFAULT '',
+                    properties_json jsonb NULL,
+                    first_seen_at_utc timestamp with time zone NOT NULL,
+                    last_seen_at_utc timestamp with time zone NOT NULL,
+                    CONSTRAINT ck_asset_relationship_no_self CHECK (parent_asset_id <> child_asset_id)
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_asset_relationship_unique
+                    ON asset_relationships (target_id, parent_asset_id, child_asset_id, relationship_type);
+
+                CREATE INDEX IF NOT EXISTS ix_asset_relationship_parent
+                    ON asset_relationships (target_id, parent_asset_id, relationship_type);
+
+                CREATE INDEX IF NOT EXISTS ix_asset_relationship_child
+                    ON asset_relationships (target_id, child_asset_id, relationship_type);
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_asset_relationship_primary_parent
+                    ON asset_relationships (target_id, child_asset_id)
+                    WHERE is_primary = true AND relationship_type = 0;
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
                 CREATE TABLE IF NOT EXISTS high_value_findings (
                     id uuid NOT NULL PRIMARY KEY,
                     target_id uuid NOT NULL REFERENCES recon_targets("Id") ON DELETE CASCADE,
@@ -183,6 +229,8 @@ public static class NightmareDbSchemaPatches
             .ConfigureAwait(false);
 
         await BackfillLegacyDiscoveredAssetsAsync(db, cancellationToken).ConfigureAwait(false);
+        await BackfillAssetCategoriesAndRootsAsync(db, cancellationToken).ConfigureAwait(false);
+        await BackfillAssetRelationshipsAsync(db, cancellationToken).ConfigureAwait(false);
         await BackfillHttpRequestQueueAsync(db, cancellationToken).ConfigureAwait(false);
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -210,6 +258,121 @@ public static class NightmareDbSchemaPatches
                     END IF;
                 END
                 $patch$;
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task BackfillAssetCategoriesAndRootsAsync(NightmareDbContext db, CancellationToken cancellationToken)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                UPDATE stored_assets
+                SET asset_category = CASE
+                    WHEN "Kind" = -1 THEN 0
+                    WHEN "Kind" IN (0, 1) THEN 1
+                    WHEN "Kind" IN (2, 3, 4, 20) THEN 2
+                    WHEN "Kind" = 21 THEN 3
+                    WHEN "Kind" IN (10, 11, 12, 33) THEN 4
+                    WHEN "Kind" IN (13, 14) THEN 5
+                    WHEN "Kind" IN (30, 31, 32) THEN 6
+                    ELSE asset_category
+                END,
+                display_name = COALESCE(display_name, "RawValue"),
+                last_seen_at_utc = COALESCE(last_seen_at_utc, "DiscoveredAtUtc")
+                WHERE "Kind" IS NOT NULL;
+
+                INSERT INTO stored_assets (
+                    "Id",
+                    "TargetId",
+                    "Kind",
+                    "CanonicalKey",
+                    "RawValue",
+                    "Depth",
+                    "DiscoveredBy",
+                    discovery_context,
+                    "DiscoveredAtUtc",
+                    "LifecycleStatus",
+                    "TypeDetailsJson",
+                    asset_category,
+                    display_name,
+                    last_seen_at_utc,
+                    confidence
+                )
+                SELECT
+                    gen_random_uuid(),
+                    t."Id",
+                    -1,
+                    'target:' || lower(trim(trailing '.' from t."RootDomain")),
+                    lower(trim(trailing '.' from t."RootDomain")),
+                    0,
+                    'schema-backfill',
+                    'Root target asset backfilled from recon_targets',
+                    COALESCE(t."CreatedAtUtc", now()),
+                    'Confirmed',
+                    NULL,
+                    0,
+                    lower(trim(trailing '.' from t."RootDomain")),
+                    now(),
+                    1.0
+                FROM recon_targets t
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM stored_assets a
+                    WHERE a."TargetId" = t."Id"
+                      AND a."CanonicalKey" = 'target:' || lower(trim(trailing '.' from t."RootDomain"))
+                );
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task BackfillAssetRelationshipsAsync(NightmareDbContext db, CancellationToken cancellationToken)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                WITH roots AS (
+                    SELECT a."Id" AS root_asset_id, a."TargetId" AS target_id
+                    FROM stored_assets a
+                    WHERE a."Kind" = -1
+                ),
+                host_assets AS (
+                    SELECT a."Id" AS child_asset_id, a."TargetId" AS target_id, a."DiscoveredAtUtc" AS discovered_at
+                    FROM stored_assets a
+                    WHERE a."Kind" IN (0, 1)
+                )
+                INSERT INTO asset_relationships (
+                    id,
+                    target_id,
+                    parent_asset_id,
+                    child_asset_id,
+                    relationship_type,
+                    is_primary,
+                    confidence,
+                    discovered_by,
+                    discovery_context,
+                    properties_json,
+                    first_seen_at_utc,
+                    last_seen_at_utc
+                )
+                SELECT
+                    gen_random_uuid(),
+                    h.target_id,
+                    r.root_asset_id,
+                    h.child_asset_id,
+                    0,
+                    true,
+                    1.0,
+                    'schema-backfill',
+                    'Root-to-host relationship backfilled for existing asset',
+                    NULL,
+                    COALESCE(h.discovered_at, now()),
+                    now()
+                FROM host_assets h
+                JOIN roots r ON r.target_id = h.target_id
+                WHERE r.root_asset_id <> h.child_asset_id
+                ON CONFLICT (target_id, parent_asset_id, child_asset_id, relationship_type) DO UPDATE
+                SET last_seen_at_utc = EXCLUDED.last_seen_at_utc;
                 """,
                 cancellationToken)
             .ConfigureAwait(false);

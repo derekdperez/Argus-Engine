@@ -1,5 +1,6 @@
 using MassTransit;
 using Microsoft.Extensions.Options;
+using NightmareV2.Application.Assets;
 using NightmareV2.Application.Events;
 using NightmareV2.Application.Workers;
 using NightmareV2.Contracts;
@@ -13,6 +14,7 @@ public sealed class SubdomainEnumerationRequestedConsumer(
     IWorkerToggleReader toggles,
     IEventOutbox outbox,
     ITargetLookup targetLookup,
+    IAssetGraphService graph,
     IOptions<SubdomainEnumerationOptions> options) : IConsumer<SubdomainEnumerationRequested>
 {
     public async Task Consume(ConsumeContext<SubdomainEnumerationRequested> context)
@@ -86,6 +88,7 @@ public sealed class SubdomainEnumerationRequestedConsumer(
         var maxPerJob = Math.Clamp(cfg.MaxSubdomainsPerJob, 1, 1_000_000);
         var correlation = message.CorrelationId == Guid.Empty ? NewId.NextGuid() : message.CorrelationId;
         var causation = message.EventId == Guid.Empty ? correlation : message.EventId;
+        var rootAsset = await graph.GetRootAssetAsync(message.TargetId, context.CancellationToken).ConfigureAwait(false);
 
         foreach (var raw in rawResults)
         {
@@ -119,6 +122,9 @@ public sealed class SubdomainEnumerationRequestedConsumer(
                         AdmissionStage: AssetAdmissionStage.Raw,
                         AssetId: null,
                         DiscoveryContext: $"Subdomain enumeration provider={raw.Provider}; method={raw.Method}",
+                        ParentAssetId: rootAsset?.Id,
+                        RelationshipType: AssetRelationshipType.Contains,
+                        IsPrimaryRelationship: true,
                         EventId: NewId.NextGuid(),
                         CausationId: causation,
                         Producer: "worker-enum"),

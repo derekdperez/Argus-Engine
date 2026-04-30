@@ -18,9 +18,14 @@ public record AssetDiscovered(
     Guid? AssetId,
     /// <summary>Human-readable provenance (parent URL, wordlist, etc.). Kept short for DB and bus payloads.</summary>
     string DiscoveryContext = "",
+    /// <summary>Optional existing parent asset for graph edge creation during Gatekeeper admission.</summary>
+    Guid? ParentAssetId = null,
+    AssetRelationshipType? RelationshipType = null,
+    bool IsPrimaryRelationship = false,
+    string RelationshipPropertiesJson = "",
     Guid EventId = default,
     Guid CausationId = default,
-    string SchemaVersion = "1",
+    string SchemaVersion = "2",
     string Producer = "nightmare-v2") : IEventEnvelope
 {
     public DateTimeOffset OccurredAtUtc => OccurredAt;

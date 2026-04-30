@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NightmareV2.Application.Gatekeeping;
+using NightmareV2.Application.Assets;
 using NightmareV2.Application.Workers;
 using NightmareV2.Infrastructure.Data;
 using NightmareV2.Application.FileStore;
@@ -45,6 +46,8 @@ public static class DependencyInjection
         services.AddSingleton<IAssetCanonicalizer, DefaultAssetCanonicalizer>();
         services.AddSingleton<IAssetDeduplicator, RedisAssetDeduplicator>();
         services.AddSingleton<ITargetScopeEvaluator, DnsTargetScopeEvaluator>();
+        services.AddScoped<IAssetRelationshipValidator, EfAssetRelationshipValidator>();
+        services.AddScoped<IAssetGraphService, EfAssetGraphService>();
         services.AddScoped<IAssetPersistence, EfAssetPersistence>();
         services.AddScoped<IHighValueFindingWriter, EfHighValueFindingWriter>();
         services.AddScoped<IWorkerToggleReader, EfWorkerToggleReader>();

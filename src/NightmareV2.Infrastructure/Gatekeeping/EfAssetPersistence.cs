@@ -15,6 +15,7 @@ namespace NightmareV2.Infrastructure.Gatekeeping;
 public sealed class EfAssetPersistence(
     NightmareDbContext db,
     IEventOutbox outbox,
+    IAssetGraphService graph,
     ILogger<EfAssetPersistence> logger) : IAssetPersistence
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false };
@@ -30,76 +31,11 @@ public sealed class EfAssetPersistence(
         CanonicalAsset canonical,
         CancellationToken cancellationToken = default)
     {
-        var targetExists = await db.Targets.AsNoTracking()
-            .AnyAsync(t => t.Id == message.TargetId, cancellationToken)
-            .ConfigureAwait(false);
-        if (!targetExists)
-        {
-            logger.LogDebug("Skip asset persist: target {TargetId} not in recon_targets (stale bus message).", message.TargetId);
+        var result = await graph.UpsertAssetAsync(message, canonical, cancellationToken).ConfigureAwait(false);
+        if (result.SkippedReason is not null)
             return (Guid.Empty, false);
-        }
 
-        var existingId = await db.Assets.AsNoTracking()
-            .Where(a => a.TargetId == message.TargetId && a.CanonicalKey == canonical.CanonicalKey)
-            .Select(a => (Guid?)a.Id)
-            .FirstOrDefaultAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (existingId is { } existing)
-        {
-            await EnsureQueuedAssetHasHttpRequestAsync(existing, cancellationToken).ConfigureAwait(false);
-            return (existing, false);
-        }
-
-        var entity = new StoredAsset
-        {
-            Id = Guid.NewGuid(),
-            TargetId = message.TargetId,
-            Kind = message.Kind,
-            CanonicalKey = canonical.CanonicalKey,
-            RawValue = message.RawValue,
-            Depth = message.Depth,
-            DiscoveredBy = message.DiscoveredBy,
-            DiscoveryContext = message.DiscoveryContext ?? "",
-            DiscoveredAtUtc = message.OccurredAt,
-            LifecycleStatus = ResolveInitialLifecycleStatus(message),
-        };
-
-        db.Assets.Add(entity);
-        EnqueueHttpRequestIfNeeded(entity);
-
-        try
-        {
-            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg
-            && pg.SqlState == PostgresErrorCodes.ForeignKeyViolation
-            && pg.ConstraintName?.Contains("recon_targets", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            DetachPendingAssetGraph(entity);
-            logger.LogDebug(ex, "Skip asset persist: FK to recon_targets for target {TargetId} (likely deleted during insert).", message.TargetId);
-            return (Guid.Empty, false);
-        }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg
-            && pg.SqlState == PostgresErrorCodes.UniqueViolation)
-        {
-            DetachPendingAssetGraph(entity);
-
-            var existingAfterRace = await db.Assets.AsNoTracking()
-                .Where(a => a.TargetId == message.TargetId && a.CanonicalKey == canonical.CanonicalKey)
-                .Select(a => (Guid?)a.Id)
-                .FirstOrDefaultAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (existingAfterRace is { } racedExisting)
-            {
-                await EnsureQueuedAssetHasHttpRequestAsync(racedExisting, cancellationToken).ConfigureAwait(false);
-                return (racedExisting, false);
-            }
-
-            logger.LogDebug(ex, "Skip asset persist: unique violation while inserting asset {CanonicalKey}.", canonical.CanonicalKey);
-            return (Guid.Empty, false);
-        }
-
-        return (entity.Id, true);
+        return (result.AssetId, result.Inserted);
     }
 
     private void DetachPendingAssetGraph(StoredAsset asset)
@@ -235,7 +171,8 @@ public sealed class EfAssetPersistence(
                 .ExecuteUpdateAsync(
                     s => s
                         .SetProperty(a => a.LifecycleStatus, AssetLifecycleStatus.Confirmed)
-                        .SetProperty(a => a.TypeDetailsJson, json),
+                        .SetProperty(a => a.TypeDetailsJson, json)
+                        .SetProperty(a => a.LastSeenAtUtc, DateTimeOffset.UtcNow),
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -246,7 +183,8 @@ public sealed class EfAssetPersistence(
                 .ExecuteUpdateAsync(
                     s => s
                         .SetProperty(a => a.LifecycleStatus, AssetLifecycleStatus.NonExistent)
-                        .SetProperty(a => a.TypeDetailsJson, json),
+                        .SetProperty(a => a.TypeDetailsJson, json)
+                        .SetProperty(a => a.LastSeenAtUtc, DateTimeOffset.UtcNow),
                     cancellationToken)
                 .ConfigureAwait(false);
         }

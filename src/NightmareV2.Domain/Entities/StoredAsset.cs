@@ -8,14 +8,18 @@ public class StoredAsset
     public Guid TargetId { get; set; }
     public ReconTarget? Target { get; set; }
     public AssetKind Kind { get; set; }
+    public AssetCategory Category { get; set; } = AssetCategory.Host;
     /// <summary>Normalized identity key (URL without fragment, lowercased host, etc.).</summary>
     public string CanonicalKey { get; set; } = "";
     public string RawValue { get; set; } = "";
+    public string? DisplayName { get; set; }
     public int Depth { get; set; }
     public string DiscoveredBy { get; set; } = "";
     /// <summary>Human-readable description of how the asset was found (parent page, wordlist category, etc.).</summary>
     public string DiscoveryContext { get; set; } = "";
     public DateTimeOffset DiscoveredAtUtc { get; set; }
+    public DateTimeOffset? LastSeenAtUtc { get; set; }
+    public decimal Confidence { get; set; } = 1.0m;
 
     /// <summary><see cref="AssetLifecycleStatus"/> values.</summary>
     public string LifecycleStatus { get; set; } = AssetLifecycleStatus.Queued;

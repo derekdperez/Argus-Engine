@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using NightmareV2.Application.Events;
 using NightmareV2.CommandCenter.Hubs;
 using NightmareV2.CommandCenter.Models;
+using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure.Data;
@@ -12,6 +13,29 @@ namespace NightmareV2.CommandCenter.Endpoints;
 
 public static class TargetEndpoints
 {
+    private static StoredAsset CreateRootAsset(ReconTarget target, string discoveredBy)
+    {
+        var root = target.RootDomain.Trim().TrimEnd('.').ToLowerInvariant();
+        var now = DateTimeOffset.UtcNow;
+        return new StoredAsset
+        {
+            Id = Guid.NewGuid(),
+            TargetId = target.Id,
+            Kind = AssetKind.Target,
+            Category = AssetCategory.ScopeRoot,
+            CanonicalKey = $"target:{root}",
+            RawValue = root,
+            DisplayName = root,
+            Depth = 0,
+            DiscoveredBy = discoveredBy,
+            DiscoveryContext = "Root target asset",
+            DiscoveredAtUtc = target.CreatedAtUtc == default ? now : target.CreatedAtUtc,
+            LastSeenAtUtc = now,
+            Confidence = 1.0m,
+            LifecycleStatus = AssetLifecycleStatus.Confirmed,
+        };
+    }
+
     public static void Map(WebApplication app)
     {
         app.MapGet(
@@ -49,6 +73,7 @@ public static class TargetEndpoints
                     };
 
                     db.Targets.Add(target);
+                    db.Assets.Add(CreateRootAsset(target, "command-center"));
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
                     var correlation = NewId.NextGuid();
@@ -213,6 +238,7 @@ public static class TargetEndpoints
                         };
                         newTargets.Add(target);
                         db.Targets.Add(target);
+                        db.Assets.Add(CreateRootAsset(target, "command-center-bulk"));
                     }
 
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);

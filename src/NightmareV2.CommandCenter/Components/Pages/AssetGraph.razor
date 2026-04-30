@@ -1,0 +1,114 @@
+@page "/asset-graph"
+@using NightmareV2.Application.Assets
+@using NightmareV2.CommandCenter.Models
+@inject HttpClient Http
+
+<PageTitle>Asset graph</PageTitle>
+
+<section class="page-stack">
+    <header class="page-header">
+        <div>
+            <h1>Asset graph</h1>
+            <p>Explore the target-rooted parent/child asset hierarchy and relationship metrics.</p>
+        </div>
+        <button class="btn btn-primary" @onclick="LoadAsync" disabled="@_loading">@(_loading ? "Loading…" : "Refresh")</button>
+    </header>
+
+    <div class="card">
+        <label for="target">Target</label>
+        <select id="target" @bind="_selectedTargetIdText" @bind:after="LoadSelectedTargetAsync">
+            <option value="">Select a target…</option>
+            @foreach (var target in _targets)
+            {
+                <option value="@target.Id">@target.RootDomain</option>
+            }
+        </select>
+    </div>
+
+    @if (_metrics is not null)
+    {
+        <div class="metric-grid">
+            <div class="metric-card">
+                <strong>@_metrics.AssetsWithoutParents</strong>
+                <span>assets without parents</span>
+            </div>
+            <div class="metric-card">
+                <strong>@_metrics.RelationshipsByType.Sum(x => x.Count)</strong>
+                <span>relationships</span>
+            </div>
+            <div class="metric-card">
+                <strong>@_metrics.AssetsByKind.Sum(x => x.Count)</strong>
+                <span>assets</span>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="alert">@_error</div>
+    }
+
+    @if (_tree.Count > 0)
+    {
+        <div class="card graph-card">
+            <h2>Target tree</h2>
+            @foreach (var node in _tree)
+            {
+                <AssetTreeView Node="node" />
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private bool _loading;
+    private string? _error;
+    private string _selectedTargetIdText = "";
+    private List<TargetSummary> _targets = [];
+    private List<AssetTreeNodeDto> _tree = [];
+    private AssetGraphMetrics? _metrics;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _targets = await Http.GetFromJsonAsync<List<TargetSummary>>("/api/targets") ?? [];
+            if (string.IsNullOrWhiteSpace(_selectedTargetIdText) && _targets.Count > 0)
+                _selectedTargetIdText = _targets[0].Id.ToString();
+
+            await LoadSelectedTargetAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadSelectedTargetAsync()
+    {
+        _tree = [];
+        _metrics = null;
+        if (!Guid.TryParse(_selectedTargetIdText, out var targetId))
+            return;
+
+        _tree = await Http.GetFromJsonAsync<List<AssetTreeNodeDto>>($"/api/targets/{targetId}/asset-tree?maxDepth=5") ?? [];
+        _metrics = await Http.GetFromJsonAsync<AssetGraphMetrics>($"/api/targets/{targetId}/asset-graph/metrics");
+    }
+
+    private sealed record CountByName(string Name, long Count);
+
+    private sealed record AssetGraphMetrics(
+        IReadOnlyList<CountByName> AssetsByKind,
+        IReadOnlyList<CountByName> AssetsByCategory,
+        IReadOnlyList<CountByName> RelationshipsByType,
+        long AssetsWithoutParents,
+        long DuplicateRelationshipRows);
+}

@@ -1,0 +1,25 @@
+@using NightmareV2.Application.Assets
+
+<li class="asset-tree-node">
+    <div class="asset-node-line">
+        <span class="asset-kind">@Node.Asset.Kind</span>
+        <strong>@(Node.Asset.DisplayName ?? Node.Asset.RawValue)</strong>
+        @if (Node.IncomingRelationship is not null)
+        {
+            <small>@Node.IncomingRelationship.RelationshipType</small>
+        }
+    </div>
+    @if (Node.Children.Count > 0)
+    {
+        <ul>
+            @foreach (var child in Node.Children)
+            {
+                <AssetTreeView Node="child" />
+            }
+        </ul>
+    }
+</li>
+
+@code {
+    [Parameter, EditorRequired] public AssetTreeNodeDto Node { get; set; } = default!;
+}

@@ -61,7 +61,10 @@ public sealed class GatekeeperOrchestrator(
         }
 
         var canonical = canonicalizer.Canonicalize(message);
-        if (!await deduplicator.TryReserveAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false))
+        var hasRelationshipContext = message.ParentAssetId is { } parentAssetId && parentAssetId != Guid.Empty;
+        var reserved = await deduplicator.TryReserveAsync(message.TargetId, canonical.CanonicalKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (!reserved && !hasRelationshipContext)
         {
             LogDedupeHit(logger, canonical.CanonicalKey);
             return;
@@ -72,14 +75,24 @@ public sealed class GatekeeperOrchestrator(
             if (!scope.IsInScope(message, canonical))
             {
                 LogOutOfScope(logger, canonical.CanonicalKey);
-                await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false);
+                if (reserved)
+                    await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
             var (assetId, inserted) = await persistence.PersistNewAssetAsync(message, canonical, cancellationToken).ConfigureAwait(false);
+            if (assetId == Guid.Empty)
+            {
+                if (reserved)
+                    await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             if (!inserted)
             {
-                await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false);
+                // Existing assets may still receive new graph edges. Do not publish duplicate Indexed events.
+                if (reserved)
+                    await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -108,7 +121,8 @@ public sealed class GatekeeperOrchestrator(
         }
         catch
         {
-            await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false);
+            if (reserved)
+                await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false);
             throw;
         }
     }
@@ -150,6 +164,10 @@ public sealed class GatekeeperOrchestrator(
                 AssetAdmissionStage.Indexed,
                 assetId,
                 message.DiscoveryContext,
+                message.ParentAssetId,
+                message.RelationshipType,
+                message.IsPrimaryRelationship,
+                message.RelationshipPropertiesJson,
                 EventId: NewId.NextGuid(),
                 CausationId: causation,
                 Producer: "gatekeeper"),

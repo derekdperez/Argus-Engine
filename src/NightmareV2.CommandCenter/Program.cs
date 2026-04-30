@@ -26,7 +26,6 @@ using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure;
 using NightmareV2.Infrastructure.Data;
 using NightmareV2.Infrastructure.Messaging;
-using AssetAdmissionStage = NightmareV2.Contracts.AssetAdmissionStage;
 using AssetKind = NightmareV2.Contracts.AssetKind;
 using UrlFetchSnapshot = NightmareV2.Application.Assets.UrlFetchSnapshot;
 
@@ -97,6 +96,7 @@ app.UseAntiforgery();
 DiagnosticsEndpoints.Map(app);
 DataMaintenanceEndpoints.Map(app);
 EventTraceEndpoints.Map(app);
+AssetGraphEndpoints.Map(app);
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
@@ -187,6 +187,29 @@ static string[] RequiredWorkerKeys() =>
     WorkerKeys.HighValuePaths,
 ];
 
+static StoredAsset CreateRootAsset(ReconTarget target, string discoveredBy)
+{
+    var root = target.RootDomain.Trim().TrimEnd('.').ToLowerInvariant();
+    var now = DateTimeOffset.UtcNow;
+    return new StoredAsset
+    {
+        Id = Guid.NewGuid(),
+        TargetId = target.Id,
+        Kind = AssetKind.Target,
+        Category = NightmareV2.Contracts.AssetCategory.ScopeRoot,
+        CanonicalKey = $"target:{root}",
+        RawValue = root,
+        DisplayName = root,
+        Depth = 0,
+        DiscoveredBy = discoveredBy,
+        DiscoveryContext = "Root target asset",
+        DiscoveredAtUtc = target.CreatedAtUtc == default ? now : target.CreatedAtUtc,
+        LastSeenAtUtc = now,
+        Confidence = 1.0m,
+        LifecycleStatus = AssetLifecycleStatus.Confirmed,
+    };
+}
+
 app.MapPost(
         "/api/targets",
         async (
@@ -208,6 +231,7 @@ app.MapPost(
             };
 
             db.Targets.Add(target);
+            db.Assets.Add(CreateRootAsset(target, "command-center"));
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
             var correlation = NewId.NextGuid();
@@ -264,6 +288,18 @@ app.MapPut(
 
             target.RootDomain = root;
             target.GlobalMaxDepth = depth;
+
+            var rootKeyPrefix = "target:";
+            var rootAsset = await db.Assets.FirstOrDefaultAsync(a => a.TargetId == id && a.Kind == AssetKind.Target, ct)
+                .ConfigureAwait(false);
+            if (rootAsset is not null)
+            {
+                rootAsset.CanonicalKey = rootKeyPrefix + root;
+                rootAsset.RawValue = root;
+                rootAsset.DisplayName = root;
+                rootAsset.LastSeenAtUtc = DateTimeOffset.UtcNow;
+            }
+
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
             var summary = new TargetSummary(target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc);
             await hub.Clients.All.SendAsync(
@@ -407,6 +443,7 @@ app.MapPost(
                 };
                 newTargets.Add(target);
                 db.Targets.Add(target);
+                db.Assets.Add(CreateRootAsset(target, "command-center-bulk"));
             }
 
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
@@ -691,7 +728,7 @@ app.MapPost(
     .DisableAntiforgery();
 
 app.MapGet(
-        "/api/filestore/{id:guid}",
+        "/api/filestore/{id:guid}/info",
         async (Guid id, IFileStore store, CancellationToken ct) =>
         {
             var meta = await store.GetDescriptorAsync(id, ct).ConfigureAwait(false);
@@ -700,7 +737,7 @@ app.MapGet(
     .WithName("GetFileBlobInfo");
 
 app.MapGet(
-        "/api/filestore/{id:guid}/download",
+        "/api/filestore/{id:guid}",
         async (Guid id, IFileStore store, CancellationToken ct) =>
         {
             var meta = await store.GetDescriptorAsync(id, ct).ConfigureAwait(false);
@@ -917,140 +954,6 @@ static bool LooksLikeSoft404(UrlFetchSnapshot? snap)
         || normalized.Contains("cannot be found", StringComparison.Ordinal)
         || normalized.Contains("the page you are looking for", StringComparison.Ordinal);
 }
-
-app.MapPost(
-        "/api/ops/subdomain-enum/restart",
-        async (RestartToolRequest body, NightmareDbContext db, IEventOutbox outbox, IOptions<SubdomainEnumerationOptions> options, CancellationToken ct) =>
-        {
-            var targetsQuery = db.Targets.AsNoTracking();
-            if (!body.AllTargets)
-            {
-                if (body.TargetIds is null || body.TargetIds.Length == 0)
-                    return Results.BadRequest("targetIds is required unless allTargets is true");
-
-                var ids = body.TargetIds
-                    .Select(x => Guid.TryParse(x, out var id) ? id : Guid.Empty)
-                    .Where(x => x != Guid.Empty)
-                    .ToHashSet();
-                if (ids.Count == 0)
-                    return Results.BadRequest("no valid target ids supplied");
-
-                targetsQuery = targetsQuery.Where(t => ids.Contains(t.Id));
-            }
-
-            var targets = await targetsQuery.Take(5000).ToListAsync(ct).ConfigureAwait(false);
-            var providers = options.Value.DefaultProviders
-                .Where(p => !string.IsNullOrWhiteSpace(p))
-                .Select(p => p.Trim().ToLowerInvariant())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            if (providers.Length == 0)
-                providers = ["subfinder", "amass"];
-
-            var queued = 0;
-            foreach (var target in targets)
-            {
-                var correlation = NewId.NextGuid();
-                foreach (var provider in providers)
-                {
-                    var eventId = NewId.NextGuid();
-                    await outbox.EnqueueAsync(
-                            new SubdomainEnumerationRequested(
-                                target.Id,
-                                target.RootDomain,
-                                provider,
-                                "command-center-manual-restart",
-                                DateTimeOffset.UtcNow,
-                                correlation,
-                                EventId: eventId,
-                                CausationId: correlation,
-                                Producer: "command-center"),
-                            ct)
-                        .ConfigureAwait(false);
-                    queued++;
-                }
-            }
-
-            return Results.Ok(new { Targets = targets.Count, JobsQueued = queued });
-        })
-    .WithName("RestartSubdomainEnumeration");
-
-app.MapPost(
-        "/api/ops/spider/restart",
-        async (RestartToolRequest body, NightmareDbContext db, IEventOutbox outbox, CancellationToken ct) =>
-        {
-            var targetsQuery = db.Targets.AsNoTracking();
-            if (!body.AllTargets)
-            {
-                if (body.TargetIds is null || body.TargetIds.Length == 0)
-                    return Results.BadRequest("targetIds is required unless allTargets is true");
-
-                var ids = body.TargetIds
-                    .Select(x => Guid.TryParse(x, out var id) ? id : Guid.Empty)
-                    .Where(x => x != Guid.Empty)
-                    .ToHashSet();
-                if (ids.Count == 0)
-                    return Results.BadRequest("no valid target ids supplied");
-
-                targetsQuery = targetsQuery.Where(t => ids.Contains(t.Id));
-            }
-
-            var targets = await targetsQuery.Take(5000).ToListAsync(ct).ConfigureAwait(false);
-            var targetIds = targets.Select(t => t.Id).ToHashSet();
-            var now = DateTimeOffset.UtcNow;
-
-            var existingQueueRows = await db.HttpRequestQueue
-                .Where(q => targetIds.Contains(q.TargetId))
-                .ToListAsync(ct)
-                .ConfigureAwait(false);
-            foreach (var row in existingQueueRows)
-            {
-                row.State = HttpRequestQueueState.Queued;
-                row.LockedBy = null;
-                row.LockedUntilUtc = null;
-                row.StartedAtUtc = null;
-                row.CompletedAtUtc = null;
-                row.LastError = null;
-                row.UpdatedAtUtc = now;
-                row.NextAttemptAtUtc = now;
-            }
-
-            var queuedRootSeeds = 0;
-            foreach (var target in targets)
-            {
-                if (existingQueueRows.Any(q => q.TargetId == target.Id))
-                    continue;
-
-                var correlation = NewId.NextGuid();
-                foreach (var rootUrl in new[] { $"https://{target.RootDomain}/", $"http://{target.RootDomain}/" })
-                {
-                    await outbox.EnqueueAsync(
-                            new AssetDiscovered(
-                                target.Id,
-                                target.RootDomain,
-                                target.GlobalMaxDepth,
-                                0,
-                                AssetKind.Url,
-                                rootUrl,
-                                "command-center-manual-spider-restart",
-                                now,
-                                correlation,
-                                AssetAdmissionStage.Raw,
-                                null,
-                                "Manual spider restart root seed",
-                                EventId: NewId.NextGuid(),
-                                CausationId: correlation,
-                                Producer: "command-center"),
-                            ct)
-                        .ConfigureAwait(false);
-                    queuedRootSeeds++;
-                }
-            }
-
-            await db.SaveChangesAsync(ct).ConfigureAwait(false);
-            return Results.Ok(new { Targets = targets.Count, RequeuedExistingRequests = existingQueueRows.Count, RootSeedsQueued = queuedRootSeeds });
-        })
-    .WithName("RestartSpidering");
 
 app.MapGet(
         "/api/workers",

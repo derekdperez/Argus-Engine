@@ -2,6 +2,7 @@ using MassTransit;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
+using NightmareV2.Application.Assets;
 using NightmareV2.Application.Events;
 using NightmareV2.Application.Workers;
 using NightmareV2.Contracts;
@@ -52,6 +53,7 @@ public sealed class ConsumerBehaviorTests
         var outbox = new CapturingEventOutbox();
         var toggles = Mock.Of<IWorkerToggleReader>(x => x.IsWorkerEnabledAsync(WorkerKeys.Enumeration, It.IsAny<CancellationToken>()) == Task.FromResult(true));
         var targetLookup = Mock.Of<ITargetLookup>(x => x.FindAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()) == Task.FromResult<TargetLookupResult?>(new TargetLookupResult(Guid.NewGuid(), "example.com", 12)));
+        var graph = Mock.Of<IAssetGraphService>(x => x.GetRootAssetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()) == Task.FromResult<AssetNodeDto?>(null));
 
         var subfinder = new CountingProvider("subfinder", [
             new SubdomainEnumerationResult { Hostname = "api.example.com", Provider = "subfinder", Method = "passive" },
@@ -67,6 +69,7 @@ public sealed class ConsumerBehaviorTests
             toggles,
             outbox,
             targetLookup,
+            graph,
             Options.Create(new SubdomainEnumerationOptions()));
 
         var message = new SubdomainEnumerationRequested(
@@ -96,6 +99,7 @@ public sealed class ConsumerBehaviorTests
         var outbox = new CapturingEventOutbox();
         var toggles = Mock.Of<IWorkerToggleReader>(x => x.IsWorkerEnabledAsync(WorkerKeys.Enumeration, It.IsAny<CancellationToken>()) == Task.FromResult(true));
         var targetLookup = Mock.Of<ITargetLookup>(x => x.FindAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()) == Task.FromResult<TargetLookupResult?>(new TargetLookupResult(Guid.NewGuid(), "example.com", 12)));
+        var graph = Mock.Of<IAssetGraphService>(x => x.GetRootAssetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()) == Task.FromResult<AssetNodeDto?>(null));
 
         var failingProvider = new ThrowingProvider("amass");
         var consumer = new SubdomainEnumerationRequestedConsumer(
@@ -104,6 +108,7 @@ public sealed class ConsumerBehaviorTests
             toggles,
             outbox,
             targetLookup,
+            graph,
             Options.Create(new SubdomainEnumerationOptions()));
 
         var message = new SubdomainEnumerationRequested(
@@ -128,6 +133,7 @@ public sealed class ConsumerBehaviorTests
         var outbox = new CapturingEventOutbox();
         var toggles = Mock.Of<IWorkerToggleReader>(x => x.IsWorkerEnabledAsync(WorkerKeys.Enumeration, It.IsAny<CancellationToken>()) == Task.FromResult(true));
         var targetLookup = Mock.Of<ITargetLookup>(x => x.FindAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()) == Task.FromResult<TargetLookupResult?>(new TargetLookupResult(Guid.NewGuid(), "example.com", 12)));
+        var graph = Mock.Of<IAssetGraphService>(x => x.GetRootAssetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()) == Task.FromResult<AssetNodeDto?>(null));
         var subfinder = new CountingProvider(
             "subfinder",
             [
@@ -141,6 +147,7 @@ public sealed class ConsumerBehaviorTests
             toggles,
             outbox,
             targetLookup,
+            graph,
             Options.Create(
                 new SubdomainEnumerationOptions
                 {

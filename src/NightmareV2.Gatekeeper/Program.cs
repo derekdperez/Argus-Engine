@@ -9,7 +9,13 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddNightmareInfrastructure(builder.Configuration);
 builder.Services.AddScoped<GatekeeperOrchestrator>();
-builder.Services.AddNightmareRabbitMq(builder.Configuration, x => x.AddConsumer<AssetDiscoveredConsumer>());
+builder.Services.AddNightmareRabbitMq(
+    builder.Configuration,
+    x =>
+    {
+        x.AddConsumer<AssetDiscoveredConsumer>();
+        x.AddConsumer<AssetRelationshipDiscoveredConsumer>();
+    });
 
 var host = builder.Build();
 var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");

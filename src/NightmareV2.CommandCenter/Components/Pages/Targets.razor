@@ -2,12 +2,14 @@
 @rendermode InteractiveServer
 @using System.Net
 @using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.AspNetCore.Components.QuickGrid
 @using NightmareV2.CommandCenter.Components.DataGrid
 @using NightmareV2.CommandCenter.Components.DataGrid.Cells
 @using NightmareV2.CommandCenter.Models
 @using NightmareV2.CommandCenter.Realtime
 @inject HttpClient Http
+@inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject DiscoveryRealtimeClient Realtime
 @implements IDisposable
@@ -37,10 +39,20 @@
 
 <section class="panel">
     <h2>Bulk import</h2>
-    <p class="muted">Plain text file: one root domain per line. Blank lines are ignored. Duplicates in the file or already in the database are skipped. New targets use the <strong>max depth</strong> from the add-target form above.</p>
-    <div class="row">
-        <InputFile OnChange="BulkImportAsync" accept=".txt,text/plain" />
-    </div>
+    <p class="muted">Plain text file: one root domain per line. Blank lines are ignored. Duplicates in the file or already in the database are skipped.</p>
+    <form method="post" action="/api/targets/bulk-file" enctype="multipart/form-data">
+        <div class="row">
+            <label>
+                Max depth
+                <input type="number" name="globalMaxDepth" min="1" value="@(_form.GlobalMaxDepth > 0 ? _form.GlobalMaxDepth : 12)" />
+            </label>
+            <label>
+                Target file
+                <input type="file" name="file" accept=".txt,text/plain" required />
+            </label>
+            <button type="submit">Import file</button>
+        </div>
+    </form>
     @if (!string.IsNullOrEmpty(_bulkStatus))
     {
         <p role="status">@_bulkStatus</p>
@@ -157,6 +169,11 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (query.TryGetValue("bulkStatus", out var bulkStatus))
+            _bulkStatus = bulkStatus.ToString();
+
         Realtime.DomainEventReceived += OnRealtimeEvent;
         await ReloadAsync();
         await StartRealtimeAsync();

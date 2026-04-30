@@ -1,2 +1,6 @@
 Todo:
 
+System Status - Update the Components grid to also display the version of each component, and the date/time that version was first released. 
+
+Update the links to each page in the navigation header on the web app. Make the different pages buttons, rather than just text links. Make them look nice and space them properly.
+

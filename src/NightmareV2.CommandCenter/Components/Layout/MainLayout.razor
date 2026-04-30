@@ -12,6 +12,7 @@
         <NavLink href="/" Match="NavLinkMatch.All">Home</NavLink>
         <NavLink href="/targets">Targets</NavLink>
         <NavLink href="/ops">Operations</NavLink>
+        <NavLink href="/ops-radzen">Operations Radzen</NavLink>
         <NavLink href="/events">Events</NavLink>
         <NavLink href="/status">System status</NavLink>
         <NavLink href="/high-value-findings">High value findings</NavLink>
@@ -21,6 +22,8 @@
 <main class="app-main">
     @Body
 </main>
+
+<RadzenComponents @rendermode="InteractiveServer" />
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.

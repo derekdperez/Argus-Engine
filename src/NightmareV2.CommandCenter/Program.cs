@@ -1,3 +1,4 @@
+using Radzen;
 using System.Net.Http;
 using System.Text.Json;
 using MassTransit;
@@ -33,6 +34,8 @@ OpsSnapshotBuilder.RegisterHttpClient(builder);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+builder.Services.AddRadzenComponents();
 
 builder.Services.AddScoped(sp =>
 {

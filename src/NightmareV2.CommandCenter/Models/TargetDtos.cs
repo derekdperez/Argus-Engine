@@ -8,4 +8,12 @@ public sealed record BulkImportRequest(IReadOnlyList<string>? Domains, int Globa
 
 public sealed record BulkImportResult(int Created, int SkippedAlreadyExist, int SkippedEmptyOrInvalid, int SkippedDuplicateInBatch);
 
-public sealed record TargetSummary(Guid Id, string RootDomain, int GlobalMaxDepth, DateTimeOffset CreatedAtUtc);
+public sealed record TargetSummary(
+    Guid Id,
+    string RootDomain,
+    int GlobalMaxDepth,
+    DateTimeOffset CreatedAtUtc,
+    long SubdomainCount = 0,
+    long ConfirmedAssetCount = 0,
+    long QueuedAssetCount = 0,
+    DateTimeOffset? LastRunAtUtc = null);

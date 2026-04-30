@@ -77,18 +77,29 @@
 }
 
 .app-nav a {
-    color: #475569;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.15rem;
+    border: 1px solid rgba(15, 23, 42, 0.10);
+    color: #334155;
     text-decoration: none;
-    border-radius: 999px;
-    padding: 0.45rem 0.75rem;
-    font-weight: 700;
+    border-radius: 0.7rem;
+    background: #fff;
+    padding: 0.35rem 0.75rem;
+    font-weight: 750;
     font-size: 0.9rem;
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.04);
+    transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
 }
 
 .app-nav a:hover,
 .app-nav a.active {
     color: #1d4ed8;
     background: rgba(37, 99, 235, 0.09);
+    border-color: rgba(37, 99, 235, 0.28);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.10);
+    transform: translateY(-1px);
 }
 
 .app-main {

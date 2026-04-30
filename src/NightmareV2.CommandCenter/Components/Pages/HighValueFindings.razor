@@ -3,9 +3,11 @@
 @using NightmareV2.CommandCenter.Components.DataGrid
 @using NightmareV2.CommandCenter.Components.DataGrid.Cells
 @using NightmareV2.CommandCenter.Models
+@using NightmareV2.CommandCenter.Realtime
 @using static Microsoft.AspNetCore.Components.QuickGrid.SortDirection
 @implements IDisposable
 @inject HttpClient Http
+@inject DiscoveryRealtimeClient Realtime
 
 <PageTitle>High value findings · Nightmare v2</PageTitle>
 
@@ -34,35 +36,57 @@
                        Items="FilteredFindings"
                        @bind-SearchText="_findingSearch"
                        SearchPlaceholder="Search severity, type, pattern, URL, worker, snippet…"
-                       ScrollPreset="NightmareDataGridScrollPreset.Tall"
-                       Virtualize="true"
+                       ScrollPreset="@(_findingVirtualize ? NightmareDataGridScrollPreset.Virtualized : NightmareDataGridScrollPreset.Tall)"
+                       Virtualize="@_findingVirtualize"
+                       Pagination="_findingPagination"
                        ItemSize="40"
                        ItemKey="@(r => r.Id)"
                        OverscanCount="6"
-                       GroupKeySelector="@(r => r.Severity)"
+                       GroupKeySelector="FindingGroupKeySelector"
                        RowMatches="@FindingMatches"
                        HostTabIndex="@(-1)">
-        <PropertyColumn Title="Discovered (UTC)" Property="@(r => r.DiscoveredAtUtc)" Format="u" Sortable="true" IsDefaultSortColumn="true" InitialSortDirection="Descending" />
-        <TemplateColumn Title="Severity" Context="r" SortBy="@SortFindingSeverity">
-            <strong>@r.Severity</strong>
-        </TemplateColumn>
-        <PropertyColumn Title="Type" Property="@(r => r.FindingType)" Sortable="true" />
-        <TemplateColumn Title="Pattern" Context="r" SortBy="@SortFindingPattern">
-            <GridCodeCell Text="@r.PatternName" />
-        </TemplateColumn>
-        <PropertyColumn Title="Target" Property="@(r => r.TargetRootDomain ?? "")" Sortable="true" />
-        <TemplateColumn Title="Source URL" Context="r" SortBy="@SortFindingUrl">
-            <a href="@r.SourceUrl" target="_blank" rel="noopener noreferrer">
-                <GridEllipsisCell Text="@r.SourceUrl" Title="@r.SourceUrl" />
-            </a>
-        </TemplateColumn>
-        <PropertyColumn Title="Worker" Property="@(r => r.WorkerName)" Sortable="true" />
-        <TemplateColumn Title="Score" Context="r" SortBy="@SortFindingScore">
-            <GridNumberCell Value="@r.ImportanceScore" />
-        </TemplateColumn>
-        <TemplateColumn Title="Snippet" Context="r">
-            <GridEllipsisCell Text="@r.MatchedText" Title="@r.MatchedText" />
-        </TemplateColumn>
+        <ConfigurationTemplate>
+            <div class="grid-config compact">
+                <label>
+                    <span>Group by</span>
+                    <select @bind="_findingGroupBy">
+                        <option value="">No grouping</option>
+                        <option value="Severity">Severity</option>
+                        <option value="Type">Type</option>
+                        <option value="Target">Target</option>
+                        <option value="Worker">Worker</option>
+                    </select>
+                </label>
+                <label class="switch-row">
+                    <input type="checkbox" @bind="_findingVirtualize" />
+                    <span>Virtualized rows</span>
+                </label>
+                <button type="button" class="btn ghost" @onclick="ClearFindingFilters">Clear filters</button>
+            </div>
+        </ConfigurationTemplate>
+        <ChildContent>
+            <PropertyColumn Title="Discovered (UTC)" Property="@(r => r.DiscoveredAtUtc)" Format="u" Sortable="true" IsDefaultSortColumn="true" InitialSortDirection="Descending" />
+            <TemplateColumn Title="Severity" Context="r" SortBy="@SortFindingSeverity">
+                <strong>@r.Severity</strong>
+            </TemplateColumn>
+            <PropertyColumn Title="Type" Property="@(r => r.FindingType)" Sortable="true" />
+            <TemplateColumn Title="Pattern" Context="r" SortBy="@SortFindingPattern">
+                <GridCodeCell Text="@r.PatternName" />
+            </TemplateColumn>
+            <PropertyColumn Title="Target" Property="@(r => r.TargetRootDomain ?? "")" Sortable="true" />
+            <TemplateColumn Title="Source URL" Context="r" SortBy="@SortFindingUrl">
+                <a href="@r.SourceUrl" target="_blank" rel="noopener noreferrer">
+                    <GridEllipsisCell Text="@r.SourceUrl" Title="@r.SourceUrl" />
+                </a>
+            </TemplateColumn>
+            <PropertyColumn Title="Worker" Property="@(r => r.WorkerName)" Sortable="true" />
+            <TemplateColumn Title="Score" Context="r" SortBy="@SortFindingScore">
+                <GridNumberCell Value="@r.ImportanceScore" />
+            </TemplateColumn>
+            <TemplateColumn Title="Snippet" Context="r">
+                <GridEllipsisCell Text="@r.MatchedText" Title="@r.MatchedText" />
+            </TemplateColumn>
+        </ChildContent>
     </NightmareDataGrid>
 </section>
 
@@ -76,6 +100,9 @@
     private string _findingPatternFilter = "";
     private string _findingTargetFilter = "";
     private string _findingWorkerFilter = "";
+    private string _findingGroupBy = "Severity";
+    private bool _findingVirtualize = true;
+    private readonly PaginationState _findingPagination = new() { ItemsPerPage = 50 };
 
     private static readonly GridSort<HighValueFindingRowDto> SortFindingSeverity =
         GridSort<HighValueFindingRowDto>.ByAscending(static r => r.Severity);
@@ -99,6 +126,16 @@
         || GridTextFilter.Matches(r.MatchedText, q)
         || GridTextFilter.Matches(r.Category, q);
 
+    private Func<HighValueFindingRowDto, string>? FindingGroupKeySelector =>
+        _findingGroupBy switch
+        {
+            "Severity" => static r => r.Severity,
+            "Type" => static r => r.FindingType,
+            "Target" => static r => r.TargetRootDomain ?? "No target",
+            "Worker" => static r => r.WorkerName,
+            _ => null,
+        };
+
     private IQueryable<HighValueFindingRowDto> FilteredFindings =>
         _rows.AsQueryable().Where(r =>
             GridTextFilter.Matches(r.Severity, _findingSeverityFilter)
@@ -115,12 +152,39 @@
         _findingPatternFilter = "";
         _findingTargetFilter = "";
         _findingWorkerFilter = "";
+        _findingGroupBy = "Severity";
     }
 
     protected override async Task OnInitializedAsync()
     {
+        Realtime.DomainEventReceived += OnRealtimeEvent;
         await ReloadAsync().ConfigureAwait(false);
+        await StartRealtimeAsync().ConfigureAwait(false);
         _ = PollAsync();
+    }
+
+    private async Task StartRealtimeAsync()
+    {
+        try
+        {
+            await Realtime.EnsureStartedAsync(_pollCts.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Manual refresh and fallback polling remain available.
+        }
+    }
+
+    private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
+    {
+        if (evt.Scope is not ("findings" or "http"))
+            return;
+
+        _ = InvokeAsync(async () =>
+        {
+            await ReloadAsync();
+            StateHasChanged();
+        });
     }
 
     private async Task PollAsync()
@@ -129,7 +193,10 @@
         {
             while (!_pollCts.IsCancellationRequested)
             {
-                await Task.Delay(4000, _pollCts.Token).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(30), _pollCts.Token).ConfigureAwait(false);
+                if (Realtime.IsConnected)
+                    continue;
+
                 await ReloadAsync().ConfigureAwait(false);
                 await InvokeAsync(StateHasChanged).ConfigureAwait(false);
             }
@@ -156,5 +223,10 @@
         }
     }
 
-    public void Dispose() => _pollCts.Cancel();
+    public void Dispose()
+    {
+        Realtime.DomainEventReceived -= OnRealtimeEvent;
+        _pollCts.Cancel();
+        _pollCts.Dispose();
+    }
 }

@@ -16,8 +16,10 @@ using NightmareV2.CommandCenter;
 using NightmareV2.CommandCenter.Components;
 using NightmareV2.CommandCenter.DataMaintenance;
 using NightmareV2.CommandCenter.Diagnostics;
+using NightmareV2.CommandCenter.Endpoints;
 using NightmareV2.CommandCenter.Hubs;
 using NightmareV2.CommandCenter.Models;
+using NightmareV2.CommandCenter.Realtime;
 using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
 using NightmareV2.Domain.Entities;
@@ -40,7 +42,18 @@ builder.Services.AddScoped(sp =>
 
 builder.Services.AddNightmareInfrastructure(builder.Configuration);
 builder.Services.AddSignalR();
-builder.Services.AddNightmareRabbitMq(builder.Configuration, _ => { });
+builder.Services.AddScoped<DiscoveryRealtimeClient>();
+builder.Services.AddNightmareRabbitMq(
+    builder.Configuration,
+    consumers =>
+    {
+        consumers.AddConsumer<TargetCreatedUiEventConsumer>();
+        consumers.AddConsumer<AssetDiscoveredUiEventConsumer>();
+        consumers.AddConsumer<ScannableContentAvailableUiEventConsumer>();
+        consumers.AddConsumer<CriticalHighValueFindingAlertUiEventConsumer>();
+        consumers.AddConsumer<PortScanRequestedUiEventConsumer>();
+        consumers.AddConsumer<SubdomainEnumerationRequestedUiEventConsumer>();
+    });
 builder.Services.AddOptions<NightmareRuntimeOptions>()
     .Bind(builder.Configuration.GetSection("Nightmare"))
     .Validate(
@@ -78,6 +91,7 @@ app.UseAntiforgery();
 
 DiagnosticsEndpoints.Map(app);
 DataMaintenanceEndpoints.Map(app);
+EventTraceEndpoints.Map(app);
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
@@ -137,7 +151,18 @@ app.MapPost(
                     ct)
                 .ConfigureAwait(false);
 
-            await hub.Clients.All.SendAsync("TargetQueued", target.Id, target.RootDomain, cancellationToken: ct)
+            await hub.Clients.All.SendAsync(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
+                .ConfigureAwait(false);
+            await hub.Clients.All.SendAsync(
+                    DiscoveryHubEvents.DomainEvent,
+                    new LiveUiEventDto(
+                        "TargetCreated",
+                        target.Id,
+                        target.Id,
+                        "targets",
+                        $"Target queued: {target.RootDomain}",
+                        target.CreatedAtUtc),
+                    cancellationToken: ct)
                 .ConfigureAwait(false);
 
             return Results.Created($"/api/targets/{target.Id}", new TargetSummary(target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc));
@@ -146,7 +171,7 @@ app.MapPost(
 
 app.MapPut(
         "/api/targets/{id:guid}",
-        async (Guid id, UpdateTargetRequest dto, NightmareDbContext db, CancellationToken ct) =>
+        async (Guid id, UpdateTargetRequest dto, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
         {
             if (!TargetRootNormalization.TryNormalize(dto.RootDomain, out var root))
                 return Results.BadRequest("root domain required");
@@ -166,19 +191,43 @@ app.MapPut(
             target.RootDomain = root;
             target.GlobalMaxDepth = depth;
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
-            return Results.Ok(new TargetSummary(target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc));
+            var summary = new TargetSummary(target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc);
+            await hub.Clients.All.SendAsync(
+                    DiscoveryHubEvents.DomainEvent,
+                    new LiveUiEventDto(
+                        "TargetUpdated",
+                        target.Id,
+                        target.Id,
+                        "targets",
+                        $"Target updated: {target.RootDomain}",
+                        DateTimeOffset.UtcNow),
+                    cancellationToken: ct)
+                .ConfigureAwait(false);
+            return Results.Ok(summary);
         })
     .WithName("UpdateTarget");
 
 app.MapDelete(
         "/api/targets/{id:guid}",
-        async (Guid id, NightmareDbContext db, CancellationToken ct) =>
+        async (Guid id, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
         {
             var target = await db.Targets.FirstOrDefaultAsync(t => t.Id == id, ct).ConfigureAwait(false);
             if (target is null)
                 return Results.NotFound();
+            var rootDomain = target.RootDomain;
             db.Targets.Remove(target);
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            await hub.Clients.All.SendAsync(
+                    DiscoveryHubEvents.DomainEvent,
+                    new LiveUiEventDto(
+                        "TargetDeleted",
+                        id,
+                        id,
+                        "targets",
+                        $"Target deleted: {rootDomain}",
+                        DateTimeOffset.UtcNow),
+                    cancellationToken: ct)
+                .ConfigureAwait(false);
             return Results.NoContent();
         })
     .WithName("DeleteTarget");
@@ -304,7 +353,18 @@ app.MapPost(
                             Producer: "command-center"),
                         ct)
                     .ConfigureAwait(false);
-                await hub.Clients.All.SendAsync("TargetQueued", target.Id, target.RootDomain, cancellationToken: ct)
+                await hub.Clients.All.SendAsync(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
+                    .ConfigureAwait(false);
+                await hub.Clients.All.SendAsync(
+                        DiscoveryHubEvents.DomainEvent,
+                        new LiveUiEventDto(
+                            "TargetCreated",
+                            target.Id,
+                            target.Id,
+                            "targets",
+                            $"Target queued: {target.RootDomain}",
+                            target.CreatedAtUtc),
+                        cancellationToken: ct)
                     .ConfigureAwait(false);
             }
 
@@ -340,7 +400,7 @@ app.MapGet(
 
 app.MapPut(
         "/api/http-request-queue/settings",
-        async (HttpRequestQueueSettingsPatch body, NightmareDbContext db, CancellationToken ct) =>
+        async (HttpRequestQueueSettingsPatch body, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
         {
             var row = await db.HttpRequestQueueSettings.FirstOrDefaultAsync(s => s.Id == 1, ct).ConfigureAwait(false);
             if (row is null)
@@ -357,20 +417,37 @@ app.MapPut(
             row.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            await hub.Clients.All.SendAsync(
+                    DiscoveryHubEvents.DomainEvent,
+                    new LiveUiEventDto(
+                        "QueueSettingsChanged",
+                        null,
+                        null,
+                        "http",
+                        body.Enabled ? "HTTP queue enabled" : "HTTP queue disabled",
+                        row.UpdatedAtUtc),
+                    cancellationToken: ct)
+                .ConfigureAwait(false);
             return Results.NoContent();
         })
     .WithName("UpdateHttpRequestQueueSettings");
 
 app.MapGet(
         "/api/http-request-queue",
-        async (NightmareDbContext db, Guid? targetId, int? take, CancellationToken ct) =>
+        async (NightmareDbContext db, Guid? targetId, bool? includeFailed, int? take, CancellationToken ct) =>
         {
             var limit = Math.Clamp(take ?? 800, 1, 5000);
-            var q = db.HttpRequestQueue.AsNoTracking().OrderByDescending(r => r.CreatedAtUtc).AsQueryable();
+            var q = db.HttpRequestQueue.AsNoTracking().AsQueryable();
             if (targetId is { } tid)
                 q = q.Where(r => r.TargetId == tid);
 
-            var rows = await q.Take(limit)
+            q = includeFailed == true
+                ? q.Where(r => r.State == HttpRequestQueueState.Queued || r.State == HttpRequestQueueState.Failed)
+                : q.Where(r => r.State == HttpRequestQueueState.Queued);
+
+            var rows = await q
+                .OrderByDescending(r => r.CreatedAtUtc)
+                .Take(limit)
                 .Select(r => new HttpRequestQueueRowDto(
                     r.Id,
                     r.AssetId,
@@ -486,7 +563,10 @@ app.MapGet(
         async (NightmareDbContext db, Guid? targetId, int? take, CancellationToken ct) =>
         {
             var limit = Math.Clamp(take ?? 500, 1, 5000);
-            var q = db.Assets.AsNoTracking().OrderByDescending(a => a.DiscoveredAtUtc).AsQueryable();
+            var q = db.Assets.AsNoTracking()
+                .Where(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed)
+                .OrderByDescending(a => a.DiscoveredAtUtc)
+                .AsQueryable();
             if (targetId is { } tid)
                 q = q.Where(a => a.TargetId == tid);
             var rows = await q.Take(limit)
@@ -1013,7 +1093,7 @@ app.MapGet(
 
 app.MapPut(
         "/api/workers/{key}",
-        async (string key, WorkerPatchRequest body, NightmareDbContext db, CancellationToken ct) =>
+        async (string key, WorkerPatchRequest body, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
         {
             var row = await db.WorkerSwitches.FirstOrDefaultAsync(w => w.WorkerKey == key, ct).ConfigureAwait(false);
             if (row is null)
@@ -1021,6 +1101,17 @@ app.MapPut(
             row.IsEnabled = body.Enabled;
             row.UpdatedAtUtc = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            await hub.Clients.All.SendAsync(
+                    DiscoveryHubEvents.DomainEvent,
+                    new LiveUiEventDto(
+                        "WorkerToggleChanged",
+                        null,
+                        null,
+                        "workers",
+                        $"{row.WorkerKey} {(row.IsEnabled ? "enabled" : "disabled")}",
+                        row.UpdatedAtUtc),
+                    cancellationToken: ct)
+                .ConfigureAwait(false);
             return Results.NoContent();
         })
     .WithName("PatchWorker");

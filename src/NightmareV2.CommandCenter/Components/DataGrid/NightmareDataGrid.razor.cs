@@ -6,15 +6,15 @@ namespace NightmareV2.CommandCenter.Components.DataGrid;
 
 /// <summary>
 /// Shared data grid: wraps <see cref="QuickGrid{TGridItem}"/> with toolbar search, optional client paging,
-/// virtualization, scroll presets, optional row grouping (<see cref="GroupKeySelector"/>), and optional
-/// in-grid row filter (<see cref="RowMatches"/>), and an optional visible row count (<see cref="ShowRowCount"/>).
-/// Sorting and column templates use QuickGrid columns; use
-/// <c>GridDateCell</c>, <c>GridCodeCell</c>, <c>GridEllipsisCell</c>, and <c>GridNumberCell</c> for common cell renderings.
+/// virtualization, scroll presets, optional row grouping (<see cref="GroupKeySelector"/>), in-grid row
+/// filtering (<see cref="RowMatches"/>), page-size controls, and a configurable toolbar area.
 /// </summary>
 [CascadingTypeParameter(nameof(TGridItem))]
 public partial class NightmareDataGrid<TGridItem>
 {
     private IReadOnlyList<IGrouping<string, TGridItem>>? _groups;
+    private int _totalRowCount;
+    private int _visibleRowCount;
 
     [Parameter] public IQueryable<TGridItem>? Items { get; set; }
 
@@ -28,6 +28,9 @@ public partial class NightmareDataGrid<TGridItem>
 
     [Parameter] public RenderFragment? ToolbarTemplate { get; set; }
 
+    /// <summary>Advanced grid controls such as column pickers, grouping, density, and column-specific filters.</summary>
+    [Parameter] public RenderFragment? ConfigurationTemplate { get; set; }
+
     [Parameter] public string SearchText { get; set; } = "";
 
     [Parameter] public EventCallback<string> SearchTextChanged { get; set; }
@@ -36,10 +39,14 @@ public partial class NightmareDataGrid<TGridItem>
 
     [Parameter] public bool ShowSearch { get; set; } = true;
 
-    /// <summary>When null, toolbar is shown if search, pagination, or <see cref="ToolbarTemplate"/> is used.</summary>
+    /// <summary>When null, toolbar is shown if search, pagination, config, or <see cref="ToolbarTemplate"/> is used.</summary>
     [Parameter] public bool? ShowToolbar { get; set; }
 
     [Parameter] public PaginationState? Pagination { get; set; }
+
+    [Parameter] public bool ShowPageSizePicker { get; set; } = true;
+
+    [Parameter] public IReadOnlyList<int> PageSizeOptions { get; set; } = [25, 50, 100, 250];
 
     [Parameter] public bool Virtualize { get; set; }
 
@@ -61,16 +68,24 @@ public partial class NightmareDataGrid<TGridItem>
 
     [Parameter] public int? HostTabIndex { get; set; }
 
+    [Parameter] public bool IsLoading { get; set; }
+
+    [Parameter] public string EmptyText { get; set; } = "No rows to display.";
+
     [Parameter(CaptureUnmatchedValues = true)]
     public Dictionary<string, object>? AdditionalAttributes { get; set; }
 
-    /// <summary>When true, shows the number of rows after search / <see cref="RowMatches"/> filtering (same set passed to QuickGrid).</summary>
+    /// <summary>When true, shows the number of rows after search / <see cref="RowMatches"/> filtering.</summary>
     [Parameter] public bool ShowRowCount { get; set; } = true;
 
-    private int _visibleRowCount;
-
     private bool ToolbarVisible =>
-        ShowToolbar ?? (ShowSearch || Pagination is not null || ToolbarTemplate is not null);
+        ShowToolbar ?? (ShowSearch || Pagination is not null || ConfigurationTemplate is not null || ToolbarTemplate is not null);
+
+    private bool HasConfiguration => ConfigurationTemplate is not null;
+
+    private bool EffectiveVirtualize => Virtualize && GroupKeySelector is null;
+
+    private bool CanPage => Pagination is not null && !EffectiveVirtualize && GroupKeySelector is null;
 
     private string HostCssClasses
     {
@@ -84,7 +99,7 @@ public partial class NightmareDataGrid<TGridItem>
                 NightmareDataGridScrollPreset.Virtualized => "nightmare-dg-host vq",
                 _ => "nightmare-dg-host",
             };
-            if (Virtualize && ScrollPreset != NightmareDataGridScrollPreset.Virtualized)
+            if (EffectiveVirtualize && ScrollPreset != NightmareDataGridScrollPreset.Virtualized)
                 scroll += " vq";
             return scroll;
         }
@@ -92,6 +107,9 @@ public partial class NightmareDataGrid<TGridItem>
 
     protected override void OnParametersSet()
     {
+        var baseItems = Items ?? Enumerable.Empty<TGridItem>().AsQueryable();
+        _totalRowCount = baseItems.Count();
+
         if (GroupKeySelector is null)
         {
             _groups = null;
@@ -102,7 +120,7 @@ public partial class NightmareDataGrid<TGridItem>
         var list = GetEffectiveItems().ToList();
         _visibleRowCount = list.Count;
         _groups = list
-            .GroupBy(GroupKeySelector, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(row => GroupKeySelector(row) ?? "Unassigned", StringComparer.OrdinalIgnoreCase)
             .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -115,11 +133,25 @@ public partial class NightmareDataGrid<TGridItem>
         return q;
     }
 
-    private PaginationState? EffectivePagination => Virtualize ? null : Pagination;
+    private PaginationState? EffectivePagination => CanPage ? Pagination : null;
 
-    private Task OnSearchInput(ChangeEventArgs e)
+    private async Task OnSearchInput(ChangeEventArgs e)
     {
         SearchText = e.Value?.ToString() ?? "";
-        return SearchTextChanged.InvokeAsync(SearchText);
+        if (Pagination is not null)
+            await Pagination.SetCurrentPageIndexAsync(0).ConfigureAwait(false);
+        await SearchTextChanged.InvokeAsync(SearchText).ConfigureAwait(false);
+    }
+
+    private async Task OnPageSizeChanged(ChangeEventArgs e)
+    {
+        if (Pagination is null)
+            return;
+
+        if (int.TryParse(e.Value?.ToString(), out var pageSize) && pageSize > 0)
+        {
+            Pagination.ItemsPerPage = pageSize;
+            await Pagination.SetCurrentPageIndexAsync(0).ConfigureAwait(false);
+        }
     }
 }

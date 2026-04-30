@@ -6,6 +6,19 @@ public static class GridTextFilter
     {
         if (string.IsNullOrWhiteSpace(filter))
             return true;
-        return value?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false;
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var tokens = filter.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0)
+            return true;
+
+        foreach (var token in tokens)
+        {
+            if (!value.Contains(token, StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+
+        return true;
     }
 }

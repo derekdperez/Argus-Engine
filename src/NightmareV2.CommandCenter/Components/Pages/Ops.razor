@@ -1,269 +1,667 @@
 @page "/ops"
 @rendermode InteractiveServer
+@using System.Net
 @using System.Net.Http.Json
 @using NightmareV2.CommandCenter.DataMaintenance
 @using NightmareV2.CommandCenter.Models
+@using NightmareV2.CommandCenter.Realtime
 @using static Microsoft.AspNetCore.Components.QuickGrid.SortDirection
 @implements IDisposable
 @inject HttpClient Http
+@inject IJSRuntime Js
+@inject DiscoveryRealtimeClient Realtime
 
 <PageTitle>Operations · Nightmare v2</PageTitle>
 
-<h1>Operations</h1>
-
-<section class="panel">
-    @if (_overview is null)
-    {
-        <p>Loading summary…</p>
-    }
-    else
-    {
-        <div class="stat-grid">
-            <div class="stat-card">
-                <div class="stat-label">Total targets</div>
-                <div class="stat-value">@_overview.TotalTargets</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Total assets confirmed</div>
-                <div class="stat-value">@_overview.TotalAssetsConfirmed</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Total URL assets</div>
-                <div class="stat-value">@_overview.TotalUrlAssets</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">URLs from fetched pages</div>
-                <div class="stat-value">@_overview.UrlsFromFetchedPages</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">URLs from scripts</div>
-                <div class="stat-value">@_overview.UrlsFromScripts</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">URLs guessed via wordlist</div>
-                <div class="stat-value">@_overview.UrlsGuessedWithWordlist</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Domain with most assets</div>
-                <div class="stat-value small">@(_overview.TopDomainByAssets ?? "—") (@_overview.TopDomainAssetCount)</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Domains with 10+ assets</div>
-                <div class="stat-value">@_overview.DomainsWith10OrMoreAssets</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Domains with &lt;10 assets</div>
-                <div class="stat-value">@_overview.DomainsWith10OrFewerAssets</div>
+<div class="page-shell ops-page">
+    <section class="page-hero ops-hero">
+        <div>
+            <p class="eyebrow">Command center</p>
+            <h1>Operations</h1>
+            <p class="hero-copy">Live reconnaissance controls, event-driven telemetry, worker toggles, and high-volume grids in one workspace.</p>
+            <div class="hero-meta">
+                <span class="live-pill @LiveStateCss">@Realtime.State</span>
+                <span>@LiveStatusText</span>
+                @if (_lastLiveEventUtc is not null)
+                {
+                    <span>Last event @_lastLiveEventUtc.Value.ToLocalTime().ToString("g")</span>
+                }
             </div>
         </div>
-    }
-</section>
+        <div class="hero-actions">
+            <button type="button" class="btn primary" disabled="@_loadingAll" @onclick="ReloadAllAsync">Refresh all</button>
+            <button type="button" class="btn" @onclick="StartRealtimeAsync">Reconnect live updates</button>
+            <label class="switch-row">
+                <input type="checkbox" @bind="_autoRefresh" />
+                <span>Auto-apply live updates</span>
+            </label>
+        </div>
+    </section>
 
-<section class="panel">
-    <h2>Assets</h2>
-    @if (_maintenanceStatus is { Enabled: true })
+    <section class="stat-grid ops-stat-grid" aria-label="Operations summary">
+        @if (_overview is null)
+        {
+            <div class="stat-card wide">
+                <div class="stat-label">Summary</div>
+                <div class="stat-value small">Loading operational snapshot…</div>
+            </div>
+        }
+        else
+        {
+            <div class="stat-card">
+                <div class="stat-label">Targets</div>
+                <div class="stat-value">@_overview.TotalTargets.ToString("N0")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Confirmed assets</div>
+                <div class="stat-value">@_overview.TotalAssetsConfirmed.ToString("N0")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">URL assets</div>
+                <div class="stat-value">@_overview.TotalUrlAssets.ToString("N0")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">HTTP backlog</div>
+                <div class="stat-value">@(_queueMetrics?.BacklogCount.ToString("N0") ?? "—")</div>
+            </div>
+            <div class="stat-card wide">
+                <div class="stat-label">Top domain</div>
+                <div class="stat-value small">@(_overview.TopDomainByAssets ?? "—") (@_overview.TopDomainAssetCount.ToString("N0") assets)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Live events seen</div>
+                <div class="stat-value">@_liveEventCount.ToString("N0")</div>
+            </div>
+        }
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
     {
-        <div class="row" style="align-items:flex-end">
-            @if (_maintenanceStatus.ApiKeyConfigured)
-            {
+        <div class="alert">@_statusMessage</div>
+    }
+
+    <section class="ops-layout-grid">
+        <section class="panel ops-primary-panel">
+            <div class="section-heading">
                 <div>
-                    <label>Maintenance API key</label>
-                    <input type="password" class="ops-filter" style="min-width:16rem" @bind="_maintenanceApiKey" autocomplete="off" />
+                    <p class="eyebrow">Scope</p>
+                    <h2>Targets</h2>
+                </div>
+                <span class="muted">@_targets.Count.ToString("N0") loaded</span>
+            </div>
+
+            <div class="ops-card-row">
+                <EditForm Model="_targetCreateForm" OnValidSubmit="CreateTargetAsync" FormName="@OpsTargetCreateFormName" method="post" class="inline-form">
+                    <label>
+                        <span>Root domain</span>
+                        <InputText @bind-Value="_targetCreateForm.RootDomain" placeholder="example.com" />
+                    </label>
+                    <label class="short-field">
+                        <span>Depth</span>
+                        <InputNumber @bind-Value="_targetCreateForm.GlobalMaxDepth" />
+                    </label>
+                    <button type="submit" class="btn primary" disabled="@_targetCreateBusy">@(_targetCreateBusy ? "Queueing…" : "Queue target")</button>
+                </EditForm>
+
+                <div class="filter-cluster">
+                    <label>
+                        <span>Active target filter</span>
+                        <select @bind="_targetFilter" @bind:after="ReloadTargetScopedAsync">
+                            <option value="">All targets</option>
+                            @foreach (var t in _targets.OrderBy(t => t.RootDomain, StringComparer.OrdinalIgnoreCase))
+                            {
+                                <option value="@t.Id.ToString()">@t.RootDomain</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+            </div>
+
+            @if (_targetEditing is not null)
+            {
+                <div class="edit-drawer">
+                    <EditForm Model="_targetEditing" OnValidSubmit="SaveTargetEditAsync" FormName="@OpsTargetEditFormName" method="post" class="inline-form">
+                        <label>
+                            <span>Edit root domain</span>
+                            <InputText @bind-Value="_targetEditing.RootDomain" />
+                        </label>
+                        <label class="short-field">
+                            <span>Depth</span>
+                            <InputNumber @bind-Value="_targetEditing.GlobalMaxDepth" />
+                        </label>
+                        <button type="submit" class="btn primary">Save target</button>
+                        <button type="button" class="btn ghost" @onclick="CancelTargetEdit">Cancel</button>
+                    </EditForm>
                 </div>
             }
-            <div>
-                <label>Confirm all-target delete phrase</label>
-                <input type="text" class="ops-filter" style="min-width:16rem" @bind="_phraseClearTargets" placeholder="@DataMaintenanceEndpoints.PhraseClearAllTargets" />
+
+            <NightmareDataGrid TGridItem="TargetSummary"
+                               Items="FilteredOpsTargets"
+                               @bind-SearchText="_targetSearch"
+                               SearchPlaceholder="Search targets by domain or id…"
+                               ScrollPreset="@(_targetVirtualize ? NightmareDataGridScrollPreset.Virtualized : NightmareDataGridScrollPreset.Medium)"
+                               Virtualize="@(_targetVirtualize && TargetGroupKeySelector is null)"
+                               Pagination="_targetPagination"
+                               ItemSize="44"
+                               ItemKey="@(r => r.Id)"
+                               OverscanCount="8"
+                               RowMatches="@TargetRowMatches"
+                               IsLoading="@_targetsLoading"
+                               EmptyText="No targets match the current filters.">
+                <ConfigurationTemplate>
+                    <div class="grid-config">
+                        <label>
+                            <span>Root domain filter</span>
+                            <input type="text" class="ops-filter" @bind="_targetRootFilter" />
+                        </label>
+                        <label>
+                            <span>Depth filter</span>
+                            <input type="text" class="ops-filter" @bind="_targetDepthFilter" />
+                        </label>
+                        <label>
+                            <span>Group by</span>
+                            <select @bind="_targetGroupBy">
+                                <option value="">No grouping</option>
+                                <option value="Depth">Max depth</option>
+                                <option value="Created">Created day</option>
+                            </select>
+                        </label>
+                        <label class="switch-row">
+                            <input type="checkbox" @bind="_targetVirtualize" />
+                            <span>Virtualized rows</span>
+                        </label>
+                        <button type="button" class="btn ghost" @onclick="ClearTargetFilters">Clear filters</button>
+                    </div>
+                </ConfigurationTemplate>
+                <ChildContent>
+                    <TemplateColumn Title="Root domain" Context="row" SortBy="@SortTargetRoot">
+                        <strong><GridCodeCell Text="@row.RootDomain" /></strong>
+                    </TemplateColumn>
+                    <PropertyColumn Title="Max depth" Property="@(row => row.GlobalMaxDepth)" Sortable="true" />
+                    <TemplateColumn Title="Created (UTC)" Context="row" SortBy="@SortTargetCreated">
+                        <GridDateCell Value="@row.CreatedAtUtc" />
+                    </TemplateColumn>
+                    <TemplateColumn Title="Actions" Context="row">
+                        <div class="row-actions">
+                            <button type="button" class="btn small" @onclick="@(() => StartTargetEdit(row))">Edit</button>
+                            <button type="button" class="btn small danger" @onclick="@(() => DeleteTargetAsync(row))">Delete</button>
+                        </div>
+                    </TemplateColumn>
+                </ChildContent>
+            </NightmareDataGrid>
+        </section>
+
+        <aside class="panel ops-side-panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Realtime</p>
+                    <h2>Event feed</h2>
+                </div>
+                <span class="muted">@_liveEvents.Count.ToString("N0") retained</span>
             </div>
-            <button type="button" disabled="@_maintenanceBusy" @onclick="ClearAllTargetsAsync">Delete all targets</button>
-        </div>
-        <div class="row" style="align-items:flex-end">
-            <div>
-                <label>Confirm all-assets delete phrase</label>
-                <input type="text" class="ops-filter" style="min-width:16rem" @bind="_phraseClearAssets" placeholder="@DataMaintenanceEndpoints.PhraseClearAllAssets" />
+            @if (_liveEvents.Count == 0)
+            {
+                <p class="muted">No pushed events received in this browser session yet.</p>
+            }
+            else
+            {
+                <ol class="event-feed">
+                    @foreach (var evt in _liveEvents.Take(12))
+                    {
+                        <li>
+                            <span class="event-kind">@evt.Kind</span>
+                            <span class="event-summary">@evt.Summary</span>
+                            <time>@evt.OccurredAtUtc.ToLocalTime().ToString("T")</time>
+                        </li>
+                    }
+                </ol>
+            }
+        </aside>
+    </section>
+
+    <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Inventory</p>
+                    <h2>Verified assets</h2>
+                </div>
+                <button type="button" class="btn" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">Refresh assets</button>
             </div>
-            <button type="button" disabled="@_maintenanceBusy" @onclick="ClearAllAssetsAsync">Delete all assets</button>
-        </div>
-        <div class="row" style="align-items:flex-end">
-            <div>
-                <label>Domain root</label>
-                <input type="text" class="ops-filter" style="min-width:12rem" @bind="_phraseClearDomainRoot" placeholder="example.com" />
-            </div>
-            <div>
-                <label>Confirm domain delete phrase</label>
-                <input type="text" class="ops-filter" style="min-width:18rem" @bind="_phraseClearDomain" placeholder="@DataMaintenanceEndpoints.PhraseClearAssetsForDomain" />
-            </div>
-            <button type="button" disabled="@_maintenanceBusy" @onclick="ClearAssetsForDomainAsync">Delete assets for domain</button>
-        </div>
-        <div class="row" style="align-items:flex-end">
-            <div>
-                <label>Asset kind (e.g. Url)</label>
-                <input type="text" class="ops-filter" style="min-width:10rem" @bind="_filterDeleteKind" />
-            </div>
-            <div>
-                <label>Status (Queued/Confirmed/NonExistent)</label>
-                <input type="text" class="ops-filter" style="min-width:12rem" @bind="_filterDeleteStatus" />
-            </div>
-            <div>
-                <label>Found by contains</label>
-                <input type="text" class="ops-filter" style="min-width:12rem" @bind="_filterDeleteDiscoveredBy" />
-            </div>
-            <div>
-                <label>Confirm filtered delete phrase</label>
-                <input type="text" class="ops-filter" style="min-width:18rem" @bind="_phraseClearFiltered" placeholder="@DataMaintenanceEndpoints.PhraseClearAssetsFiltered" />
-            </div>
-            <button type="button" disabled="@_maintenanceBusy" @onclick="ClearAssetsFilteredAsync">Delete filtered assets</button>
-        </div>
-        @if (!string.IsNullOrWhiteSpace(_maintenanceMessage))
+
+        @if (_maintenanceStatus is { Enabled: true })
         {
-            <p class="muted">@_maintenanceMessage</p>
+            <details class="danger-zone">
+                <summary>Maintenance danger zone</summary>
+                <div class="danger-zone-body">
+                    @if (_maintenanceStatus.ApiKeyConfigured)
+                    {
+                        <label>
+                            <span>Maintenance API key</span>
+                            <input type="password" class="ops-filter" @bind="_maintenanceApiKey" autocomplete="off" />
+                        </label>
+                    }
+                    <label>
+                        <span>Confirm all-target delete phrase</span>
+                        <input type="text" class="ops-filter" @bind="_phraseClearTargets" placeholder="@DataMaintenanceEndpoints.PhraseClearAllTargets" />
+                    </label>
+                    <button type="button" class="btn danger" disabled="@_maintenanceBusy" @onclick="ClearAllTargetsAsync">Delete all targets</button>
+                    <label>
+                        <span>Confirm all-assets delete phrase</span>
+                        <input type="text" class="ops-filter" @bind="_phraseClearAssets" placeholder="@DataMaintenanceEndpoints.PhraseClearAllAssets" />
+                    </label>
+                    <button type="button" class="btn danger" disabled="@_maintenanceBusy" @onclick="ClearAllAssetsAsync">Delete all assets</button>
+                    <label>
+                        <span>Domain root</span>
+                        <input type="text" class="ops-filter" @bind="_phraseClearDomainRoot" placeholder="example.com" />
+                    </label>
+                    <label>
+                        <span>Confirm domain delete phrase</span>
+                        <input type="text" class="ops-filter" @bind="_phraseClearDomain" placeholder="@DataMaintenanceEndpoints.PhraseClearAssetsForDomain" />
+                    </label>
+                    <button type="button" class="btn danger" disabled="@_maintenanceBusy" @onclick="ClearAssetsForDomainAsync">Delete domain assets</button>
+                    <label>
+                        <span>Delete kind</span>
+                        <input type="text" class="ops-filter" @bind="_filterDeleteKind" placeholder="Url" />
+                    </label>
+                    <label>
+                        <span>Delete status</span>
+                        <input type="text" class="ops-filter" @bind="_filterDeleteStatus" placeholder="Queued/Confirmed/NonExistent" />
+                    </label>
+                    <label>
+                        <span>Found by contains</span>
+                        <input type="text" class="ops-filter" @bind="_filterDeleteDiscoveredBy" />
+                    </label>
+                    <label>
+                        <span>Confirm filtered delete phrase</span>
+                        <input type="text" class="ops-filter" @bind="_phraseClearFiltered" placeholder="@DataMaintenanceEndpoints.PhraseClearAssetsFiltered" />
+                    </label>
+                    <button type="button" class="btn danger" disabled="@_maintenanceBusy" @onclick="ClearAssetsFilteredAsync">Delete filtered assets</button>
+                    @if (!string.IsNullOrWhiteSpace(_maintenanceMessage))
+                    {
+                        <p class="muted full-row">@_maintenanceMessage</p>
+                    }
+                </div>
+            </details>
         }
-    }
 
-    <div class="row">
-        <label>Target filter</label>
-        <select @bind="_targetFilter" @bind:after="ReloadTargetScopedAsync">
-            <option value="">All targets</option>
-            @foreach (var t in _targets)
-            {
-                <option value="@t.Id.ToString()">@t.RootDomain</option>
-            }
-        </select>
-        <button type="button" @onclick="ReloadAllAsync">Refresh now</button>
-    </div>
-    <div class="row">
-        <label>Column filters</label>
-        <input type="text" class="ops-filter" placeholder="Kind" @bind="_filterKindCol" />
-        <input type="text" class="ops-filter" placeholder="Status" @bind="_filterStatusCol" />
-        <input type="text" class="ops-filter" placeholder="Raw" @bind="_filterRawCol" />
-        <input type="text" class="ops-filter" placeholder="Pipeline" @bind="_filterPipelineCol" />
-        <input type="text" class="ops-filter" placeholder="How found" @bind="_filterHowFoundCol" />
-        <button type="button" @onclick="ClearAssetFilters">Clear all filters</button>
-    </div>
-    <NightmareDataGrid TGridItem="AssetGridRowDto"
-                       Items="FilteredAssets"
-                       @bind-SearchText="_filterAssets"
-                       SearchPlaceholder="Filter kind, status, raw URL, pipeline, how found…"
-                       ScrollPreset="NightmareDataGridScrollPreset.Tall"
-                       Virtualize="false"
-                       ItemSize="40"
-                       ItemKey="@(a => a.Id)"
-                       OverscanCount="6"
-                       HostTabIndex="@(-1)">
-        <PropertyColumn Title="Discovered (UTC)" Property="@(a => a.DiscoveredAtUtc)" Format="u" Sortable="true" IsDefaultSortColumn="true" InitialSortDirection="Descending" />
-        <PropertyColumn Title="Kind" Property="@(a => a.Kind)" Sortable="true" />
-        <PropertyColumn Title="Status" Property="@(a => a.LifecycleStatus)" Sortable="true" />
-        <PropertyColumn Title="Depth" Property="@(a => a.Depth)" Sortable="true" />
-        <TemplateColumn Title="Raw" Context="a" SortBy="@(GridSort<AssetGridRowDto>.ByAscending(x => x.RawValue))">
-            @{
-                var href = ToLiveHref(a);
-            }
-            @if (string.IsNullOrEmpty(href))
-            {
-                <span>@a.RawValue</span>
-            }
-            else
-            {
-                <a href="@href" target="_blank" rel="noopener noreferrer">@a.RawValue</a>
-            }
-        </TemplateColumn>
-        <PropertyColumn Title="Pipeline" Property="@(a => a.DiscoveredBy)" Sortable="true" />
-        <TemplateColumn Title="How found" Context="a" SortBy="@SortAssetDiscoveryContext">
-            <span title="@a.DiscoveryContext">@(string.IsNullOrWhiteSpace(a.DiscoveryContext) ? "—" : a.DiscoveryContext)</span>
-        </TemplateColumn>
-    </NightmareDataGrid>
-</section>
+        <NightmareDataGrid TGridItem="AssetGridRowDto"
+                           Items="FilteredAssets"
+                           @bind-SearchText="_filterAssets"
+                           SearchPlaceholder="Search kind, status, raw URL, pipeline, canonical key…"
+                           ScrollPreset="@((_assetVirtualize && AssetGroupKeySelector is null) ? NightmareDataGridScrollPreset.Virtualized : NightmareDataGridScrollPreset.Tall)"
+                           Virtualize="@(_assetVirtualize && AssetGroupKeySelector is null)"
+                           Pagination="_assetPagination"
+                           ItemSize="40"
+                           ItemKey="@(a => a.Id)"
+                           OverscanCount="8"
+                           GroupKeySelector="AssetGroupKeySelector"
+                           IsLoading="@_assetsLoading"
+                           EmptyText="No verified assets match the current filters.">
+            <ToolbarTemplate>
+                <label class="compact-field">
+                    <span>Load</span>
+                    <input type="number" min="100" max="5000" step="100" @bind="_assetTake" @bind:after="ReloadAssetsAsync" />
+                </label>
+            </ToolbarTemplate>
+            <ConfigurationTemplate>
+                <div class="grid-config">
+                    <label>
+                        <span>Kind</span>
+                        <input type="text" class="ops-filter" @bind="_filterKindCol" />
+                    </label>
+                    <label>
+                        <span>Status</span>
+                        <input type="text" class="ops-filter" @bind="_filterStatusCol" />
+                    </label>
+                    <label>
+                        <span>Raw/canonical</span>
+                        <input type="text" class="ops-filter" @bind="_filterRawCol" />
+                    </label>
+                    <label>
+                        <span>Pipeline</span>
+                        <input type="text" class="ops-filter" @bind="_filterPipelineCol" />
+                    </label>
+                    <label>
+                        <span>How found</span>
+                        <input type="text" class="ops-filter" @bind="_filterHowFoundCol" />
+                    </label>
+                    <label>
+                        <span>Group by</span>
+                        <select @bind="_assetGroupBy">
+                            <option value="">No grouping</option>
+                            <option value="Kind">Kind</option>
+                            <option value="Status">Status</option>
+                            <option value="Pipeline">Pipeline</option>
+                            <option value="Depth">Depth</option>
+                        </select>
+                    </label>
+                    <fieldset>
+                        <legend>Columns</legend>
+                        <label class="switch-row"><input type="checkbox" @bind="_showAssetDepth" /><span>Depth</span></label>
+                        <label class="switch-row"><input type="checkbox" @bind="_showAssetCanonical" /><span>Canonical key</span></label>
+                        <label class="switch-row"><input type="checkbox" @bind="_showAssetPipeline" /><span>Pipeline</span></label>
+                        <label class="switch-row"><input type="checkbox" @bind="_showAssetHowFound" /><span>How found</span></label>
+                    </fieldset>
+                    <label class="switch-row">
+                        <input type="checkbox" @bind="_assetVirtualize" />
+                        <span>Virtualized rows</span>
+                    </label>
+                    <button type="button" class="btn ghost" @onclick="ClearAssetFilters">Clear filters</button>
+                </div>
+            </ConfigurationTemplate>
+            <ChildContent>
+                <PropertyColumn Title="Discovered (UTC)" Property="@(a => a.DiscoveredAtUtc)" Format="u" Sortable="true" IsDefaultSortColumn="true" InitialSortDirection="Descending" />
+                <PropertyColumn Title="Kind" Property="@(a => a.Kind)" Sortable="true" />
+                <PropertyColumn Title="Status" Property="@(a => a.LifecycleStatus)" Sortable="true" />
+                @if (_showAssetDepth)
+                {
+                    <PropertyColumn Title="Depth" Property="@(a => a.Depth)" Sortable="true" />
+                }
+                <TemplateColumn Title="Raw" Context="a" SortBy="@(GridSort<AssetGridRowDto>.ByAscending(x => x.RawValue))">
+                    @{
+                        var href = ToLiveHref(a);
+                    }
+                    @if (string.IsNullOrEmpty(href))
+                    {
+                        <GridEllipsisCell Text="@a.RawValue" Title="@a.RawValue" />
+                    }
+                    else
+                    {
+                        <a href="@href" target="_blank" rel="noopener noreferrer"><GridEllipsisCell Text="@a.RawValue" Title="@a.RawValue" /></a>
+                    }
+                </TemplateColumn>
+                @if (_showAssetCanonical)
+                {
+                    <TemplateColumn Title="Canonical" Context="a" SortBy="@(GridSort<AssetGridRowDto>.ByAscending(x => x.CanonicalKey))">
+                        <GridCodeCell Text="@a.CanonicalKey" />
+                    </TemplateColumn>
+                }
+                @if (_showAssetPipeline)
+                {
+                    <PropertyColumn Title="Pipeline" Property="@(a => a.DiscoveredBy)" Sortable="true" />
+                }
+                @if (_showAssetHowFound)
+                {
+                    <TemplateColumn Title="How found" Context="a" SortBy="@SortAssetDiscoveryContext">
+                        <GridEllipsisCell Text="@a.DiscoveryContext" Title="@a.DiscoveryContext" />
+                    </TemplateColumn>
+                }
+            </ChildContent>
+        </NightmareDataGrid>
+    </section>
 
-<section class="panel">
-    <h2>HTTP Request Queue</h2>
-    @if (_queueSettings is not null)
-    {
-        <div class="row" style="align-items:flex-end">
-            <button type="button" disabled="@_queueSettingsBusy" @onclick="ToggleHttpQueueAsync">
-                @(_queueSettings.Enabled ? "Disable new requests" : "Enable new requests")
-            </button>
-            <div>
-                <label>Global req/min</label>
-                <input type="number" min="1" class="ops-filter" @bind="_queueGlobalRequestsPerMinute" />
+    <section class="ops-layout-grid">
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">HTTP</p>
+                    <h2>Request queue</h2>
+                </div>
+                <button type="button" class="btn" @onclick="ReloadHttpQueueAsync" disabled="@_queueLoading">Refresh queue</button>
             </div>
-            <div>
-                <label>Per-domain req/min</label>
-                <input type="number" min="1" class="ops-filter" @bind="_queuePerDomainRequestsPerMinute" />
-            </div>
-            <div>
-                <label>Max concurrency</label>
-                <input type="number" min="1" class="ops-filter" @bind="_queueMaxConcurrency" />
-            </div>
-            <div>
-                <label>Timeout seconds</label>
-                <input type="number" min="5" max="300" class="ops-filter" @bind="_queueRequestTimeoutSeconds" />
-            </div>
-            <button type="button" disabled="@_queueSettingsBusy" @onclick="SaveHttpQueueSettingsAsync">Save queue settings</button>
-        </div>
-        <p class="muted">Queue is @(_queueSettings.Enabled ? "enabled" : "disabled"); updated @(_queueSettings.UpdatedAtUtc.ToString("u")). @_queueSettingsMessage</p>
-    }
-    <div class="row">
-        <label>Queue column filters</label>
-        <input type="text" class="ops-filter" placeholder="Kind" @bind="_filterQueueKindCol" />
-        <input type="text" class="ops-filter" placeholder="URL/domain" @bind="_filterQueueRawCol" />
-        <input type="text" class="ops-filter" placeholder="State" @bind="_filterQueuePipelineCol" />
-        <button type="button" @onclick="ClearQueueFilters">Clear all filters</button>
-    </div>
-    <NightmareDataGrid TGridItem="HttpRequestQueueRowDto"
-                       Items="FilteredRequestQueue"
-                       @bind-SearchText="_filterQueueSearch"
-                       SearchPlaceholder="Filter queue rows…"
-                       ScrollPreset="NightmareDataGridScrollPreset.Medium"
-                       Virtualize="false"
-                       ItemSize="40"
-                       ItemKey="@(q => q.Id)"
-                       OverscanCount="6"
-                       HostTabIndex="@(-1)">
-        <PropertyColumn Title="Created (UTC)" Property="@(q => q.CreatedAtUtc)" Format="u" Sortable="true" IsDefaultSortColumn="true" InitialSortDirection="Descending" />
-        <PropertyColumn Title="State" Property="@(q => q.State)" Sortable="true" />
-        <PropertyColumn Title="Kind" Property="@(q => q.AssetKind)" Sortable="true" />
-        <TemplateColumn Title="Request URL" Context="q" SortBy="@(GridSort<HttpRequestQueueRowDto>.ByAscending(x => x.RequestUrl))">
-            @{
-                var href = ToLiveHref(q);
-            }
-            @if (string.IsNullOrEmpty(href))
+
+            @if (_queueSettings is not null)
             {
-                <span>@q.RequestUrl</span>
+                <div class="settings-strip">
+                    <button type="button" class="@QueueToggleButtonClass" disabled="@_queueSettingsBusy" @onclick="ToggleHttpQueueAsync">
+                        @(_queueSettings.Enabled ? "Pause new requests" : "Resume new requests")
+                    </button>
+                    <label>
+                        <span>Global req/min</span>
+                        <input type="number" min="1" @bind="_queueGlobalRequestsPerMinute" />
+                    </label>
+                    <label>
+                        <span>Per-domain req/min</span>
+                        <input type="number" min="1" @bind="_queuePerDomainRequestsPerMinute" />
+                    </label>
+                    <label>
+                        <span>Max concurrency</span>
+                        <input type="number" min="1" @bind="_queueMaxConcurrency" />
+                    </label>
+                    <label>
+                        <span>Timeout sec</span>
+                        <input type="number" min="5" max="300" @bind="_queueRequestTimeoutSeconds" />
+                    </label>
+                    <button type="button" class="btn primary" disabled="@_queueSettingsBusy" @onclick="SaveHttpQueueSettingsAsync">Save</button>
+                </div>
+                <p class="muted">Queue is @(_queueSettings.Enabled ? "enabled" : "disabled"); updated @_queueSettings.UpdatedAtUtc.ToString("u"). @_queueSettingsMessage</p>
             }
-            else
-            {
-                <a href="@href" target="_blank" rel="noopener noreferrer">@q.RequestUrl</a>
-            }
-        </TemplateColumn>
-        <PropertyColumn Title="Domain" Property="@(q => q.DomainKey)" Sortable="true" />
-        <PropertyColumn Title="Attempts" Property="@(q => q.AttemptCount)" Sortable="true" />
-        <PropertyColumn Title="HTTP" Property="@(q => q.LastHttpStatus)" Sortable="true" />
-        <PropertyColumn Title="Duration ms" Property="@(q => q.DurationMs)" Sortable="true" />
-        <TemplateColumn Title="Last error" Context="q">
-            <span title="@q.LastError">@(string.IsNullOrWhiteSpace(q.LastError) ? "—" : q.LastError)</span>
-        </TemplateColumn>
-    </NightmareDataGrid>
-</section>
+
+            <div class="mini-metrics">
+                <span>Backlog <strong>@(_queueMetrics?.BacklogCount.ToString("N0") ?? "—")</strong></span>
+                <span>In flight <strong>@(_queueMetrics?.InFlightCount.ToString("N0") ?? "—")</strong></span>
+                <span>Failed <strong>@(_queueMetrics?.FailedCount.ToString("N0") ?? "—")</strong></span>
+                <span>Completed/hour <strong>@(_queueMetrics?.CompletedLastHourCount.ToString("N0") ?? "—")</strong></span>
+            </div>
+
+            <NightmareDataGrid TGridItem="HttpRequestQueueRowDto"
+                               Items="FilteredRequestQueue"
+                               @bind-SearchText="_filterQueueSearch"
+                               SearchPlaceholder="Search queue rows by URL, domain, state, HTTP status, error…"
+                               ScrollPreset="@((_queueVirtualize && QueueGroupKeySelector is null) ? NightmareDataGridScrollPreset.Virtualized : NightmareDataGridScrollPreset.Tall)"
+                               Virtualize="@(_queueVirtualize && QueueGroupKeySelector is null)"
+                               Pagination="_queuePagination"
+                               ItemSize="40"
+                               ItemKey="@(q => q.Id)"
+                               OverscanCount="8"
+                               GroupKeySelector="QueueGroupKeySelector"
+                               IsLoading="@_queueLoading"
+                               EmptyText="No queue rows match the current filters.">
+                <ToolbarTemplate>
+                    <label class="compact-field">
+                        <span>Load</span>
+                        <input type="number" min="100" max="5000" step="100" @bind="_queueTake" @bind:after="ReloadHttpQueueAsync" />
+                    </label>
+                    <label class="switch-row">
+                        <input type="checkbox" @bind="_showFailedQueueRequests" @bind:after="ReloadHttpQueueAsync" />
+                        <span>Show failed</span>
+                    </label>
+                </ToolbarTemplate>
+                <ConfigurationTemplate>
+                    <div class="grid-config">
+                        <label>
+                            <span>Kind</span>
+                            <input type="text" class="ops-filter" @bind="_filterQueueKindCol" />
+                        </label>
+                        <label>
+                            <span>URL/domain</span>
+                            <input type="text" class="ops-filter" @bind="_filterQueueRawCol" />
+                        </label>
+                        <label>
+                            <span>State</span>
+                            <input type="text" class="ops-filter" @bind="_filterQueuePipelineCol" />
+                        </label>
+                        <label>
+                            <span>Group by</span>
+                            <select @bind="_queueGroupBy">
+                                <option value="">No grouping</option>
+                                <option value="State">State</option>
+                                <option value="Kind">Kind</option>
+                                <option value="Domain">Domain</option>
+                                <option value="HTTP">HTTP status</option>
+                            </select>
+                        </label>
+                        <fieldset>
+                            <legend>Columns</legend>
+                            <label class="switch-row"><input type="checkbox" @bind="_showQueueDomain" /><span>Domain</span></label>
+                            <label class="switch-row"><input type="checkbox" @bind="_showQueueAttempts" /><span>Attempts</span></label>
+                            <label class="switch-row"><input type="checkbox" @bind="_showQueueTiming" /><span>Timing</span></label>
+                            <label class="switch-row"><input type="checkbox" @bind="_showQueueErrors" /><span>Errors</span></label>
+                        </fieldset>
+                        <label class="switch-row">
+                            <input type="checkbox" @bind="_queueVirtualize" />
+                            <span>Virtualized rows</span>
+                        </label>
+                        <button type="button" class="btn ghost" @onclick="ClearQueueFilters">Clear filters</button>
+                    </div>
+                </ConfigurationTemplate>
+                <ChildContent>
+                    <PropertyColumn Title="Created (UTC)" Property="@(q => q.CreatedAtUtc)" Format="u" Sortable="true" IsDefaultSortColumn="true" InitialSortDirection="Descending" />
+                    <PropertyColumn Title="State" Property="@(q => q.State)" Sortable="true" />
+                    <PropertyColumn Title="Kind" Property="@(q => q.AssetKind)" Sortable="true" />
+                    <TemplateColumn Title="Request URL" Context="q" SortBy="@(GridSort<HttpRequestQueueRowDto>.ByAscending(x => x.RequestUrl))">
+                        @{
+                            var href = ToLiveHref(q);
+                        }
+                        @if (string.IsNullOrEmpty(href))
+                        {
+                            <GridEllipsisCell Text="@q.RequestUrl" Title="@q.RequestUrl" />
+                        }
+                        else
+                        {
+                            <a href="@href" target="_blank" rel="noopener noreferrer"><GridEllipsisCell Text="@q.RequestUrl" Title="@q.RequestUrl" /></a>
+                        }
+                    </TemplateColumn>
+                    @if (_showQueueDomain)
+                    {
+                        <PropertyColumn Title="Domain" Property="@(q => q.DomainKey)" Sortable="true" />
+                    }
+                    @if (_showQueueAttempts)
+                    {
+                        <PropertyColumn Title="Attempts" Property="@(q => q.AttemptCount)" Sortable="true" />
+                        <PropertyColumn Title="Priority" Property="@(q => q.Priority)" Sortable="true" />
+                    }
+                    <PropertyColumn Title="HTTP" Property="@(q => q.LastHttpStatus)" Sortable="true" />
+                    @if (_showQueueTiming)
+                    {
+                        <PropertyColumn Title="Duration ms" Property="@(q => q.DurationMs)" Sortable="true" />
+                        <PropertyColumn Title="Updated (UTC)" Property="@(q => q.UpdatedAtUtc)" Format="u" Sortable="true" />
+                    }
+                    @if (_showQueueErrors)
+                    {
+                        <TemplateColumn Title="Last error" Context="q">
+                            <GridEllipsisCell Text="@q.LastError" Title="@q.LastError" />
+                        </TemplateColumn>
+                    }
+                </ChildContent>
+            </NightmareDataGrid>
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Workers</p>
+                    <h2>Activity + controls</h2>
+                </div>
+                <button type="button" class="btn" @onclick="ReloadVolatileAsync" disabled="@_snapshotLoading">Refresh workers</button>
+            </div>
+
+            <NightmareDataGrid TGridItem="WorkerKindSummaryDto"
+                               Items="WorkerRows"
+                               @bind-SearchText="_workerSearch"
+                               SearchPlaceholder="Search workers…"
+                               ScrollPreset="NightmareDataGridScrollPreset.Medium"
+                               Pagination="_workerPagination"
+                               ItemSize="44"
+                               ItemKey="@(w => w.WorkerKey)"
+                               RowMatches="@WorkerRowMatches"
+                               IsLoading="@_snapshotLoading"
+                               EmptyText="Worker activity has not loaded yet.">
+                <ChildContent>
+                    <TemplateColumn Title="Worker" Context="w" SortBy="@SortWorkerKey">
+                        <strong>@w.WorkerKey</strong>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Enabled" Context="w" SortBy="@SortWorkerEnabled">
+                        <span class="@WorkerBadgeClass(w)">@(w.ToggleEnabled ? "Enabled" : "Paused")</span>
+                    </TemplateColumn>
+                    <PropertyColumn Title="Instances" Property="@(w => w.InstanceCount)" Sortable="true" />
+                    <TemplateColumn Title="Last activity" Context="w" SortBy="@SortWorkerLastActivity">
+                        <GridDateCell Value="@w.LastActivityUtc" />
+                    </TemplateColumn>
+                    <TemplateColumn Title="Rollup" Context="w">
+                        <GridEllipsisCell Text="@w.RollupActivityLabel" Title="@w.RollupActivityLabel" />
+                    </TemplateColumn>
+                    <TemplateColumn Title="Actions" Context="w">
+                        <button type="button" class="btn small" disabled="@(_workerBusyKey == w.WorkerKey)" @onclick="@(() => SetWorkerEnabledAsync(w.WorkerKey, !w.ToggleEnabled))">
+                            @(w.ToggleEnabled ? "Pause" : "Resume")
+                        </button>
+                    </TemplateColumn>
+                </ChildContent>
+            </NightmareDataGrid>
+
+            <h3 class="subhead">Rabbit queues</h3>
+            <NightmareDataGrid TGridItem="RabbitQueueBriefDto"
+                               Items="RabbitQueueRows"
+                               @bind-SearchText="_rabbitSearch"
+                               SearchPlaceholder="Search queues…"
+                               ScrollPreset="NightmareDataGridScrollPreset.Compact"
+                               Pagination="_rabbitPagination"
+                               ItemSize="38"
+                               ItemKey="@(q => q.Name)"
+                               RowMatches="@RabbitRowMatches"
+                               EmptyText="No RabbitMQ queue data is available.">
+                <ChildContent>
+                    <PropertyColumn Title="Queue" Property="@(q => q.Name)" Sortable="true" />
+                    <PropertyColumn Title="Ready" Property="@(q => q.MessagesReady)" Sortable="true" />
+                    <PropertyColumn Title="Unacked" Property="@(q => q.MessagesUnacknowledged)" Sortable="true" />
+                    <PropertyColumn Title="Consumers" Property="@(q => q.Consumers)" Sortable="true" />
+                    <PropertyColumn Title="Worker" Property="@(q => q.LikelyWorkerKey ?? "")" Sortable="true" />
+                </ChildContent>
+            </NightmareDataGrid>
+        </section>
+    </section>
+</div>
 
 @code {
+    private const string OpsTargetCreateFormName = "ops-target-create";
+    private const string OpsTargetEditFormName = "ops-target-edit";
+
     private readonly CancellationTokenSource _pollCts = new();
+    private CancellationTokenSource? _liveReloadCts;
+
     private readonly List<TargetSummary> _targets = [];
     private readonly List<AssetGridRowDto> _assets = [];
     private readonly List<HttpRequestQueueRowDto> _requestQueue = [];
+    private readonly List<LiveUiEventDto> _liveEvents = [];
+
     private OpsOverviewDto? _overview;
+    private OpsSnapshotDto? _snapshot;
+    private HttpRequestQueueMetricsDto? _queueMetrics;
     private HttpRequestQueueSettingsDto? _queueSettings;
+    private MaintenanceStatusDto? _maintenanceStatus;
+
+    [SupplyParameterFromForm(FormName = OpsTargetCreateFormName)]
+    private TargetForm _targetCreateForm { get; set; } = new();
+
+    private TargetEditForm? _targetEditing;
+    private string _targetSearch = "";
+    private string _targetRootFilter = "";
+    private string _targetDepthFilter = "";
+    private string _targetGroupBy = "";
+    private bool _targetVirtualize;
     private string _targetFilter = "";
+
     private string _filterAssets = "";
     private string _filterKindCol = "";
     private string _filterStatusCol = "";
     private string _filterRawCol = "";
     private string _filterPipelineCol = "";
     private string _filterHowFoundCol = "";
+    private string _assetGroupBy = "";
+    private int _assetTake = 2000;
+    private bool _assetVirtualize = true;
+    private bool _showAssetDepth = true;
+    private bool _showAssetCanonical;
+    private bool _showAssetPipeline = true;
+    private bool _showAssetHowFound = true;
+
     private string _filterQueueSearch = "";
     private string _filterQueueKindCol = "";
     private string _filterQueueRawCol = "";
     private string _filterQueuePipelineCol = "";
-    private MaintenanceStatusDto? _maintenanceStatus;
+    private string _queueGroupBy = "";
+    private int _queueTake = 2000;
+    private bool _queueVirtualize = true;
+    private bool _showQueueDomain = true;
+    private bool _showQueueAttempts = true;
+    private bool _showQueueTiming;
+    private bool _showQueueErrors = true;
+    private bool _showFailedQueueRequests;
+
+    private string _workerSearch = "";
+    private string _rabbitSearch = "";
+    private string? _workerBusyKey;
+
     private string _maintenanceApiKey = "";
     private string _phraseClearTargets = "";
     private string _phraseClearAssets = "";
@@ -275,57 +673,222 @@
     private string _filterDeleteDiscoveredBy = "";
     private string _maintenanceMessage = "";
     private bool _maintenanceBusy;
+
+    private bool _loadingAll;
+    private bool _targetsLoading;
+    private bool _assetsLoading;
+    private bool _queueLoading;
+    private bool _snapshotLoading;
+    private bool _targetCreateBusy;
     private bool _queueSettingsBusy;
+    private bool _autoRefresh = true;
+    private string _statusMessage = "";
     private string _queueSettingsMessage = "";
+    private DateTimeOffset? _lastLiveEventUtc;
+    private int _liveEventCount;
+
     private int _queueGlobalRequestsPerMinute = 120;
     private int _queuePerDomainRequestsPerMinute = 6;
     private int _queueMaxConcurrency = 8;
     private int _queueRequestTimeoutSeconds = 30;
 
+    private readonly PaginationState _targetPagination = new() { ItemsPerPage = 25 };
+    private readonly PaginationState _assetPagination = new() { ItemsPerPage = 50 };
+    private readonly PaginationState _queuePagination = new() { ItemsPerPage = 50 };
+    private readonly PaginationState _workerPagination = new() { ItemsPerPage = 10 };
+    private readonly PaginationState _rabbitPagination = new() { ItemsPerPage = 10 };
+
+    private string LiveStateCss => Realtime.IsConnected ? "connected" : "disconnected";
+    private string LiveStatusText => Realtime.IsConnected
+        ? "Subscribed to command-center events"
+        : "Live updates disconnected; fallback refresh is active";
+
+    private string QueueToggleButtonClass => _queueSettings?.Enabled == true ? "btn danger" : "btn primary";
+
+    private static string WorkerBadgeClass(WorkerKindSummaryDto worker) =>
+        worker.ToggleEnabled ? "badge badge-green" : "badge badge-gray";
+
     protected override async Task OnInitializedAsync()
     {
+        Realtime.DomainEventReceived += OnRealtimeEvent;
+        Realtime.ConnectionStateChanged += OnRealtimeConnectionChanged;
+
         await ReloadAllAsync();
-        _ = PollAsync();
+        await StartRealtimeAsync();
+        _ = ResilienceRefreshAsync();
     }
 
-    private async Task PollAsync()
+    private async Task StartRealtimeAsync()
+    {
+        try
+        {
+            await Realtime.EnsureStartedAsync(_pollCts.Token);
+            if (Guid.TryParse(_targetFilter, out var targetId))
+                await Realtime.SubscribeTargetAsync(targetId, _pollCts.Token);
+            _statusMessage = "";
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Live updates are unavailable: {ex.Message}";
+        }
+    }
+
+    private void OnRealtimeConnectionChanged(object? sender, EventArgs e)
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _liveEventCount++;
+            _lastLiveEventUtc = DateTimeOffset.UtcNow;
+            _liveEvents.Insert(0, evt);
+            if (_liveEvents.Count > 100)
+                _liveEvents.RemoveRange(100, _liveEvents.Count - 100);
+            ScheduleLiveReload(evt);
+            StateHasChanged();
+        });
+    }
+
+    private void ScheduleLiveReload(LiveUiEventDto evt)
+    {
+        if (!_autoRefresh)
+            return;
+
+        _liveReloadCts?.Cancel();
+        _liveReloadCts?.Dispose();
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(_pollCts.Token);
+        _liveReloadCts = cts;
+
+        _ = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await Task.Delay(450, cts.Token);
+                    await InvokeAsync(async () =>
+                    {
+                        await ReloadForEventAsync(evt);
+                        StateHasChanged();
+                    });
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            },
+            CancellationToken.None);
+    }
+
+    private async Task ReloadForEventAsync(LiveUiEventDto evt)
+    {
+        if (evt.Scope is "targets")
+        {
+            await ReloadTargetsAsync();
+            await ReloadTargetScopedAsync();
+        }
+        else if (evt.Scope is "assets")
+        {
+            await ReloadAssetsAsync();
+            await ReloadVolatileAsync();
+        }
+        else if (evt.Scope is "http")
+        {
+            await ReloadHttpQueueAsync();
+            await ReloadHttpQueueMetricsAsync();
+            await ReloadVolatileAsync();
+        }
+        else if (evt.Scope is "workers")
+        {
+            await ReloadVolatileAsync();
+        }
+        else
+        {
+            await ReloadVolatileAsync();
+        }
+    }
+
+    private async Task ResilienceRefreshAsync()
     {
         try
         {
             while (!_pollCts.IsCancellationRequested)
             {
-                await Task.Delay(2000, _pollCts.Token);
-                await InvokeAsync(async () =>
+                await Task.Delay(TimeSpan.FromSeconds(30), _pollCts.Token);
+                if (!_autoRefresh)
+                    continue;
+
+                if (!Realtime.IsConnected)
                 {
-                    await ReloadVolatileAsync();
-                    await ReloadAssetsAsync();
-                    await ReloadHttpQueueAsync();
-                    StateHasChanged();
-                });
+                    await InvokeAsync(async () =>
+                    {
+                        await ReloadVolatileAsync();
+                        await ReloadTargetScopedAsync();
+                        StateHasChanged();
+                    });
+                }
             }
         }
         catch (OperationCanceledException)
         {
-            // shutdown
-        }
-    }
-
-    private async Task ReloadVolatileAsync()
-    {
-        try
-        {
-            var overview = await Http.GetFromJsonAsync<OpsOverviewDto>("/api/ops/overview");
-            if (overview is not null)
-                _overview = overview;
-        }
-        catch
-        {
-            // keep last good overview
         }
     }
 
     private async Task ReloadAllAsync()
     {
+        _loadingAll = true;
+        _statusMessage = "";
+        try
+        {
+            await ReloadTargetsAsync();
+            await ReloadTargetScopedAsync();
+            await ReloadHttpQueueSettingsAsync();
+            await ReloadVolatileAsync();
+            await ReloadMaintenanceStatusAsync();
+        }
+        finally
+        {
+            _loadingAll = false;
+        }
+    }
+
+    private async Task ReloadVolatileAsync()
+    {
+        _snapshotLoading = true;
+        try
+        {
+            try
+            {
+                var overview = await Http.GetFromJsonAsync<OpsOverviewDto>("/api/ops/overview");
+                if (overview is not null)
+                    _overview = overview;
+            }
+            catch
+            {
+                // keep last good overview
+            }
+
+            try
+            {
+                _snapshot = await Http.GetFromJsonAsync<OpsSnapshotDto>("/api/ops/snapshot");
+            }
+            catch
+            {
+                // Rabbit management may be unavailable; keep last good snapshot.
+            }
+
+            await ReloadHttpQueueMetricsAsync();
+        }
+        finally
+        {
+            _snapshotLoading = false;
+        }
+    }
+
+    private async Task ReloadTargetsAsync()
+    {
+        _targetsLoading = true;
         try
         {
             var targets = await Http.GetFromJsonAsync<List<TargetSummary>>("/api/targets");
@@ -333,15 +896,19 @@
             if (targets is not null)
                 _targets.AddRange(targets);
         }
-        catch
+        catch (Exception ex)
         {
+            _statusMessage = $"Could not load targets: {ex.Message}";
             _targets.Clear();
         }
+        finally
+        {
+            _targetsLoading = false;
+        }
+    }
 
-        await ReloadAssetsAsync();
-        await ReloadHttpQueueAsync();
-        await ReloadHttpQueueSettingsAsync();
-        await ReloadVolatileAsync();
+    private async Task ReloadMaintenanceStatusAsync()
+    {
         try
         {
             _maintenanceStatus = await Http.GetFromJsonAsync<MaintenanceStatusDto>("/api/maintenance/status");
@@ -354,39 +921,84 @@
 
     private async Task ReloadTargetScopedAsync()
     {
+        if (Guid.TryParse(_targetFilter, out var targetId))
+        {
+            try
+            {
+                await Realtime.SubscribeTargetAsync(targetId, _pollCts.Token);
+            }
+            catch
+            {
+                // Live connection fallback will continue to refresh.
+            }
+        }
+
         await ReloadAssetsAsync();
         await ReloadHttpQueueAsync();
     }
 
     private async Task ReloadAssetsAsync()
     {
+        _assetsLoading = true;
         try
         {
-            var qs = string.IsNullOrEmpty(_targetFilter) ? "?take=800" : $"?targetId={Uri.EscapeDataString(_targetFilter)}&take=800";
+            var take = Math.Clamp(_assetTake, 100, 5000);
+            _assetTake = take;
+            var qs = string.IsNullOrEmpty(_targetFilter)
+                ? $"?take={take}"
+                : $"?targetId={Uri.EscapeDataString(_targetFilter)}&take={take}";
             var list = await Http.GetFromJsonAsync<List<AssetGridRowDto>>($"/api/assets{qs}");
             _assets.Clear();
             if (list is not null)
                 _assets.AddRange(list);
         }
-        catch
+        catch (Exception ex)
         {
+            _statusMessage = $"Could not load assets: {ex.Message}";
             _assets.Clear();
+        }
+        finally
+        {
+            _assetsLoading = false;
         }
     }
 
     private async Task ReloadHttpQueueAsync()
     {
+        _queueLoading = true;
         try
         {
-            var qs = string.IsNullOrEmpty(_targetFilter) ? "?take=800" : $"?targetId={Uri.EscapeDataString(_targetFilter)}&take=800";
+            var take = Math.Clamp(_queueTake, 100, 5000);
+            _queueTake = take;
+            var includeFailed = _showFailedQueueRequests ? "true" : "false";
+            var qs = string.IsNullOrEmpty(_targetFilter)
+                ? $"?take={take}&includeFailed={includeFailed}"
+                : $"?targetId={Uri.EscapeDataString(_targetFilter)}&take={take}&includeFailed={includeFailed}";
             var list = await Http.GetFromJsonAsync<List<HttpRequestQueueRowDto>>($"/api/http-request-queue{qs}");
             _requestQueue.Clear();
             if (list is not null)
                 _requestQueue.AddRange(list);
         }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Could not load HTTP queue: {ex.Message}";
+            _requestQueue.Clear();
+        }
+        finally
+        {
+            _queueLoading = false;
+        }
+    }
+
+    private async Task ReloadHttpQueueMetricsAsync()
+    {
+        try
+        {
+            _queueMetrics = await Http.GetFromJsonAsync<HttpRequestQueueMetricsDto>("/api/http-request-queue/metrics");
+        }
         catch
         {
-            _requestQueue.Clear();
+            _queueMetrics = null;
         }
     }
 
@@ -406,6 +1018,122 @@
         catch
         {
             _queueSettings = null;
+        }
+    }
+
+    private async Task CreateTargetAsync()
+    {
+        if (_targetCreateBusy)
+            return;
+
+        _targetCreateBusy = true;
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.PostAsJsonAsync("/api/targets", new CreateTargetRequest(_targetCreateForm.RootDomain, _targetCreateForm.GlobalMaxDepth));
+            if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict)
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "Target could not be created.");
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            _statusMessage = "Target queued.";
+            _targetCreateForm = new TargetForm { GlobalMaxDepth = _targetCreateForm.GlobalMaxDepth > 0 ? _targetCreateForm.GlobalMaxDepth : 12 };
+            await ReloadTargetsAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = ex.Message;
+        }
+        finally
+        {
+            _targetCreateBusy = false;
+        }
+    }
+
+    private void StartTargetEdit(TargetSummary row)
+    {
+        _targetEditing = new TargetEditForm(row.Id, row.RootDomain, row.GlobalMaxDepth);
+        _statusMessage = "";
+    }
+
+    private void CancelTargetEdit() => _targetEditing = null;
+
+    private async Task SaveTargetEditAsync()
+    {
+        if (_targetEditing is null)
+            return;
+
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.PutAsJsonAsync($"/api/targets/{_targetEditing.Id}", new UpdateTargetRequest(_targetEditing.RootDomain, _targetEditing.GlobalMaxDepth));
+            if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "Root domain is already in use.");
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            _targetEditing = null;
+            _statusMessage = "Target updated.";
+            await ReloadTargetsAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = ex.Message;
+        }
+    }
+
+    private async Task DeleteTargetAsync(TargetSummary row)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", $"Delete target {row.RootDomain}? Related assets and findings are removed with the target.");
+        if (!ok)
+            return;
+
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/targets/{row.Id}");
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                _statusMessage = "Target was already removed.";
+                await ReloadTargetsAsync();
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            if (_targetEditing?.Id == row.Id)
+                _targetEditing = null;
+            if (_targetFilter == row.Id.ToString())
+                _targetFilter = "";
+            _statusMessage = "Target deleted.";
+            await ReloadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = ex.Message;
+        }
+    }
+
+    private async Task SetWorkerEnabledAsync(string workerKey, bool enabled)
+    {
+        _workerBusyKey = workerKey;
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.PutAsJsonAsync($"/api/workers/{Uri.EscapeDataString(workerKey)}", new WorkerPatchRequest(enabled));
+            response.EnsureSuccessStatusCode();
+            await ReloadVolatileAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = ex.Message;
+        }
+        finally
+        {
+            _workerBusyKey = null;
         }
     }
 
@@ -463,6 +1191,14 @@
         }
     }
 
+    private void ClearTargetFilters()
+    {
+        _targetSearch = "";
+        _targetRootFilter = "";
+        _targetDepthFilter = "";
+        _targetGroupBy = "";
+    }
+
     private void ClearAssetFilters()
     {
         _filterAssets = "";
@@ -471,6 +1207,7 @@
         _filterRawCol = "";
         _filterPipelineCol = "";
         _filterHowFoundCol = "";
+        _assetGroupBy = "";
     }
 
     private void ClearQueueFilters()
@@ -479,6 +1216,7 @@
         _filterQueueKindCol = "";
         _filterQueueRawCol = "";
         _filterQueuePipelineCol = "";
+        _queueGroupBy = "";
     }
 
     private async Task<HttpResponseMessage> MaintenancePostAsync<T>(string relativeUri, T body)
@@ -574,5 +1312,39 @@
         }
     }
 
-    public void Dispose() => _pollCts.Cancel();
+    private static async Task<string> ReadResponseMessageAsync(HttpResponseMessage response, string fallback)
+    {
+        var message = await response.Content.ReadAsStringAsync();
+        return string.IsNullOrWhiteSpace(message) ? fallback : message;
+    }
+
+    public sealed class TargetForm
+    {
+        public string RootDomain { get; set; } = "example.com";
+        public int GlobalMaxDepth { get; set; } = 12;
+    }
+
+    private sealed class TargetEditForm
+    {
+        public TargetEditForm(Guid id, string rootDomain, int globalMaxDepth)
+        {
+            Id = id;
+            RootDomain = rootDomain;
+            GlobalMaxDepth = globalMaxDepth;
+        }
+
+        public Guid Id { get; }
+        public string RootDomain { get; set; }
+        public int GlobalMaxDepth { get; set; }
+    }
+
+    public void Dispose()
+    {
+        Realtime.DomainEventReceived -= OnRealtimeEvent;
+        Realtime.ConnectionStateChanged -= OnRealtimeConnectionChanged;
+        _pollCts.Cancel();
+        _pollCts.Dispose();
+        _liveReloadCts?.Cancel();
+        _liveReloadCts?.Dispose();
+    }
 }

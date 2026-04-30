@@ -1,20 +1,26 @@
 ﻿@inherits LayoutComponentBase
 
-<header style="padding:8px 12px;border-bottom:1px solid #ddd">
-    <nav>
-        <a href="/">Home</a>
-        ·
-        <a href="/targets">Targets</a>
-        ·
-        <a href="/ops">Operations</a>
-        ·
-        <a href="/status">System status</a>
-        ·
-        <a href="/high-value-findings">High value findings</a>
+<header class="app-header">
+    <a class="brand" href="/">
+        <span class="brand-mark">N2</span>
+        <span>
+            <strong>Nightmare</strong>
+            <small>Command Center</small>
+        </span>
+    </a>
+    <nav class="app-nav" aria-label="Primary">
+        <NavLink href="/" Match="NavLinkMatch.All">Home</NavLink>
+        <NavLink href="/targets">Targets</NavLink>
+        <NavLink href="/ops">Operations</NavLink>
+        <NavLink href="/events">Events</NavLink>
+        <NavLink href="/status">System status</NavLink>
+        <NavLink href="/high-value-findings">High value findings</NavLink>
     </nav>
 </header>
 
-@Body
+<main class="app-main">
+    @Body
+</main>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.

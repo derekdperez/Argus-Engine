@@ -8,3 +8,4 @@
 - Add SQS/SNS transport side-by-side configuration and phased cutover plan from RabbitMQ.
 - Add integration tests for enum provider jobs using controlled fake tool binaries to validate retry/isolation and outbox emission behavior end-to-end.
 - Consider provider-specific queues (`subdomain-enumeration-subfinder`, `subdomain-enumeration-amass`) if worker pools become specialized by installed tooling.
+- Fix Development service-provider validation for the current `IDbContextFactory<NightmareDbContext>` registration; `dotnet run` in Development fails because singleton services depend on scoped `DbContextOptions<NightmareDbContext>`.

@@ -1,5 +1,27 @@
 # AI Change Log
 
+## 2026-04-30
+
+- Added Command Center Events live trace:
+  - API: `GET /api/events/live`
+  - UI page: `/events`
+  - Shows publish rows newest-first, producer, compact payload data, consuming workers, consume latency, and immediate follow-up publishes linked by event causation.
+  - Why: provide fast end-to-end visibility into event flow and worker reactions.
+- Updated Command Center navigation to include Events.
+- Wrapped existing `NightmareDataGrid` column content in explicit `ChildContent` blocks where named toolbar/config templates are used.
+  - Why: keep existing grid pages compatible with the shared grid component's named child content contract.
+- Validation:
+  - `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded.
+  - `GET http://localhost:5263/events` returned `200 OK` with the app running in Production mode, plain HTTP, and startup DB initialization skipped.
+
+- Tightened Ops grid data boundaries:
+  - `/api/assets` now returns only confirmed/verified assets for the top Ops asset grid.
+  - `/api/http-request-queue` now returns queued request rows by default and can include failed rows with `includeFailed=true`.
+  - Added a `Show failed` checkbox to the Ops request queue toolbar.
+  - Why: keep verified assets separate from pending queue work while preserving access to failed request diagnostics.
+- Validation:
+  - `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded.
+
 ## 2026-04-29
 
 - Standardized event envelope fields across contract events (`EventId`, `CausationId`, `SchemaVersion`, `Producer`; `OccurredAtUtc` exposed consistently).

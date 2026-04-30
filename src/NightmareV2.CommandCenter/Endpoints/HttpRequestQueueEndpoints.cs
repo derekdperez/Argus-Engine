@@ -54,21 +54,18 @@ public static class HttpRequestQueueEndpoints
 
         app.MapGet(
                 "/api/http-request-queue",
-                async (NightmareDbContext db, Guid? targetId, bool? includeFailed, int? take, CancellationToken ct) =>
+                async (NightmareDbContext db, Guid? targetId, bool? includeFailed, bool? includeCompleted, int? take, CancellationToken ct) =>
                 {
                     var limit = Math.Clamp(take ?? 800, 1, 5000);
                     var q = db.HttpRequestQueue.AsNoTracking().AsQueryable();
                     if (targetId is { } tid)
                         q = q.Where(r => r.TargetId == tid);
 
-                    q = includeFailed == true
-                        ? q.Where(r => r.State == HttpRequestQueueState.Queued
-                            || r.State == HttpRequestQueueState.Retry
-                            || r.State == HttpRequestQueueState.InFlight
-                            || r.State == HttpRequestQueueState.Failed)
-                        : q.Where(r => r.State == HttpRequestQueueState.Queued
-                            || r.State == HttpRequestQueueState.Retry
-                            || r.State == HttpRequestQueueState.InFlight);
+                    q = q.Where(r => r.State == HttpRequestQueueState.Queued
+                        || r.State == HttpRequestQueueState.Retry
+                        || r.State == HttpRequestQueueState.InFlight
+                        || (includeFailed == true && r.State == HttpRequestQueueState.Failed)
+                        || (includeCompleted == true && r.State == HttpRequestQueueState.Succeeded));
 
                     var rows = await q
                         .OrderByDescending(r => r.CreatedAtUtc)

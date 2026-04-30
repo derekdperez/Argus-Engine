@@ -228,7 +228,7 @@
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Inventory</p>
-                    <h2>Verified assets</h2>
+                    <h2>Assets</h2>
                 </div>
                 <button type="button" class="btn" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">Refresh assets</button>
             </div>
@@ -325,7 +325,9 @@
             <button type="button" class="btn" @onclick="ExportAssetsCsvAsync">Export CSV</button>
         </div>
 
-        <RadzenDataGrid TItem="AssetGridRowDto"
+        <RadzenDataGrid @ref="_assetGrid"
+                        @key="_assetGridVersion"
+                        TItem="AssetGridRowDto"
                         Data="@RadzenAssets"
                         IsLoading="@_assetsLoading"
                         AllowFiltering="true"
@@ -341,11 +343,11 @@
                         AllowColumnReorder="true"
                         AllowColumnPicking="true"
                         AllowGrouping="true"
-                        GroupPanelText="Drag a column header here to group verified assets"
+                        GroupPanelText="Drag a column header here to group assets"
                         AllowVirtualization="@_assetVirtualize"
                         VirtualizationOverscanCount="12"
                         Density="@_radzenDensity"
-                        EmptyText="No verified assets match the current filters."
+                        EmptyText="No assets match the current filters."
                         Style="height: 640px"
                         class="ops-rz-grid">
             <Columns>
@@ -451,6 +453,10 @@
                     <span>Show failed</span>
                 </label>
                 <label class="switch-row">
+                    <input type="checkbox" @bind="_showCompletedQueueRequests" @bind:after="ReloadHttpQueueAsync" />
+                    <span>Show completed</span>
+                </label>
+                <label class="switch-row">
                     <input type="checkbox" @bind="_queueVirtualize" />
                     <span>Virtualize rows</span>
                 </label>
@@ -465,7 +471,9 @@
                 <button type="button" class="btn" @onclick="ExportQueueCsvAsync">Export CSV</button>
             </div>
 
-            <RadzenDataGrid TItem="HttpRequestQueueRowDto"
+            <RadzenDataGrid @ref="_queueGrid"
+                            @key="_queueGridVersion"
+                            TItem="HttpRequestQueueRowDto"
                             Data="@RadzenRequestQueue"
                             IsLoading="@_queueLoading"
                             AllowFiltering="true"
@@ -640,6 +648,11 @@
     private readonly List<RabbitQueueBriefDto> _rabbitQueues = [];
     private readonly HashSet<Guid> _selectedToolTargetIds = [];
 
+    private RadzenDataGrid<AssetGridRowDto>? _assetGrid;
+    private RadzenDataGrid<HttpRequestQueueRowDto>? _queueGrid;
+    private int _assetGridVersion;
+    private int _queueGridVersion;
+
     private OpsOverviewDto? _overview;
     private OpsSnapshotDto? _snapshot;
     private HttpRequestQueueMetricsDto? _queueMetrics;
@@ -665,7 +678,7 @@
     private string _filterHowFoundCol = "";
     private string _assetGroupBy = "";
     private int _assetTake = 2000;
-    private bool _assetVirtualize = true;
+    private bool _assetVirtualize;
     private bool _showAssetDepth = true;
     private bool _showAssetCanonical;
     private bool _showAssetPipeline = true;
@@ -677,12 +690,13 @@
     private string _filterQueuePipelineCol = "";
     private string _queueGroupBy = "";
     private int _queueTake = 2000;
-    private bool _queueVirtualize = true;
+    private bool _queueVirtualize;
     private bool _showQueueDomain = true;
     private bool _showQueueAttempts = true;
     private bool _showQueueTiming;
     private bool _showQueueErrors = true;
-    private bool _showFailedQueueRequests;
+    private bool _showFailedQueueRequests = true;
+    private bool _showCompletedQueueRequests = true;
 
     private string _workerSearch = "";
     private string _rabbitSearch = "";
@@ -1117,6 +1131,10 @@
             if (list is not null)
                 _assets.AddRange(list);
 
+            _assetsGridVersion++;
+            if (_assetGrid is not null)
+                await _assetGrid.Reload();
+
             _assetsLoadedAtUtc = DateTimeOffset.UtcNow;
         }
         catch (Exception ex)
@@ -1138,13 +1156,18 @@
             var take = Math.Clamp(_queueTake, 100, 5000);
             _queueTake = take;
             var includeFailed = _showFailedQueueRequests ? "true" : "false";
+            var includeCompleted = _showCompletedQueueRequests ? "true" : "false";
             var qs = string.IsNullOrEmpty(_targetFilter)
-                ? $"?take={take}&includeFailed={includeFailed}"
-                : $"?targetId={Uri.EscapeDataString(_targetFilter)}&take={take}&includeFailed={includeFailed}";
+                ? $"?take={take}&includeFailed={includeFailed}&includeCompleted={includeCompleted}"
+                : $"?targetId={Uri.EscapeDataString(_targetFilter)}&take={take}&includeFailed={includeFailed}&includeCompleted={includeCompleted}";
             var list = await Http.GetFromJsonAsync<List<HttpRequestQueueRowDto>>($"/api/http-request-queue{qs}");
             _requestQueue.Clear();
             if (list is not null)
                 _requestQueue.AddRange(list);
+
+            _queueGridVersion++;
+            if (_queueGrid is not null)
+                await _queueGrid.Reload();
 
             _queueLoadedAtUtc = DateTimeOffset.UtcNow;
         }

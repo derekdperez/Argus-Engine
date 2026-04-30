@@ -1,4 +1,5 @@
 using Radzen;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using MassTransit;
@@ -45,11 +46,8 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddRadzenComponents();
 
-builder.Services.AddScoped(sp =>
-{
-    var nav = sp.GetRequiredService<NavigationManager>();
-    return new HttpClient { BaseAddress = new Uri(nav.BaseUri) };
-});
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveCommandCenterApiBaseUri(sp) });
 
 builder.Services.AddNightmareInfrastructure(builder.Configuration);
 builder.Services.AddSignalR();
@@ -97,6 +95,25 @@ if (!app.Environment.IsDevelopment())
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 if (!listenPlainHttp)
     app.UseHttpsRedirection();
+
+app.Use(
+    async (context, next) =>
+    {
+        if (context.Request.Path.Equals("/_framework/blazor.web.js", StringComparison.OrdinalIgnoreCase))
+        {
+            var fallbackPath = ResolveBlazorWebJsPath(app.Environment);
+            if (!string.IsNullOrWhiteSpace(fallbackPath))
+            {
+                context.Response.ContentType = "application/javascript; charset=utf-8";
+                context.Response.Headers["Cache-Control"] = "public,max-age=31536000,immutable";
+                await context.Response.SendFileAsync(fallbackPath, context.RequestAborted).ConfigureAwait(false);
+                return;
+            }
+        }
+
+        await next().ConfigureAwait(false);
+    });
+
 app.UseStaticFiles();
 app.UseAntiforgery();
 
@@ -181,6 +198,124 @@ static DateTimeOffset? MaxUtc(DateTimeOffset? first, DateTimeOffset? second)
     if (second is null)
         return first;
     return first > second ? first : second;
+}
+
+static Uri ResolveCommandCenterApiBaseUri(IServiceProvider services)
+{
+    var configuration = services.GetRequiredService<IConfiguration>();
+
+    var configured = configuration["Nightmare:CommandCenterInternalBaseUrl"];
+    if (TryCreateBaseUri(configured, out var configuredUri))
+        return configuredUri;
+
+    var urls = configuration["ASPNETCORE_URLS"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+    var loopbackUri = TryCreateLoopbackBaseUri(urls);
+    if (loopbackUri is not null)
+        return loopbackUri;
+
+    var httpContext = services.GetService<IHttpContextAccessor>()?.HttpContext;
+    if (httpContext is not null)
+    {
+        var request = httpContext.Request;
+        if (TryCreateBaseUri($"{request.Scheme}://{request.Host}{request.PathBase}/", out var requestUri))
+            return requestUri;
+    }
+
+    var navigation = services.GetService<NavigationManager>();
+    if (TryCreateBaseUri(navigation?.BaseUri, out var navigationUri))
+        return navigationUri;
+
+    return new Uri("http://127.0.0.1:8080/");
+}
+
+static bool TryCreateBaseUri(string? value, out Uri uri)
+{
+    uri = null!;
+    if (string.IsNullOrWhiteSpace(value))
+        return false;
+
+    var trimmed = value.Trim();
+    if (!trimmed.EndsWith('/'))
+        trimmed += "/";
+
+    if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var parsed))
+        return false;
+
+    if (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)
+        return false;
+
+    uri = parsed;
+    return true;
+}
+
+static Uri? TryCreateLoopbackBaseUri(string? urls)
+{
+    if (string.IsNullOrWhiteSpace(urls))
+        return null;
+
+    foreach (var rawUrl in urls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+        if (!Uri.TryCreate(rawUrl.Replace("+", "127.0.0.1").Replace("*", "127.0.0.1"), UriKind.Absolute, out var parsed))
+            continue;
+
+        var host = parsed.Host is "0.0.0.0" or "::" or "[::]"
+            ? "127.0.0.1"
+            : parsed.Host;
+
+        if (!IPAddress.TryParse(host, out var address) || !IPAddress.IsLoopback(address))
+            host = "127.0.0.1";
+
+        var builder = new UriBuilder(parsed)
+        {
+            Host = host,
+        };
+
+        return builder.Uri;
+    }
+
+    return null;
+}
+
+static string? ResolveBlazorWebJsPath(IWebHostEnvironment environment)
+{
+    var candidates = new[]
+    {
+        Path.Combine(environment.WebRootPath ?? "", "_framework", "blazor.web.js"),
+        Path.Combine(AppContext.BaseDirectory, "wwwroot", "_framework", "blazor.web.js"),
+        Path.Combine(AppContext.BaseDirectory, "_framework", "blazor.web.js"),
+    };
+
+    foreach (var candidate in candidates)
+    {
+        if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
+            return candidate;
+    }
+
+    foreach (var root in new[] { AppContext.BaseDirectory, "/usr/share/dotnet" })
+    {
+        var found = FindFirstFile(root, "blazor.web.js");
+        if (found is not null)
+            return found;
+    }
+
+    return null;
+}
+
+static string? FindFirstFile(string root, string fileName)
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+            return null;
+
+        return Directory.EnumerateFiles(root, fileName, SearchOption.AllDirectories)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .FirstOrDefault();
+    }
+    catch
+    {
+        return null;
+    }
 }
 
 static string[] RequiredWorkerKeys() =>
@@ -600,21 +735,18 @@ app.MapPut(
 
 app.MapGet(
         "/api/http-request-queue",
-        async (NightmareDbContext db, Guid? targetId, bool? includeFailed, int? take, CancellationToken ct) =>
+        async (NightmareDbContext db, Guid? targetId, bool? includeFailed, bool? includeCompleted, int? take, CancellationToken ct) =>
         {
             var limit = Math.Clamp(take ?? 800, 1, 5000);
             var q = db.HttpRequestQueue.AsNoTracking().AsQueryable();
             if (targetId is { } tid)
                 q = q.Where(r => r.TargetId == tid);
 
-            q = includeFailed == true
-                ? q.Where(r => r.State == HttpRequestQueueState.Queued
-                    || r.State == HttpRequestQueueState.Retry
-                    || r.State == HttpRequestQueueState.InFlight
-                    || r.State == HttpRequestQueueState.Failed)
-                : q.Where(r => r.State == HttpRequestQueueState.Queued
-                    || r.State == HttpRequestQueueState.Retry
-                    || r.State == HttpRequestQueueState.InFlight);
+            q = q.Where(r => r.State == HttpRequestQueueState.Queued
+                || r.State == HttpRequestQueueState.Retry
+                || r.State == HttpRequestQueueState.InFlight
+                || (includeFailed == true && r.State == HttpRequestQueueState.Failed)
+                || (includeCompleted == true && r.State == HttpRequestQueueState.Succeeded));
 
             var rows = await q
                 .OrderByDescending(r => r.CreatedAtUtc)
@@ -735,7 +867,6 @@ app.MapGet(
         {
             var limit = Math.Clamp(take ?? 500, 1, 5000);
             var q = db.Assets.AsNoTracking()
-                .Where(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed)
                 .OrderByDescending(a => a.DiscoveredAtUtc)
                 .AsQueryable();
             if (targetId is { } tid)

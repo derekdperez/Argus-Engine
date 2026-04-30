@@ -49,6 +49,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080
+# Blazor Server components call this app's own JSON endpoints from inside the container.
+ENV Nightmare__CommandCenterInternalBaseUrl=http://127.0.0.1:8080/
 # Avoid HTTPS redirect/HSTS when only HTTP is bound (matches compose Nightmare__ListenPlainHttp).
 ENV Nightmare__ListenPlainHttp=true
 EXPOSE 8080

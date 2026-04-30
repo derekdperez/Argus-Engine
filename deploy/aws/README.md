@@ -9,6 +9,32 @@ These helpers keep the production stack self-hosted: Postgres, Redis, and Rabbit
 - ECS services are scaled with the included autoscaler script, which reads the app's own HTTP queue API and calls `aws ecs update-service`.
 - `docker-compose.yml` remains the local development deployment.
 
+## HTTP Request Worker Scaling
+
+For high-throughput HTTP request processing, NightmareV2 supports distributed worker deployment:
+
+**📖 See [SCALING_GUIDE.md](./SCALING_GUIDE.md) for comprehensive documentation on:**
+- Local docker-compose deployment with 10 workers
+- EC2-based worker provisioning and deployment
+- Domain-level request rate limiting (1 per domain per minute)
+- Worker health monitoring and troubleshooting
+
+**Quick start:**
+
+```bash
+# Provision 2 new EC2 instances with 10 workers each
+set -a
+. deploy/aws/.env
+set +a
+deploy/aws/provision-ec2-workers.sh
+
+# Deploy and start workers once instances are running
+deploy/aws/deploy-worker-instances.sh <instance-id-1> <instance-id-2>
+
+# Verify workers are running
+curl http://${COMMAND_CENTER_URL}/api/http-request-queue/metrics
+```
+
 ## Required environment
 
 Copy `.env.example` to `.env` and set the values for your AWS account, region, cluster, and repositories.

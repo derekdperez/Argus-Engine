@@ -177,6 +177,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    deploy:
+      replicas: 10
 
   worker-enum:
     image: nightmare-v2/worker-enum:local

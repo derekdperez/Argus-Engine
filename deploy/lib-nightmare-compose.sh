@@ -786,6 +786,42 @@ nightmare_compose_up_redeploy() {
   compose "${args[@]}"
 }
 
+nightmare_compose_force_recreate_services() {
+  local services=("$@")
+  [[ ${#services[@]} -gt 0 ]] || return 0
+
+  local args=(up -d --no-deps --force-recreate)
+  local service include_enum=0 include_spider=0
+
+  for service in "${services[@]}"; do
+    case "$service" in
+      worker-enum) include_enum=1 ;;
+      worker-spider) include_spider=1 ;;
+    esac
+  done
+
+  # Keep explicit replica counts when a scaled service is recreated from a rebuilt image.
+  [[ "$include_enum" == "1" ]] && args+=(--scale "worker-enum=${NIGHTMARE_ENUM_REPLICAS:-10}")
+  [[ "$include_spider" == "1" ]] && args+=(--scale "worker-spider=${NIGHTMARE_SPIDER_REPLICAS:-10}")
+
+  args+=("${services[@]}")
+  echo "Forcing recreated container(s) from current rebuilt image(s): ${services[*]}"
+  compose "${args[@]}"
+}
+
+nightmare_hot_copy_publish_output_to_container() {
+  local service="$1"
+  local cid="$2"
+  local out_abs="$3"
+  local temp_dir="/tmp/nightmare-hot-publish-${service}"
+
+  # Copy into a temporary directory first, then replace /app so removed static assets/Razor bundles
+  # do not remain from the previous publish output.
+  nightmare_docker exec "$cid" sh -lc "rm -rf '$temp_dir' && mkdir -p '$temp_dir'"
+  nightmare_docker cp "$out_abs/." "$cid:$temp_dir/"
+  nightmare_docker exec "$cid" sh -lc "find /app -mindepth 1 -maxdepth 1 -exec rm -rf {} + && cp -a '$temp_dir'/. /app/ && rm -rf '$temp_dir'"
+}
+
 nightmare_publish_service_for_hot_swap() {
   local service="$1"
   local csproj out_rel out_abs uid gid
@@ -814,24 +850,34 @@ nightmare_publish_service_for_hot_swap() {
 nightmare_hot_swap_services() {
   local fallback=()
   local service cid running out_abs
+  local cids=()
+  local running_cids=()
 
   for service in "$@"; do
-    cid="$(compose ps -q "$service" | tail -n 1 || true)"
-    running="false"
-    if [[ -n "$cid" ]]; then
-      running="$(nightmare_docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || echo false)"
-    fi
+    cids=()
+    running_cids=()
+    mapfile -t cids < <(compose ps -q "$service" || true)
 
-    if [[ -z "$cid" || "$running" != "true" ]]; then
-      echo "Hot-swap fallback: $service is not running; it will be rebuilt as an image."
+    for cid in "${cids[@]}"; do
+      [[ -n "$cid" ]] || continue
+      running="$(nightmare_docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || echo false)"
+      if [[ "$running" == "true" ]]; then
+        running_cids+=("$cid")
+      fi
+    done
+
+    if [[ ${#running_cids[@]} -eq 0 ]]; then
+      echo "Hot-swap fallback: $service has no running container; it will be rebuilt as an image."
       fallback+=("$service")
       continue
     fi
 
     nightmare_publish_service_for_hot_swap "$service"
     out_abs="$ROOT/deploy/.hot-publish/$service"
-    echo "Copying publish output into $service container and restarting only that service..."
-    nightmare_docker cp "$out_abs/." "$cid:/app/"
+    echo "Copying publish output into ${#running_cids[@]} running $service container(s), then restarting that service..."
+    for cid in "${running_cids[@]}"; do
+      nightmare_hot_copy_publish_output_to_container "$service" "$cid" "$out_abs"
+    done
     compose restart "$service"
   done
 
@@ -844,6 +890,7 @@ nightmare_compose_image_deploy_for_services() {
   [[ ${#services[@]} -gt 0 ]] || return 0
   nightmare_compose_build_service_list "${services[@]}"
   nightmare_compose_up_redeploy
+  nightmare_compose_force_recreate_services "${services[@]}"
 }
 
 nightmare_compose_hot_deploy() {
@@ -881,6 +928,12 @@ nightmare_compose_deploy_all() {
   else
     nightmare_compose_build
     nightmare_compose_up_redeploy
+    # docker compose up does not always recreate a running container when the image tag is stable
+    # (for example nightmare-v2/command-center:local). Force only rebuilt services to use the
+    # image that was just produced so website/UI changes are visible after a normal deploy.
+    # shellcheck disable=SC2206
+    local rebuilt_services=( ${NIGHTMARE_BUILT_SERVICES:-} )
+    nightmare_compose_force_recreate_services "${rebuilt_services[@]}"
   fi
   nightmare_record_built_service_fingerprints
   nightmare_commit_current_fingerprints

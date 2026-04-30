@@ -1,7 +1,7 @@
 @inherits LayoutComponentBase
 
 <header class="app-header">
-    <a class="brand" href="/">
+    <a class="brand" href="/ops" aria-label="Open Operations">
         <span class="brand-mark">N2</span>
         <span>
             <strong>Nightmare</strong>
@@ -9,12 +9,11 @@
         </span>
     </a>
     <nav class="app-nav" aria-label="Primary">
-        <NavLink href="/" Match="NavLinkMatch.All">Home</NavLink>
-        <NavLink href="/targets">Targets</NavLink>
-        <NavLink href="/ops">Operations</NavLink>
-        <NavLink href="/events">Events</NavLink>
-        <NavLink href="/status">System status</NavLink>
-        <NavLink href="/high-value-findings">High value findings</NavLink>
+        <NavLink class="nav-button btn primary" href="/ops" Match="NavLinkMatch.All">Operations</NavLink>
+        <NavLink class="nav-button btn" href="/targets">Targets</NavLink>
+        <NavLink class="nav-button btn" href="/events">Events</NavLink>
+        <NavLink class="nav-button btn" href="/status">System status</NavLink>
+        <NavLink class="nav-button btn" href="/high-value-findings">High value findings</NavLink>
     </nav>
 </header>
 

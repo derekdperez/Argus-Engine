@@ -76,30 +76,37 @@
     justify-content: flex-end;
 }
 
-.app-nav a {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+.app-nav .nav-button {
     min-height: 2.15rem;
-    border: 1px solid rgba(15, 23, 42, 0.10);
+    border-color: rgba(15, 23, 42, 0.10);
     color: #334155;
-    text-decoration: none;
     border-radius: 0.7rem;
     background: #fff;
     padding: 0.35rem 0.75rem;
-    font-weight: 750;
     font-size: 0.9rem;
     box-shadow: 0 4px 10px rgba(15, 23, 42, 0.04);
-    transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
 }
 
-.app-nav a:hover,
-.app-nav a.active {
+.app-nav .nav-button:hover,
+.app-nav .nav-button.active {
     color: #1d4ed8;
     background: rgba(37, 99, 235, 0.09);
     border-color: rgba(37, 99, 235, 0.28);
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.10);
     transform: translateY(-1px);
+}
+
+.app-nav .nav-button.primary {
+    color: #fff;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    border-color: transparent;
+}
+
+.app-nav .nav-button.primary.active,
+.app-nav .nav-button.primary:hover {
+    color: #fff;
+    border-color: transparent;
+    background: linear-gradient(135deg, #1d4ed8, #1e40af);
 }
 
 .app-main {

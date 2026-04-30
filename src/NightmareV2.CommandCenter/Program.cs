@@ -1,5 +1,4 @@
 using Radzen;
-using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using MassTransit;
@@ -21,15 +20,9 @@ using NightmareV2.CommandCenter.Diagnostics;
 using NightmareV2.CommandCenter.Endpoints;
 using NightmareV2.CommandCenter.Hubs;
 using NightmareV2.CommandCenter.Models;
-using CmdAssetGridRowDto = NightmareV2.CommandCenter.Models.AssetGridRowDto;
-using CmdHighValueFindingRowDto = NightmareV2.CommandCenter.Models.HighValueFindingRowDto;
-using CmdHttpRequestQueueMetricsDto = NightmareV2.CommandCenter.Models.HttpRequestQueueMetricsDto;
-using CmdHttpRequestQueueRowDto = NightmareV2.CommandCenter.Models.HttpRequestQueueRowDto;
-using CmdHttpRequestQueueSettingsDto = NightmareV2.CommandCenter.Models.HttpRequestQueueSettingsDto;
-using CmdOpsOverviewDto = NightmareV2.CommandCenter.Models.OpsOverviewDto;
 using NightmareV2.CommandCenter.Realtime;
+using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
-using AssetAdmissionStage = NightmareV2.Contracts.AssetAdmissionStage;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure;
 using NightmareV2.Infrastructure.Data;
@@ -46,8 +39,11 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddRadzenComponents();
 
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveCommandCenterApiBaseUri(sp) });
+builder.Services.AddScoped(sp =>
+{
+    var nav = sp.GetRequiredService<NavigationManager>();
+    return new HttpClient { BaseAddress = new Uri(nav.BaseUri) };
+});
 
 builder.Services.AddNightmareInfrastructure(builder.Configuration);
 builder.Services.AddSignalR();
@@ -95,31 +91,14 @@ if (!app.Environment.IsDevelopment())
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 if (!listenPlainHttp)
     app.UseHttpsRedirection();
-
-app.Use(
-    async (context, next) =>
-    {
-        if (context.Request.Path.Equals("/_framework/blazor.web.js", StringComparison.OrdinalIgnoreCase))
-        {
-            var fallbackPath = ResolveBlazorWebJsPath(app.Environment);
-            if (!string.IsNullOrWhiteSpace(fallbackPath))
-            {
-                context.Response.ContentType = "application/javascript; charset=utf-8";
-                context.Response.Headers["Cache-Control"] = "public,max-age=31536000,immutable";
-                await context.Response.SendFileAsync(fallbackPath, context.RequestAborted).ConfigureAwait(false);
-                return;
-            }
-        }
-
-        await next().ConfigureAwait(false);
-    });
-
 app.UseStaticFiles();
 app.UseAntiforgery();
 
 DiagnosticsEndpoints.Map(app);
 DataMaintenanceEndpoints.Map(app);
 EventTraceEndpoints.Map(app);
+AssetGraphEndpoints.Map(app);
+TagEndpoints.Map(app);
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
@@ -200,124 +179,6 @@ static DateTimeOffset? MaxUtc(DateTimeOffset? first, DateTimeOffset? second)
     return first > second ? first : second;
 }
 
-static Uri ResolveCommandCenterApiBaseUri(IServiceProvider services)
-{
-    var configuration = services.GetRequiredService<IConfiguration>();
-
-    var configured = configuration["Nightmare:CommandCenterInternalBaseUrl"];
-    if (TryCreateBaseUri(configured, out var configuredUri))
-        return configuredUri;
-
-    var urls = configuration["ASPNETCORE_URLS"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
-    var loopbackUri = TryCreateLoopbackBaseUri(urls);
-    if (loopbackUri is not null)
-        return loopbackUri;
-
-    var httpContext = services.GetService<IHttpContextAccessor>()?.HttpContext;
-    if (httpContext is not null)
-    {
-        var request = httpContext.Request;
-        if (TryCreateBaseUri($"{request.Scheme}://{request.Host}{request.PathBase}/", out var requestUri))
-            return requestUri;
-    }
-
-    var navigation = services.GetService<NavigationManager>();
-    if (TryCreateBaseUri(navigation?.BaseUri, out var navigationUri))
-        return navigationUri;
-
-    return new Uri("http://127.0.0.1:8080/");
-}
-
-static bool TryCreateBaseUri(string? value, out Uri uri)
-{
-    uri = null!;
-    if (string.IsNullOrWhiteSpace(value))
-        return false;
-
-    var trimmed = value.Trim();
-    if (!trimmed.EndsWith('/'))
-        trimmed += "/";
-
-    if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var parsed))
-        return false;
-
-    if (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)
-        return false;
-
-    uri = parsed;
-    return true;
-}
-
-static Uri? TryCreateLoopbackBaseUri(string? urls)
-{
-    if (string.IsNullOrWhiteSpace(urls))
-        return null;
-
-    foreach (var rawUrl in urls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-    {
-        if (!Uri.TryCreate(rawUrl.Replace("+", "127.0.0.1").Replace("*", "127.0.0.1"), UriKind.Absolute, out var parsed))
-            continue;
-
-        var host = parsed.Host is "0.0.0.0" or "::" or "[::]"
-            ? "127.0.0.1"
-            : parsed.Host;
-
-        if (!IPAddress.TryParse(host, out var address) || !IPAddress.IsLoopback(address))
-            host = "127.0.0.1";
-
-        var builder = new UriBuilder(parsed)
-        {
-            Host = host,
-        };
-
-        return builder.Uri;
-    }
-
-    return null;
-}
-
-static string? ResolveBlazorWebJsPath(IWebHostEnvironment environment)
-{
-    var candidates = new[]
-    {
-        Path.Combine(environment.WebRootPath ?? "", "_framework", "blazor.web.js"),
-        Path.Combine(AppContext.BaseDirectory, "wwwroot", "_framework", "blazor.web.js"),
-        Path.Combine(AppContext.BaseDirectory, "_framework", "blazor.web.js"),
-    };
-
-    foreach (var candidate in candidates)
-    {
-        if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
-            return candidate;
-    }
-
-    foreach (var root in new[] { AppContext.BaseDirectory, "/usr/share/dotnet" })
-    {
-        var found = FindFirstFile(root, "blazor.web.js");
-        if (found is not null)
-            return found;
-    }
-
-    return null;
-}
-
-static string? FindFirstFile(string root, string fileName)
-{
-    try
-    {
-        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-            return null;
-
-        return Directory.EnumerateFiles(root, fileName, SearchOption.AllDirectories)
-            .OrderBy(p => p, StringComparer.Ordinal)
-            .FirstOrDefault();
-    }
-    catch
-    {
-        return null;
-    }
-}
-
 static string[] RequiredWorkerKeys() =>
 [
     WorkerKeys.Gatekeeper,
@@ -326,6 +187,7 @@ static string[] RequiredWorkerKeys() =>
     WorkerKeys.PortScan,
     WorkerKeys.HighValueRegex,
     WorkerKeys.HighValuePaths,
+    WorkerKeys.TechnologyIdentification,
 ];
 
 static async Task QueueRootSpiderSeedsAsync(
@@ -371,164 +233,6 @@ static IEnumerable<string> RootSpiderSeedUrls(string rootDomain)
     yield return $"https://{host}/";
     yield return $"http://{host}/";
 }
-
-static async Task<(IReadOnlyList<string> RawLines, int GlobalDepth, string? Error)> ReadBulkImportRequestAsync(
-    HttpRequest httpRequest,
-    CancellationToken ct)
-{
-    const int maxLines = 50_000;
-    var rawLines = new List<string>();
-    var globalDepth = 12;
-    var contentType = httpRequest.ContentType ?? "";
-
-    if (contentType.Contains("multipart/form-data", StringComparison.OrdinalIgnoreCase))
-    {
-        var form = await httpRequest.ReadFormAsync(ct).ConfigureAwait(false);
-        if (form.TryGetValue("globalMaxDepth", out var depthVals)
-            && int.TryParse(depthVals.ToString(), out var parsedDepth)
-            && parsedDepth > 0)
-        {
-            globalDepth = parsedDepth;
-        }
-
-        var file = form.Files.GetFile("file");
-        if (file is null || file.Length == 0)
-            return (rawLines, globalDepth, "multipart field \"file\" is required");
-
-        await using var stream = file.OpenReadStream();
-        using var reader = new StreamReader(stream);
-        var text = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
-        rawLines.AddRange(TargetRootNormalization.SplitLines(text));
-    }
-    else
-    {
-        var dto = await httpRequest.ReadFromJsonAsync<BulkImportRequest>(cancellationToken: ct).ConfigureAwait(false);
-        if (dto is null)
-            return (rawLines, globalDepth, "expected JSON body or multipart/form-data with field \"file\"");
-
-        globalDepth = dto.GlobalMaxDepth > 0 ? dto.GlobalMaxDepth : 12;
-        if (dto.Domains is not null)
-            rawLines.AddRange(dto.Domains);
-    }
-
-    if (rawLines.Count > maxLines)
-        return (rawLines, globalDepth, $"maximum {maxLines} lines per import");
-
-    return (rawLines, globalDepth, null);
-}
-
-static async Task<BulkImportResult> ImportTargetsAsync(
-    IReadOnlyList<string> rawLines,
-    int globalDepth,
-    NightmareDbContext db,
-    IEventOutbox outbox,
-    IHubContext<DiscoveryHub> hub,
-    CancellationToken ct)
-{
-    var firstOrder = new List<string>();
-    var batchSeen = new HashSet<string>(StringComparer.Ordinal);
-    var skippedEmpty = 0;
-    var skippedDupBatch = 0;
-    var skippedInvalid = 0;
-
-    foreach (var line in rawLines)
-    {
-        var trimmed = line.Trim();
-        if (trimmed.Length == 0)
-        {
-            skippedEmpty++;
-            continue;
-        }
-
-        if (!TargetRootNormalization.TryNormalize(trimmed, out var n))
-        {
-            skippedInvalid++;
-            continue;
-        }
-
-        if (!batchSeen.Add(n))
-        {
-            skippedDupBatch++;
-            continue;
-        }
-
-        firstOrder.Add(n);
-    }
-
-    if (firstOrder.Count == 0)
-        return new BulkImportResult(0, 0, skippedInvalid + skippedEmpty, skippedDupBatch);
-
-    var existing = await db.Targets.AsNoTracking()
-        .Where(t => firstOrder.Contains(t.RootDomain))
-        .Select(t => t.RootDomain)
-        .ToListAsync(ct)
-        .ConfigureAwait(false);
-    var existingSet = existing.ToHashSet(StringComparer.Ordinal);
-
-    var skippedExist = 0;
-    var newTargets = new List<ReconTarget>();
-    foreach (var n in firstOrder)
-    {
-        if (existingSet.Contains(n))
-        {
-            skippedExist++;
-            continue;
-        }
-
-        existingSet.Add(n);
-        var target = new ReconTarget
-        {
-            Id = Guid.NewGuid(),
-            RootDomain = n,
-            GlobalMaxDepth = globalDepth > 0 ? globalDepth : 12,
-            CreatedAtUtc = DateTimeOffset.UtcNow,
-        };
-        newTargets.Add(target);
-        db.Targets.Add(target);
-    }
-
-    await db.SaveChangesAsync(ct).ConfigureAwait(false);
-
-    foreach (var target in newTargets)
-    {
-        var correlation = NewId.NextGuid();
-        var eventId = NewId.NextGuid();
-        await QueueRootSpiderSeedsAsync(outbox, target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc, correlation, eventId, ct)
-            .ConfigureAwait(false);
-        await outbox.EnqueueAsync(
-                new TargetCreated(
-                    target.Id,
-                    target.RootDomain,
-                    target.GlobalMaxDepth,
-                    target.CreatedAtUtc,
-                    correlation,
-                    EventId: eventId,
-                    CausationId: correlation,
-                    Producer: "command-center"),
-                ct)
-            .ConfigureAwait(false);
-        await hub.Clients.All.SendAsync(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
-            .ConfigureAwait(false);
-        await hub.Clients.All.SendAsync(
-                DiscoveryHubEvents.DomainEvent,
-                new LiveUiEventDto(
-                    "TargetCreated",
-                    target.Id,
-                    target.Id,
-                    "targets",
-                    $"Target queued: {target.RootDomain}",
-                    target.CreatedAtUtc),
-                cancellationToken: ct)
-            .ConfigureAwait(false);
-    }
-
-    return new BulkImportResult(newTargets.Count, skippedExist, skippedInvalid + skippedEmpty, skippedDupBatch);
-}
-
-static string FormatBulkImportResult(BulkImportResult result) =>
-    $"Created {result.Created}, skipped {result.SkippedAlreadyExist} already in DB, "
-    + $"{result.SkippedDuplicateInBatch} duplicate lines in file, "
-    + $"{result.SkippedEmptyOrInvalid} empty or invalid lines.";
 
 app.MapPost(
         "/api/targets",
@@ -655,28 +359,148 @@ app.MapPost(
         "/api/targets/bulk",
         async (HttpRequest httpRequest, NightmareDbContext db, IEventOutbox outbox, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
         {
-            var parsed = await ReadBulkImportRequestAsync(httpRequest, ct).ConfigureAwait(false);
-            if (parsed.Error is not null)
-                return Results.BadRequest(parsed.Error);
+            const int maxLines = 50_000;
+            var rawLines = new List<string>();
+            var globalDepth = 12;
+            var contentType = httpRequest.ContentType ?? "";
 
-            var result = await ImportTargetsAsync(parsed.RawLines, parsed.GlobalDepth, db, outbox, hub, ct).ConfigureAwait(false);
-            return Results.Ok(result);
+            if (contentType.Contains("multipart/form-data", StringComparison.OrdinalIgnoreCase))
+            {
+                var form = await httpRequest.ReadFormAsync(ct).ConfigureAwait(false);
+                if (form.TryGetValue("globalMaxDepth", out var depthVals) && int.TryParse(depthVals.ToString(), out var parsedDepth) && parsedDepth > 0)
+                    globalDepth = parsedDepth;
+                var file = form.Files.GetFile("file");
+                if (file is null || file.Length == 0)
+                    return Results.BadRequest("multipart field \"file\" is required");
+                await using var stream = file.OpenReadStream();
+                using var reader = new StreamReader(stream);
+                var text = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+                rawLines.AddRange(TargetRootNormalization.SplitLines(text));
+            }
+            else
+            {
+                var dto = await httpRequest.ReadFromJsonAsync<BulkImportRequest>(cancellationToken: ct).ConfigureAwait(false);
+                if (dto is null)
+                    return Results.BadRequest("expected JSON body or multipart/form-data with field \"file\"");
+                globalDepth = dto.GlobalMaxDepth > 0 ? dto.GlobalMaxDepth : 12;
+                if (dto.Domains is not null)
+                    rawLines.AddRange(dto.Domains);
+            }
+
+            if (rawLines.Count > maxLines)
+                return Results.BadRequest($"maximum {maxLines} lines per import");
+
+            var firstOrder = new List<string>();
+            var batchSeen = new HashSet<string>(StringComparer.Ordinal);
+            var skippedEmpty = 0;
+            var skippedDupBatch = 0;
+            var skippedInvalid = 0;
+            foreach (var line in rawLines)
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Length == 0)
+                {
+                    skippedEmpty++;
+                    continue;
+                }
+
+                if (!TargetRootNormalization.TryNormalize(trimmed, out var n))
+                {
+                    skippedInvalid++;
+                    continue;
+                }
+
+                if (!batchSeen.Add(n))
+                {
+                    skippedDupBatch++;
+                    continue;
+                }
+
+                firstOrder.Add(n);
+            }
+
+            if (firstOrder.Count == 0)
+            {
+                return Results.Ok(
+                    new BulkImportResult(
+                        0,
+                        0,
+                        skippedInvalid + skippedEmpty,
+                        skippedDupBatch));
+            }
+
+            var existing = await db.Targets.AsNoTracking()
+                .Where(t => firstOrder.Contains(t.RootDomain))
+                .Select(t => t.RootDomain)
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+            var existingSet = existing.ToHashSet(StringComparer.Ordinal);
+
+            var skippedExist = 0;
+            var newTargets = new List<ReconTarget>();
+            foreach (var n in firstOrder)
+            {
+                if (existingSet.Contains(n))
+                {
+                    skippedExist++;
+                    continue;
+                }
+
+                existingSet.Add(n);
+                var target = new ReconTarget
+                {
+                    Id = Guid.NewGuid(),
+                    RootDomain = n,
+                    GlobalMaxDepth = globalDepth,
+                    CreatedAtUtc = DateTimeOffset.UtcNow,
+                };
+                newTargets.Add(target);
+                db.Targets.Add(target);
+            }
+
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            foreach (var target in newTargets)
+            {
+                var correlation = NewId.NextGuid();
+                var eventId = NewId.NextGuid();
+                await QueueRootSpiderSeedsAsync(outbox, target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc, correlation, eventId, ct)
+                    .ConfigureAwait(false);
+                await outbox.EnqueueAsync(
+                        new TargetCreated(
+                            target.Id,
+                            target.RootDomain,
+                            target.GlobalMaxDepth,
+                            target.CreatedAtUtc,
+                            correlation,
+                            EventId: eventId,
+                            CausationId: correlation,
+                            Producer: "command-center"),
+                        ct)
+                    .ConfigureAwait(false);
+                await hub.Clients.All.SendAsync(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
+                    .ConfigureAwait(false);
+                await hub.Clients.All.SendAsync(
+                        DiscoveryHubEvents.DomainEvent,
+                        new LiveUiEventDto(
+                            "TargetCreated",
+                            target.Id,
+                            target.Id,
+                            "targets",
+                            $"Target queued: {target.RootDomain}",
+                            target.CreatedAtUtc),
+                        cancellationToken: ct)
+                    .ConfigureAwait(false);
+            }
+
+            return Results.Ok(
+                new BulkImportResult(
+                    newTargets.Count,
+                    skippedExist,
+                    skippedInvalid + skippedEmpty,
+                    skippedDupBatch));
         })
     .WithName("BulkImportTargets");
-
-app.MapPost(
-        "/api/targets/bulk-file",
-        async (HttpRequest httpRequest, NightmareDbContext db, IEventOutbox outbox, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
-        {
-            var parsed = await ReadBulkImportRequestAsync(httpRequest, ct).ConfigureAwait(false);
-            if (parsed.Error is not null)
-                return Results.Redirect($"/targets?bulkStatus={Uri.EscapeDataString(parsed.Error)}");
-
-            var result = await ImportTargetsAsync(parsed.RawLines, parsed.GlobalDepth, db, outbox, hub, ct).ConfigureAwait(false);
-            return Results.Redirect($"/targets?bulkStatus={Uri.EscapeDataString(FormatBulkImportResult(result))}");
-        })
-    .WithName("BulkImportTargetsFromForm")
-    .DisableAntiforgery();
 
 
 app.MapGet(
@@ -689,7 +513,7 @@ app.MapGet(
                 ?? new HttpRequestQueueSettings();
 
             return Results.Ok(
-                new CmdHttpRequestQueueSettingsDto(
+                new HttpRequestQueueSettingsDto(
                     row.Enabled,
                     row.GlobalRequestsPerMinute,
                     row.PerDomainRequestsPerMinute,
@@ -735,23 +559,26 @@ app.MapPut(
 
 app.MapGet(
         "/api/http-request-queue",
-        async (NightmareDbContext db, Guid? targetId, bool? includeFailed, bool? includeCompleted, int? take, CancellationToken ct) =>
+        async (NightmareDbContext db, Guid? targetId, bool? includeFailed, int? take, CancellationToken ct) =>
         {
             var limit = Math.Clamp(take ?? 800, 1, 5000);
             var q = db.HttpRequestQueue.AsNoTracking().AsQueryable();
             if (targetId is { } tid)
                 q = q.Where(r => r.TargetId == tid);
 
-            q = q.Where(r => r.State == HttpRequestQueueState.Queued
-                || r.State == HttpRequestQueueState.Retry
-                || r.State == HttpRequestQueueState.InFlight
-                || (includeFailed == true && r.State == HttpRequestQueueState.Failed)
-                || (includeCompleted == true && r.State == HttpRequestQueueState.Succeeded));
+            q = includeFailed == true
+                ? q.Where(r => r.State == HttpRequestQueueState.Queued
+                    || r.State == HttpRequestQueueState.Retry
+                    || r.State == HttpRequestQueueState.InFlight
+                    || r.State == HttpRequestQueueState.Failed)
+                : q.Where(r => r.State == HttpRequestQueueState.Queued
+                    || r.State == HttpRequestQueueState.Retry
+                    || r.State == HttpRequestQueueState.InFlight);
 
             var rows = await q
                 .OrderByDescending(r => r.CreatedAtUtc)
                 .Take(limit)
-                .Select(r => new CmdHttpRequestQueueRowDto(
+                .Select(r => new HttpRequestQueueRowDto(
                     r.Id,
                     r.AssetId,
                     r.TargetId,
@@ -815,7 +642,7 @@ app.MapGet(
                 .ConfigureAwait(false);
 
             return Results.Ok(
-                new CmdHttpRequestQueueMetricsDto(
+                new HttpRequestQueueMetricsDto(
                     queued,
                     retry,
                     scheduledRetry,
@@ -863,16 +690,23 @@ app.MapGet(
 
 app.MapGet(
         "/api/assets",
-        async (NightmareDbContext db, Guid? targetId, int? take, CancellationToken ct) =>
+        async (NightmareDbContext db, Guid? targetId, int? take, string? tag, CancellationToken ct) =>
         {
             var limit = Math.Clamp(take ?? 500, 1, 5000);
             var q = db.Assets.AsNoTracking()
+                .Where(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed)
                 .OrderByDescending(a => a.DiscoveredAtUtc)
                 .AsQueryable();
             if (targetId is { } tid)
                 q = q.Where(a => a.TargetId == tid);
+            if (!string.IsNullOrWhiteSpace(tag))
+            {
+                var tagSlug = tag.Trim();
+                q = q.Where(a => db.AssetTags.Any(at => at.AssetId == a.Id && db.Tags.Any(t => t.Id == at.TagId && t.Slug == tagSlug)));
+            }
+
             var rows = await q.Take(limit)
-                .Select(a => new CmdAssetGridRowDto(
+                .Select(a => new AssetGridRowDto(
                     a.Id,
                     a.TargetId,
                     a.Kind.ToString(),
@@ -976,7 +810,7 @@ app.MapGet(
                 .Take(fetchCount)
                 .Select(x => new
                 {
-                    Row = new CmdHighValueFindingRowDto(
+                    Row = new HighValueFindingRowDto(
                         x.f.Id,
                         x.f.TargetId,
                         x.f.SourceAssetId,
@@ -1021,7 +855,7 @@ app.MapGet(
     .WithName("ListHighValueFindings");
 
 static bool FindingSourceIsAllowed(
-    CmdHighValueFindingRowDto row,
+    HighValueFindingRowDto row,
     string discoveredBy,
     UrlFetchSnapshot snap,
     IReadOnlySet<string> allowedHighValuePaths)
@@ -1036,7 +870,7 @@ static bool FindingSourceIsAllowed(
 }
 
 static bool HighValuePathRedirectIsAllowed(
-    CmdHighValueFindingRowDto row,
+    HighValueFindingRowDto row,
     UrlFetchSnapshot snap,
     IReadOnlySet<string> allowedHighValuePaths)
 {
@@ -1282,6 +1116,7 @@ app.MapGet(
                 new WorkerCapabilityDto(WorkerKeys.PortScan, "Port Scan", "v1", true, false, true, true),
                 new WorkerCapabilityDto(WorkerKeys.HighValueRegex, "High Value Regex", "v1", true, false, false, false),
                 new WorkerCapabilityDto(WorkerKeys.HighValuePaths, "High Value Paths", "v1", true, true, false, false),
+                new WorkerCapabilityDto(WorkerKeys.TechnologyIdentification, "Technology Identification", "v1", false, true, true, false),
             };
             return Results.Ok(rows);
         })
@@ -1342,6 +1177,7 @@ app.MapGet(
                 WorkerKeys.PortScan,
                 WorkerKeys.HighValueRegex,
                 WorkerKeys.HighValuePaths,
+                WorkerKeys.TechnologyIdentification,
             };
 
             var rows = keys.Select(
@@ -1445,7 +1281,7 @@ app.MapGet(
             var domains10OrFewer = domainCounts.LongCount(x => x.Count < 10);
 
             return Results.Ok(
-                new CmdOpsOverviewDto(
+                new OpsOverviewDto(
                     totalTargets,
                     totalAssetsConfirmed,
                     totalUrls,

@@ -9,6 +9,7 @@
     <ProjectReference Include="..\NightmareV2.Infrastructure\NightmareV2.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="..\Resources\TechnologyDetection\technologies\*.json" Link="Resources\TechnologyDetection\technologies\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Resources\TechIdentificationData\*.json" Link="Resources\TechnologyDetection\technologies\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Resources\TechnologyDetection\manifest.json" Link="Resources\TechnologyDetection\manifest.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Resources\TechnologyDetection\categories.json" Link="Resources\TechnologyDetection\categories.json" CopyToOutputDirectory="PreserveNewest" />

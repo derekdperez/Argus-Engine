@@ -1,7 +1,29 @@
 {
   "source": "developit/wappalyzer",
-  "sourcePath": "src/Resources/TechIdentificationData",
+  "sourcePath": "src/Resources/TechnologyDetection/technologies",
   "importedAtUtc": "2026-04-30T00:00:00Z",
-  "retainedFields": ["headers", "html", "cookies", "meta", "scripts", "script", "scriptSrc", "url", "implies", "requires", "excludes"],
-  "discardedFields": ["js", "dom", "dns", "certIssuer", "xhr", "robots", "css", "magento"]
+  "retainedFields": [
+    "headers",
+    "html",
+    "cookies",
+    "meta",
+    "scripts",
+    "script",
+    "scriptSrc",
+    "url",
+    "implies",
+    "requires",
+    "excludes"
+  ],
+  "discardedFields": [
+    "js",
+    "dom",
+    "dns",
+    "certIssuer",
+    "xhr",
+    "robots",
+    "css",
+    "magento"
+  ],
+  "notes": "Bootstrap catalog included for this repo; replace or expand technologies/*.json with the full Wappalyzer-style catalog as needed."
 }

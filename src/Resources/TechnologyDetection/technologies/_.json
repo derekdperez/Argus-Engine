@@ -1,0 +1,300 @@
+{
+  "ASP.NET": {
+    "description": "Microsoft ASP.NET web framework",
+    "website": "https://dotnet.microsoft.com/apps/aspnet",
+    "headers": {
+      "x-aspnet-version": "",
+      "x-powered-by": "ASP\\.NET"
+    },
+    "html": [
+      "__VIEWSTATE",
+      "WebResource\\.axd"
+    ],
+    "implies": [
+      "Microsoft"
+    ]
+  },
+  "ASP.NET Core": {
+    "description": "Microsoft ASP.NET Core web framework",
+    "website": "https://dotnet.microsoft.com/apps/aspnet",
+    "headers": {
+      "server": "Kestrel",
+      "x-powered-by": "ASP\\.NET"
+    },
+    "implies": [
+      "Microsoft"
+    ]
+  },
+  "Kestrel": {
+    "description": "ASP.NET Core web server",
+    "website": "https://learn.microsoft.com/aspnet/core/fundamentals/servers/kestrel",
+    "headers": {
+      "server": "Kestrel"
+    },
+    "implies": [
+      "ASP.NET Core"
+    ]
+  },
+  "Microsoft IIS": {
+    "description": "Microsoft Internet Information Services",
+    "website": "https://www.iis.net/",
+    "headers": {
+      "server": "Microsoft-IIS(?:/([\\d.]+))?\\;version:\\1"
+    },
+    "implies": [
+      "Microsoft"
+    ]
+  },
+  "Microsoft": {
+    "description": "Microsoft technology marker",
+    "website": "https://www.microsoft.com/"
+  },
+  "nginx": {
+    "description": "nginx web server",
+    "website": "https://nginx.org/",
+    "headers": {
+      "server": "nginx(?:/([\\d.]+))?\\;version:\\1"
+    }
+  },
+  "OpenResty": {
+    "description": "OpenResty web platform",
+    "website": "https://openresty.org/",
+    "headers": {
+      "server": "openresty(?:/([\\d.]+))?\\;version:\\1"
+    },
+    "implies": [
+      "nginx"
+    ]
+  },
+  "Apache HTTP Server": {
+    "description": "Apache HTTP Server",
+    "website": "https://httpd.apache.org/",
+    "headers": {
+      "server": "Apache(?:/([\\d.]+))?\\;version:\\1"
+    }
+  },
+  "LiteSpeed": {
+    "description": "LiteSpeed web server",
+    "website": "https://www.litespeedtech.com/",
+    "headers": {
+      "server": "LiteSpeed"
+    }
+  },
+  "Cloudflare": {
+    "description": "Cloudflare edge/CDN services",
+    "website": "https://www.cloudflare.com/",
+    "headers": {
+      "server": "cloudflare",
+      "cf-ray": "",
+      "cf-cache-status": ""
+    }
+  },
+  "Varnish": {
+    "description": "Varnish HTTP cache",
+    "website": "https://varnish-cache.org/",
+    "headers": {
+      "via": "varnish",
+      "x-varnish": ""
+    }
+  },
+  "PHP": {
+    "description": "PHP server-side language",
+    "website": "https://www.php.net/",
+    "headers": {
+      "x-powered-by": "PHP(?:/([\\d.]+))?\\;version:\\1"
+    },
+    "cookies": {
+      "PHPSESSID": ""
+    }
+  },
+  "Laravel": {
+    "description": "Laravel PHP framework",
+    "website": "https://laravel.com/",
+    "cookies": {
+      "laravel_session": ""
+    },
+    "headers": {
+      "set-cookie": "laravel_session"
+    },
+    "implies": [
+      "PHP"
+    ]
+  },
+  "WordPress": {
+    "description": "WordPress content management system",
+    "website": "https://wordpress.org/",
+    "html": [
+      "wp-content",
+      "wp-includes",
+      "<meta[^>]+name=[\\\"']generator[\\\"'][^>]+WordPress"
+    ],
+    "meta": {
+      "generator": "WordPress(?: ([\\d.]+))?\\;version:\\1"
+    },
+    "scripts": [
+      "wp-(?:includes|content)/"
+    ],
+    "implies": [
+      "PHP"
+    ]
+  },
+  "Drupal": {
+    "description": "Drupal content management system",
+    "website": "https://www.drupal.org/",
+    "headers": {
+      "x-generator": "Drupal(?: ([\\d.]+))?\\;version:\\1"
+    },
+    "html": [
+      "drupal-settings-json",
+      "content=[\\\"']Drupal"
+    ],
+    "meta": {
+      "generator": "Drupal(?: ([\\d.]+))?\\;version:\\1"
+    },
+    "implies": [
+      "PHP"
+    ]
+  },
+  "Joomla": {
+    "description": "Joomla content management system",
+    "website": "https://www.joomla.org/",
+    "meta": {
+      "generator": "Joomla!"
+    },
+    "html": [
+      "com_content",
+      "/media/system/js/"
+    ],
+    "implies": [
+      "PHP"
+    ]
+  },
+  "jQuery": {
+    "description": "jQuery JavaScript library",
+    "website": "https://jquery.com/",
+    "scripts": [
+      "jquery(?:-([\\d.]+))?(?:\\.min)?\\.js\\;version:\\1"
+    ],
+    "html": [
+      "jquery(?:-([\\d.]+))?(?:\\.min)?\\.js\\;version:\\1"
+    ]
+  },
+  "Bootstrap": {
+    "description": "Bootstrap frontend framework",
+    "website": "https://getbootstrap.com/",
+    "scripts": [
+      "bootstrap(?:\\.bundle)?(?:\\.min)?\\.js",
+      "bootstrap(?:-([\\d.]+))?(?:\\.min)?\\.js\\;version:\\1"
+    ],
+    "html": [
+      "bootstrap(?:\\.bundle)?(?:\\.min)?\\.js",
+      "bootstrap(?:\\.min)?\\.css"
+    ]
+  },
+  "React": {
+    "description": "React JavaScript library",
+    "website": "https://react.dev/",
+    "scripts": [
+      "react(?:\\.production\\.min|\\.development)?\\.js",
+      "react-dom"
+    ],
+    "html": [
+      "data-reactroot",
+      "__REACT_DEVTOOLS_GLOBAL_HOOK__"
+    ]
+  },
+  "Vue.js": {
+    "description": "Vue.js JavaScript framework",
+    "website": "https://vuejs.org/",
+    "scripts": [
+      "vue(?:\\.runtime)?(?:\\.global)?(?:\\.prod)?\\.js"
+    ],
+    "html": [
+      "data-v-",
+      "__vue__"
+    ]
+  },
+  "Angular": {
+    "description": "Angular web framework",
+    "website": "https://angular.dev/",
+    "html": [
+      "ng-version",
+      "_ngcontent-",
+      "ng-app"
+    ],
+    "scripts": [
+      "angular(?:\\.min)?\\.js"
+    ]
+  },
+  "Next.js": {
+    "description": "Next.js React framework",
+    "website": "https://nextjs.org/",
+    "html": [
+      "__NEXT_DATA__",
+      "/_next/static/"
+    ],
+    "scripts": [
+      "/_next/static/"
+    ],
+    "implies": [
+      "React"
+    ]
+  },
+  "Nuxt": {
+    "description": "Nuxt web framework",
+    "website": "https://nuxt.com/",
+    "html": [
+      "__NUXT__",
+      "/_nuxt/"
+    ],
+    "scripts": [
+      "/_nuxt/"
+    ],
+    "implies": [
+      "Vue.js"
+    ]
+  },
+  "Shopify": {
+    "description": "Shopify commerce platform",
+    "website": "https://www.shopify.com/",
+    "headers": {
+      "x-shopify-stage": "",
+      "x-shopid": ""
+    },
+    "html": [
+      "cdn\\.shopify\\.com",
+      "Shopify\\.theme"
+    ]
+  },
+  "Google Analytics": {
+    "description": "Google Analytics",
+    "website": "https://analytics.google.com/",
+    "html": [
+      "www\\.google-analytics\\.com/analytics\\.js",
+      "googletagmanager\\.com/gtag/js",
+      "G-[A-Z0-9]{6,}"
+    ],
+    "scripts": [
+      "google-analytics\\.com",
+      "googletagmanager\\.com/gtag/js"
+    ]
+  },
+  "Plausible": {
+    "description": "Plausible Analytics",
+    "website": "https://plausible.io/",
+    "scripts": [
+      "plausible\\.io/js/script\\.js"
+    ],
+    "html": [
+      "plausible\\.io/js/script\\.js"
+    ]
+  },
+  "Webpack": {
+    "description": "Webpack JavaScript bundler",
+    "website": "https://webpack.js.org/",
+    "html": [
+      "webpackJsonp",
+      "__webpack_require__"
+    ]
+  }
+}

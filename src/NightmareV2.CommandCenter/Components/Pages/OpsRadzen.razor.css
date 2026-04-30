@@ -479,3 +479,14 @@
         max-width: 70vw;
     }
 }
+
+.ops-stack-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+}
+
+.ops-tool-actions {
+    border-color: rgba(37, 99, 235, 0.22);
+}

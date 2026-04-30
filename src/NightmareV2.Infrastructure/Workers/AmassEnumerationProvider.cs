@@ -51,7 +51,6 @@ public sealed class AmassEnumerationProvider(
         [
             "-d", request.RootDomain,
             "-w", wordlistPath,
-            "-dns-qps", Math.Clamp(opt.Amass.DnsQueriesPerSecond, 1, 10000).ToString(CultureInfo.InvariantCulture),
             "-max-depth", Math.Clamp(opt.Amass.MaxDepth, 1, 10).ToString(CultureInfo.InvariantCulture),
             "-min-for-recursive", Math.Clamp(opt.Amass.MinForRecursive, 1, 50).ToString(CultureInfo.InvariantCulture),
             "-timeout", Math.Clamp(opt.Amass.TimeoutMinutes, 1, 240).ToString(CultureInfo.InvariantCulture),

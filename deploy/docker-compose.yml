@@ -213,6 +213,9 @@ services:
       rabbitmq:
         condition: service_healthy
 
+    deploy:
+      replicas: 10
+
   worker-portscan:
     image: nightmare-v2/worker-portscan:local
     build:

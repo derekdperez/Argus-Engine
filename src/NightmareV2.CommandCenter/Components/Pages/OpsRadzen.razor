@@ -76,8 +76,25 @@
         <div class="alert">@_statusMessage</div>
     }
 
-    <section class="ops-layout-grid">
-        <section class="panel ops-primary-panel">
+
+    <section class="panel ops-tool-actions">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Tool controls</p>
+                <h2>Restart enumeration or spidering</h2>
+            </div>
+            <span class="muted">@_selectedToolTargetIds.Count.ToString("N0") selected</span>
+        </div>
+        <p class="muted">Use the checkboxes in the Targets grid to restart tools for selected targets, or queue the restart globally for every active target.</p>
+        <div class="ops-rz-toolbar">
+            <button type="button" class="btn primary" disabled="@_toolRestartBusy" @onclick="@(() => RestartEnumAsync(true))">Restart enum for all targets</button>
+            <button type="button" class="btn danger" disabled="@_toolRestartBusy" @onclick="@(() => RestartSpiderAsync(true))">Restart spidering for all targets</button>
+            <button type="button" class="btn" disabled="@(_toolRestartBusy || _selectedToolTargetIds.Count == 0)" @onclick="@(() => RestartEnumAsync(false))">Restart enum for selected (@_selectedToolTargetIds.Count)</button>
+            <button type="button" class="btn" disabled="@(_toolRestartBusy || _selectedToolTargetIds.Count == 0)" @onclick="@(() => RestartSpiderAsync(false))">Restart spidering for selected (@_selectedToolTargetIds.Count)</button>
+            <button type="button" class="btn ghost" disabled="@(_selectedToolTargetIds.Count == 0)" @onclick="ClearToolTargetSelection">Clear selection</button>
+        </div>
+    </section>
+    <section class="ops-layout-grid">        <section class="panel ops-primary-panel">
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Scope</p>
@@ -175,6 +192,11 @@
                             Style="height: 390px"
                             class="ops-rz-grid">
                 <Columns>
+                    <RadzenDataGridColumn TItem="TargetSummary" Title="Select" Width="90px" Filterable="false" Sortable="false" Groupable="false">
+                        <Template Context="row">
+                            <input type="checkbox" checked="@_selectedToolTargetIds.Contains(row.Id)" @onchange="@((ChangeEventArgs e) => ToggleToolTarget(row.Id, e))" />
+                        </Template>
+                    </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="TargetSummary" Property="CreatedAtUtc" Title="Created" Width="180px" SortOrder="SortOrder.Descending">
                         <Template Context="row">@FormatOpsTime(row.CreatedAtUtc)</Template>
                     </RadzenDataGridColumn>
@@ -387,7 +409,7 @@
         </RadzenDataGrid>
     </section>
 
-    <section class="ops-layout-grid">
+    <section class="ops-stack-grid">
         <section class="panel">
             <div class="section-heading">
                 <div>
@@ -643,6 +665,7 @@
     private readonly List<AssetGridRowDto> _assets = [];
     private readonly List<HttpRequestQueueRowDto> _requestQueue = [];
     private readonly List<LiveUiEventDto> _liveEvents = [];
+    private readonly HashSet<Guid> _selectedToolTargetIds = [];
 
     private OpsOverviewDto? _overview;
     private OpsSnapshotDto? _snapshot;
@@ -710,6 +733,7 @@
     private bool _queueLoading;
     private bool _snapshotLoading;
     private bool _targetCreateBusy;
+    private bool _toolRestartBusy;
     private bool _queueSettingsBusy;
     private bool _autoRefresh = true;
     private string _statusMessage = "";
@@ -1119,6 +1143,60 @@
         catch
         {
             _queueSettings = null;
+        }
+    }
+
+    private void ToggleToolTarget(Guid id, ChangeEventArgs e)
+    {
+        if (e.Value is bool selected && selected)
+            _selectedToolTargetIds.Add(id);
+        else
+            _selectedToolTargetIds.Remove(id);
+    }
+
+    private void ClearToolTargetSelection() => _selectedToolTargetIds.Clear();
+
+    private async Task RestartEnumAsync(bool allTargets)
+    {
+        await RestartToolAsync("/api/ops/subdomain-enum/restart", allTargets, "Subdomain enumeration restart queued.").ConfigureAwait(false);
+    }
+
+    private async Task RestartSpiderAsync(bool allTargets)
+    {
+        await RestartToolAsync("/api/ops/spider/restart", allTargets, "Spider restart queued.").ConfigureAwait(false);
+    }
+
+    private async Task RestartToolAsync(string endpoint, bool allTargets, string successMessage)
+    {
+        if (_toolRestartBusy)
+            return;
+        if (!allTargets && _selectedToolTargetIds.Count == 0)
+            return;
+
+        _toolRestartBusy = true;
+        try
+        {
+            var ids = allTargets ? null : _selectedToolTargetIds.Select(id => id.ToString()).ToArray();
+            var response = await Http.PostAsJsonAsync(endpoint, new RestartToolRequest(ids, allTargets)).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+            {
+                if (!allTargets)
+                    _selectedToolTargetIds.Clear();
+                _statusMessage = successMessage;
+                await ReloadVolatileAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                _statusMessage = $"Tool restart failed: {(int)response.StatusCode} {response.ReasonPhrase}";
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Tool restart failed: {ex.Message}";
+        }
+        finally
+        {
+            _toolRestartBusy = false;
         }
     }
 

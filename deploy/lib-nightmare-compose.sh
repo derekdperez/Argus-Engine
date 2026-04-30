@@ -775,6 +775,14 @@ nightmare_compose_build() {
 nightmare_compose_up_redeploy() {
   local args=(up -d --remove-orphans)
   [[ "${NIGHTMARE_FORCE_RECREATE:-0}" == "1" || "${NIGHTMARE_DEPLOY_FRESH:-0}" == "1" ]] && args+=(--force-recreate)
+
+  # Plain Docker Compose ignores deploy.replicas unless compatibility mode is used.
+  # Keep local/EC2 scaling explicit so deployments start enough consumers by default.
+  args+=(
+    --scale "worker-enum=${NIGHTMARE_ENUM_REPLICAS:-10}"
+    --scale "worker-spider=${NIGHTMARE_SPIDER_REPLICAS:-10}"
+  )
+
   compose "${args[@]}"
 }
 

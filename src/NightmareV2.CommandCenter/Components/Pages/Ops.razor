@@ -139,7 +139,7 @@
                                Items="FilteredOpsTargets"
                                @bind-SearchText="_targetSearch"
                                SearchPlaceholder="Search targets by domain or id…"
-                               ScrollPreset="@(_targetVirtualize ? NightmareDataGridScrollPreset.Virtualized : NightmareDataGridScrollPreset.Medium)"
+                               ScrollPreset="@(_targetVirtualize && TargetGroupKeySelector is null ? NightmareDataGridScrollPreset.Virtualized : NightmareDataGridScrollPreset.Medium)"
                                Virtualize="@(_targetVirtualize && TargetGroupKeySelector is null)"
                                Pagination="_targetPagination"
                                ItemSize="44"
@@ -147,7 +147,16 @@
                                OverscanCount="8"
                                RowMatches="@TargetRowMatches"
                                IsLoading="@_targetsLoading"
-                               EmptyText="No targets match the current filters.">
+                               EmptyText="No targets match the current filters."
+                               ShowDensityPicker="true"
+                               RefreshRequested="ReloadTargetsAsync"
+                               LastUpdatedUtc="_targetsLoadedAtUtc"
+                               ClearFiltersRequested="ClearTargetFilters"
+                               ActiveFilterCount="@OpsTargetActiveFilterCount"
+                               EnableCsvExport="true"
+                               ExportFileName="nightmare-ops-targets.csv"
+                               PersistKey="ops-targets"
+                               StickyFirstColumn="true">
                 <ConfigurationTemplate>
                     <div class="grid-config">
                         <label>
@@ -296,7 +305,16 @@
                            OverscanCount="8"
                            GroupKeySelector="AssetGroupKeySelector"
                            IsLoading="@_assetsLoading"
-                           EmptyText="No verified assets match the current filters.">
+                           EmptyText="No verified assets match the current filters."
+                           ShowDensityPicker="true"
+                           RefreshRequested="ReloadAssetsAsync"
+                           LastUpdatedUtc="_assetsLoadedAtUtc"
+                           ClearFiltersRequested="ClearAssetFilters"
+                           ActiveFilterCount="@AssetActiveFilterCount"
+                           EnableCsvExport="true"
+                           ExportFileName="nightmare-assets.csv"
+                           PersistKey="ops-assets"
+                           StickyFirstColumn="true">
             <ToolbarTemplate>
                 <label class="compact-field">
                     <span>Load</span>
@@ -446,7 +464,16 @@
                                OverscanCount="8"
                                GroupKeySelector="QueueGroupKeySelector"
                                IsLoading="@_queueLoading"
-                               EmptyText="No queue rows match the current filters.">
+                               EmptyText="No queue rows match the current filters."
+                               ShowDensityPicker="true"
+                               RefreshRequested="ReloadHttpQueueAsync"
+                               LastUpdatedUtc="_queueLoadedAtUtc"
+                               ClearFiltersRequested="ClearQueueFilters"
+                               ActiveFilterCount="@QueueActiveFilterCount"
+                               EnableCsvExport="true"
+                               ExportFileName="nightmare-http-queue.csv"
+                               PersistKey="ops-http-queue"
+                               StickyFirstColumn="true">
                 <ToolbarTemplate>
                     <label class="compact-field">
                         <span>Load</span>
@@ -556,7 +583,12 @@
                                ItemKey="@(w => w.WorkerKey)"
                                RowMatches="@WorkerRowMatches"
                                IsLoading="@_snapshotLoading"
-                               EmptyText="Worker activity has not loaded yet.">
+                               EmptyText="Worker activity has not loaded yet."
+                               RefreshRequested="ReloadVolatileAsync"
+                               LastUpdatedUtc="_snapshotLoadedAtUtc"
+                               EnableCsvExport="true"
+                               ExportFileName="nightmare-workers.csv"
+                               PersistKey="ops-workers">
                 <ChildContent>
                     <TemplateColumn Title="Worker" Context="w" SortBy="@SortWorkerKey">
                         <strong>@w.WorkerKey</strong>
@@ -589,7 +621,13 @@
                                ItemSize="38"
                                ItemKey="@(q => q.Name)"
                                RowMatches="@RabbitRowMatches"
-                               EmptyText="No RabbitMQ queue data is available.">
+                               IsLoading="@_snapshotLoading"
+                               EmptyText="No RabbitMQ queue data is available."
+                               RefreshRequested="ReloadVolatileAsync"
+                               LastUpdatedUtc="_snapshotLoadedAtUtc"
+                               EnableCsvExport="true"
+                               ExportFileName="nightmare-rabbit-queues.csv"
+                               PersistKey="ops-rabbit-queues">
                 <ChildContent>
                     <PropertyColumn Title="Queue" Property="@(q => q.Name)" Sortable="true" />
                     <PropertyColumn Title="Ready" Property="@(q => q.MessagesReady)" Sortable="true" />
@@ -685,6 +723,10 @@
     private string _statusMessage = "";
     private string _queueSettingsMessage = "";
     private DateTimeOffset? _lastLiveEventUtc;
+    private DateTimeOffset? _targetsLoadedAtUtc;
+    private DateTimeOffset? _assetsLoadedAtUtc;
+    private DateTimeOffset? _queueLoadedAtUtc;
+    private DateTimeOffset? _snapshotLoadedAtUtc;
     private int _liveEventCount;
 
     private int _queueGlobalRequestsPerMinute = 120;
@@ -879,6 +921,7 @@
             }
 
             await ReloadHttpQueueMetricsAsync();
+            _snapshotLoadedAtUtc = DateTimeOffset.UtcNow;
         }
         finally
         {
@@ -895,6 +938,8 @@
             _targets.Clear();
             if (targets is not null)
                 _targets.AddRange(targets);
+
+            _targetsLoadedAtUtc = DateTimeOffset.UtcNow;
         }
         catch (Exception ex)
         {
@@ -951,6 +996,8 @@
             _assets.Clear();
             if (list is not null)
                 _assets.AddRange(list);
+
+            _assetsLoadedAtUtc = DateTimeOffset.UtcNow;
         }
         catch (Exception ex)
         {
@@ -978,6 +1025,8 @@
             _requestQueue.Clear();
             if (list is not null)
                 _requestQueue.AddRange(list);
+
+            _queueLoadedAtUtc = DateTimeOffset.UtcNow;
         }
         catch (Exception ex)
         {

@@ -93,7 +93,16 @@ else
                            ItemKey="@(r => r.Id)"
                            OverscanCount="8"
                            RowMatches="@TargetRowMatches"
-                           HostTabIndex="@(-1)">
+                           HostTabIndex="@(-1)"
+                           ShowDensityPicker="true"
+                           RefreshRequested="ReloadAsync"
+                           LastUpdatedUtc="_lastLoadedAtUtc"
+                           ClearFiltersRequested="ClearTargetFilters"
+                           ActiveFilterCount="@TargetActiveFilterCount"
+                           EnableCsvExport="true"
+                           ExportFileName="nightmare-targets.csv"
+                           PersistKey="targets"
+                           StickyFirstColumn="true">
             <ConfigurationTemplate>
                 <div class="grid-config compact">
                     <label>
@@ -144,6 +153,7 @@ else
     private string? _bulkStatus;
     private bool _createBusy;
     private TargetEditForm? _editing;
+    private DateTimeOffset? _lastLoadedAtUtc;
 
     protected override async Task OnInitializedAsync()
     {
@@ -184,6 +194,8 @@ else
             _rows.Clear();
             if (list is not null)
                 _rows.AddRange(list);
+
+            _lastLoadedAtUtc = DateTimeOffset.UtcNow;
         }
         catch
         {
@@ -351,6 +363,12 @@ else
         _rows.AsQueryable().Where(r =>
             GridTextFilter.Matches(r.RootDomain, _targetRootFilter)
             && GridTextFilter.Matches(r.GlobalMaxDepth.ToString(), _targetDepthFilter));
+
+    private int TargetActiveFilterCount =>
+        CountActive(_targetRootFilter, _targetDepthFilter);
+
+    private static int CountActive(params string?[] values) =>
+        values.Count(value => !string.IsNullOrWhiteSpace(value));
 
     private void ClearTargetFilters()
     {

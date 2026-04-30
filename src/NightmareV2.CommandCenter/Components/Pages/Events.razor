@@ -80,7 +80,16 @@
                            GroupKeySelector="EventGroupKeySelector"
                            RowMatches="@EventMatches"
                            IsLoading="@_loading"
-                           EmptyText="No events match the current filters.">
+                           EmptyText="No events match the current filters."
+                           ShowDensityPicker="true"
+                           RefreshRequested="ReloadAsync"
+                           LastUpdatedUtc="_lastLoadedAtUtc"
+                           ClearFiltersRequested="ClearFilters"
+                           ActiveFilterCount="@EventActiveFilterCount"
+                           EnableCsvExport="true"
+                           ExportFileName="nightmare-events.csv"
+                           PersistKey="events"
+                           StickyFirstColumn="true">
             <ToolbarTemplate>
                 <label class="compact-field">
                     <span>Window</span>
@@ -324,6 +333,13 @@
             _loading = false;
         }
     }
+
+    private int EventActiveFilterCount =>
+        CountActive(_eventNameFilter, _producerFilter, _consumerFilter, _groupBy)
+        + (_unconsumedOnly ? 1 : 0);
+
+    private static int CountActive(params string?[] values) =>
+        values.Count(value => !string.IsNullOrWhiteSpace(value));
 
     private void ClearFilters()
     {

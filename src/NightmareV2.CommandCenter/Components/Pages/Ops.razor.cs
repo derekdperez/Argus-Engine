@@ -153,4 +153,26 @@ public partial class Ops
 
         return null;
     }
+    private int OpsTargetActiveFilterCount =>
+        CountActive(_targetRootFilter, _targetDepthFilter, _targetGroupBy);
+
+    private int AssetActiveFilterCount =>
+        CountActive(_filterKindCol, _filterStatusCol, _filterRawCol, _filterPipelineCol, _filterHowFoundCol, _assetGroupBy)
+        + (!_showAssetDepth ? 1 : 0)
+        + (_showAssetCanonical ? 1 : 0)
+        + (!_showAssetPipeline ? 1 : 0)
+        + (!_showAssetHowFound ? 1 : 0);
+
+    private int QueueActiveFilterCount =>
+        CountActive(_filterQueueKindCol, _filterQueueRawCol, _filterQueuePipelineCol, _queueGroupBy)
+        + (_showFailedQueueRequests ? 1 : 0)
+        + (!_showQueueDomain ? 1 : 0)
+        + (!_showQueueAttempts ? 1 : 0)
+        + (_showQueueTiming ? 1 : 0)
+        + (!_showQueueErrors ? 1 : 0);
+
+    private static int CountActive(params string?[] values) =>
+        values.Count(value => !string.IsNullOrWhiteSpace(value));
+
+
 }

@@ -36,15 +36,25 @@
                        Items="FilteredFindings"
                        @bind-SearchText="_findingSearch"
                        SearchPlaceholder="Search severity, type, pattern, URL, worker, snippet…"
-                       ScrollPreset="@(_findingVirtualize ? NightmareDataGridScrollPreset.Virtualized : NightmareDataGridScrollPreset.Tall)"
-                       Virtualize="@_findingVirtualize"
+                       ScrollPreset="@(_findingVirtualize && FindingGroupKeySelector is null ? NightmareDataGridScrollPreset.Virtualized : NightmareDataGridScrollPreset.Tall)"
+                       Virtualize="@(_findingVirtualize && FindingGroupKeySelector is null)"
                        Pagination="_findingPagination"
                        ItemSize="40"
                        ItemKey="@(r => r.Id)"
                        OverscanCount="6"
                        GroupKeySelector="FindingGroupKeySelector"
                        RowMatches="@FindingMatches"
-                       HostTabIndex="@(-1)">
+                       HostTabIndex="@(-1)"
+                       IsLoading="@_loading"
+                       ShowDensityPicker="true"
+                       RefreshRequested="ReloadAsync"
+                       LastUpdatedUtc="_lastLoadedAtUtc"
+                       ClearFiltersRequested="ClearFindingFilters"
+                       ActiveFilterCount="@FindingActiveFilterCount"
+                       EnableCsvExport="true"
+                       ExportFileName="nightmare-high-value-findings.csv"
+                       PersistKey="high-value-findings"
+                       StickyFirstColumn="true">
         <ConfigurationTemplate>
             <div class="grid-config compact">
                 <label>
@@ -102,6 +112,8 @@
     private string _findingWorkerFilter = "";
     private string _findingGroupBy = "Severity";
     private bool _findingVirtualize = true;
+    private bool _loading;
+    private DateTimeOffset? _lastLoadedAtUtc;
     private readonly PaginationState _findingPagination = new() { ItemsPerPage = 50 };
 
     private static readonly GridSort<HighValueFindingRowDto> SortFindingSeverity =
@@ -143,6 +155,13 @@
             && GridTextFilter.Matches(r.PatternName, _findingPatternFilter)
             && GridTextFilter.Matches(r.TargetRootDomain, _findingTargetFilter)
             && GridTextFilter.Matches(r.WorkerName, _findingWorkerFilter));
+
+    private int FindingActiveFilterCount =>
+        CountActive(_findingSeverityFilter, _findingTypeFilter, _findingPatternFilter, _findingTargetFilter, _findingWorkerFilter)
+        + (string.Equals(_findingGroupBy, "Severity", StringComparison.OrdinalIgnoreCase) ? 0 : CountActive(_findingGroupBy));
+
+    private static int CountActive(params string?[] values) =>
+        values.Count(value => !string.IsNullOrWhiteSpace(value));
 
     private void ClearFindingFilters()
     {
@@ -208,6 +227,10 @@
 
     private async Task ReloadAsync()
     {
+        if (_loading)
+            return;
+
+        _loading = true;
         try
         {
             var qs = _criticalOnly ? "?criticalOnly=true&take=800" : "?take=800";
@@ -216,10 +239,16 @@
             _rows.Clear();
             if (list is not null)
                 _rows.AddRange(list);
+
+            _lastLoadedAtUtc = DateTimeOffset.UtcNow;
         }
         catch
         {
             _rows.Clear();
+        }
+        finally
+        {
+            _loading = false;
         }
     }
 

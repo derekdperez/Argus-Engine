@@ -1,57 +1,98 @@
 import os
-from pathlib import Path
+import re
 
-def fix_missing_contracts():
-    repo_root = Path(os.getcwd())
-    
-    # 1. Recreate/Update the Contracts file
-    contracts_dir = repo_root / "src/NightmareV2.Contracts"
-    contracts_file = contracts_dir / "OpsDto.cs"
-    
-    # Ensure directory exists
-    contracts_dir.mkdir(parents=True, exist_ok=True)
-    
-    contracts_content = """
-namespace NightmareV2.Contracts;
+def patch_files():
+    # Define the project root-relative paths
+    files_to_patch = {
+        "src/NightmareV2.Application/Workers/IHttpRequestQueueStateMachine.cs": {
+            "search": "HttpRequestQueueStateKind to",
+            "replace": "HttpRequestQueueStateKind toKind"
+        },
+        "src/NightmareV2.Infrastructure/Messaging/BusJournalObservers.cs": {
+            "transform": patch_bus_observers
+        },
+        "src/NightmareV2.CommandCenter/WorkerActivityQuery.cs": {
+            "prepend_usings": ["using NightmareV2.Contracts;", "using NightmareV2.CommandCenter.Models;"]
+        },
+        "src/NightmareV2.CommandCenter/DockerRuntimeStatusBuilder.cs": {
+            "prepend_usings": ["using NightmareV2.Contracts;", "using NightmareV2.CommandCenter.Models;"]
+        },
+        "src/NightmareV2.CommandCenter/Components/Pages/Status.razor": {
+            "prepend_usings": ["@using NightmareV2.Contracts", "@using NightmareV2.CommandCenter.Models"]
+        },
+        "src/NightmareV2.CommandCenter/Components/Pages/HighValueFindings.razor": {
+            "prepend_usings": ["@using NightmareV2.Contracts", "@using NightmareV2.CommandCenter.Models"]
+        },
+        "src/NightmareV2.CommandCenter/Components/Pages/OpsRadzen.razor": {
+            "transform": patch_ops_radzen
+        }
+    }
 
-public record OpsSnapshotDto(
-    AssetOpsSummaryDto AssetSummary,
-    BusTrafficSummaryDto BusSummary,
-    List<WorkerDetailStatsDto> WorkerStats);
+    for path, patch in files_to_patch.items():
+        if not os.path.exists(path):
+            print(f"[!] Warning: File not found - {path}")
+            continue
 
-public record AssetOpsSummaryDto(long TotalAssets, long NewToday, List<AssetCountByDomainDto> ByDomain);
-public record AssetCountByDomainDto(string Domain, long Count);
-public record BusTrafficSummaryDto(long PendingMessages, long FailedMessages, double MessagesPerSecond);
-public record WorkerDetailStatsDto(string WorkerName, string Status, int InstanceCount, long ProcessedCount);
-public record RabbitQueueBriefDto(string Name, long Messages);
-public record WorkerActivitySnapshotDto(List<WorkerInstanceActivityDto> Instances);
-public record WorkerInstanceActivityDto(string Id, string WorkerKind, string LastAction, DateTime Timestamp);
-public record DockerRuntimeStatusDto(List<DockerContainerStatusDto> Containers, List<DockerImageStatusDto> Images);
-public record DockerContainerStatusDto(string Id, string Names, string Image, string Status, string State);
-public record DockerImageStatusDto(string Id, string Repository, string Tag, string Size);
-public record DockerComponentHealthDto(string Name, bool IsHealthy, string Details);
-public record WorkerKindSummaryDto(string Kind, int Count);
-public record AssetGridRowDto(string Name, string Value, DateTime Discovered);
-public record HttpRequestQueueRowDto(string Id, string Method, string Url, string State);
-public record OpsOverviewDto(int ActiveWorkers, int PendingTasks);
-public record HttpRequestQueueMetricsDto(int Total, int Pending, int Processing, int Failed);
-public record HttpRequestQueueSettingsDto(int MaxConcurrency, bool Paused);
-public record HighValueFindingRowDto(string Severity, string Title, string Target, DateTime Detected);
-"""
-    contracts_file.write_text(contracts_content.strip())
-    print(f"Restored contracts in: {contracts_file}")
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
 
-    # 2. Ensure CommandCenter has the correct 'using' directive
-    builder_path = repo_root / "src/NightmareV2.CommandCenter/OpsSnapshotBuilder.cs"
-    if builder_path.exists():
-        content = builder_path.read_text()
-        if "using NightmareV2.Contracts;" not in content:
-            builder_path.write_text("using NightmareV2.Contracts;\n" + content)
-            print(f"Added namespace import to: {builder_path}")
+        new_content = content
 
-    # 3. Clean NuGet cache and rebuild
-    print("Cleaning build artifacts...")
-    os.system("dotnet clean src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj")
+        # Apply specific search/replace
+        if "search" in patch:
+            new_content = new_content.replace(patch["search"], patch["replace"])
+
+        # Apply using/namespace prepends
+        if "prepend_usings" in patch:
+            usings = "\n".join(patch["prepend_usings"]) + "\n"
+            if usings not in new_content:
+                new_content = usings + new_content
+
+        # Apply custom logic transformations
+        if "transform" in patch:
+            new_content = patch["transform"](new_content)
+
+        if content != new_content:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            print(f"[✓] Patched: {path}")
+        else:
+            print(f"[~] No changes needed: {path}")
+
+def patch_bus_observers(content):
+    """Adds static keyword to methods that don't use instance data."""
+    methods = ["ConsumeFault", "PostConsume", "PreConsume"]
+    for method in methods:
+        pattern = rf"public Task {method}<T>"
+        content = re.sub(pattern, f"public static Task {method}<T>", content)
+    return content
+
+def patch_ops_radzen(content):
+    """Removes duplicate Http injections and OnInitialized methods."""
+    # Add missing namespaces
+    usings = "@using NightmareV2.Contracts\n@using NightmareV2.CommandCenter.Models\n"
+    if "@using NightmareV2.Contracts" not in content:
+        content = usings + content
+
+    # Remove duplicate @inject HttpClient Http (keeps only the first occurrence)
+    inject_pattern = r"@inject HttpClient Http"
+    matches = list(re.finditer(inject_pattern, content))
+    if len(matches) > 1:
+        # Keep the first, remove the others
+        for match in reversed(matches[1:]):
+            content = content[:match.start()] + content[match.end():]
+
+    # Remove duplicate OnInitializedAsync blocks (extremely simplified check)
+    # This logic assumes the second one starts later in the file
+    init_pattern = r"protected override async Task OnInitializedAsync\(\).*?\{.*?\}"
+    matches = list(re.finditer(init_pattern, content, re.DOTALL))
+    if len(matches) > 1:
+        for match in reversed(matches[1:]):
+            content = content[:match.start()] + content[match.end():]
+
+    return content
 
 if __name__ == "__main__":
-    fix_missing_contracts()
+    print("Starting build error patching script...")
+    patch_files()
+    print("Patching complete.")

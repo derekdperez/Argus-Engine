@@ -21,8 +21,8 @@ using NightmareV2.CommandCenter.Endpoints;
 using NightmareV2.CommandCenter.Hubs;
 using NightmareV2.CommandCenter.Models;
 using NightmareV2.CommandCenter.Realtime;
+using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
-using AssetAdmissionStage = NightmareV2.Contracts.AssetAdmissionStage;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure;
 using NightmareV2.Infrastructure.Data;
@@ -97,6 +97,8 @@ app.UseAntiforgery();
 DiagnosticsEndpoints.Map(app);
 DataMaintenanceEndpoints.Map(app);
 EventTraceEndpoints.Map(app);
+AssetGraphEndpoints.Map(app);
+TagEndpoints.Map(app);
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
@@ -185,6 +187,7 @@ static string[] RequiredWorkerKeys() =>
     WorkerKeys.PortScan,
     WorkerKeys.HighValueRegex,
     WorkerKeys.HighValuePaths,
+    WorkerKeys.TechnologyIdentification,
 ];
 
 static async Task QueueRootSpiderSeedsAsync(
@@ -687,7 +690,7 @@ app.MapGet(
 
 app.MapGet(
         "/api/assets",
-        async (NightmareDbContext db, Guid? targetId, int? take, CancellationToken ct) =>
+        async (NightmareDbContext db, Guid? targetId, int? take, string? tag, CancellationToken ct) =>
         {
             var limit = Math.Clamp(take ?? 500, 1, 5000);
             var q = db.Assets.AsNoTracking()
@@ -696,6 +699,12 @@ app.MapGet(
                 .AsQueryable();
             if (targetId is { } tid)
                 q = q.Where(a => a.TargetId == tid);
+            if (!string.IsNullOrWhiteSpace(tag))
+            {
+                var tagSlug = tag.Trim();
+                q = q.Where(a => db.AssetTags.Any(at => at.AssetId == a.Id && db.Tags.Any(t => t.Id == at.TagId && t.Slug == tagSlug)));
+            }
+
             var rows = await q.Take(limit)
                 .Select(a => new AssetGridRowDto(
                     a.Id,
@@ -1107,6 +1116,7 @@ app.MapGet(
                 new WorkerCapabilityDto(WorkerKeys.PortScan, "Port Scan", "v1", true, false, true, true),
                 new WorkerCapabilityDto(WorkerKeys.HighValueRegex, "High Value Regex", "v1", true, false, false, false),
                 new WorkerCapabilityDto(WorkerKeys.HighValuePaths, "High Value Paths", "v1", true, true, false, false),
+                new WorkerCapabilityDto(WorkerKeys.TechnologyIdentification, "Technology Identification", "v1", false, true, true, false),
             };
             return Results.Ok(rows);
         })
@@ -1167,6 +1177,7 @@ app.MapGet(
                 WorkerKeys.PortScan,
                 WorkerKeys.HighValueRegex,
                 WorkerKeys.HighValuePaths,
+                WorkerKeys.TechnologyIdentification,
             };
 
             var rows = keys.Select(

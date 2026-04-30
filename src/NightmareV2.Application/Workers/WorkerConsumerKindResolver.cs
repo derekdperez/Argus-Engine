@@ -21,6 +21,8 @@ public static class WorkerConsumerKindResolver
             return WorkerKeys.HighValueRegex;
         if (consumerTypeFullName.Contains("Workers.HighValue.Consumers.HighValuePathGuessConsumer", StringComparison.Ordinal))
             return WorkerKeys.HighValuePaths;
+        if (consumerTypeFullName.Contains("Workers.TechnologyIdentification.Consumers.TechnologyIdentificationConsumer", StringComparison.Ordinal))
+            return WorkerKeys.TechnologyIdentification;
         return null;
     }
 }

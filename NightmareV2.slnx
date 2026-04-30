@@ -10,8 +10,10 @@
     <Project Path="src/NightmareV2.Workers.PortScan/NightmareV2.Workers.PortScan.csproj" />
     <Project Path="src/NightmareV2.Workers.Spider/NightmareV2.Workers.Spider.csproj" />
     <Project Path="src/NightmareV2.Workers.HighValue/NightmareV2.Workers.HighValue.csproj" />
+    <Project Path="src/NightmareV2.Workers.TechnologyIdentification/NightmareV2.Workers.TechnologyIdentification.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/NightmareV2.Workers.Enum.Tests/NightmareV2.Workers.Enum.Tests.csproj" />
+    <Project Path="tests/NightmareV2.TechnologyIdentification.Tests/NightmareV2.TechnologyIdentification.Tests.csproj" />
   </Folder>
 </Solution>

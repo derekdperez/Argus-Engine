@@ -1,0 +1,7 @@
+{
+  "source": "developit/wappalyzer",
+  "sourcePath": "src/Resources/TechIdentificationData",
+  "importedAtUtc": "2026-04-30T00:00:00Z",
+  "retainedFields": ["headers", "html", "cookies", "meta", "scripts", "script", "scriptSrc", "url", "implies", "requires", "excludes"],
+  "discardedFields": ["js", "dom", "dns", "certIssuer", "xhr", "robots", "css", "magento"]
+}

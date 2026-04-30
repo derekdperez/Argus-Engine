@@ -22,6 +22,7 @@ internal static class DockerRuntimeStatusBuilder
         new("worker-enum", "Enum Worker", "worker-enum"),
         new("worker-portscan", "Port Scan Worker", "worker-portscan"),
         new("worker-highvalue", "High Value Worker", "worker-highvalue"),
+        new("worker-techid", "Technology Identification Worker", "worker-techid"),
     ];
 
     public static async Task<DockerRuntimeStatusDto> BuildAsync(CancellationToken cancellationToken)

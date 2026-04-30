@@ -99,5 +99,6 @@ Recommended services:
 - worker-enum
 - worker-portscan
 - worker-highvalue
+- worker-techid
 
 Keep Postgres, Redis, and RabbitMQ self-hosted in your own ECS/EC2 containers unless you decide to move to managed AWS services later.

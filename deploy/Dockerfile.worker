@@ -18,6 +18,7 @@ COPY src/NightmareV2.Gatekeeper/NightmareV2.Gatekeeper.csproj src/NightmareV2.Ga
 COPY src/NightmareV2.Workers.HighValue/NightmareV2.Workers.HighValue.csproj src/NightmareV2.Workers.HighValue/
 COPY src/NightmareV2.Workers.PortScan/NightmareV2.Workers.PortScan.csproj src/NightmareV2.Workers.PortScan/
 COPY src/NightmareV2.Workers.Spider/NightmareV2.Workers.Spider.csproj src/NightmareV2.Workers.Spider/
+COPY src/NightmareV2.Workers.TechnologyIdentification/NightmareV2.Workers.TechnologyIdentification.csproj src/NightmareV2.Workers.TechnologyIdentification/
 RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 

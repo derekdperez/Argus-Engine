@@ -19,6 +19,7 @@ internal static class WorkerActivityQuery
         WorkerKeys.PortScan,
         WorkerKeys.HighValueRegex,
         WorkerKeys.HighValuePaths,
+        WorkerKeys.TechnologyIdentification,
     ];
 
     public static async Task<WorkerActivitySnapshotDto> BuildSnapshotAsync(NightmareDbContext db, CancellationToken ct)

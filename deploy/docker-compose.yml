@@ -256,5 +256,28 @@ services:
       rabbitmq:
         condition: service_healthy
 
+
+  worker-techid:
+    image: nightmare-v2/worker-techid:local
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
+      args:
+        <<: *dotnet-build-args
+        PROJECT_DIR: NightmareV2.Workers.TechnologyIdentification
+        APP_DLL: NightmareV2.Workers.TechnologyIdentification.dll
+    environment:
+      <<: *common-env
+      Nightmare__SkipStartupDatabase: "true"
+    depends_on:
+      command-center:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
 volumes:
   pgdata:

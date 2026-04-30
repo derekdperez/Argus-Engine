@@ -108,6 +108,7 @@ nightmare_service_project_path() {
     worker-enum) echo "src/NightmareV2.Workers.Enum" ;;
     worker-portscan) echo "src/NightmareV2.Workers.PortScan" ;;
     worker-highvalue) echo "src/NightmareV2.Workers.HighValue" ;;
+    worker-techid) echo "src/NightmareV2.Workers.TechnologyIdentification" ;;
     *) return 1 ;;
   esac
 }
@@ -120,6 +121,7 @@ nightmare_service_app_dll() {
     worker-enum) echo "NightmareV2.Workers.Enum.dll" ;;
     worker-portscan) echo "NightmareV2.Workers.PortScan.dll" ;;
     worker-highvalue) echo "NightmareV2.Workers.HighValue.dll" ;;
+    worker-techid) echo "NightmareV2.Workers.TechnologyIdentification.dll" ;;
     *) return 1 ;;
   esac
 }
@@ -145,7 +147,8 @@ nightmare_all_dotnet_services() {
     worker-spider \
     worker-enum \
     worker-portscan \
-    worker-highvalue
+    worker-highvalue \
+    worker-techid
 }
 
 nightmare_common_source_inputs() {
@@ -177,6 +180,9 @@ nightmare_service_specific_source_inputs() {
       ;;
     worker-highvalue)
       inputs+=("src/Resources/RegexPatterns" "src/Resources/Wordlists/high_value")
+      ;;
+    worker-techid)
+      inputs+=("src/Resources/TechIdentificationData" "src/Resources/TechnologyDetection")
       ;;
   esac
 

@@ -28,6 +28,7 @@ internal static class OpsSnapshotBuilder
         (WorkerKeys.PortScan, "PortScanRequestedConsumer"),
         (WorkerKeys.HighValueRegex, "Workers.HighValue.Consumers.HighValueRegexConsumer"),
         (WorkerKeys.HighValuePaths, "Workers.HighValue.Consumers.HighValuePathGuessConsumer"),
+        (WorkerKeys.TechnologyIdentification, "Workers.TechnologyIdentification.Consumers.TechnologyIdentificationConsumer"),
     ];
 
     public static void RegisterHttpClient(WebApplicationBuilder builder)
@@ -69,6 +70,7 @@ internal static class OpsSnapshotBuilder
             WorkerKeys.PortScan,
             WorkerKeys.HighValueRegex,
             WorkerKeys.HighValuePaths,
+            WorkerKeys.TechnologyIdentification,
         };
         var metrics = new List<WorkerDetailStatsDto>(order.Length);
         foreach (var key in order)
@@ -420,6 +422,8 @@ internal static class OpsSnapshotBuilder
             return WorkerKeys.Enumeration;
         if (n.Contains("highvaluepath") || n.Contains("high-value-path") || n.Contains("hvpath"))
             return WorkerKeys.HighValuePaths;
+        if (n.Contains("technology") || n.Contains("techid") || n.Contains("tech-id"))
+            return WorkerKeys.TechnologyIdentification;
         if (n.Contains("highvalue") || n.Contains("high-value") || n.Contains("high_value") || n.Contains("scannable"))
             return WorkerKeys.HighValueRegex;
         return null;

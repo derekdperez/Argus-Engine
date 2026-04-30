@@ -42,3 +42,4 @@ build_and_push "worker-spider" "deploy/Dockerfile.worker" "NightmareV2.Workers.S
 build_and_push "worker-enum" "deploy/Dockerfile.worker-enum" "NightmareV2.Workers.Enum" "NightmareV2.Workers.Enum.dll"
 build_and_push "worker-portscan" "deploy/Dockerfile.worker" "NightmareV2.Workers.PortScan" "NightmareV2.Workers.PortScan.dll"
 build_and_push "worker-highvalue" "deploy/Dockerfile.worker" "NightmareV2.Workers.HighValue" "NightmareV2.Workers.HighValue.dll"
+build_and_push "worker-techid" "deploy/Dockerfile.worker" "NightmareV2.Workers.TechnologyIdentification" "NightmareV2.Workers.TechnologyIdentification.dll"

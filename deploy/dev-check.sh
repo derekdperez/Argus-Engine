@@ -78,7 +78,7 @@ printf '\n== 3. Start infrastructure ==\n'
 compose up -d postgres filestore-db-init redis rabbitmq
 
 printf '\n== 4. Start application services ==\n'
-compose up -d command-center gatekeeper worker-enum worker-spider worker-portscan worker-highvalue
+compose up -d command-center gatekeeper worker-enum worker-spider worker-portscan worker-highvalue worker-techid
 
 printf '\n== 5. Container status ==\n'
 compose ps

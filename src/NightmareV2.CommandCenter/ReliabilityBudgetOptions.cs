@@ -15,5 +15,6 @@ public sealed class ReliabilityBudgetOptions
         "worker-spider",
         "worker-portscan",
         "worker-highvalue",
+        "worker-techid",
     ];
 }

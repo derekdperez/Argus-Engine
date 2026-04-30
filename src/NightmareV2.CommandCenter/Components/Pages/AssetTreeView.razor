@@ -1,4 +1,5 @@
 @using NightmareV2.Application.Assets
+@using NightmareV2.Application.TechnologyIdentification
 
 <li class="asset-tree-node">
     <div class="asset-node-line">
@@ -8,13 +9,26 @@
         {
             <small>@Node.IncomingRelationship.RelationshipType</small>
         }
+        @if (AssetTags.TryGetValue(Node.Asset.Id, out var tags) && tags.Count > 0)
+        {
+            <span class="asset-tag-list">
+                @foreach (var tag in tags.Take(4))
+                {
+                    <span class="asset-tag-pill" title="@tag.Slug">@tag.Name</span>
+                }
+                @if (tags.Count > 4)
+                {
+                    <span class="asset-tag-pill muted">+@(tags.Count - 4)</span>
+                }
+            </span>
+        }
     </div>
     @if (Node.Children.Count > 0)
     {
         <ul>
             @foreach (var child in Node.Children)
             {
-                <AssetTreeView Node="child" />
+                <AssetTreeView Node="child" AssetTags="AssetTags" />
             }
         </ul>
     }
@@ -22,4 +36,6 @@
 
 @code {
     [Parameter, EditorRequired] public AssetTreeNodeDto Node { get; set; } = default!;
+    [Parameter] public IReadOnlyDictionary<Guid, IReadOnlyList<AssetTagDto>> AssetTags { get; set; } =
+        new Dictionary<Guid, IReadOnlyList<AssetTagDto>>();
 }

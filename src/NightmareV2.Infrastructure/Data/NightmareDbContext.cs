@@ -15,6 +15,9 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
     public DbSet<HttpRequestQueueSettings> HttpRequestQueueSettings => Set<HttpRequestQueueSettings>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
+    public DbSet<Tag> Tags => Set<Tag>();
+    public DbSet<AssetTag> AssetTags => Set<AssetTag>();
+    public DbSet<TechnologyDetection> TechnologyDetections => Set<TechnologyDetection>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -52,6 +55,68 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
         });
 
 
+
+
+        modelBuilder.Entity<Tag>(e =>
+        {
+            e.ToTable("tags");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.Slug).HasColumnName("slug").HasMaxLength(256).IsRequired();
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(256).IsRequired();
+            e.Property(x => x.TagType).HasColumnName("tag_type").HasMaxLength(64).IsRequired();
+            e.Property(x => x.Source).HasColumnName("source").HasMaxLength(128).IsRequired();
+            e.Property(x => x.SourceKey).HasColumnName("source_key").HasMaxLength(256);
+            e.Property(x => x.Description).HasColumnName("description").HasMaxLength(1024);
+            e.Property(x => x.Website).HasColumnName("website").HasMaxLength(1024);
+            e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
+            e.Property(x => x.IsActive).HasColumnName("is_active");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.HasIndex(x => x.Slug).IsUnique();
+            e.HasIndex(x => new { x.TagType, x.Source });
+        });
+
+        modelBuilder.Entity<AssetTag>(e =>
+        {
+            e.ToTable("asset_tags");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TargetId).HasColumnName("target_id");
+            e.Property(x => x.AssetId).HasColumnName("asset_id");
+            e.Property(x => x.TagId).HasColumnName("tag_id");
+            e.Property(x => x.Confidence).HasColumnName("confidence").HasPrecision(5, 4);
+            e.Property(x => x.Source).HasColumnName("source").HasMaxLength(128).IsRequired();
+            e.Property(x => x.EvidenceJson).HasColumnName("evidence_json").HasColumnType("jsonb");
+            e.Property(x => x.FirstSeenAtUtc).HasColumnName("first_seen_at_utc");
+            e.Property(x => x.LastSeenAtUtc).HasColumnName("last_seen_at_utc");
+            e.HasIndex(x => new { x.AssetId, x.TagId }).IsUnique();
+            e.HasIndex(x => new { x.TargetId, x.TagId });
+            e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Tag).WithMany().HasForeignKey(x => x.TagId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TechnologyDetection>(e =>
+        {
+            e.ToTable("technology_detections");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TargetId).HasColumnName("target_id");
+            e.Property(x => x.AssetId).HasColumnName("asset_id");
+            e.Property(x => x.TagId).HasColumnName("tag_id");
+            e.Property(x => x.TechnologyName).HasColumnName("technology_name").HasMaxLength(256).IsRequired();
+            e.Property(x => x.EvidenceSource).HasColumnName("evidence_source").HasMaxLength(64).IsRequired();
+            e.Property(x => x.EvidenceKey).HasColumnName("evidence_key").HasMaxLength(512);
+            e.Property(x => x.Pattern).HasColumnName("pattern").HasMaxLength(2048);
+            e.Property(x => x.MatchedText).HasColumnName("matched_text").HasMaxLength(512);
+            e.Property(x => x.Version).HasColumnName("version").HasMaxLength(128);
+            e.Property(x => x.Confidence).HasColumnName("confidence").HasPrecision(5, 4);
+            e.Property(x => x.EvidenceHash).HasColumnName("evidence_hash").HasMaxLength(64).IsRequired();
+            e.Property(x => x.DetectedAtUtc).HasColumnName("detected_at_utc");
+            e.HasIndex(x => new { x.AssetId, x.TagId, x.EvidenceHash }).IsUnique();
+            e.HasIndex(x => new { x.TargetId, x.TagId });
+            e.HasIndex(x => x.DetectedAtUtc);
+        });
 
         modelBuilder.Entity<AssetRelationship>(e =>
         {

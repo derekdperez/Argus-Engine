@@ -11,6 +11,7 @@ services=(
   worker-enum
   worker-portscan
   worker-highvalue
+  worker-techid
 )
 
 for service in "${services[@]}"; do

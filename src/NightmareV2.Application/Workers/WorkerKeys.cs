@@ -10,4 +10,5 @@ public static class WorkerKeys
     public const string PortScan = "PortScan";
     public const string HighValueRegex = "HighValueRegex";
     public const string HighValuePaths = "HighValuePaths";
+    public const string TechnologyIdentification = "TechnologyIdentification";
 }

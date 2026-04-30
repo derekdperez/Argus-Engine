@@ -104,6 +104,68 @@ public static class NightmareDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS tags (
+                    id uuid NOT NULL PRIMARY KEY,
+                    slug character varying(256) NOT NULL,
+                    name character varying(256) NOT NULL,
+                    tag_type character varying(64) NOT NULL,
+                    source character varying(128) NOT NULL,
+                    source_key character varying(256) NULL,
+                    description character varying(1024) NULL,
+                    website character varying(1024) NULL,
+                    metadata_json jsonb NULL,
+                    is_active boolean NOT NULL DEFAULT true,
+                    created_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    updated_at_utc timestamp with time zone NOT NULL DEFAULT now()
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_tags_slug ON tags (slug);
+                CREATE INDEX IF NOT EXISTS ix_tags_type_source ON tags (tag_type, source);
+
+                CREATE TABLE IF NOT EXISTS asset_tags (
+                    id uuid NOT NULL PRIMARY KEY,
+                    target_id uuid NOT NULL REFERENCES recon_targets("Id") ON DELETE CASCADE,
+                    asset_id uuid NOT NULL REFERENCES stored_assets("Id") ON DELETE CASCADE,
+                    tag_id uuid NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                    confidence numeric(5,4) NOT NULL DEFAULT 1.0,
+                    source character varying(128) NOT NULL,
+                    evidence_json jsonb NULL,
+                    first_seen_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    last_seen_at_utc timestamp with time zone NOT NULL DEFAULT now()
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_asset_tags_asset_tag ON asset_tags (asset_id, tag_id);
+                CREATE INDEX IF NOT EXISTS ix_asset_tags_target_tag ON asset_tags (target_id, tag_id);
+
+                CREATE TABLE IF NOT EXISTS technology_detections (
+                    id uuid NOT NULL PRIMARY KEY,
+                    target_id uuid NOT NULL REFERENCES recon_targets("Id") ON DELETE CASCADE,
+                    asset_id uuid NOT NULL REFERENCES stored_assets("Id") ON DELETE CASCADE,
+                    tag_id uuid NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                    technology_name character varying(256) NOT NULL,
+                    evidence_source character varying(64) NOT NULL,
+                    evidence_key character varying(512) NULL,
+                    pattern character varying(2048) NULL,
+                    matched_text character varying(512) NULL,
+                    version character varying(128) NULL,
+                    confidence numeric(5,4) NOT NULL DEFAULT 1.0,
+                    evidence_hash character varying(64) NOT NULL,
+                    detected_at_utc timestamp with time zone NOT NULL DEFAULT now()
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_technology_detections_asset_tag_hash
+                    ON technology_detections (asset_id, tag_id, evidence_hash);
+                CREATE INDEX IF NOT EXISTS ix_technology_detections_target_tag
+                    ON technology_detections (target_id, tag_id);
+                CREATE INDEX IF NOT EXISTS ix_technology_detections_detected_at
+                    ON technology_detections (detected_at_utc DESC);
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         await db.Database.ExecuteSqlRawAsync(
                 """
                 CREATE TABLE IF NOT EXISTS high_value_findings (

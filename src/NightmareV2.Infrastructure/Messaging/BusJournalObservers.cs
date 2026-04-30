@@ -31,13 +31,13 @@ public sealed class BusJournalConsumeObserver(BusJournalBuffer buffer) : IConsum
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false };
 
-    public static Task ConsumeFault<T>(ConsumeContext<T> context, Exception exception)
+    public Task ConsumeFault<T>(ConsumeContext<T> context, Exception exception)
         where T : class =>
         Task.CompletedTask;
 
     public Task ConsumeFault(ConsumeContext context, Exception exception) => Task.CompletedTask;
 
-    public static Task PostConsume<T>(ConsumeContext<T> context)
+    public Task PostConsume<T>(ConsumeContext<T> context)
         where T : class
     {
         buffer.TryEnqueue(
@@ -50,7 +50,7 @@ public sealed class BusJournalConsumeObserver(BusJournalBuffer buffer) : IConsum
 
     public Task PostConsume(ConsumeContext context) => Task.CompletedTask;
 
-    public static Task PreConsume<T>(ConsumeContext<T> context)
+    public Task PreConsume<T>(ConsumeContext<T> context)
         where T : class =>
         Task.CompletedTask;
 

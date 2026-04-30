@@ -1,98 +1,75 @@
 import os
 import re
 
-def patch_files():
-    # Define the project root-relative paths
-    files_to_patch = {
-        "src/NightmareV2.Application/Workers/IHttpRequestQueueStateMachine.cs": {
-            "search": "HttpRequestQueueStateKind to",
-            "replace": "HttpRequestQueueStateKind toKind"
-        },
-        "src/NightmareV2.Infrastructure/Messaging/BusJournalObservers.cs": {
-            "transform": patch_bus_observers
-        },
-        "src/NightmareV2.CommandCenter/WorkerActivityQuery.cs": {
-            "prepend_usings": ["using NightmareV2.Contracts;", "using NightmareV2.CommandCenter.Models;"]
-        },
-        "src/NightmareV2.CommandCenter/DockerRuntimeStatusBuilder.cs": {
-            "prepend_usings": ["using NightmareV2.Contracts;", "using NightmareV2.CommandCenter.Models;"]
-        },
-        "src/NightmareV2.CommandCenter/Components/Pages/Status.razor": {
-            "prepend_usings": ["@using NightmareV2.Contracts", "@using NightmareV2.CommandCenter.Models"]
-        },
-        "src/NightmareV2.CommandCenter/Components/Pages/HighValueFindings.razor": {
-            "prepend_usings": ["@using NightmareV2.Contracts", "@using NightmareV2.CommandCenter.Models"]
-        },
-        "src/NightmareV2.CommandCenter/Components/Pages/OpsRadzen.razor": {
-            "transform": patch_ops_radzen
-        }
-    }
-
-    for path, patch in files_to_patch.items():
-        if not os.path.exists(path):
-            print(f"[!] Warning: File not found - {path}")
-            continue
-
-        with open(path, "r", encoding="utf-8") as f:
+def patch_project():
+    # 1. Fix BusJournalObservers.cs (CS0736)
+    # Reverting static methods to instance methods to satisfy IConsumeObserver
+    bus_observers_path = "src/NightmareV2.Infrastructure/Messaging/BusJournalObservers.cs"
+    if os.path.exists(bus_observers_path):
+        with open(bus_observers_path, "r", encoding="utf-8") as f:
             content = f.read()
+        
+        # Remove the 'static' keyword that caused the interface implementation failure
+        new_content = content.replace("public static Task ConsumeFault", "public Task ConsumeFault")
+        new_content = new_content.replace("public static Task PostConsume", "public Task PostConsume")
+        new_content = new_content.replace("public static Task PreConsume", "public Task PreConsume")
+        
+        with open(bus_observers_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        print(f"[✓] Fixed CS0736 in {bus_observers_path}")
 
-        new_content = content
+    # 2. Fix GatekeeperOrchestrator.cs (CA1848, CA1873)
+    # Implementing LoggerMessage source generation for high-performance logging
+    gatekeeper_path = "src/NightmareV2.Application/Gatekeeping/GatekeeperOrchestrator.cs"
+    if os.path.exists(gatekeeper_path):
+        with open(gatekeeper_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
 
-        # Apply specific search/replace
-        if "search" in patch:
-            new_content = new_content.replace(patch["search"], patch["replace"])
+        new_lines = []
+        class_definition_found = False
+        
+        for line in lines:
+            # CA1848/CA1873 require the class to be 'partial' for source generators
+            if "public class GatekeeperOrchestrator" in line and "partial" not in line:
+                line = line.replace("public class", "public partial class")
+                class_definition_found = True
+            
+            # Replace inline Log calls with high-performance partial method calls
+            line = line.replace('_logger.LogDebug("Processing asset: {Asset}", asset.CanonicalUrl);', 
+                                'LogProcessingAsset(_logger, asset.CanonicalUrl);')
+            line = line.replace('_logger.LogDebug("Asset is in scope: {Asset}", asset.CanonicalUrl);', 
+                                'LogAssetInScope(_logger, asset.CanonicalUrl);')
+            line = line.replace('_logger.LogDebug("Asset is not in scope: {Asset}", asset.CanonicalUrl);', 
+                                'LogAssetOutOfScope(_logger, asset.CanonicalUrl);')
+            line = line.replace('_logger.LogInformation("Asset admitted to stage {Stage}: {Asset}", stage, asset.CanonicalUrl);', 
+                                'LogAssetAdmitted(_logger, stage.ToString(), asset.CanonicalUrl);')
+            
+            new_lines.append(line)
 
-        # Apply using/namespace prepends
-        if "prepend_usings" in patch:
-            usings = "\n".join(patch["prepend_usings"]) + "\n"
-            if usings not in new_content:
-                new_content = usings + new_content
+        # Append the LoggerMessage definitions at the end of the class
+        # We find the last closing brace and insert before it
+        if class_definition_found:
+            for i in range(len(new_lines) - 1, -1, -1):
+                if "}" in new_lines[i]:
+                    logger_defs = """
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Processing asset: {Asset}")]
+    static partial void LogProcessingAsset(ILogger logger, string asset);
 
-        # Apply custom logic transformations
-        if "transform" in patch:
-            new_content = patch["transform"](new_content)
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Asset is in scope: {Asset}")]
+    static partial void LogAssetInScope(ILogger logger, string asset);
 
-        if content != new_content:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(new_content)
-            print(f"[✓] Patched: {path}")
-        else:
-            print(f"[~] No changes needed: {path}")
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Asset is not in scope: {Asset}")]
+    static partial void LogAssetOutOfScope(ILogger logger, string asset);
 
-def patch_bus_observers(content):
-    """Adds static keyword to methods that don't use instance data."""
-    methods = ["ConsumeFault", "PostConsume", "PreConsume"]
-    for method in methods:
-        pattern = rf"public Task {method}<T>"
-        content = re.sub(pattern, f"public static Task {method}<T>", content)
-    return content
+    [LoggerMessage(Level = LogLevel.Information, Message = "Asset admitted to stage {Stage}: {Asset}")]
+    static partial void LogAssetAdmitted(ILogger logger, string stage, string asset);
+"""
+                    new_lines.insert(i, logger_defs)
+                    break
 
-def patch_ops_radzen(content):
-    """Removes duplicate Http injections and OnInitialized methods."""
-    # Add missing namespaces
-    usings = "@using NightmareV2.Contracts\n@using NightmareV2.CommandCenter.Models\n"
-    if "@using NightmareV2.Contracts" not in content:
-        content = usings + content
-
-    # Remove duplicate @inject HttpClient Http (keeps only the first occurrence)
-    inject_pattern = r"@inject HttpClient Http"
-    matches = list(re.finditer(inject_pattern, content))
-    if len(matches) > 1:
-        # Keep the first, remove the others
-        for match in reversed(matches[1:]):
-            content = content[:match.start()] + content[match.end():]
-
-    # Remove duplicate OnInitializedAsync blocks (extremely simplified check)
-    # This logic assumes the second one starts later in the file
-    init_pattern = r"protected override async Task OnInitializedAsync\(\).*?\{.*?\}"
-    matches = list(re.finditer(init_pattern, content, re.DOTALL))
-    if len(matches) > 1:
-        for match in reversed(matches[1:]):
-            content = content[:match.start()] + content[match.end():]
-
-    return content
+        with open(gatekeeper_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+        print(f"[✓] Fixed CA1848/CA1873 in {gatekeeper_path}")
 
 if __name__ == "__main__":
-    print("Starting build error patching script...")
-    patch_files()
-    print("Patching complete.")
+    patch_project()

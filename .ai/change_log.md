@@ -107,3 +107,10 @@
   - Added the missing CommandCenter bus journal row DTO and corrected `AssetKind` / `UrlFetchSnapshot` namespace aliases.
   - Why: restore `dotnet publish` for `NightmareV2.CommandCenter` without relying on older contract DTO names.
 - Validation: `dotnet publish src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release -o ./.tmp/publish-command-center /p:UseAppHost=false` succeeded.
+
+- Promoted the Radzen operations workspace to the default operations surface:
+  - `/` and `/ops` now route to the full operations workspace; the old basic page moved to `/ops-basic`, and `/ops-radzen` remains as an alternate direct link.
+  - Updated operations summary cards, target rollup columns, fixed UTC-5 display formatting, compact Radzen density, and button-style nav links.
+  - Added target rollups for subdomains, confirmed assets, queued HTTP requests, and last activity time.
+  - Added fallbacks so worker controls render seeded worker keys and RabbitMQ management URL can be inferred from `RabbitMq:Host`.
+- Validation: `dotnet publish src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release -o ./.tmp/publish-command-center /p:UseAppHost=false` succeeded.

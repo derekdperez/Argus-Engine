@@ -11,6 +11,15 @@ internal static class WorkerActivityQuery
     private static readonly TimeSpan HotWindow = TimeSpan.FromSeconds(25);
     private static readonly TimeSpan RecentWindow = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan IdleWindow = TimeSpan.FromHours(1);
+    private static readonly string[] RequiredWorkerKeys =
+    [
+        WorkerKeys.Gatekeeper,
+        WorkerKeys.Spider,
+        WorkerKeys.Enumeration,
+        WorkerKeys.PortScan,
+        WorkerKeys.HighValueRegex,
+        WorkerKeys.HighValuePaths,
+    ];
 
     public static async Task<WorkerActivitySnapshotDto> BuildSnapshotAsync(NightmareDbContext db, CancellationToken ct)
     {
@@ -38,6 +47,8 @@ internal static class WorkerActivityQuery
         var toggles = await db.WorkerSwitches.AsNoTracking()
             .ToDictionaryAsync(w => w.WorkerKey, w => w.IsEnabled, ct)
             .ConfigureAwait(false);
+        foreach (var key in RequiredWorkerKeys)
+            toggles.TryAdd(key, true);
 
         var instances = new List<WorkerInstanceActivityDto>(latestByKey.Count);
         foreach (var kv in latestByKey)

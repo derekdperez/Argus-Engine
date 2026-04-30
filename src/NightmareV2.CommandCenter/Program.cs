@@ -107,15 +107,84 @@ app.MapGet(
         "/api/targets",
         async (NightmareDbContext db, CancellationToken ct) =>
         {
-            var rows = await db.Targets.AsNoTracking()
+            var targets = await db.Targets.AsNoTracking()
                 .OrderByDescending(t => t.CreatedAtUtc)
-                .Select(t => new TargetSummary(t.Id, t.RootDomain, t.GlobalMaxDepth, t.CreatedAtUtc))
                 .Take(5000)
                 .ToListAsync(ct)
                 .ConfigureAwait(false);
+
+            var targetIds = targets.Select(t => t.Id).ToList();
+            var now = DateTimeOffset.UtcNow;
+            var assetRollups = await db.Assets.AsNoTracking()
+                .Where(a => targetIds.Contains(a.TargetId))
+                .GroupBy(a => a.TargetId)
+                .Select(
+                    g => new
+                    {
+                        TargetId = g.Key,
+                        Subdomains = g.LongCount(a => a.Kind == AssetKind.Subdomain),
+                        Confirmed = g.LongCount(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
+                        Queued = g.LongCount(a => a.LifecycleStatus == AssetLifecycleStatus.Queued),
+                        LastAssetAtUtc = g.Max(a => (DateTimeOffset?)a.DiscoveredAtUtc),
+                    })
+                .ToDictionaryAsync(x => x.TargetId, ct)
+                .ConfigureAwait(false);
+
+            var queueRollups = await db.HttpRequestQueue.AsNoTracking()
+                .Where(q => targetIds.Contains(q.TargetId))
+                .GroupBy(q => q.TargetId)
+                .Select(
+                    g => new
+                    {
+                        TargetId = g.Key,
+                        Queued = g.LongCount(q => q.State == HttpRequestQueueState.Queued
+                            || (q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now)),
+                        LastQueueAtUtc = g.Max(q => (DateTimeOffset?)q.UpdatedAtUtc),
+                    })
+                .ToDictionaryAsync(x => x.TargetId, ct)
+                .ConfigureAwait(false);
+
+            var rows = targets
+                .Select(
+                    t =>
+                    {
+                        assetRollups.TryGetValue(t.Id, out var assets);
+                        queueRollups.TryGetValue(t.Id, out var queue);
+                        var lastRun = MaxUtc(assets?.LastAssetAtUtc, queue?.LastQueueAtUtc);
+                        return new TargetSummary(
+                            t.Id,
+                            t.RootDomain,
+                            t.GlobalMaxDepth,
+                            t.CreatedAtUtc,
+                            assets?.Subdomains ?? 0,
+                            assets?.Confirmed ?? 0,
+                            queue?.Queued ?? assets?.Queued ?? 0,
+                            lastRun);
+                    })
+                .ToList();
+
             return Results.Ok(rows);
         })
     .WithName("ListTargets");
+
+static DateTimeOffset? MaxUtc(DateTimeOffset? first, DateTimeOffset? second)
+{
+    if (first is null)
+        return second;
+    if (second is null)
+        return first;
+    return first > second ? first : second;
+}
+
+static string[] RequiredWorkerKeys() =>
+[
+    WorkerKeys.Gatekeeper,
+    WorkerKeys.Spider,
+    WorkerKeys.Enumeration,
+    WorkerKeys.PortScan,
+    WorkerKeys.HighValueRegex,
+    WorkerKeys.HighValuePaths,
+];
 
 app.MapPost(
         "/api/targets",
@@ -446,8 +515,13 @@ app.MapGet(
                 q = q.Where(r => r.TargetId == tid);
 
             q = includeFailed == true
-                ? q.Where(r => r.State == HttpRequestQueueState.Queued || r.State == HttpRequestQueueState.Failed)
-                : q.Where(r => r.State == HttpRequestQueueState.Queued);
+                ? q.Where(r => r.State == HttpRequestQueueState.Queued
+                    || r.State == HttpRequestQueueState.Retry
+                    || r.State == HttpRequestQueueState.InFlight
+                    || r.State == HttpRequestQueueState.Failed)
+                : q.Where(r => r.State == HttpRequestQueueState.Queued
+                    || r.State == HttpRequestQueueState.Retry
+                    || r.State == HttpRequestQueueState.InFlight);
 
             var rows = await q
                 .OrderByDescending(r => r.CreatedAtUtc)
@@ -847,11 +921,16 @@ app.MapGet(
         "/api/workers",
         async (NightmareDbContext db, CancellationToken ct) =>
         {
-            var rows = await db.WorkerSwitches.AsNoTracking()
-                .OrderBy(w => w.WorkerKey)
+            var now = DateTimeOffset.UtcNow;
+            var persisted = await db.WorkerSwitches.AsNoTracking()
                 .Select(w => new WorkerSwitchDto(w.WorkerKey, w.IsEnabled, w.UpdatedAtUtc))
                 .ToListAsync(ct)
                 .ConfigureAwait(false);
+            var rows = RequiredWorkerKeys()
+                .Select(key => persisted.FirstOrDefault(w => w.WorkerKey == key) ?? new WorkerSwitchDto(key, true, now))
+                .Concat(persisted.Where(w => !RequiredWorkerKeys().Contains(w.WorkerKey, StringComparer.Ordinal)))
+                .OrderBy(w => w.WorkerKey, StringComparer.Ordinal)
+                .ToList();
             return Results.Ok(rows);
         })
     .WithName("ListWorkers");
@@ -1101,7 +1180,10 @@ app.MapPut(
         {
             var row = await db.WorkerSwitches.FirstOrDefaultAsync(w => w.WorkerKey == key, ct).ConfigureAwait(false);
             if (row is null)
-                return Results.NotFound();
+            {
+                row = new WorkerSwitch { WorkerKey = key };
+                db.WorkerSwitches.Add(row);
+            }
             row.IsEnabled = body.Enabled;
             row.UpdatedAtUtc = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct).ConfigureAwait(false);

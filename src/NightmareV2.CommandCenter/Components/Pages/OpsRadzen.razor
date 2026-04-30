@@ -743,7 +743,11 @@
         _targets.Where(t =>
             GridTextFilter.Matches(t.RootDomain, _targetSearch)
             || GridTextFilter.Matches(t.Id.ToString(), _targetSearch)
-            || GridTextFilter.Matches(t.GlobalMaxDepth.ToString(CultureInfo.InvariantCulture), _targetSearch))
+            || GridTextFilter.Matches(t.GlobalMaxDepth.ToString(CultureInfo.InvariantCulture), _targetSearch)
+            || GridTextFilter.Matches(t.SubdomainCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
+            || GridTextFilter.Matches(t.ConfirmedAssetCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
+            || GridTextFilter.Matches(t.QueuedAssetCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
+            || GridTextFilter.Matches(FormatOpsTime(t.LastRunAtUtc), _targetSearch))
         .Where(t => GridTextFilter.Matches(t.RootDomain, _targetRootFilter))
         .Where(t => GridTextFilter.Matches(t.GlobalMaxDepth.ToString(CultureInfo.InvariantCulture), _targetDepthFilter))
         .OrderByDescending(t => t.CreatedAtUtc);
@@ -1433,7 +1437,7 @@
     private async Task ExportAssetsCsvAsync() =>
         await ExportCsvAsync(
             "nightmare-assets-radzen.csv",
-            ["Id", "TargetId", "Kind", "LifecycleStatus", "Depth", "RawValue", "CanonicalKey", "DiscoveredBy", "DiscoveryContext", "DiscoveredAtUtc"],
+            ["Id", "TargetId", "Kind", "LifecycleStatus", "Depth", "RawValue", "CanonicalKey", "DiscoveredBy", "DiscoveryContext", "Discovered"],
             RadzenAssets.Select(a => new[]
             {
                 a.Id.ToString(),
@@ -1445,13 +1449,13 @@
                 a.CanonicalKey,
                 a.DiscoveredBy,
                 a.DiscoveryContext,
-                a.DiscoveredAtUtc.ToString("u", CultureInfo.InvariantCulture),
+                FormatOpsTime(a.DiscoveredAtUtc),
             }));
 
     private async Task ExportQueueCsvAsync() =>
         await ExportCsvAsync(
             "nightmare-http-queue-radzen.csv",
-            ["Id", "AssetId", "TargetId", "State", "Method", "RequestUrl", "DomainKey", "AttemptCount", "LastHttpStatus", "DurationMs", "LastError", "CreatedAtUtc", "UpdatedAtUtc"],
+            ["Id", "AssetId", "TargetId", "State", "Method", "RequestUrl", "DomainKey", "AttemptCount", "LastHttpStatus", "DurationMs", "LastError", "Created", "Updated"],
             RadzenRequestQueue.Select(q => new[]
             {
                 q.Id.ToString(),
@@ -1465,20 +1469,20 @@
                 q.LastHttpStatus?.ToString(CultureInfo.InvariantCulture),
                 q.DurationMs?.ToString(CultureInfo.InvariantCulture),
                 q.LastError,
-                q.CreatedAtUtc.ToString("u", CultureInfo.InvariantCulture),
-                q.UpdatedAtUtc.ToString("u", CultureInfo.InvariantCulture),
+                FormatOpsTime(q.CreatedAtUtc),
+                FormatOpsTime(q.UpdatedAtUtc),
             }));
 
     private async Task ExportWorkersCsvAsync() =>
         await ExportCsvAsync(
             "nightmare-workers-radzen.csv",
-            ["WorkerKey", "ToggleEnabled", "InstanceCount", "LastActivityUtc", "RollupActivityLabel"],
+            ["WorkerKey", "ToggleEnabled", "InstanceCount", "LastActivity", "RollupActivityLabel"],
             RadzenWorkers.Select(w => new[]
             {
                 w.WorkerKey,
                 w.ToggleEnabled.ToString(),
                 w.InstanceCount.ToString(CultureInfo.InvariantCulture),
-                w.LastActivityUtc?.ToString("u", CultureInfo.InvariantCulture),
+                FormatOpsTime(w.LastActivityUtc),
                 w.RollupActivityLabel,
             }));
 

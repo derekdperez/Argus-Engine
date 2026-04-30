@@ -341,7 +341,15 @@ internal static class OpsSnapshotBuilder
     {
         var baseUrl = configuration["RabbitMq:ManagementUrl"]?.Trim();
         if (string.IsNullOrEmpty(baseUrl))
-            return ([], false);
+        {
+            var host = configuration["RabbitMq:Host"]?.Trim();
+            if (string.IsNullOrEmpty(host))
+                return ([], false);
+            baseUrl = host.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                || host.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                ? host
+                : $"http://{host}:15672";
+        }
 
         var vhost = configuration["RabbitMq:VirtualHost"];
         if (string.IsNullOrEmpty(vhost))

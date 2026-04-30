@@ -62,8 +62,13 @@ public static class HttpRequestQueueEndpoints
                         q = q.Where(r => r.TargetId == tid);
 
                     q = includeFailed == true
-                        ? q.Where(r => r.State == HttpRequestQueueState.Queued || r.State == HttpRequestQueueState.Failed)
-                        : q.Where(r => r.State == HttpRequestQueueState.Queued);
+                        ? q.Where(r => r.State == HttpRequestQueueState.Queued
+                            || r.State == HttpRequestQueueState.Retry
+                            || r.State == HttpRequestQueueState.InFlight
+                            || r.State == HttpRequestQueueState.Failed)
+                        : q.Where(r => r.State == HttpRequestQueueState.Queued
+                            || r.State == HttpRequestQueueState.Retry
+                            || r.State == HttpRequestQueueState.InFlight);
 
                     var rows = await q
                         .OrderByDescending(r => r.CreatedAtUtc)

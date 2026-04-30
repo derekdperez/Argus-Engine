@@ -10,7 +10,7 @@ COPY src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj src/Nightmar
 COPY src/NightmareV2.Contracts/NightmareV2.Contracts.csproj src/NightmareV2.Contracts/
 COPY src/NightmareV2.Domain/NightmareV2.Domain.csproj src/NightmareV2.Domain/
 COPY src/NightmareV2.Infrastructure/NightmareV2.Infrastructure.csproj src/NightmareV2.Infrastructure/
-RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages \
+RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj"
 
 # Copy only the project dependency closure used by the web app. Unrelated worker edits no longer invalidate this layer.
@@ -20,7 +20,7 @@ COPY src/NightmareV2.Contracts/ src/NightmareV2.Contracts/
 COPY src/NightmareV2.Domain/ src/NightmareV2.Domain/
 COPY src/NightmareV2.Infrastructure/ src/NightmareV2.Infrastructure/
 COPY src/Resources/ src/Resources/
-RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages \
+RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj" \
     -c Release -o /app/publish --no-restore /p:UseAppHost=false
 

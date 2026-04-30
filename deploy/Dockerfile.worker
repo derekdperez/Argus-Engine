@@ -18,7 +18,7 @@ COPY src/NightmareV2.Gatekeeper/NightmareV2.Gatekeeper.csproj src/NightmareV2.Ga
 COPY src/NightmareV2.Workers.HighValue/NightmareV2.Workers.HighValue.csproj src/NightmareV2.Workers.HighValue/
 COPY src/NightmareV2.Workers.PortScan/NightmareV2.Workers.PortScan.csproj src/NightmareV2.Workers.PortScan/
 COPY src/NightmareV2.Workers.Spider/NightmareV2.Workers.Spider.csproj src/NightmareV2.Workers.Spider/
-RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages \
+RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 
 # Copy only the shared projects and selected worker. Unrelated worker edits no longer invalidate this image.
@@ -29,7 +29,7 @@ COPY src/NightmareV2.Infrastructure/ src/NightmareV2.Infrastructure/
 COPY src/${PROJECT_DIR}/ src/${PROJECT_DIR}/
 # High-value worker links content from src/Resources; copying it for all generic workers keeps the Dockerfile simple.
 COPY src/Resources/ src/Resources/
-RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages \
+RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
     -c Release -o /app/publish --no-restore /p:UseAppHost=false
 

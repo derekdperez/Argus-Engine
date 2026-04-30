@@ -22,6 +22,14 @@
 - Validation:
   - `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded.
 
+- Serialized Docker BuildKit NuGet package cache access:
+  - Added `sharing=locked` to the shared `nightmare-nuget` cache mounts in web, worker, and enum worker Dockerfiles.
+  - Why: prevent parallel compose builds from corrupting `/root/.nuget/packages` during concurrent `dotnet restore`/`publish` stages.
+- Validation:
+  - `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded.
+  - `dotnet build src/NightmareV2.Gatekeeper/NightmareV2.Gatekeeper.csproj -c Release` succeeded.
+  - Docker compose build could not be run locally because Docker Desktop was not running (`dockerDesktopLinuxEngine` pipe missing).
+
 ## 2026-04-29
 
 - Standardized event envelope fields across contract events (`EventId`, `CausationId`, `SchemaVersion`, `Producer`; `OccurredAtUtc` exposed consistently).

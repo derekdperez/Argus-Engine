@@ -21,7 +21,7 @@ internal static class ApiRouteInference
                 segment =>
                 {
                     var decoded = Uri.UnescapeDataString(segment);
-                    if (decoded.StartsWith('{', StringComparison.Ordinal) && decoded.EndsWith('}', StringComparison.Ordinal))
+                    if (decoded.StartsWith("{", StringComparison.Ordinal) && decoded.EndsWith("}", StringComparison.Ordinal))
                         return decoded;
                     if (UuidSegment.IsMatch(decoded))
                         return "{uuid}";

@@ -19,6 +19,30 @@ public sealed class GatekeeperOrchestrator(
     IWorkerToggleReader workerToggles,
     ILogger<GatekeeperOrchestrator> logger)
 {
+    private static readonly Action<ILogger, string, Exception?> GatekeeperDisabled =
+        LoggerMessage.Define<string>(
+            LogLevel.Debug,
+            new EventId(1001, nameof(GatekeeperDisabled)),
+            "Gatekeeper disabled; skipping Raw {Raw}");
+
+    private static readonly Action<ILogger, string, int, int, Exception?> DroppingDepthExceeded =
+        LoggerMessage.Define<string, int, int>(
+            LogLevel.Debug,
+            new EventId(1002, nameof(DroppingDepthExceeded)),
+            "Dropping {Raw} depth {Depth} > max {Max}");
+
+    private static readonly Action<ILogger, string, Exception?> DedupeHit =
+        LoggerMessage.Define<string>(
+            LogLevel.Debug,
+            new EventId(1003, nameof(DedupeHit)),
+            "Dedupe hit for {Key}");
+
+    private static readonly Action<ILogger, string, Exception?> OutOfScope =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(1004, nameof(OutOfScope)),
+            "Out of scope: {Key}");
+
     public async Task ProcessAsync(AssetDiscovered message, CancellationToken cancellationToken = default)
     {
         if (message.AdmissionStage != AssetAdmissionStage.Raw)
@@ -26,20 +50,20 @@ public sealed class GatekeeperOrchestrator(
 
         if (!await workerToggles.IsWorkerEnabledAsync(WorkerKeys.Gatekeeper, cancellationToken).ConfigureAwait(false))
         {
-            logger.LogDebug("Gatekeeper disabled; skipping Raw {Raw}", message.RawValue);
+            LogGatekeeperDisabled(logger, message.RawValue);
             return;
         }
 
         if (message.Depth > message.GlobalMaxDepth)
         {
-            logger.LogDebug("Dropping {Raw} depth {Depth} > max {Max}", message.RawValue, message.Depth, message.GlobalMaxDepth);
+            LogDroppingDepthExceeded(logger, message.RawValue, message.Depth, message.GlobalMaxDepth);
             return;
         }
 
         var canonical = canonicalizer.Canonicalize(message);
         if (!await deduplicator.TryReserveAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false))
         {
-            logger.LogDebug("Dedupe hit for {Key}", canonical.CanonicalKey);
+            LogDedupeHit(logger, canonical.CanonicalKey);
             return;
         }
 
@@ -47,7 +71,7 @@ public sealed class GatekeeperOrchestrator(
         {
             if (!scope.IsInScope(message, canonical))
             {
-                logger.LogInformation("Out of scope: {Key}", canonical.CanonicalKey);
+                LogOutOfScope(logger, canonical.CanonicalKey);
                 await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false);
                 return;
             }
@@ -88,6 +112,18 @@ public sealed class GatekeeperOrchestrator(
             throw;
         }
     }
+
+    private static void LogGatekeeperDisabled(ILogger logger, string raw) =>
+        GatekeeperDisabled(logger, raw, null);
+
+    private static void LogDroppingDepthExceeded(ILogger logger, string raw, int depth, int maxDepth) =>
+        DroppingDepthExceeded(logger, raw, depth, maxDepth, null);
+
+    private static void LogDedupeHit(ILogger logger, string key) =>
+        DedupeHit(logger, key, null);
+
+    private static void LogOutOfScope(ILogger logger, string key) =>
+        OutOfScope(logger, key, null);
 
     private Task PublishIndexedAsync(
         AssetDiscovered message,

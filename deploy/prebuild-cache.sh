@@ -41,6 +41,7 @@ nightmare_docker run --rm \
   sh -lc 'for p in src/*/*.csproj; do dotnet restore "$p"; done'
 
 nightmare_detect_changed_services "$ROOT"
+nightmare_record_built_service_fingerprints
 nightmare_commit_current_fingerprints
 nightmare_write_last_deploy_stamp
 

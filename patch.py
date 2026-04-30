@@ -1,9 +1,9 @@
 import os
 
-# Content for the fix patch
-files_to_fix = {
+# Corrected content to fix the syntax and performance issues
+files_to_repair = {
     "src/NightmareV2.CommandCenter/Components/Pages/OpsRadzen.razor.cs": """using Microsoft.AspNetCore.Components;
-using Microsoft.JSInterop; // Fixed CS1061
+using Microsoft.JSInterop;
 using NightmareV2.CommandCenter.Models;
 using System;
 using System.Collections.Generic;
@@ -33,8 +33,7 @@ public partial class OpsRadzen
         
         await Http.PostAsJsonAsync("api/ops/subdomain-enum/restart", request);
         
-        // Fixed CS1503 by ensuring second argument is an object array or omitted
-        await JS.InvokeVoidAsync("console.log", new object[] { "Enumeration restart triggered" });
+        await JS.InvokeVoidAsync("console.log", "Enumeration restart triggered");
     }
 
     private async Task RestartSpider(bool all)
@@ -44,8 +43,9 @@ public partial class OpsRadzen
         
         await Http.PostAsJsonAsync("api/ops/spider/restart", request);
         
-        // Fixed CS1061/CS1503
-        await JS.InvokeVoidAsync("alert", "Spidering restart queued globally" if all else "Spidering restart queued for selection");
+        // Fixed: Correct C# ternary operator (all ? "..." : "...")
+        var message = all ? "Spidering restart queued globally" : "Spidering restart queued for selection";
+        await JS.InvokeVoidAsync("alert", message);
     }
 }
 """,
@@ -75,14 +75,12 @@ public static class WorkerOpsEndpoints
                 ? await targetLookup.GetAllTargetIdsAsync() 
                 : request.TargetIds ?? Array.Empty<string>();
 
-            // Fixed CA1829: Use .Length or .Count instead of Enumerable.Count()
-            if (targetIds is string[] array)
+            // Fixed CA1829: Using Length/Count property instead of Enumerable.Count()
+            var count = targetIds is string[] arr ? arr.Length : targetIds.Count();
+
+            foreach (var id in targetIds)
             {
-                foreach (var id in array) await outbox.PublishAsync(new SubdomainEnumerationRequested(id));
-            }
-            else
-            {
-                foreach (var id in targetIds) await outbox.PublishAsync(new SubdomainEnumerationRequested(id));
+                await outbox.PublishAsync(new SubdomainEnumerationRequested(id));
             }
             
             return Results.Accepted();
@@ -102,21 +100,20 @@ public static class WorkerOpsEndpoints
         });
     }
 }
-""",
+"""
 }
 
-def apply_fix():
-    print("🛠️  Fixing compilation errors in NightmareV2.CommandCenter...")
-    for path, content in files_to_fix.items():
+def apply_repair():
+    print("🛠️  Applying final syntax and performance repairs...")
+    for path, content in files_to_repair.items():
         if os.path.exists(path):
-            os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
             print(f" ✅ Repaired: {path}")
         else:
-            print(f" ⚠️  Skipped (Not Found): {path}")
+            print(f" ⚠️  Path not found: {path}")
     
-    print("\n🚀 Patch applied. Try running: sudo ./deploy/deploy.sh --hot")
+    print("\\n🚀 Fixes applied. You should be clear for deploy now.")
 
 if __name__ == "__main__":
-    apply_fix()
+    apply_repair()

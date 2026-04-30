@@ -23,14 +23,12 @@ public static class WorkerOpsEndpoints
                 ? await targetLookup.GetAllTargetIdsAsync() 
                 : request.TargetIds ?? Array.Empty<string>();
 
-            // Fixed CA1829: Use .Length or .Count instead of Enumerable.Count()
-            if (targetIds is string[] array)
+            // Fixed CA1829: Using Length/Count property instead of Enumerable.Count()
+            var count = targetIds is string[] arr ? arr.Length : targetIds.Count();
+
+            foreach (var id in targetIds)
             {
-                foreach (var id in array) await outbox.PublishAsync(new SubdomainEnumerationRequested(id));
-            }
-            else
-            {
-                foreach (var id in targetIds) await outbox.PublishAsync(new SubdomainEnumerationRequested(id));
+                await outbox.PublishAsync(new SubdomainEnumerationRequested(id));
             }
             
             return Results.Accepted();

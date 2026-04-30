@@ -21,12 +21,12 @@ using NightmareV2.CommandCenter.Endpoints;
 using NightmareV2.CommandCenter.Hubs;
 using NightmareV2.CommandCenter.Models;
 using NightmareV2.CommandCenter.Realtime;
-using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure;
 using NightmareV2.Infrastructure.Data;
 using NightmareV2.Infrastructure.Messaging;
+using AssetAdmissionStage = NightmareV2.Contracts.AssetAdmissionStage;
 using AssetKind = NightmareV2.Contracts.AssetKind;
 using UrlFetchSnapshot = NightmareV2.Application.Assets.UrlFetchSnapshot;
 
@@ -105,6 +105,7 @@ app.MapRazorComponents<App>()
 app.MapHub<DiscoveryHub>("/hubs/discovery");
 
 app.MapGet(
+        "/api/targets",
         async (NightmareDbContext db, CancellationToken ct) =>
         {
             var targets = await db.Targets.AsNoTracking()
@@ -452,6 +453,7 @@ app.MapPost(
 
 
 app.MapGet(
+        "/api/http-request-queue/settings",
         async (NightmareDbContext db, CancellationToken ct) =>
         {
             var row = await db.HttpRequestQueueSettings.AsNoTracking()
@@ -505,6 +507,7 @@ app.MapPut(
     .WithName("UpdateHttpRequestQueueSettings");
 
 app.MapGet(
+        "/api/http-request-queue",
         async (NightmareDbContext db, Guid? targetId, bool? includeFailed, int? take, CancellationToken ct) =>
         {
             var limit = Math.Clamp(take ?? 800, 1, 5000);
@@ -555,6 +558,7 @@ app.MapGet(
     .WithName("ListHttpRequestQueue");
 
 app.MapGet(
+        "/api/http-request-queue/metrics",
         async (NightmareDbContext db, CancellationToken ct) =>
         {
             var now = DateTimeOffset.UtcNow;
@@ -601,6 +605,7 @@ app.MapGet(
     .WithName("GetHttpRequestQueueMetrics");
 
 app.MapGet(
+        "/api/bus/live",
         async (NightmareDbContext db, int? minutes, int? take, CancellationToken ct) =>
         {
             var window = TimeSpan.FromMinutes(Math.Clamp(minutes ?? 3, 1, 60));
@@ -618,6 +623,7 @@ app.MapGet(
     .WithName("BusLive");
 
 app.MapGet(
+        "/api/bus/history",
         async (NightmareDbContext db, int? take, CancellationToken ct) =>
         {
             var limit = Math.Clamp(take ?? 400, 1, 2000);
@@ -632,6 +638,7 @@ app.MapGet(
     .WithName("BusHistory");
 
 app.MapGet(
+        "/api/assets",
         async (NightmareDbContext db, Guid? targetId, int? take, CancellationToken ct) =>
         {
             var limit = Math.Clamp(take ?? 500, 1, 5000);
@@ -684,6 +691,7 @@ app.MapPost(
     .DisableAntiforgery();
 
 app.MapGet(
+        "/api/filestore/{id:guid}",
         async (Guid id, IFileStore store, CancellationToken ct) =>
         {
             var meta = await store.GetDescriptorAsync(id, ct).ConfigureAwait(false);
@@ -692,6 +700,7 @@ app.MapGet(
     .WithName("GetFileBlobInfo");
 
 app.MapGet(
+        "/api/filestore/{id:guid}/download",
         async (Guid id, IFileStore store, CancellationToken ct) =>
         {
             var meta = await store.GetDescriptorAsync(id, ct).ConfigureAwait(false);
@@ -720,6 +729,7 @@ app.MapDelete(
     .WithName("DeleteFileBlob");
 
 app.MapGet(
+        "/api/high-value-findings",
         async (NightmareDbContext db, bool? criticalOnly, int? take, CancellationToken ct) =>
         {
             var limit = Math.Clamp(take ?? 500, 1, 5000);

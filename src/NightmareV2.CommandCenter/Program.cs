@@ -21,7 +21,6 @@ using NightmareV2.CommandCenter.Endpoints;
 using NightmareV2.CommandCenter.Hubs;
 using NightmareV2.CommandCenter.Models;
 using NightmareV2.CommandCenter.Realtime;
-using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure;
@@ -459,7 +458,7 @@ app.MapGet(
                     r.Method,
                     r.RequestUrl,
                     r.DomainKey,
-                    r.State,
+                    r.State.ToString(),
                     r.AttemptCount,
                     r.MaxAttempts,
                     r.Priority,
@@ -724,7 +723,7 @@ app.MapGet(
 static bool FindingSourceIsAllowed(
     HighValueFindingRowDto row,
     string discoveredBy,
-    UrlFetchSnapshot snap,
+    NightmareV2.Contracts.UrlFetchSnapshot snap,
     IReadOnlySet<string> allowedHighValuePaths)
 {
     // Regex findings can be raised from any confirmed URL response. The previous page query
@@ -738,7 +737,7 @@ static bool FindingSourceIsAllowed(
 
 static bool HighValuePathRedirectIsAllowed(
     HighValueFindingRowDto row,
-    UrlFetchSnapshot snap,
+    NightmareV2.Contracts.UrlFetchSnapshot snap,
     IReadOnlySet<string> allowedHighValuePaths)
 {
     var source = NormalizeUrlForCompare(row.SourceUrl);
@@ -798,14 +797,14 @@ static string NormalizeWordlistPath(string path)
     return p.TrimEnd('/');
 }
 
-static bool TryParseSnapshot(string? typeDetailsJson, out UrlFetchSnapshot snapshot)
+static bool TryParseSnapshot(string? typeDetailsJson, out NightmareV2.Contracts.UrlFetchSnapshot snapshot)
 {
     snapshot = default!;
     if (string.IsNullOrWhiteSpace(typeDetailsJson))
         return false;
     try
     {
-        snapshot = JsonSerializer.Deserialize<UrlFetchSnapshot>(typeDetailsJson)!;
+        snapshot = JsonSerializer.Deserialize<NightmareV2.Contracts.UrlFetchSnapshot>(typeDetailsJson)!;
         return snapshot is not null;
     }
     catch
@@ -814,7 +813,7 @@ static bool TryParseSnapshot(string? typeDetailsJson, out UrlFetchSnapshot snaps
     }
 }
 
-static bool LooksLikeSoft404(UrlFetchSnapshot? snap)
+static bool LooksLikeSoft404(NightmareV2.Contracts.UrlFetchSnapshot? snap)
 {
     if (snap is null)
         return true;

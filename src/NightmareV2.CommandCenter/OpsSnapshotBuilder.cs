@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using NightmareV2.Application.Workers;
 using NightmareV2.CommandCenter.Models;
-using NightmareV2.Contracts;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure.Data;
 

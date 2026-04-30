@@ -76,7 +76,7 @@ public static class HttpRequestQueueEndpoints
                             r.Method,
                             r.RequestUrl,
                             r.DomainKey,
-                            r.State,
+                            r.State.ToString(),
                             r.AttemptCount,
                             r.MaxAttempts,
                             r.Priority,

@@ -1,8 +1,6 @@
-using NightmareV2.Contracts;
 using NightmareV2.CommandCenter.Models;
 using Microsoft.EntityFrameworkCore;
 using NightmareV2.Application.Workers;
-using NightmareV2.CommandCenter.Models;
 using NightmareV2.Infrastructure.Data;
 
 namespace NightmareV2.CommandCenter;

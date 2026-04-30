@@ -1,7 +1,7 @@
-@using NightmareV2.Contracts
 @using NightmareV2.CommandCenter.Models
 @page "/ops-radzen"
 @rendermode InteractiveServer
+@using System.Globalization
 @using System.Net
 @using System.Net.Http.Json
 @using NightmareV2.CommandCenter.DataMaintenance
@@ -720,11 +720,74 @@
     private int _queueMaxConcurrency = 8;
     private int _queueRequestTimeoutSeconds = 30;
 
+    private readonly int[] _gridPageSizeOptions = [25, 50, 100, 250, 500];
+    private readonly int[] _sideGridPageSizeOptions = [5, 10, 25, 50];
+    private int _targetPageSize = 25;
+    private int _largeGridPageSize = 50;
+    private int _sideGridPageSize = 10;
+    private Density _radzenDensity = Density.Compact;
+
     private readonly PaginationState _targetPagination = new() { ItemsPerPage = 25 };
     private readonly PaginationState _assetPagination = new() { ItemsPerPage = 50 };
     private readonly PaginationState _queuePagination = new() { ItemsPerPage = 50 };
     private readonly PaginationState _workerPagination = new() { ItemsPerPage = 10 };
     private readonly PaginationState _rabbitPagination = new() { ItemsPerPage = 10 };
+
+    private string SelectedDensity
+    {
+        get => _radzenDensity == Density.Compact ? "Compact" : "Default";
+        set => _radzenDensity = string.Equals(value, "Compact", StringComparison.OrdinalIgnoreCase)
+            ? Density.Compact
+            : Density.Default;
+    }
+
+    private IEnumerable<TargetSummary> RadzenTargets =>
+        _targets.Where(t =>
+            GridTextFilter.Matches(t.RootDomain, _targetSearch)
+            || GridTextFilter.Matches(t.Id.ToString(), _targetSearch)
+            || GridTextFilter.Matches(t.GlobalMaxDepth.ToString(CultureInfo.InvariantCulture), _targetSearch))
+        .Where(t => GridTextFilter.Matches(t.RootDomain, _targetRootFilter))
+        .Where(t => GridTextFilter.Matches(t.GlobalMaxDepth.ToString(CultureInfo.InvariantCulture), _targetDepthFilter));
+
+    private IEnumerable<AssetGridRowDto> RadzenAssets =>
+        _assets.Where(a =>
+            GridTextFilter.Matches(a.Kind, _filterAssets)
+            || GridTextFilter.Matches(a.LifecycleStatus, _filterAssets)
+            || GridTextFilter.Matches(a.RawValue, _filterAssets)
+            || GridTextFilter.Matches(a.CanonicalKey, _filterAssets)
+            || GridTextFilter.Matches(a.DiscoveredBy, _filterAssets)
+            || GridTextFilter.Matches(a.DiscoveryContext, _filterAssets))
+        .Where(a => GridTextFilter.Matches(a.Kind, _filterKindCol))
+        .Where(a => GridTextFilter.Matches(a.LifecycleStatus, _filterStatusCol))
+        .Where(a => GridTextFilter.Matches(a.RawValue, _filterRawCol) || GridTextFilter.Matches(a.CanonicalKey, _filterRawCol))
+        .Where(a => GridTextFilter.Matches(a.DiscoveredBy, _filterPipelineCol))
+        .Where(a => GridTextFilter.Matches(a.DiscoveryContext, _filterHowFoundCol));
+
+    private IEnumerable<HttpRequestQueueRowDto> RadzenRequestQueue =>
+        _requestQueue.Where(q =>
+            GridTextFilter.Matches(q.RequestUrl, _filterQueueSearch)
+            || GridTextFilter.Matches(q.DomainKey, _filterQueueSearch)
+            || GridTextFilter.Matches(q.State, _filterQueueSearch)
+            || GridTextFilter.Matches(q.LastHttpStatus?.ToString(CultureInfo.InvariantCulture), _filterQueueSearch)
+            || GridTextFilter.Matches(q.LastError, _filterQueueSearch))
+        .Where(q => GridTextFilter.Matches(q.AssetKind, _filterQueueKindCol))
+        .Where(q => GridTextFilter.Matches(q.RequestUrl, _filterQueueRawCol) || GridTextFilter.Matches(q.DomainKey, _filterQueueRawCol))
+        .Where(q => GridTextFilter.Matches(q.State, _filterQueuePipelineCol));
+
+    private IEnumerable<WorkerKindSummaryDto> RadzenWorkers =>
+        (_snapshot?.Activity.WorkerSummaries ?? [])
+        .Where(w =>
+            GridTextFilter.Matches(w.WorkerKey, _workerSearch)
+            || GridTextFilter.Matches(w.RollupActivityLabel, _workerSearch)
+            || GridTextFilter.Matches(w.LastActivityUtc?.ToString("u", CultureInfo.InvariantCulture), _workerSearch));
+
+    private IEnumerable<RabbitQueueBriefDto> RadzenRabbitQueues =>
+        (_snapshot?.RabbitQueues ?? [])
+        .Where(q =>
+            GridTextFilter.Matches(q.Name, _rabbitSearch)
+            || GridTextFilter.Matches(q.LikelyWorkerKey, _rabbitSearch)
+            || GridTextFilter.Matches(q.MessagesReady.ToString(CultureInfo.InvariantCulture), _rabbitSearch)
+            || GridTextFilter.Matches(q.MessagesUnacknowledged.ToString(CultureInfo.InvariantCulture), _rabbitSearch));
 
     private string LiveStateCss => Realtime.IsConnected ? "connected" : "disconnected";
     private string LiveStatusText => Realtime.IsConnected
@@ -1351,6 +1414,122 @@
     {
         var message = await response.Content.ReadAsStringAsync();
         return string.IsNullOrWhiteSpace(message) ? fallback : message;
+    }
+
+    private async Task SaveRadzenGridPreferencesAsync()
+    {
+        await Js.InvokeVoidAsync("nightmareUi.setLocalStorage", "ops-radzen-density", SelectedDensity);
+        _statusMessage = "Grid preferences saved.";
+    }
+
+    private async Task ExportTargetsCsvAsync() =>
+        await ExportCsvAsync(
+            "nightmare-targets-radzen.csv",
+            ["Id", "RootDomain", "GlobalMaxDepth", "CreatedAtUtc"],
+            RadzenTargets.Select(t => new[] { t.Id.ToString(), t.RootDomain, t.GlobalMaxDepth.ToString(CultureInfo.InvariantCulture), t.CreatedAtUtc.ToString("u", CultureInfo.InvariantCulture) }));
+
+    private async Task ExportAssetsCsvAsync() =>
+        await ExportCsvAsync(
+            "nightmare-assets-radzen.csv",
+            ["Id", "TargetId", "Kind", "LifecycleStatus", "Depth", "RawValue", "CanonicalKey", "DiscoveredBy", "DiscoveryContext", "DiscoveredAtUtc"],
+            RadzenAssets.Select(a => new[]
+            {
+                a.Id.ToString(),
+                a.TargetId.ToString(),
+                a.Kind,
+                a.LifecycleStatus,
+                a.Depth.ToString(CultureInfo.InvariantCulture),
+                a.RawValue,
+                a.CanonicalKey,
+                a.DiscoveredBy,
+                a.DiscoveryContext,
+                a.DiscoveredAtUtc.ToString("u", CultureInfo.InvariantCulture),
+            }));
+
+    private async Task ExportQueueCsvAsync() =>
+        await ExportCsvAsync(
+            "nightmare-http-queue-radzen.csv",
+            ["Id", "AssetId", "TargetId", "State", "Method", "RequestUrl", "DomainKey", "AttemptCount", "LastHttpStatus", "DurationMs", "LastError", "CreatedAtUtc", "UpdatedAtUtc"],
+            RadzenRequestQueue.Select(q => new[]
+            {
+                q.Id.ToString(),
+                q.AssetId.ToString(),
+                q.TargetId.ToString(),
+                q.State,
+                q.Method,
+                q.RequestUrl,
+                q.DomainKey,
+                q.AttemptCount.ToString(CultureInfo.InvariantCulture),
+                q.LastHttpStatus?.ToString(CultureInfo.InvariantCulture),
+                q.DurationMs?.ToString(CultureInfo.InvariantCulture),
+                q.LastError,
+                q.CreatedAtUtc.ToString("u", CultureInfo.InvariantCulture),
+                q.UpdatedAtUtc.ToString("u", CultureInfo.InvariantCulture),
+            }));
+
+    private async Task ExportWorkersCsvAsync() =>
+        await ExportCsvAsync(
+            "nightmare-workers-radzen.csv",
+            ["WorkerKey", "ToggleEnabled", "InstanceCount", "LastActivityUtc", "RollupActivityLabel"],
+            RadzenWorkers.Select(w => new[]
+            {
+                w.WorkerKey,
+                w.ToggleEnabled.ToString(),
+                w.InstanceCount.ToString(CultureInfo.InvariantCulture),
+                w.LastActivityUtc?.ToString("u", CultureInfo.InvariantCulture),
+                w.RollupActivityLabel,
+            }));
+
+    private async Task ExportRabbitCsvAsync() =>
+        await ExportCsvAsync(
+            "nightmare-rabbit-queues-radzen.csv",
+            ["Name", "Messages", "MessagesReady", "MessagesUnacknowledged", "Consumers", "LikelyWorkerKey"],
+            RadzenRabbitQueues.Select(q => new[]
+            {
+                q.Name,
+                q.Messages.ToString(CultureInfo.InvariantCulture),
+                q.MessagesReady.ToString(CultureInfo.InvariantCulture),
+                q.MessagesUnacknowledged.ToString(CultureInfo.InvariantCulture),
+                q.Consumers.ToString(CultureInfo.InvariantCulture),
+                q.LikelyWorkerKey,
+            }));
+
+    private async Task ExportCsvAsync(string fileName, string[] headers, IEnumerable<string?[]> rows)
+    {
+        var csv = BuildCsv(headers, rows);
+        await Js.InvokeVoidAsync("nightmareUi.downloadTextFile", fileName, csv, "text/csv;charset=utf-8");
+    }
+
+    private static string BuildCsv(string[] headers, IEnumerable<string?[]> rows)
+    {
+        var builder = new System.Text.StringBuilder();
+        builder.AppendLine(string.Join(",", headers.Select(CsvEscape)));
+        foreach (var row in rows)
+            builder.AppendLine(string.Join(",", row.Select(CsvEscape)));
+        return builder.ToString();
+    }
+
+    private static string CsvEscape(string? value)
+    {
+        var s = value ?? "";
+        return s.IndexOfAny([',', '"', '\r', '\n']) < 0
+            ? s
+            : "\"" + s.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    }
+
+    private static string? ToLiveHref(AssetGridRowDto asset) =>
+        TryHttpHref(asset.RawValue) ?? TryHttpHref(asset.CanonicalKey);
+
+    private static string? ToLiveHref(HttpRequestQueueRowDto row) =>
+        TryHttpHref(row.FinalUrl) ?? TryHttpHref(row.RequestUrl);
+
+    private static string? TryHttpHref(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        return Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
+            ? uri.ToString()
+            : null;
     }
 
     public sealed class TargetForm

@@ -17,21 +17,25 @@ public static class WorkerOpsEndpoints
     {
         var group = endpoints.MapGroup("/api/ops");
 
-        // Restart Subdomain Enumeration
         group.MapPost("/subdomain-enum/restart", async (RestartToolRequest request, IEventOutbox outbox, ITargetLookup targetLookup) =>
         {
             var targetIds = request.AllTargets 
                 ? await targetLookup.GetAllTargetIdsAsync() 
                 : request.TargetIds ?? Array.Empty<string>();
 
-            foreach (var id in targetIds)
+            // Fixed CA1829: Use .Length or .Count instead of Enumerable.Count()
+            if (targetIds is string[] array)
             {
-                await outbox.PublishAsync(new SubdomainEnumerationRequested(id));
+                foreach (var id in array) await outbox.PublishAsync(new SubdomainEnumerationRequested(id));
             }
+            else
+            {
+                foreach (var id in targetIds) await outbox.PublishAsync(new SubdomainEnumerationRequested(id));
+            }
+            
             return Results.Accepted();
         });
 
-        // Restart Spidering/Crawling
         group.MapPost("/spider/restart", async (RestartToolRequest request, IEventOutbox outbox, ITargetLookup targetLookup) =>
         {
             var targetIds = request.AllTargets 
@@ -40,7 +44,6 @@ public static class WorkerOpsEndpoints
 
             foreach (var id in targetIds)
             {
-                // Trigger via the ScannableContentAvailable event to force a re-spider
                 await outbox.PublishAsync(new ScannableContentAvailable(id, NightmareV2.Contracts.ScannableContentSource.UserRequest));
             }
             return Results.Accepted();

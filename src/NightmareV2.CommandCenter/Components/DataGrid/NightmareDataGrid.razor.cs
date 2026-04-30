@@ -17,6 +17,7 @@ namespace NightmareV2.CommandCenter.Components.DataGrid;
 public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private readonly PaginationState _fallbackPagination = new();
 
     private IReadOnlyList<TGridItem> _effectiveRows = [];
     private IReadOnlyList<GridGroup<TGridItem>>? _groups;
@@ -165,6 +166,8 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
     private bool CanPage => Pagination is not null && !EffectiveVirtualize && GroupKeySelector is null;
 
     private PaginationState? EffectivePagination => CanPage ? Pagination : null;
+
+    private PaginationState ActivePagination => Pagination ?? _fallbackPagination;
 
     private int EffectiveItemSize =>
         Density switch

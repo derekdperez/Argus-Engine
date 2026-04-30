@@ -7,6 +7,7 @@ using NightmareV2.Application.Workers;
 using NightmareV2.CommandCenter.Models;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure.Data;
+using AssetKind = NightmareV2.Contracts.AssetKind;
 
 namespace NightmareV2.CommandCenter;
 

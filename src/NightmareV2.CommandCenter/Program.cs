@@ -26,6 +26,8 @@ using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure;
 using NightmareV2.Infrastructure.Data;
 using NightmareV2.Infrastructure.Messaging;
+using AssetKind = NightmareV2.Contracts.AssetKind;
+using UrlFetchSnapshot = NightmareV2.Application.Assets.UrlFetchSnapshot;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -723,7 +725,7 @@ app.MapGet(
 static bool FindingSourceIsAllowed(
     HighValueFindingRowDto row,
     string discoveredBy,
-    NightmareV2.Contracts.UrlFetchSnapshot snap,
+    UrlFetchSnapshot snap,
     IReadOnlySet<string> allowedHighValuePaths)
 {
     // Regex findings can be raised from any confirmed URL response. The previous page query
@@ -737,7 +739,7 @@ static bool FindingSourceIsAllowed(
 
 static bool HighValuePathRedirectIsAllowed(
     HighValueFindingRowDto row,
-    NightmareV2.Contracts.UrlFetchSnapshot snap,
+    UrlFetchSnapshot snap,
     IReadOnlySet<string> allowedHighValuePaths)
 {
     var source = NormalizeUrlForCompare(row.SourceUrl);
@@ -797,14 +799,14 @@ static string NormalizeWordlistPath(string path)
     return p.TrimEnd('/');
 }
 
-static bool TryParseSnapshot(string? typeDetailsJson, out NightmareV2.Contracts.UrlFetchSnapshot snapshot)
+static bool TryParseSnapshot(string? typeDetailsJson, out UrlFetchSnapshot snapshot)
 {
     snapshot = default!;
     if (string.IsNullOrWhiteSpace(typeDetailsJson))
         return false;
     try
     {
-        snapshot = JsonSerializer.Deserialize<NightmareV2.Contracts.UrlFetchSnapshot>(typeDetailsJson)!;
+        snapshot = JsonSerializer.Deserialize<UrlFetchSnapshot>(typeDetailsJson)!;
         return snapshot is not null;
     }
     catch
@@ -813,7 +815,7 @@ static bool TryParseSnapshot(string? typeDetailsJson, out NightmareV2.Contracts.
     }
 }
 
-static bool LooksLikeSoft404(NightmareV2.Contracts.UrlFetchSnapshot? snap)
+static bool LooksLikeSoft404(UrlFetchSnapshot? snap)
 {
     if (snap is null)
         return true;

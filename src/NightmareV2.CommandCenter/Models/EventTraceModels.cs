@@ -31,3 +31,12 @@ public sealed record EventTraceRowDto(
     int ConsumerCount,
     IReadOnlyList<EventConsumerTraceDto> Consumers,
     IReadOnlyList<EventFollowUpTraceDto> FollowUps);
+
+public sealed record BusJournalRowDto(
+    long Id,
+    string Direction,
+    string MessageType,
+    string PayloadJson,
+    DateTimeOffset OccurredAtUtc,
+    string? ConsumerType,
+    string? HostName);

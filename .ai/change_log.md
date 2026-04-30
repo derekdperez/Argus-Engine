@@ -101,3 +101,9 @@
   - `dotnet build src/NightmareV2.Workers.Enum/NightmareV2.Workers.Enum.csproj -c Release` succeeded.
   - `dotnet test tests/NightmareV2.Workers.Enum.Tests/NightmareV2.Workers.Enum.Tests.csproj -c Release` passed (10/10).
   - `dotnet build NightmareV2.slnx -c Release` succeeded.
+
+- Fixed CommandCenter publish blockers found during EC2 deployment:
+  - Removed stale local `OpsRadzen.razor.cs` from the workspace; it duplicated Razor-generated `Http` injection and `OnInitializedAsync`.
+  - Added the missing CommandCenter bus journal row DTO and corrected `AssetKind` / `UrlFetchSnapshot` namespace aliases.
+  - Why: restore `dotnet publish` for `NightmareV2.CommandCenter` without relying on older contract DTO names.
+- Validation: `dotnet publish src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release -o ./.tmp/publish-command-center /p:UseAppHost=false` succeeded.

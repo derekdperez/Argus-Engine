@@ -78,6 +78,18 @@ public static class NightmareDbSchemaPatches
 
         await db.Database.ExecuteSqlRawAsync(
                 """
+                CREATE TABLE IF NOT EXISTS worker_scale_targets (
+                    scale_key character varying(64) PRIMARY KEY,
+                    desired_count integer NOT NULL,
+                    updated_at_utc timestamp with time zone NOT NULL,
+                    CONSTRAINT ck_worker_scale_targets_desired_count_nonnegative CHECK (desired_count >= 0)
+                );
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
                 ALTER TABLE stored_assets
                     ADD COLUMN IF NOT EXISTS asset_category smallint NOT NULL DEFAULT 0,
                     ADD COLUMN IF NOT EXISTS display_name character varying(512) NULL,

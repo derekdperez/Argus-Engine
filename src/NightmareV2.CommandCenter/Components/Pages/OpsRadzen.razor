@@ -585,6 +585,28 @@
                         <Template Context="w"><span class="@WorkerBadgeClass(w)">@(w.ToggleEnabled ? "Enabled" : "Paused")</span></Template>
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="InstanceCount" Title="Instances" Width="120px" />
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Title="Desired" Width="260px" Filterable="false" Sortable="false" Groupable="false">
+                        <Template Context="w">
+                            @if (WorkerScaleFor(w.WorkerKey) is { } scale)
+                            {
+                                <div class="worker-scale-control">
+                                    <button type="button" class="btn small" disabled="@WorkerScaleBusy(w.WorkerKey)" @onclick="@(() => ChangeWorkerScaleAsync(w.WorkerKey, -1))">-1</button>
+                                    <input type="number"
+                                           min="0"
+                                           class="ops-filter worker-scale-input"
+                                           value="@WorkerScaleInput(w.WorkerKey)"
+                                           @oninput="@((ChangeEventArgs e) => SetWorkerScaleInput(w.WorkerKey, e.Value?.ToString()))" />
+                                    <button type="button" class="btn small" disabled="@WorkerScaleBusy(w.WorkerKey)" @onclick="@(() => ApplyWorkerScaleInputAsync(w.WorkerKey))">Set</button>
+                                    <button type="button" class="btn small" disabled="@WorkerScaleBusy(w.WorkerKey)" @onclick="@(() => ChangeWorkerScaleAsync(w.WorkerKey, 1))">+1</button>
+                                </div>
+                                <small class="muted">@WorkerScaleSummary(scale)</small>
+                            }
+                            else
+                            {
+                                <span class="muted">Not scalable</span>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="LastActivityUtc" Title="Last activity" Width="180px">
                         <Template Context="w">@FormatOpsTime(w.LastActivityUtc)</Template>
                     </RadzenDataGridColumn>
@@ -653,8 +675,10 @@
     private readonly List<AssetGridRowDto> _assets = [];
     private readonly List<HttpRequestQueueRowDto> _requestQueue = [];
     private readonly List<WorkerKindSummaryDto> _workerSummaries = [];
+    private readonly List<WorkerScaleTargetDto> _workerScaleTargets = [];
     private readonly List<RabbitQueueBriefDto> _rabbitQueues = [];
     private readonly HashSet<Guid> _selectedToolTargetIds = [];
+    private readonly Dictionary<string, int> _workerScaleInputs = new(StringComparer.Ordinal);
 
     private RadzenDataGrid<AssetGridRowDto>? _assetGrid;
     private RadzenDataGrid<HttpRequestQueueRowDto>? _queueGrid;
@@ -709,6 +733,7 @@
     private string _workerSearch = "";
     private string _rabbitSearch = "";
     private string? _workerBusyKey;
+    private string? _workerScaleBusyKey;
 
     private string _maintenanceApiKey = "";
     private string _phraseClearTargets = "";
@@ -821,6 +846,36 @@
 
     private static string WorkerBadgeClass(WorkerKindSummaryDto worker) =>
         worker.ToggleEnabled ? "badge badge-green" : "badge badge-gray";
+
+    private WorkerScaleTargetDto? WorkerScaleFor(string workerKey) =>
+        _workerScaleTargets.FirstOrDefault(s => string.Equals(s.WorkerKey, workerKey, StringComparison.Ordinal));
+
+    private int WorkerScaleInput(string workerKey)
+    {
+        if (_workerScaleInputs.TryGetValue(workerKey, out var value))
+            return value;
+
+        var scale = WorkerScaleFor(workerKey);
+        return Math.Max(0, scale?.ManualDesiredCount ?? scale?.DesiredCount ?? scale?.RunningCount ?? 0);
+    }
+
+    private bool WorkerScaleBusy(string workerKey)
+    {
+        var scale = WorkerScaleFor(workerKey);
+        return string.Equals(_workerScaleBusyKey, workerKey, StringComparison.Ordinal)
+            || (scale is not null && string.Equals(_workerScaleBusyKey, scale.ScaleKey, StringComparison.Ordinal));
+    }
+
+    private static string WorkerScaleSummary(WorkerScaleTargetDto scale)
+    {
+        var desired = scale.DesiredCount?.ToString(CultureInfo.InvariantCulture) ?? "?";
+        var running = scale.RunningCount?.ToString(CultureInfo.InvariantCulture) ?? "?";
+        var pending = scale.PendingCount?.ToString(CultureInfo.InvariantCulture) ?? "?";
+        var manual = scale.ManualDesiredCount is null
+            ? "auto"
+            : $"manual {scale.ManualDesiredCount.Value.ToString(CultureInfo.InvariantCulture)}";
+        return $"{manual}; ECS desired {desired}, running {running}, pending {pending}";
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -990,6 +1045,7 @@
             }
 
             await ReloadWorkerRowsAsync();
+            await ReloadWorkerScaleAsync();
             await ReloadRabbitQueuesAsync();
             await ReloadHttpQueueMetricsAsync();
             _snapshotLoadedAtUtc = DateTimeOffset.UtcNow;
@@ -1050,6 +1106,25 @@
         catch
         {
             // Keep last good rows.
+        }
+    }
+
+    private async Task ReloadWorkerScaleAsync()
+    {
+        try
+        {
+            var scale = await Http.GetFromJsonAsync<List<WorkerScaleTargetDto>>("/api/workers/scale").ConfigureAwait(false);
+            _workerScaleTargets.Clear();
+            if (scale is not null)
+            {
+                _workerScaleTargets.AddRange(scale);
+                foreach (var row in scale)
+                    _workerScaleInputs[row.WorkerKey] = Math.Max(0, row.ManualDesiredCount ?? row.DesiredCount ?? row.RunningCount ?? 0);
+            }
+        }
+        catch
+        {
+            _workerScaleTargets.Clear();
         }
     }
 
@@ -1444,6 +1519,56 @@
         finally
         {
             _workerBusyKey = null;
+        }
+    }
+
+    private void SetWorkerScaleInput(string workerKey, string? raw)
+    {
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var desired))
+            return;
+
+        _workerScaleInputs[workerKey] = Math.Max(0, desired);
+    }
+
+    private Task ChangeWorkerScaleAsync(string workerKey, int delta)
+    {
+        var desired = Math.Max(0, WorkerScaleInput(workerKey) + delta);
+        _workerScaleInputs[workerKey] = desired;
+        return SetWorkerScaleAsync(workerKey, desired);
+    }
+
+    private Task ApplyWorkerScaleInputAsync(string workerKey) =>
+        SetWorkerScaleAsync(workerKey, WorkerScaleInput(workerKey));
+
+    private async Task SetWorkerScaleAsync(string workerKey, int desiredCount)
+    {
+        var scale = WorkerScaleFor(workerKey);
+        if (scale is null)
+        {
+            _statusMessage = $"{workerKey} does not map to a scalable ECS worker service.";
+            return;
+        }
+
+        _workerScaleBusyKey = scale.ScaleKey;
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.PutAsJsonAsync(
+                    $"/api/workers/{Uri.EscapeDataString(workerKey)}/scale",
+                    new WorkerScalePatchRequest(Math.Max(0, desiredCount)))
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            var result = await response.Content.ReadFromJsonAsync<WorkerScaleUpdateResult>().ConfigureAwait(false);
+            _statusMessage = result?.Message ?? $"{scale.ScaleKey} desired count updated.";
+            await ReloadWorkerScaleAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = ex.Message;
+        }
+        finally
+        {
+            _workerScaleBusyKey = null;
         }
     }
 

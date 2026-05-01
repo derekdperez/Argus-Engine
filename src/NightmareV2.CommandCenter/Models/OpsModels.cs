@@ -6,6 +6,28 @@ public sealed record WorkerSwitchDto(string WorkerKey, bool IsEnabled, DateTimeO
 
 public sealed record WorkerPatchRequest(bool Enabled);
 
+public sealed record WorkerScalePatchRequest(int DesiredCount);
+
+public sealed record WorkerScaleTargetDto(
+    string WorkerKey,
+    string ScaleKey,
+    string? EcsServiceName,
+    int? DesiredCount,
+    int? RunningCount,
+    int? PendingCount,
+    int? ManualDesiredCount,
+    bool EcsConfigured,
+    string Status);
+
+public sealed record WorkerScaleUpdateResult(
+    string WorkerKey,
+    string ScaleKey,
+    int DesiredCount,
+    bool EcsUpdated,
+    string Message);
+
+public sealed record WorkerScaleOverrideDto(string ScaleKey, int DesiredCount);
+
 public sealed record WorkerCapabilityDto(
     string WorkerKey,
     string DisplayName,

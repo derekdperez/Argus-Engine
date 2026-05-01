@@ -88,6 +88,23 @@ desired_for() {
   echo "$desired"
 }
 
+manual_desired_for() {
+  local worker="$1"
+  SCALE_OVERRIDES_JSON="$scale_overrides_json" WORKER="$worker" python3 -c '
+import json
+import os
+worker = os.environ["WORKER"]
+try:
+    rows = json.loads(os.environ.get("SCALE_OVERRIDES_JSON", "[]"))
+except json.JSONDecodeError:
+    rows = []
+for row in rows:
+    if row.get("scaleKey") == worker and row.get("desiredCount") is not None:
+        print(int(row["desiredCount"]))
+        break
+'
+}
+
 latest_task_definition() {
   local family="$1"
   aws ecs list-task-definitions \
@@ -100,6 +117,7 @@ latest_task_definition() {
     --output text
 }
 
+scale_overrides_json="$(curl -fsS "${COMMAND_CENTER_URL%/}/api/workers/scale-overrides" 2>/dev/null || echo '[]')"
 http_metrics_json=""
 rabbit_queues_json=""
 updated_services=()
@@ -109,12 +127,17 @@ for worker in "${workers[@]}"; do
   min_tasks="$(scale_min "$worker")"
   max_tasks="$(scale_max "$worker")"
   target="$(target_backlog "$worker")"
+  manual_desired="$(manual_desired_for "$worker")"
 
-  if [[ "$worker" == "worker-spider" ]]; then
+  if [[ "$manual_desired" =~ ^[0-9]+$ ]]; then
+    backlog="manual"
+    desired="$manual_desired"
+  elif [[ "$worker" == "worker-spider" ]]; then
     if [[ -z "$http_metrics_json" ]]; then
       http_metrics_json="$(curl -fsS "${COMMAND_CENTER_URL%/}/api/http-request-queue/metrics")"
     fi
     backlog="$(HTTP_METRICS_JSON="$http_metrics_json" python3 -c 'import json,os; m=json.loads(os.environ["HTTP_METRICS_JSON"]); print(int(m.get("backlogCount", 0)))')"
+    desired="$(desired_for "$backlog" "$target" "$min_tasks" "$max_tasks")"
   else
     if [[ -z "$rabbit_queues_json" ]]; then
       rabbit_queues_json="$(curl -fsS "${COMMAND_CENTER_URL%/}/api/ops/rabbit-queues")"
@@ -130,9 +153,9 @@ for row in rows:
         total += int(row.get("messagesReady", 0)) + int(row.get("messagesUnacknowledged", 0))
 print(total)
 ')"
+    desired="$(desired_for "$backlog" "$target" "$min_tasks" "$max_tasks")"
   fi
 
-  desired="$(desired_for "$backlog" "$target" "$min_tasks" "$max_tasks")"
   current_desired="$(
     aws ecs describe-services \
       --region "$AWS_REGION" \
@@ -172,7 +195,11 @@ print(total)
     update_args+=(--force-new-deployment)
   fi
 
-  echo "${worker}: backlog=${backlog} currentDesired=${current_desired} targetBacklogPerTask=${target} nextDesired=${desired}"
+  if [[ "$manual_desired" =~ ^[0-9]+$ ]]; then
+    echo "${worker}: manualDesired=${desired} currentDesired=${current_desired} nextDesired=${desired}"
+  else
+    echo "${worker}: backlog=${backlog} currentDesired=${current_desired} targetBacklogPerTask=${target} nextDesired=${desired}"
+  fi
 
   if [[ "$current_desired" != "$desired" || "$task_changed" == "true" || "$ECS_AUTOSCALER_FORCE_NEW_DEPLOYMENT" == "true" ]]; then
     aws "${update_args[@]}" >/dev/null

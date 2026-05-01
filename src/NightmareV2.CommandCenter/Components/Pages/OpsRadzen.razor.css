@@ -205,6 +205,19 @@
     align-items: center;
 }
 
+.worker-scale-control {
+    display: inline-grid;
+    grid-template-columns: auto minmax(4.5rem, 5.5rem) auto auto;
+    gap: 0.35rem;
+    align-items: center;
+}
+
+.worker-scale-input {
+    min-height: 2rem;
+    width: 100%;
+    padding: 0.3rem 0.45rem;
+}
+
 .danger-zone {
     margin-bottom: 1rem;
     border: 1px solid rgba(220, 38, 38, 0.20);

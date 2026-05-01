@@ -8,3 +8,17 @@ Update ALL TIMES in the ENTIRE application to show "MM/dd/yyyy" or "MM/dd/yy" fo
 
 Add an ECS monitor and display stats about the ECS systems on the System Status page
 
+On the Operations page:
+
+The Target grid should show 100 targets per page, and always virtualize rows (remove the checkbox)
+
+The Assets grid should show 1000 items per page, and should also always virtualize and remove the checkbox.
+
+All data grids need to consume the appropriate events so that they can update themselves with new data automatically. Remove any controls or mentions of anything related to refreshing - this needs to be event based and doesnt need to be refreshed!
+
+Remove the Load textbox from the HTTP queue, it needs to always just show the whole queue. If it's getting too large, it needs more workers.
+
+On the admin page, make the scaling logic for workers configurable.
+
+The admin page shows 0 ECS hours, 0% free tier used, 0 EC2 hours, and 0 HTTP traffic, even though the application is running...
+

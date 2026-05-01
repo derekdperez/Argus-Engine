@@ -19,6 +19,7 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
     public DbSet<AssetTag> AssetTags => Set<AssetTag>();
     public DbSet<TechnologyDetection> TechnologyDetections => Set<TechnologyDetection>();
     public DbSet<CloudResourceUsageSample> CloudResourceUsageSamples => Set<CloudResourceUsageSample>();
+    public DbSet<WorkerScaleTarget> WorkerScaleTargets => Set<WorkerScaleTarget>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -175,6 +176,16 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
             e.ToTable("worker_switches");
             e.HasKey(x => x.WorkerKey);
             e.Property(x => x.WorkerKey).HasMaxLength(64);
+        });
+
+        modelBuilder.Entity<WorkerScaleTarget>(e =>
+        {
+            e.ToTable("worker_scale_targets");
+            e.HasKey(x => x.ScaleKey);
+            e.Property(x => x.ScaleKey).HasColumnName("scale_key").HasMaxLength(64);
+            e.Property(x => x.DesiredCount).HasColumnName("desired_count");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.ToTable(t => t.HasCheckConstraint("ck_worker_scale_targets_desired_count_nonnegative", "desired_count >= 0"));
         });
 
         modelBuilder.Entity<CloudResourceUsageSample>(e =>

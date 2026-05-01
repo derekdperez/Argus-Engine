@@ -1,4 +1,8 @@
 using Radzen;
+using Amazon;
+using Amazon.ECS;
+using Amazon.ECS.Model;
+using Amazon.Runtime;
 using System.Net.Http;
 using System.Text.Json;
 using MassTransit;
@@ -190,6 +194,95 @@ static string[] RequiredWorkerKeys() =>
     WorkerKeys.HighValuePaths,
     WorkerKeys.TechnologyIdentification,
 ];
+
+static (string ScaleKey, string DefaultServiceName)? WorkerScaleTargetForKey(string workerKey) =>
+    workerKey switch
+    {
+        WorkerKeys.Spider => ("worker-spider", "nightmare-worker-spider"),
+        WorkerKeys.Enumeration => ("worker-enum", "nightmare-worker-enum"),
+        WorkerKeys.PortScan => ("worker-portscan", "nightmare-worker-portscan"),
+        WorkerKeys.HighValueRegex or WorkerKeys.HighValuePaths => ("worker-highvalue", "nightmare-worker-highvalue"),
+        WorkerKeys.TechnologyIdentification => ("worker-techid", "nightmare-worker-techid"),
+        _ => null,
+    };
+
+static string EcsServiceNameForScaleKey(IConfiguration configuration, string scaleKey, string defaultServiceName)
+{
+    var envName = scaleKey switch
+    {
+        "worker-spider" => "WORKER_SPIDER_SERVICE",
+        "worker-enum" => "WORKER_ENUM_SERVICE",
+        "worker-portscan" => "WORKER_PORTSCAN_SERVICE",
+        "worker-highvalue" => "WORKER_HIGHVALUE_SERVICE",
+        "worker-techid" => "WORKER_TECHID_SERVICE",
+        _ => "",
+    };
+
+    return string.IsNullOrWhiteSpace(envName)
+        ? defaultServiceName
+        : configuration[envName] ?? defaultServiceName;
+}
+
+static async Task<string?> ResolveAwsRegionAsync(IConfiguration configuration, CancellationToken ct)
+{
+    var configured = configuration["AWS_REGION"]
+        ?? configuration["AWS_DEFAULT_REGION"]
+        ?? configuration["AWS:Region"];
+    if (!string.IsNullOrWhiteSpace(configured))
+        return configured.Trim();
+
+    try
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        var token = "";
+        using (var tokenRequest = new HttpRequestMessage(HttpMethod.Put, "http://169.254.169.254/latest/api/token"))
+        {
+            tokenRequest.Headers.TryAddWithoutValidation("X-aws-ec2-metadata-token-ttl-seconds", "60");
+            using var tokenResponse = await http.SendAsync(tokenRequest, ct).ConfigureAwait(false);
+            if (tokenResponse.IsSuccessStatusCode)
+                token = await tokenResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        }
+
+        using var identityRequest = new HttpRequestMessage(HttpMethod.Get, "http://169.254.169.254/latest/dynamic/instance-identity/document");
+        if (!string.IsNullOrWhiteSpace(token))
+            identityRequest.Headers.TryAddWithoutValidation("X-aws-ec2-metadata-token", token);
+
+        using var identityResponse = await http.SendAsync(identityRequest, ct).ConfigureAwait(false);
+        if (!identityResponse.IsSuccessStatusCode)
+            return null;
+
+        var json = await identityResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.TryGetProperty("region", out var region) ? region.GetString() : null;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+static async Task<Dictionary<string, Service>> DescribeEcsServicesAsync(
+    IConfiguration configuration,
+    IEnumerable<string> serviceNames,
+    CancellationToken ct)
+{
+    var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);
+    if (string.IsNullOrWhiteSpace(region))
+        return [];
+
+    var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
+    using var ecs = new AmazonECSClient(RegionEndpoint.GetBySystemName(region));
+    var response = await ecs.DescribeServicesAsync(
+            new DescribeServicesRequest
+            {
+                Cluster = cluster,
+                Services = serviceNames.Distinct(StringComparer.Ordinal).ToList(),
+            },
+            ct)
+        .ConfigureAwait(false);
+
+    return response.Services.ToDictionary(s => s.ServiceName, StringComparer.Ordinal);
+}
 
 static async Task QueueRootSpiderSeedsAsync(
     IEventOutbox outbox,
@@ -1254,6 +1347,92 @@ app.MapGet(
     .WithName("WorkerActivity");
 
 app.MapGet(
+        "/api/workers/scale-overrides",
+        async (NightmareDbContext db, CancellationToken ct) =>
+        {
+            var rows = await db.WorkerScaleTargets.AsNoTracking()
+                .OrderBy(t => t.ScaleKey)
+                .Select(t => new WorkerScaleOverrideDto(t.ScaleKey, t.DesiredCount))
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+            return Results.Ok(rows);
+        })
+    .WithName("WorkerScaleOverrides");
+
+app.MapGet(
+        "/api/workers/scale",
+        async (NightmareDbContext db, IConfiguration configuration, CancellationToken ct) =>
+        {
+            var overrides = await db.WorkerScaleTargets.AsNoTracking()
+                .ToDictionaryAsync(t => t.ScaleKey, t => t, StringComparer.Ordinal, ct)
+                .ConfigureAwait(false);
+
+            var definitions = RequiredWorkerKeys()
+                .Select(key => new { WorkerKey = key, Target = WorkerScaleTargetForKey(key) })
+                .Where(x => x.Target is not null)
+                .Select(
+                    x =>
+                    {
+                        var target = x.Target!.Value;
+                        return new
+                        {
+                            x.WorkerKey,
+                            target.ScaleKey,
+                            ServiceName = EcsServiceNameForScaleKey(configuration, target.ScaleKey, target.DefaultServiceName),
+                        };
+                    })
+                .ToList();
+
+            Dictionary<string, Service> services = [];
+            var ecsConfigured = false;
+            var status = "ECS region is not configured and could not be inferred from EC2 metadata.";
+            var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(region))
+            {
+                try
+                {
+                    services = await DescribeEcsServicesAsync(configuration, definitions.Select(d => d.ServiceName), ct).ConfigureAwait(false);
+                    ecsConfigured = true;
+                    status = "ECS service state loaded.";
+                }
+                catch (AmazonECSException ex)
+                {
+                    status = $"ECS API error: {ex.Message}";
+                }
+                catch (AmazonServiceException ex)
+                {
+                    status = $"AWS API error: {ex.Message}";
+                }
+                catch (Exception ex)
+                {
+                    status = $"ECS service state unavailable: {ex.Message}";
+                }
+            }
+
+            var rows = definitions
+                .Select(
+                    definition =>
+                    {
+                        overrides.TryGetValue(definition.ScaleKey, out var manual);
+                        services.TryGetValue(definition.ServiceName, out var service);
+                        return new WorkerScaleTargetDto(
+                            definition.WorkerKey,
+                            definition.ScaleKey,
+                            definition.ServiceName,
+                            service?.DesiredCount,
+                            service?.RunningCount,
+                            service?.PendingCount,
+                            manual?.DesiredCount,
+                            ecsConfigured && service is not null,
+                            service is null ? status : "ECS service state loaded.");
+                    })
+                .ToList();
+
+            return Results.Ok(rows);
+        })
+    .WithName("WorkerScaleTargets");
+
+app.MapGet(
         "/api/ops/snapshot",
         async (NightmareDbContext db, IHttpClientFactory httpFactory, IConfiguration configuration, CancellationToken ct) =>
         {
@@ -1424,6 +1603,89 @@ app.MapPut(
             return Results.NoContent();
         })
     .WithName("PatchWorker");
+
+app.MapPut(
+        "/api/workers/{key}/scale",
+        async (
+            string key,
+            WorkerScalePatchRequest body,
+            NightmareDbContext db,
+            IConfiguration configuration,
+            IHubContext<DiscoveryHub> hub,
+            CancellationToken ct) =>
+        {
+            var target = WorkerScaleTargetForKey(key);
+            if (target is null)
+                return Results.BadRequest($"{key} does not map to a scalable ECS worker service.");
+
+            var maxDesiredCount = configuration.GetValue<int?>("Nightmare:WorkerScaling:MaxDesiredCount") ?? 100;
+            if (body.DesiredCount < 0 || body.DesiredCount > maxDesiredCount)
+                return Results.BadRequest($"desiredCount must be between 0 and {maxDesiredCount}.");
+
+            var scaleKey = target.Value.ScaleKey;
+            var now = DateTimeOffset.UtcNow;
+            var row = await db.WorkerScaleTargets.FirstOrDefaultAsync(t => t.ScaleKey == scaleKey, ct).ConfigureAwait(false);
+            if (row is null)
+            {
+                row = new WorkerScaleTarget { ScaleKey = scaleKey };
+                db.WorkerScaleTargets.Add(row);
+            }
+
+            row.DesiredCount = body.DesiredCount;
+            row.UpdatedAtUtc = now;
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            var serviceName = EcsServiceNameForScaleKey(configuration, scaleKey, target.Value.DefaultServiceName);
+            var ecsUpdated = false;
+            var message = "Manual worker count saved. ECS was not updated because AWS region is not configured and could not be inferred from EC2 metadata.";
+            var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(region))
+            {
+                try
+                {
+                    var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
+                    using var ecs = new AmazonECSClient(RegionEndpoint.GetBySystemName(region));
+                    await ecs.UpdateServiceAsync(
+                            new UpdateServiceRequest
+                            {
+                                Cluster = cluster,
+                                Service = serviceName,
+                                DesiredCount = body.DesiredCount,
+                            },
+                            ct)
+                        .ConfigureAwait(false);
+                    ecsUpdated = true;
+                    message = $"Set {serviceName} desired count to {body.DesiredCount}.";
+                }
+                catch (AmazonECSException ex)
+                {
+                    message = $"Manual worker count saved, but ECS update failed: {ex.Message}";
+                }
+                catch (AmazonServiceException ex)
+                {
+                    message = $"Manual worker count saved, but AWS update failed: {ex.Message}";
+                }
+                catch (Exception ex)
+                {
+                    message = $"Manual worker count saved, but ECS update failed: {ex.Message}";
+                }
+            }
+
+            await hub.Clients.All.SendAsync(
+                    DiscoveryHubEvents.DomainEvent,
+                    new LiveUiEventDto(
+                        "WorkerScaleChanged",
+                        null,
+                        null,
+                        "workers",
+                        $"{scaleKey} desired count set to {body.DesiredCount}",
+                        now),
+                    cancellationToken: ct)
+                .ConfigureAwait(false);
+
+            return Results.Ok(new WorkerScaleUpdateResult(key, scaleKey, body.DesiredCount, ecsUpdated, message));
+        })
+    .WithName("ScaleWorker");
 
 
 static async Task InitializeStartupDatabasesAsync(WebApplication app, bool skipStartupDatabase)

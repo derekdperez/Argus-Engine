@@ -816,6 +816,8 @@
 
     private readonly CancellationTokenSource _pollCts = new();
     private CancellationTokenSource? _liveReloadCts;
+    private readonly HashSet<string> _dirtyScopes = new(StringComparer.Ordinal);
+    private DateTimeOffset? _firstDirtyAtUtc;
 
     private readonly List<TargetSummary> _targets = [];
     private readonly List<AssetGridRowDto> _assets = [];
@@ -1175,20 +1177,29 @@
 
     private void ScheduleLiveReload(LiveUiEventDto evt)
     {
+        // Accumulate which data scopes have changed.
+        _dirtyScopes.Add(evt.Scope);
+        _firstDirtyAtUtc ??= DateTimeOffset.UtcNow;
+
         _liveReloadCts?.Cancel();
         _liveReloadCts?.Dispose();
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_pollCts.Token);
         _liveReloadCts = cts;
+
+        // Use a short debounce, but force-fire if we've been accumulating for too long (2s max).
+        var age = DateTimeOffset.UtcNow - _firstDirtyAtUtc.Value;
+        var delay = age.TotalMilliseconds > 2000 ? 0 : 250;
 
         _ = Task.Run(
             async () =>
             {
                 try
                 {
-                    await Task.Delay(50, cts.Token);
+                    if (delay > 0)
+                        await Task.Delay(delay, cts.Token);
                     await InvokeAsync(async () =>
                     {
-                        await ReloadForEventAsync(evt);
+                        await FlushDirtyScopesAsync();
                         StateHasChanged();
                     });
                 }
@@ -1199,32 +1210,31 @@
             CancellationToken.None);
     }
 
-    private async Task ReloadForEventAsync(LiveUiEventDto evt)
+    private async Task FlushDirtyScopesAsync()
     {
-        if (evt.Scope is "targets")
-        {
+        // Snapshot and clear the dirty set so new events can accumulate fresh.
+        var scopes = _dirtyScopes.ToArray();
+        _dirtyScopes.Clear();
+        _firstDirtyAtUtc = null;
+
+        var needTargets = scopes.Contains("targets");
+        var needAssets = scopes.Contains("assets") || needTargets;
+        var needHttp = scopes.Contains("http") || needTargets;
+
+        if (needTargets)
             await ReloadTargetsAsync();
-            await ReloadTargetScopedAsync();
-        }
-        else if (evt.Scope is "assets")
-        {
+
+        if (needAssets)
             await ReloadAssetsAsync();
-            await ReloadVolatileAsync();
-        }
-        else if (evt.Scope is "http")
+
+        if (needHttp)
         {
             await ReloadHttpQueueAsync();
             await ReloadHttpQueueMetricsAsync();
-            await ReloadVolatileAsync();
         }
-        else if (evt.Scope is "workers")
-        {
-            await ReloadVolatileAsync();
-        }
-        else
-        {
-            await ReloadVolatileAsync();
-        }
+
+        // Always refresh overview/metrics on any event.
+        await ReloadVolatileAsync();
     }
 
     private async Task ReloadAllAsync()

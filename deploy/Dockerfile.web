@@ -22,15 +22,10 @@ COPY src/NightmareV2.Infrastructure/ src/NightmareV2.Infrastructure/
 COPY src/Resources/ src/Resources/
 RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj" \
-    -c Release -o /app/publish --no-restore /p:UseAppHost=false
-
-# Defensive publish-time fallback for .NET 10 static-web-asset regressions where
-# /_framework/blazor.web.js is absent at runtime. Keeping a physical copy lets
-# Static File Middleware serve the Blazor bootstrap script directly from wwwroot.
-RUN set -eu; \
-    mkdir -p /app/publish/wwwroot/_framework; \
-    blazor_web_js="$(find /root/.nuget/packages /usr/share/dotnet -type f -name blazor.web.js 2>/dev/null | sort | tail -n 1 || true)"; \
-    if [ -n "$blazor_web_js" ]; then \
+    -c Release -o /app/publish --no-restore /p:UseAppHost=false \
+    && mkdir -p /app/publish/wwwroot/_framework \
+    && blazor_web_js="$(find /root/.nuget/packages /usr/share/dotnet -type f -name blazor.web.js 2>/dev/null | sort | tail -n 1 || true)" \
+    && if [ -n "$blazor_web_js" ]; then \
         cp "$blazor_web_js" /app/publish/wwwroot/_framework/blazor.web.js; \
         echo "Copied Blazor bootstrap asset from $blazor_web_js"; \
     else \

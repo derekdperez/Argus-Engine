@@ -2,6 +2,10 @@
 
 ## 2026-05-01
 
+- Fixed technology-identification worker Docker publish collision:
+  - Legacy `TechIdentificationData` JSON files now publish under `Resources/TechnologyDetection/TechIdentificationData` instead of being flattened into `Resources/TechnologyDetection/technologies`.
+  - `TechnologyCatalogLoader` now merges legacy data first and current `technologies` data second, preserving both catalogs while allowing current definitions to override by technology name.
+  - Why: Docker publish failed with `NETSDK1152` because both catalogs contained `_.json` at the same relative output path.
 - Added target max-depth bulk update workflow:
   - New `PUT /api/targets/max-depth` updates `GlobalMaxDepth` for all targets or an explicit target-id list without changing root domains.
   - `/targets` can apply a depth to all loaded targets or the current filtered target set.

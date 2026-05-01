@@ -216,7 +216,6 @@ latest_task_definition() {
     --family-prefix "$family" \
     --status ACTIVE \
     --sort DESC \
-    --max-items 1 \
     --query 'taskDefinitionArns[0]' \
     --output text
 }

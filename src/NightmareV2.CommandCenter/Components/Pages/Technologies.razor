@@ -1,0 +1,209 @@
+@using System.Net.Http.Json
+@using NightmareV2.CommandCenter.Models
+@using NightmareV2.CommandCenter.Realtime
+@implements IDisposable
+@inject HttpClient Http
+@inject DiscoveryRealtimeClient Realtime
+
+@page "/technologies"
+@rendermode InteractiveServer
+
+<PageTitle>Technologies and Tags · Nightmare v2</PageTitle>
+
+<div class="page-shell ops-page">
+    <section class="page-hero ops-hero">
+        <div>
+            <p class="eyebrow">Detection</p>
+            <h1>Technologies and Tags</h1>
+            <p class="hero-copy">Technologies identified across assets through headers, HTML content, cookies, and other fingerprints.</p>
+            <div class="hero-meta">
+                <span class="live-pill @LiveStateCss">@Realtime.State</span>
+                <span>@(_lastLoadedAtUtc is null ? "Not loaded" : $"Last refresh {_lastLoadedAtUtc:yyyy-MM-dd HH:mm:ss} UTC")</span>
+                <span>@FilteredFindings.Count().ToString("N0") rows</span>
+            </div>
+        </div>
+        <div class="hero-actions">
+            <button type="button" class="btn" @onclick="ReloadAsync" disabled="@_loading">@(_loading ? "Refreshing..." : "Refresh")</button>
+        </div>
+    </section>
+
+    <section class="panel ops-rz-panel">
+        <div class="ops-grid-toolbar">
+            <input type="text" class="ops-filter wide" placeholder="Search target, subdomain, technology, version, evidence..." @bind="_search" @bind:event="oninput" />
+            <input type="text" class="ops-filter" placeholder="Target" @bind="_targetFilter" @bind:event="oninput" />
+            <input type="text" class="ops-filter" placeholder="Subdomain" @bind="_subdomainFilter" @bind:event="oninput" />
+            <input type="text" class="ops-filter" placeholder="Technology" @bind="_technologyFilter" @bind:event="oninput" />
+            <button type="button" class="btn ghost" @onclick="ClearFilters">Clear filters</button>
+        </div>
+
+        <RadzenDataGrid TItem="TechnologyDetectionRowDto"
+                        Data="@FilteredFindings"
+                        Count="@FilteredFindings.Count()"
+                        AllowSorting="true"
+                        AllowFiltering="false"
+                        AllowPaging="false"
+                        AllowGrouping="true"
+                        AllowVirtualization="true"
+                        Style="height: 860px"
+                        Density="Density.Compact"
+                        GridLines="DataGridGridLines.Both"
+                        IsLoading="@_loading"
+                        ColumnWidth="180px">
+            <Columns>
+                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="DetectedAtUtc" Title="Detected" Width="180px" SortOrder="SortOrder.Descending">
+                    <Template Context="r">@r.DetectedAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="TargetRootDomain" Title="Target" Width="200px" />
+                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="AssetCanonicalKey" Title="Subdomain" Width="240px">
+                    <Template Context="r">
+                        <span class="ops-rz-clip" title="@r.AssetCanonicalKey">@r.AssetCanonicalKey</span>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="TechnologyName" Title="Technology" Width="200px">
+                    <Template Context="r"><strong>@r.TechnologyName</strong></Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="Version" Title="Version" Width="120px" />
+                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="CategoryName" Title="Category" Width="180px" />
+                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="EvidenceSource" Title="Source" Width="120px" />
+                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="MatchedText" Title="Evidence" Width="400px">
+                    <Template Context="r">
+                        @if (!string.IsNullOrEmpty(r.EvidenceKey))
+                        {
+                            <span class="muted">[@r.EvidenceKey]</span><br/>
+                        }
+                        <span class="ops-rz-clip" title="@r.MatchedText">@r.MatchedText</span>
+                        @if (!string.IsNullOrEmpty(r.Pattern))
+                        {
+                            <br/><code title="@r.Pattern">@r.Pattern</code>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </section>
+</div>
+
+@code {
+    private readonly CancellationTokenSource _pollCts = new();
+    private readonly List<TechnologyDetectionRowDto> _rows = [];
+    private bool _loading;
+    private DateTimeOffset? _lastLoadedAtUtc;
+    private string _search = "";
+    private string _targetFilter = "";
+    private string _subdomainFilter = "";
+    private string _technologyFilter = "";
+
+    private string LiveStateCss => Realtime.IsConnected ? "ok" : "warn";
+
+    private IEnumerable<TechnologyDetectionRowDto> FilteredFindings => _rows.Where(r =>
+        Matches(r.TargetRootDomain, _targetFilter)
+        && Matches(r.AssetCanonicalKey, _subdomainFilter)
+        && Matches(r.TechnologyName, _technologyFilter)
+        && (
+            Matches(r.TargetRootDomain, _search)
+            || Matches(r.AssetCanonicalKey, _search)
+            || Matches(r.TechnologyName, _search)
+            || Matches(r.CategoryName, _search)
+            || Matches(r.Version, _search)
+            || Matches(r.EvidenceSource, _search)
+            || Matches(r.EvidenceKey, _search)
+            || Matches(r.Pattern, _search)
+            || Matches(r.MatchedText, _search)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        Realtime.DomainEventReceived += OnRealtimeEvent;
+        await ReloadAsync().ConfigureAwait(false);
+        await StartRealtimeAsync().ConfigureAwait(false);
+        _ = PollAsync();
+    }
+
+    private async Task StartRealtimeAsync()
+    {
+        try
+        {
+            await Realtime.EnsureStartedAsync(_pollCts.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Manual refresh and fallback polling remain available.
+        }
+    }
+
+    private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
+    {
+        // Technology detections are published as "assets" domain events.
+        if (evt.Scope is not ("findings" or "assets" or "http"))
+            return;
+
+        _ = InvokeAsync(async () =>
+        {
+            await ReloadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task PollAsync()
+    {
+        try
+        {
+            while (!_pollCts.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30), _pollCts.Token).ConfigureAwait(false);
+                if (Realtime.IsConnected)
+                    continue;
+
+                await ReloadAsync().ConfigureAwait(false);
+                await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (_loading)
+            return;
+
+        _loading = true;
+        try
+        {
+            var list = await Http.GetFromJsonAsync<List<TechnologyDetectionRowDto>>($"/api/technologies?take=10000")
+                .ConfigureAwait(false);
+            _rows.Clear();
+            if (list is not null)
+                _rows.AddRange(list);
+
+            _lastLoadedAtUtc = DateTimeOffset.UtcNow;
+        }
+        catch
+        {
+            _rows.Clear();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ClearFilters()
+    {
+        _search = "";
+        _targetFilter = "";
+        _subdomainFilter = "";
+        _technologyFilter = "";
+    }
+
+    private static bool Matches(string? value, string? filter) =>
+        string.IsNullOrWhiteSpace(filter)
+        || (!string.IsNullOrWhiteSpace(value) && value.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    public void Dispose()
+    {
+        Realtime.DomainEventReceived -= OnRealtimeEvent;
+        _pollCts.Cancel();
+        _pollCts.Dispose();
+    }
+}

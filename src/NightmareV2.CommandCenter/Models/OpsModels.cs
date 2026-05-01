@@ -387,3 +387,19 @@ public sealed record WorkerScalingSettingsPatchDto(
     int MinTasks,
     int MaxTasks,
     int TargetBacklogPerTask);
+
+public sealed record TechnologyDetectionRowDto(
+    Guid Id,
+    Guid TargetId,
+    string TargetRootDomain,
+    Guid AssetId,
+    string AssetCanonicalKey,
+    string TechnologyName,
+    string CategoryName,
+    string? Version,
+    string EvidenceSource,
+    string? EvidenceKey,
+    string? Pattern,
+    string? MatchedText,
+    decimal Confidence,
+    DateTimeOffset DetectedAtUtc);

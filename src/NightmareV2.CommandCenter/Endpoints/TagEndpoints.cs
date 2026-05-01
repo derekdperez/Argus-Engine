@@ -96,5 +96,39 @@ public static class TagEndpoints
                     return Results.Ok(rows);
                 })
             .WithName("ListTargetTechnologies");
+
+        app.MapGet(
+                "/api/technologies",
+                async (NightmareDbContext db, int? take, CancellationToken ct) =>
+                {
+                    var maxRows = take ?? 10000;
+                    var q = from d in db.TechnologyDetections.AsNoTracking()
+                            join t in db.Targets.AsNoTracking() on d.TargetId equals t.Id
+                            join a in db.Assets.AsNoTracking() on d.AssetId equals a.Id
+                            join tag in db.Tags.AsNoTracking() on d.TagId equals tag.Id
+                            select new NightmareV2.CommandCenter.Models.TechnologyDetectionRowDto(
+                                d.Id,
+                                t.Id,
+                                t.RootDomain,
+                                a.Id,
+                                a.CanonicalKey,
+                                d.TechnologyName,
+                                tag.Name, // Using tag.Name as Category name placeholder or just Tag Name if categories are embedded in metadata
+                                d.Version,
+                                d.EvidenceSource,
+                                d.EvidenceKey,
+                                d.Pattern,
+                                d.MatchedText,
+                                d.Confidence,
+                                d.DetectedAtUtc);
+
+                    var rows = await q.OrderByDescending(x => x.DetectedAtUtc)
+                        .Take(maxRows)
+                        .ToListAsync(ct)
+                        .ConfigureAwait(false);
+
+                    return Results.Ok(rows);
+                })
+            .WithName("ListTechnologies");
     }
 }

@@ -6,6 +6,8 @@
   - `deploy/aws/deploy-ecs-services.sh` registers task definitions from ECR images and creates/updates ECS services.
   - `deploy/aws/autoscale-ecs-workers.sh` scales spider, enum, port scan, high-value, and tech-id workers from Command Center queue metrics.
   - `deploy/aws/destroy-ecs-services.sh` explicitly deletes worker or all Nightmare ECS services with confirmation env vars.
+  - `deploy/deploy.sh --ecs-workers` now runs the EC2 self-hosted core stack and deploys workers to ECS.
+  - `deploy/aws/bootstrap-ecs-from-ec2.sh` derives EC2/VPC settings, creates baseline ECS/IAM/ECR/log/security-group resources, and generates ECS env files for workers.
   - Updated AWS env examples, service env guidance, README, scaling guide, and gitignore for non-committed live AWS config.
   - Why: support ECS worker lifecycle management without embedding AWS orchestration into app runtime code.
 - Validation:

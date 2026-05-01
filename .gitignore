@@ -12,6 +12,7 @@ deploy/.last-deploy-stamp
 
 # Live AWS/ECS service environment values can contain database and broker credentials.
 deploy/aws/.env
+deploy/aws/.env.generated
 deploy/aws/service-env
 
 # Fast deploy fingerprints

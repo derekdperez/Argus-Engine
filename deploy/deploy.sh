@@ -25,6 +25,7 @@
 #   SUBFINDER_PACKAGE=...  Optional go install package for the worker image subfinder binary.
 #   AMASS_PACKAGE=...      Optional go install package for the worker image amass binary.
 #   COMPOSE_BAKE=true|false    Multi-service compose builds may use "bake"; scripts default to false for stability.
+#   NIGHTMARE_ECS_WORKERS=1     Deploy core stack locally on EC2 and deploy workers as ECS services.
 #
 # If you see: unknown shorthand flag: 'd' in -d
 #   you ran "docker compose ..." without the Compose plugin — "compose" was ignored and
@@ -39,8 +40,14 @@ cd "$ROOT"
 
 NIGHTMARE_DEPLOY_FRESH="${NIGHTMARE_DEPLOY_FRESH:-0}"
 NIGHTMARE_DEPLOY_MODE="${NIGHTMARE_DEPLOY_MODE:-image}"
+NIGHTMARE_ECS_WORKERS="${NIGHTMARE_ECS_WORKERS:-0}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --ecs-workers)
+      NIGHTMARE_ECS_WORKERS=1
+      NIGHTMARE_DEPLOY_MODE=image
+      shift
+      ;;
     -fresh | --fresh)
       NIGHTMARE_DEPLOY_FRESH=1
       NIGHTMARE_DEPLOY_MODE=image
@@ -56,7 +63,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h | --help)
       cat <<'EOF'
-Usage: ./deploy/deploy.sh [--hot] [-fresh]
+Usage: ./deploy/deploy.sh [--hot] [-fresh] [--ecs-workers]
 
   (default)  Fast image deploy: rebuild only service image(s) whose source/shared
              dependency or image recipe fingerprint changed, then run compose up
@@ -69,6 +76,12 @@ Usage: ./deploy/deploy.sh [--hot] [-fresh]
 
   -fresh     Rebuild all service images with --pull --no-cache and force recreate.
 
+  --ecs-workers
+             EC2 production mode: run the core self-hosted stack locally via
+             Docker Compose, scale local workers to zero, create/update ECS
+             resources, push worker images to ECR, and create/update ECS worker
+             services.
+
 Environment:
   NIGHTMARE_DEPLOY_MODE=image|hot
   NIGHTMARE_GIT_PULL=1
@@ -77,6 +90,7 @@ Environment:
   NIGHTMARE_NO_CACHE=1
   NIGHTMARE_PULL_IMAGES=1
   NIGHTMARE_FORCE_RECREATE=1
+  NIGHTMARE_ECS_WORKERS=1
 EOF
       exit 0
       ;;
@@ -88,20 +102,67 @@ EOF
 done
 export NIGHTMARE_DEPLOY_FRESH
 export NIGHTMARE_DEPLOY_MODE
+export NIGHTMARE_ECS_WORKERS
 
 # shellcheck source=deploy/lib-nightmare-compose.sh
 source "$DEPLOY_DIR/lib-nightmare-compose.sh"
 # shellcheck source=deploy/lib-install-deps.sh
 source "$DEPLOY_DIR/lib-install-deps.sh"
 
+if [[ "$NIGHTMARE_ECS_WORKERS" == "1" && -f "$DEPLOY_DIR/aws/.env" ]]; then
+  # shellcheck source=/dev/null
+  set -a
+  . "$DEPLOY_DIR/aws/.env"
+  set +a
+fi
+
 nightmare_ensure_runtime_dependencies
+if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
+  nightmare_ensure_curl
+  nightmare_ensure_git || true
+  nightmare_ensure_python3
+  nightmare_ensure_aws_cli
+fi
 
 nightmare_maybe_git_pull "$ROOT"
 nightmare_export_build_stamp "$ROOT"
 nightmare_decide_incremental_deploy
 
-echo "Applying stack from: $ROOT"
+if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
+  echo "Applying core stack from: $ROOT (local workers scaled to zero; ECS workers enabled)"
+else
+  echo "Applying stack from: $ROOT"
+fi
 nightmare_compose_full_redeploy
+
+if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
+  echo ""
+  echo "Bootstrapping ECS resources from this EC2 instance..."
+  "$DEPLOY_DIR/aws/bootstrap-ecs-from-ec2.sh"
+
+  # shellcheck source=/dev/null
+  set -a
+  [[ ! -f "$DEPLOY_DIR/aws/.env" ]] || . "$DEPLOY_DIR/aws/.env"
+  . "$DEPLOY_DIR/aws/.env.generated"
+  set +a
+
+  echo "Ensuring ECR repositories..."
+  "$DEPLOY_DIR/aws/create-ecr-repos.sh"
+
+  echo "Building and pushing ECR images..."
+  "$DEPLOY_DIR/aws/build-push-ecr.sh"
+
+  echo "Creating/updating ECS worker services..."
+  "$DEPLOY_DIR/aws/deploy-ecs-services.sh" \
+    worker-spider \
+    worker-enum \
+    worker-portscan \
+    worker-highvalue \
+    worker-techid
+
+  echo "Applying one autoscale pass..."
+  "$DEPLOY_DIR/aws/autoscale-ecs-workers.sh" || true
+fi
 
 echo ""
 echo "Nightmare v2 is running."
@@ -119,5 +180,9 @@ echo "  ./deploy/smoke-test.sh                    # verify health, Blazor static
 echo "  ./deploy/logs.sh --errors                 # show recent error-like log lines across services"
 echo "  ./deploy/logs.sh --follow worker-spider   # follow one service"
 echo "  docker compose -f deploy/docker-compose.yml down"
+if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
+  echo "  deploy/aws/autoscale-ecs-workers.sh        # run from cron/EventBridge for continuous ECS worker scaling"
+  echo "  CONFIRM_DESTROY_ECS_WORKERS=yes deploy/aws/destroy-ecs-services.sh workers"
+fi
 echo "(or docker-compose -f deploy/docker-compose.yml ... if you use V1)"
 echo ""

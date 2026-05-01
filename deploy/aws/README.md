@@ -24,6 +24,41 @@ The scripts intentionally do not create the VPC, cluster, load balancer, or data
 
 ## ECS deploy workflow
 
+### EC2 one-command worker deployment
+
+When running the self-hosted stack on one EC2 host and placing workers on ECS, use:
+
+```bash
+./deploy/deploy.sh --ecs-workers
+```
+
+That mode:
+
+- Starts Postgres, Redis, RabbitMQ, Command Center, and Gatekeeper locally with Docker Compose.
+- Scales local worker containers to zero so ECS owns worker capacity.
+- Uses EC2 metadata to discover the current VPC, subnet, security groups, private IP, region, and account.
+- Creates the ECS cluster, ECR repositories, CloudWatch log group, ECS task execution role, task role, and ECS worker security group when missing.
+- Opens inbound access from the ECS worker security group to the EC2 host security group on `5432`, `6379`, `5672`, `15672`, and `8080`.
+- Generates `deploy/aws/service-env` so ECS workers reach the self-hosted compose services through the EC2 private IP.
+- Builds/pushes ECR images and creates or updates ECS worker services.
+
+Required before running:
+
+- The EC2 instance profile must allow ECS, ECR, IAM role creation/attachment, CloudWatch Logs, STS, and EC2 describe/security-group updates.
+- The EC2 instance security group must permit your browser to reach Command Center on `8080` if you want public UI access.
+- The EC2 instance must have enough disk/CPU to build Docker images.
+
+For continuous scaling, run this periodically after the first deploy:
+
+```bash
+set -a
+. deploy/aws/.env.generated
+set +a
+deploy/aws/autoscale-ecs-workers.sh
+```
+
+The manual workflow below is still useful when the core services are already reachable from ECS through managed databases/brokers or custom network plumbing.
+
 Create local, non-committed config files:
 
 ```bash

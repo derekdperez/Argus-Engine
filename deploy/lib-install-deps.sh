@@ -112,6 +112,84 @@ nightmare_ensure_git() {
   esac
 }
 
+nightmare_ensure_unzip() {
+  command -v unzip >/dev/null 2>&1 && return 0
+  [[ -f /etc/os-release ]] || return 0
+  # shellcheck source=/dev/null
+  source /etc/os-release
+  case "${ID:-}" in
+    ubuntu | debian)
+      nightmare_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get update -qq
+      nightmare_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y unzip
+      ;;
+    amzn | rhel | centos | fedora | rocky | almalinux)
+      if command -v dnf >/dev/null 2>&1; then
+        nightmare_run_privileged dnf install -y unzip
+      else
+        nightmare_run_privileged yum install -y unzip
+      fi
+      ;;
+  esac
+}
+
+nightmare_ensure_python3() {
+  command -v python3 >/dev/null 2>&1 && return 0
+  [[ -f /etc/os-release ]] || return 0
+  # shellcheck source=/dev/null
+  source /etc/os-release
+  case "${ID:-}" in
+    ubuntu | debian)
+      nightmare_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get update -qq
+      nightmare_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y python3
+      ;;
+    amzn | rhel | centos | fedora | rocky | almalinux)
+      if command -v dnf >/dev/null 2>&1; then
+        nightmare_run_privileged dnf install -y python3
+      else
+        nightmare_run_privileged yum install -y python3
+      fi
+      ;;
+  esac
+}
+
+nightmare_ensure_aws_cli() {
+  if command -v aws >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ "${NIGHTMARE_SKIP_INSTALL:-}" == "1" ]]; then
+    echo "NIGHTMARE_SKIP_INSTALL=1 but aws CLI is not on PATH." >&2
+    exit 1
+  fi
+
+  nightmare_is_linux || {
+    echo "AWS CLI is required for ECS deploy mode. Install it, then re-run." >&2
+    exit 1
+  }
+
+  nightmare_ensure_curl
+  nightmare_ensure_unzip
+
+  local arch url tmp zip
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64 | amd64) url="https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" ;;
+    aarch64 | arm64) url="https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" ;;
+    *)
+      echo "Unsupported architecture for automatic AWS CLI install: ${arch}" >&2
+      exit 1
+      ;;
+  esac
+
+  tmp="$(mktemp -d)"
+  zip="${tmp}/awscliv2.zip"
+  echo "Installing AWS CLI v2..."
+  curl -fsSL "$url" -o "$zip"
+  unzip -q "$zip" -d "$tmp"
+  nightmare_run_privileged "$tmp/aws/install" --update
+  rm -rf "$tmp"
+}
+
 nightmare_start_docker_service_linux() {
   command -v docker >/dev/null 2>&1 || return 0
 

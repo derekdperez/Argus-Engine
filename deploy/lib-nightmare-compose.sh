@@ -784,10 +784,20 @@ nightmare_compose_up_redeploy() {
 
   # Plain Docker Compose ignores deploy.replicas unless compatibility mode is used.
   # Keep local/EC2 scaling explicit so deployments start enough consumers by default.
-  args+=(
-    --scale "worker-enum=${NIGHTMARE_ENUM_REPLICAS:-10}"
-    --scale "worker-spider=${NIGHTMARE_SPIDER_REPLICAS:-10}"
-  )
+  if [[ "${NIGHTMARE_ECS_WORKERS:-0}" == "1" ]]; then
+    args+=(
+      --scale worker-enum=0
+      --scale worker-spider=0
+      --scale worker-portscan=0
+      --scale worker-highvalue=0
+      --scale worker-techid=0
+    )
+  else
+    args+=(
+      --scale "worker-enum=${NIGHTMARE_ENUM_REPLICAS:-10}"
+      --scale "worker-spider=${NIGHTMARE_SPIDER_REPLICAS:-10}"
+    )
+  fi
 
   compose "${args[@]}"
 }
@@ -795,6 +805,22 @@ nightmare_compose_up_redeploy() {
 nightmare_compose_force_recreate_services() {
   local services=("$@")
   [[ ${#services[@]} -gt 0 ]] || return 0
+
+  if [[ "${NIGHTMARE_ECS_WORKERS:-0}" == "1" ]]; then
+    local filtered=()
+    local candidate
+    for candidate in "${services[@]}"; do
+      case "$candidate" in
+        worker-spider | worker-enum | worker-portscan | worker-highvalue | worker-techid)
+          ;;
+        *)
+          filtered+=("$candidate")
+          ;;
+      esac
+    done
+    services=("${filtered[@]}")
+    [[ ${#services[@]} -gt 0 ]] || return 0
+  fi
 
   local args=(up -d --no-deps --force-recreate)
   local service include_enum=0 include_spider=0
@@ -807,8 +833,13 @@ nightmare_compose_force_recreate_services() {
   done
 
   # Keep explicit replica counts when a scaled service is recreated from a rebuilt image.
-  [[ "$include_enum" == "1" ]] && args+=(--scale "worker-enum=${NIGHTMARE_ENUM_REPLICAS:-10}")
-  [[ "$include_spider" == "1" ]] && args+=(--scale "worker-spider=${NIGHTMARE_SPIDER_REPLICAS:-10}")
+  if [[ "${NIGHTMARE_ECS_WORKERS:-0}" == "1" ]]; then
+    [[ "$include_enum" == "1" ]] && args+=(--scale worker-enum=0)
+    [[ "$include_spider" == "1" ]] && args+=(--scale worker-spider=0)
+  else
+    [[ "$include_enum" == "1" ]] && args+=(--scale "worker-enum=${NIGHTMARE_ENUM_REPLICAS:-10}")
+    [[ "$include_spider" == "1" ]] && args+=(--scale "worker-spider=${NIGHTMARE_SPIDER_REPLICAS:-10}")
+  fi
 
   args+=("${services[@]}")
   echo "Forcing recreated container(s) from current rebuilt image(s): ${services[*]}"

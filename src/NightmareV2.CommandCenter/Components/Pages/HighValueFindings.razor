@@ -36,13 +36,13 @@
                        Items="FilteredFindings"
                        @bind-SearchText="_findingSearch"
                        SearchPlaceholder="Search severity, type, pattern, URL, worker, snippet…"
-                       ScrollPreset="@(_findingVirtualize && FindingGroupKeySelector is null ? NightmareDataGridScrollPreset.Virtualized : NightmareDataGridScrollPreset.Tall)"
-                       Virtualize="@(_findingVirtualize && FindingGroupKeySelector is null)"
-                       Pagination="_findingPagination"
+                       ScrollPreset="NightmareDataGridScrollPreset.Virtualized"
+                       Virtualize="true"
+                       VirtualizedHeightPixels="860"
                        ItemSize="40"
                        ItemKey="@(r => r.Id)"
                        OverscanCount="6"
-                       GroupKeySelector="FindingGroupKeySelector"
+                       GroupKeySelector="@EffectiveFindingGroupKeySelector"
                        RowMatches="@FindingMatches"
                        HostTabIndex="@(-1)"
                        IsLoading="@_loading"
@@ -66,10 +66,6 @@
                         <option value="Target">Target</option>
                         <option value="Worker">Worker</option>
                     </select>
-                </label>
-                <label class="switch-row">
-                    <input type="checkbox" @bind="_findingVirtualize" />
-                    <span>Virtualized rows</span>
                 </label>
                 <button type="button" class="btn ghost" @onclick="ClearFindingFilters">Clear filters</button>
             </div>
@@ -112,11 +108,10 @@
     private string _findingPatternFilter = "";
     private string _findingTargetFilter = "";
     private string _findingWorkerFilter = "";
-    private string _findingGroupBy = "Severity";
-    private bool _findingVirtualize = true;
+    private string _findingGroupBy = "";
+    private Func<HighValueFindingRowDto, string>? EffectiveFindingGroupKeySelector => string.IsNullOrWhiteSpace(_findingGroupBy) ? null : FindingGroupKeySelector;
     private bool _loading;
     private DateTimeOffset? _lastLoadedAtUtc;
-    private readonly PaginationState _findingPagination = new() { ItemsPerPage = 50 };
 
     private static readonly GridSort<HighValueFindingRowDto> SortFindingDiscovered =
         GridSort<HighValueFindingRowDto>.ByDescending(static r => r.DiscoveredAtUtc);
@@ -176,7 +171,7 @@
         _findingPatternFilter = "";
         _findingTargetFilter = "";
         _findingWorkerFilter = "";
-        _findingGroupBy = "Severity";
+        _findingGroupBy = "";
     }
 
     protected override async Task OnInitializedAsync()
@@ -201,7 +196,7 @@
 
     private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
     {
-        if (evt.Scope is not ("findings" or "http"))
+        if (evt.Scope is not ("findings" or "assets" or "http"))
             return;
 
         _ = InvokeAsync(async () =>
@@ -238,7 +233,7 @@
         _loading = true;
         try
         {
-            var qs = _criticalOnly ? "?criticalOnly=true&take=800" : "?take=800";
+            var qs = _criticalOnly ? "?criticalOnly=true" : "";
             var list = await Http.GetFromJsonAsync<List<HighValueFindingRowDto>>($"/api/high-value-findings{qs}")
                 .ConfigureAwait(false);
             _rows.Clear();

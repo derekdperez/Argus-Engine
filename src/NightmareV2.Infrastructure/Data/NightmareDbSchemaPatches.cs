@@ -110,7 +110,9 @@ public static class NightmareDbSchemaPatches
                     ADD COLUMN IF NOT EXISTS asset_category smallint NOT NULL DEFAULT 0,
                     ADD COLUMN IF NOT EXISTS display_name character varying(512) NULL,
                     ADD COLUMN IF NOT EXISTS last_seen_at_utc timestamp with time zone NULL,
-                    ADD COLUMN IF NOT EXISTS confidence numeric(5,4) NOT NULL DEFAULT 1.0;
+                    ADD COLUMN IF NOT EXISTS confidence numeric(5,4) NOT NULL DEFAULT 1.0,
+                    ADD COLUMN IF NOT EXISTS final_url character varying(4096) NULL,
+                    ADD COLUMN IF NOT EXISTS redirect_count integer NOT NULL DEFAULT 0;
 
                 CREATE INDEX IF NOT EXISTS ix_stored_assets_target_kind
                     ON stored_assets ("TargetId", "Kind");
@@ -211,6 +213,7 @@ public static class NightmareDbSchemaPatches
                 """,
                 cancellationToken)
             .ConfigureAwait(false);
+
 
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -325,8 +328,12 @@ public static class NightmareDbSchemaPatches
                     response_body text NULL,
                     response_content_type character varying(256) NULL,
                     response_content_length bigint NULL,
-                    final_url character varying(4096) NULL
+                    final_url character varying(4096) NULL,
+                    redirect_count integer NOT NULL DEFAULT 0
                 );
+
+                ALTER TABLE http_request_queue
+                    ADD COLUMN IF NOT EXISTS redirect_count integer NOT NULL DEFAULT 0;
 
                 CREATE UNIQUE INDEX IF NOT EXISTS ux_http_request_queue_asset_id ON http_request_queue (asset_id);
                 CREATE INDEX IF NOT EXISTS ix_http_request_queue_state_next_attempt ON http_request_queue (state, next_attempt_at_utc);

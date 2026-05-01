@@ -33,4 +33,5 @@ public sealed class HttpRequestQueueItem
     public string? ResponseContentType { get; set; }
     public long? ResponseContentLength { get; set; }
     public string? FinalUrl { get; set; }
+    public int RedirectCount { get; set; }
 }

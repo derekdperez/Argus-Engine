@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NightmareV2.Application.Assets;
 using NightmareV2.Application.Events;
 using NightmareV2.Application.Gatekeeping;
+using NightmareV2.Application.HighValue;
 using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
 using NightmareV2.Domain.Entities;
@@ -152,6 +153,26 @@ public sealed class EfAssetPersistence(
         CancellationToken cancellationToken = default)
     {
         var json = JsonSerializer.Serialize(snapshot, JsonOpts);
+        var meta = await db.Assets.AsNoTracking()
+            .Where(a => a.Id == assetId)
+            .Select(a => new { a.TargetId, a.RawValue, a.DiscoveredBy, a.CanonicalKey })
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (meta is null)
+            return;
+
+        var finalUrl = ResolveFinalUrl(snapshot.FinalUrl, meta.RawValue);
+        var finalCanonicalKey = TryCanonicalizeUrl(finalUrl);
+        var redirectsToExistingAsset = !string.IsNullOrWhiteSpace(finalCanonicalKey)
+            && !string.Equals(finalCanonicalKey, meta.CanonicalKey, StringComparison.Ordinal)
+            && await db.Assets.AsNoTracking()
+                .AnyAsync(
+                    a => a.TargetId == meta.TargetId
+                        && a.Id != assetId
+                        && a.CanonicalKey == finalCanonicalKey,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
         var isHttpSuccess = snapshot.StatusCode is >= 200 and < 300;
         var isSoft404 = isHttpSuccess && UrlFetchClassifier.LooksLikeSoft404(snapshot);
 
@@ -163,7 +184,13 @@ public sealed class EfAssetPersistence(
                 snapshot.StatusCode);
         }
 
-        var isConfirmedResponse = isHttpSuccess && !isSoft404;
+        var isConfirmedResponse = isHttpSuccess
+            && !isSoft404
+            && !redirectsToExistingAsset
+            && HighValueRedirectIsConfirmable(meta.DiscoveredBy, meta.RawValue, snapshot);
+
+        var now = DateTimeOffset.UtcNow;
+        var redirectCount = Math.Max(0, snapshot.RedirectCount);
         if (isConfirmedResponse)
         {
             await db.Assets
@@ -172,7 +199,9 @@ public sealed class EfAssetPersistence(
                     s => s
                         .SetProperty(a => a.LifecycleStatus, AssetLifecycleStatus.Confirmed)
                         .SetProperty(a => a.TypeDetailsJson, json)
-                        .SetProperty(a => a.LastSeenAtUtc, DateTimeOffset.UtcNow),
+                        .SetProperty(a => a.FinalUrl, finalUrl)
+                        .SetProperty(a => a.RedirectCount, redirectCount)
+                        .SetProperty(a => a.LastSeenAtUtc, now),
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -184,24 +213,19 @@ public sealed class EfAssetPersistence(
                     s => s
                         .SetProperty(a => a.LifecycleStatus, AssetLifecycleStatus.NonExistent)
                         .SetProperty(a => a.TypeDetailsJson, json)
-                        .SetProperty(a => a.LastSeenAtUtc, DateTimeOffset.UtcNow),
+                        .SetProperty(a => a.FinalUrl, finalUrl)
+                        .SetProperty(a => a.RedirectCount, redirectCount)
+                        .SetProperty(a => a.LastSeenAtUtc, now),
                     cancellationToken)
                 .ConfigureAwait(false);
         }
-
-        var meta = await db.Assets.AsNoTracking()
-            .Where(a => a.Id == assetId)
-            .Select(a => new { a.TargetId, a.RawValue })
-            .FirstOrDefaultAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (meta is null)
-            return;
 
         if (!isConfirmedResponse)
             return;
 
         var correlation = correlationId == Guid.Empty ? Guid.NewGuid() : correlationId;
         var causation = correlation;
+        var scanUrl = string.IsNullOrWhiteSpace(finalUrl) ? meta.RawValue ?? "" : finalUrl;
 
         async Task DelayAsync(int failedAttempt)
         {
@@ -218,7 +242,7 @@ public sealed class EfAssetPersistence(
                         new ScannableContentAvailable(
                             assetId,
                             meta.TargetId,
-                            meta.RawValue ?? "",
+                            scanUrl,
                             correlation,
                             DateTimeOffset.UtcNow,
                             ScannableContentSource.UrlHttpResponse,
@@ -241,5 +265,115 @@ public sealed class EfAssetPersistence(
         }
 
         throw new InvalidOperationException($"Failed to publish ScannableContentAvailable for asset {assetId} after retries.");
+    }
+
+    private static string? ResolveFinalUrl(string? finalUrl, string? fallbackRaw)
+    {
+        var candidate = string.IsNullOrWhiteSpace(finalUrl) ? fallbackRaw : finalUrl;
+        if (string.IsNullOrWhiteSpace(candidate))
+            return null;
+        if (!Uri.TryCreate(candidate.Trim(), UriKind.Absolute, out var uri))
+            return candidate.Trim();
+        if (uri.Scheme is not ("http" or "https") || string.IsNullOrWhiteSpace(uri.Host))
+            return candidate.Trim();
+        return uri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped);
+    }
+
+    private static bool HighValueRedirectIsConfirmable(string discoveredBy, string rawUrl, UrlFetchSnapshot snapshot)
+    {
+        if (!discoveredBy.StartsWith("hvpath:", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (snapshot.RedirectCount <= 0)
+            return true;
+
+        var raw = NormalizeUrlForCompare(rawUrl);
+        var final = NormalizeUrlForCompare(snapshot.FinalUrl);
+        if (final is null)
+            return false;
+        if (raw is not null && string.Equals(raw, final, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (!Uri.TryCreate(final, UriKind.Absolute, out var finalUri))
+            return false;
+
+        return LoadHighValuePathSet().Contains(NormalizeWordlistPath(finalUri.AbsolutePath));
+    }
+
+    private static string? NormalizeUrlForCompare(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return null;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri))
+            return null;
+        if (uri.Scheme is not ("http" or "https"))
+            return null;
+        return uri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped).TrimEnd('/');
+    }
+
+    private static string NormalizeWordlistPath(string path)
+    {
+        var p = path.Trim();
+        if (p.Length == 0)
+            return "/";
+        var q = p.IndexOfAny(['?', '#']);
+        if (q >= 0)
+            p = p[..q];
+        if (!p.StartsWith('/'))
+            p = "/" + p;
+        return p.TrimEnd('/');
+    }
+
+    private static IReadOnlySet<string> LoadHighValuePathSet()
+    {
+        var dir = Path.Combine(AppContext.BaseDirectory, "Resources", "Wordlists", "high_value");
+        var list = HighValueWordlistCatalog.LoadFromDirectory(dir);
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (_, lines) in list)
+        {
+            foreach (var line in lines)
+                set.Add(NormalizeWordlistPath(line));
+        }
+
+        return set;
+    }
+
+    private static string? TryCanonicalizeUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return null;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri))
+            return null;
+        if (uri.Scheme is not ("http" or "https") || string.IsNullOrWhiteSpace(uri.Host))
+            return null;
+
+        var scheme = uri.Scheme.ToLowerInvariant();
+        var host = uri.IdnHost.ToLowerInvariant();
+        var port = uri.IsDefaultPort ? "" : ":" + uri.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var path = string.IsNullOrWhiteSpace(uri.AbsolutePath) ? "/" : uri.AbsolutePath;
+        var query = NormalizeQuery(uri.Query);
+        return $"url:{scheme}://{host}{port}{path}{query}";
+    }
+
+    private static string NormalizeQuery(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query) || query == "?")
+            return "";
+
+        var trimmed = query.TrimStart('?');
+        var parts = trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(
+                p =>
+                {
+                    var kv = p.Split('=', 2);
+                    var key = Uri.UnescapeDataString(kv[0]).ToLowerInvariant();
+                    var value = kv.Length == 2 ? Uri.UnescapeDataString(kv[1]) : "";
+                    return new KeyValuePair<string, string>(key, value);
+                })
+            .OrderBy(p => p.Key, StringComparer.Ordinal)
+            .ThenBy(p => p.Value, StringComparer.Ordinal)
+            .Select(p => string.IsNullOrEmpty(p.Value) ? Uri.EscapeDataString(p.Key) : $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}")
+            .ToArray();
+
+        return parts.Length == 0 ? "" : "?" + string.Join('&', parts);
     }
 }

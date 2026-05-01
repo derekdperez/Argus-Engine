@@ -25,6 +25,7 @@ public sealed class HttpRequestQueueWorker(
 {
     private const int MaxLinksPerAsset = 500;
     private const int MaxBodyCaptureChars = 200_000;
+    private const int MaxRedirects = 10;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
     private readonly string _workerId = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
     private readonly AdaptiveConcurrencyController _adaptiveConcurrency = new();
@@ -261,6 +262,7 @@ public sealed class HttpRequestQueueWorker(
             ResponseContentType = ReadNullableString(reader, "response_content_type"),
             ResponseContentLength = ReadNullableInt64(reader, "response_content_length"),
             FinalUrl = ReadNullableString(reader, "final_url"),
+            RedirectCount = ReadNullableInt32(reader, "redirect_count") ?? 0,
         };
 
     private static string? ReadNullableString(DbDataReader reader, string name)
@@ -361,37 +363,71 @@ public sealed class HttpRequestQueueWorker(
     {
         var http = httpFactory.CreateClient("spider");
         var sw = Stopwatch.StartNew();
+        var method = new HttpMethod(item.Method);
+        var currentUrl = item.RequestUrl;
+        var redirectCount = 0;
+        Dictionary<string, string> reqHeaders = new(StringComparer.OrdinalIgnoreCase);
 
-        using var request = new HttpRequestMessage(new HttpMethod(item.Method), item.RequestUrl);
-        request.Headers.UserAgent.ParseAdd("NightmareV2/1.0");
+        for (;;)
+        {
+            using var request = new HttpRequestMessage(method, currentUrl);
+            request.Headers.UserAgent.ParseAdd("NightmareV2/1.0");
+            reqHeaders = HeadersToDict(request.Headers);
 
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
-            .ConfigureAwait(false);
-        sw.Stop();
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
+                .ConfigureAwait(false);
 
-        var reqHeaders = HeadersToDict(request.Headers);
-        var respHeaders = HeadersToDict(response.Headers);
-        foreach (var h in response.Content.Headers)
-            respHeaders[h.Key] = string.Join(", ", h.Value);
+            if (IsRedirectStatus(response.StatusCode)
+                && response.Headers.Location is { } location
+                && redirectCount < MaxRedirects
+                && TryResolveRedirectUrl(currentUrl, location, out var nextUrl))
+            {
+                redirectCount++;
+                currentUrl = nextUrl;
+                continue;
+            }
 
-        var truncatedBody = await BoundedHttpContentReader.ReadAsStringAsync(response.Content, MaxBodyCaptureChars, ct)
-            .ConfigureAwait(false);
-        var contentType = response.Content.Headers.ContentType?.ToString();
+            sw.Stop();
 
-        var snapshot = new UrlFetchSnapshot(
-            request.Method.Method,
-            reqHeaders,
-            null,
-            (int)response.StatusCode,
-            respHeaders,
-            truncatedBody,
-            response.Content.Headers.ContentLength,
-            sw.Elapsed.TotalMilliseconds,
-            contentType,
-            DateTimeOffset.UtcNow,
-            response.RequestMessage?.RequestUri?.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped));
+            var respHeaders = HeadersToDict(response.Headers);
+            foreach (var h in response.Content.Headers)
+                respHeaders[h.Key] = string.Join(", ", h.Value);
 
-        return snapshot;
+            var truncatedBody = await BoundedHttpContentReader.ReadAsStringAsync(response.Content, MaxBodyCaptureChars, ct)
+                .ConfigureAwait(false);
+            var contentType = response.Content.Headers.ContentType?.ToString();
+
+            return new UrlFetchSnapshot(
+                method.Method,
+                reqHeaders,
+                null,
+                (int)response.StatusCode,
+                respHeaders,
+                truncatedBody,
+                response.Content.Headers.ContentLength,
+                sw.Elapsed.TotalMilliseconds,
+                contentType,
+                DateTimeOffset.UtcNow,
+                currentUrl,
+                redirectCount);
+        }
+    }
+
+    private static bool IsRedirectStatus(HttpStatusCode statusCode) =>
+        (int)statusCode is 300 or 301 or 302 or 303 or 307 or 308;
+
+    private static bool TryResolveRedirectUrl(string currentUrl, Uri location, out string nextUrl)
+    {
+        nextUrl = "";
+        if (!Uri.TryCreate(currentUrl, UriKind.Absolute, out var currentUri))
+            return false;
+
+        var redirectUri = location.IsAbsoluteUri ? location : new Uri(currentUri, location);
+        if (redirectUri.Scheme is not ("http" or "https") || string.IsNullOrWhiteSpace(redirectUri.Host))
+            return false;
+
+        nextUrl = redirectUri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped);
+        return true;
     }
 
     private async Task SaveResponseAsync(
@@ -432,6 +468,7 @@ public sealed class HttpRequestQueueWorker(
         item.ResponseContentType = SanitizeForPostgresText(snapshot.ContentType);
         item.ResponseContentLength = snapshot.ResponseSizeBytes;
         item.FinalUrl = SanitizeForPostgresText(snapshot.FinalUrl);
+        item.RedirectCount = Math.Max(0, snapshot.RedirectCount);
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
@@ -465,6 +502,7 @@ public sealed class HttpRequestQueueWorker(
         row.ResponseContentType = SanitizeForPostgresText(snapshot.ContentType);
         row.ResponseContentLength = snapshot.ResponseSizeBytes;
         row.FinalUrl = SanitizeForPostgresText(snapshot.FinalUrl);
+        row.RedirectCount = Math.Max(0, snapshot.RedirectCount);
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }

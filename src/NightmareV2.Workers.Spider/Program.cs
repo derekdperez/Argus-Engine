@@ -28,6 +28,7 @@ builder.Services.AddHttpClient("spider")
         var handler = new SocketsHttpHandler
         {
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            AllowAutoRedirect = false,
         };
         if (allowInsecureSpiderSsl)
         {

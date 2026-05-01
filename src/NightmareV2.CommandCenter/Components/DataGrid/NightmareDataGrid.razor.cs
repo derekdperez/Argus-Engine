@@ -68,7 +68,7 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
 
     [Parameter] public IReadOnlyList<int> PageSizeOptions { get; set; } = [25, 50, 100, 250];
 
-    [Parameter] public bool Virtualize { get; set; }
+    [Parameter] public bool Virtualize { get; set; } = true;
 
     [Parameter] public int ItemSize { get; set; } = 0;
 
@@ -80,7 +80,7 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
 
     [Parameter] public string GridTableClass { get; set; } = "nightmare-qg";
 
-    [Parameter] public NightmareDataGridScrollPreset ScrollPreset { get; set; } = NightmareDataGridScrollPreset.Compact;
+    [Parameter] public NightmareDataGridScrollPreset ScrollPreset { get; set; } = NightmareDataGridScrollPreset.Virtualized;
 
     [Parameter] public NightmareDataGridDensity Density { get; set; } = NightmareDataGridDensity.Compact;
 

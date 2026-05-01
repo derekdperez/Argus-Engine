@@ -8,6 +8,7 @@
 @using System.Net.Http.Json
 @using NightmareV2.CommandCenter.DataMaintenance
 @using NightmareV2.CommandCenter.Realtime
+@using NightmareV2.CommandCenter.Components.DataGrid.Cells
 @using static Microsoft.AspNetCore.Components.QuickGrid.SortDirection
 @implements IDisposable
 @inject HttpClient Http
@@ -21,7 +22,7 @@
         <div>
             <p class="eyebrow">Command center</p>
             <h1>Operations</h1>
-            <p class="hero-copy">Command-center workspace for target scope, asset inventory, HTTP request queue, worker activity, and RabbitMQ queue state.</p>
+            <p class="hero-copy">Command-center workspace for target scope, asset inventory, HTTP request queue, and worker activity.</p>
             <div class="hero-meta">
                 <span class="live-pill @LiveStateCss">@Realtime.State</span>
                 <span>@LiveStatusText</span>
@@ -36,7 +37,7 @@
         </div>
     </section>
 
-    <section class="stat-grid ops-stat-grid" aria-label="Operations summary">
+    <section class="stat-grid ops-stat-grid compact-stats" aria-label="Operations summary">
         @if (_overview is null)
         {
             <div class="stat-card wide">
@@ -55,13 +56,33 @@
                 <div class="stat-value">@_overview.TotalAssetsConfirmed.ToString("N0")</div>
             </div>
             <div class="stat-card">
+                <div class="stat-label">Subdomains discovered</div>
+                <div class="stat-value">@_overview.SubdomainsDiscovered.ToString("N0")</div>
+            </div>
+            <div class="stat-card">
                 <div class="stat-label">HTTP Queue</div>
-                <div class="stat-value">@(_queueMetrics?.BacklogCount.ToString("N0") ?? "-")</div>
+                <div class="stat-value">@_overview.HttpQueueQueuedAssetCount.ToString("N0")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Last asset created</div>
+                <div class="stat-value small">@FormatOpsTime(_overview.LastAssetCreatedAtUtc)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Last worker event</div>
+                <div class="stat-value small">@FormatOpsTime(_overview.LastWorkerEventPublishedAtUtc)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">HTTP failed 1m / 1h / 24h</div>
+                <div class="stat-value small">@FormatMetricTriple(_queueMetrics?.FailedLastMinuteCount, _queueMetrics?.FailedLastHourCount, _queueMetrics?.FailedLast24HoursCount)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">HTTP sent 1m / 1h / 24h</div>
+                <div class="stat-value small">@FormatMetricTriple(_queueMetrics?.SentLastMinuteCount, _queueMetrics?.SentLastHourCount, _queueMetrics?.SentLast24HoursCount)</div>
             </div>
             <div class="stat-card wide">
                 <div class="stat-label">Top domain</div>
                 <div class="stat-value small">@(_overview.TopDomainByAssets ?? "-") (@_overview.TopDomainAssetCount.ToString("N0") assets)</div>
-            </div>            
+            </div>
         }
     </section>
 
@@ -77,15 +98,15 @@
                 <p class="eyebrow">Tool controls</p>
                 <h2>Restart enumeration or spidering</h2>
             </div>
-            <span class="muted">@_selectedToolTargetIds.Count.ToString("N0") selected</span>
+            <span class="muted">@SelectedToolTargetCount.ToString("N0") selected</span>
         </div>
         <p class="muted">Use the checkboxes in the Targets grid to restart tools for selected targets, or queue the restart globally for every active target.</p>
         <div class="ops-rz-toolbar">
             <button type="button" class="btn primary" disabled="@_toolRestartBusy" @onclick="@(() => RestartEnumAsync(true))">Restart enum for all targets</button>
             <button type="button" class="btn danger" disabled="@_toolRestartBusy" @onclick="@(() => RestartSpiderAsync(true))">Restart spidering for all targets</button>
-            <button type="button" class="btn" disabled="@(_toolRestartBusy || _selectedToolTargetIds.Count == 0)" @onclick="@(() => RestartEnumAsync(false))">Restart enum for selected (@_selectedToolTargetIds.Count)</button>
-            <button type="button" class="btn" disabled="@(_toolRestartBusy || _selectedToolTargetIds.Count == 0)" @onclick="@(() => RestartSpiderAsync(false))">Restart spidering for selected (@_selectedToolTargetIds.Count)</button>
-            <button type="button" class="btn ghost" disabled="@(_selectedToolTargetIds.Count == 0)" @onclick="ClearToolTargetSelection">Clear selection</button>
+            <button type="button" class="btn" disabled="@(_toolRestartBusy || SelectedToolTargetCount == 0)" @onclick="@(() => RestartEnumAsync(false))">Restart enum for selected (@SelectedToolTargetCount)</button>
+            <button type="button" class="btn" disabled="@(_toolRestartBusy || SelectedToolTargetCount == 0)" @onclick="@(() => RestartSpiderAsync(false))">Restart spidering for selected (@SelectedToolTargetCount)</button>
+            <button type="button" class="btn ghost" disabled="@(SelectedToolTargetCount == 0)" @onclick="ClearToolTargetSelection">Clear selection</button>
         </div>
     </section>
     <section class="ops-layout-grid">
@@ -148,14 +169,19 @@
                     <span>Search</span>
                     <input type="search" class="ops-filter" @bind="_targetSearch" placeholder="Domain, id, depth…" />
                 </label>
-                <label>
-                    <span>Root domain</span>
-                    <input type="text" class="ops-filter" @bind="_targetRootFilter" />
-                </label>
-                <label>
-                    <span>Depth</span>
-                    <input type="text" class="ops-filter" @bind="_targetDepthFilter" />
-                </label>
+                <details class="ops-rz-column-toggles column-title-editor">
+                    <summary>Display names</summary>
+                    @foreach (var col in TargetColumnTitleOptions)
+                    {
+                        <label>
+                            <span>@col.Label</span>
+                            <input type="text"
+                                   class="ops-filter"
+                                   value="@ColumnTitle(col.Key, col.DefaultTitle)"
+                                   @oninput="@((ChangeEventArgs e) => SetColumnTitle(col.Key, e.Value?.ToString()))" />
+                        </label>
+                    }
+                </details>
                 <button type="button" class="btn ghost" @onclick="ClearTargetFilters">Clear filters</button>
                 <button type="button" class="btn" @onclick="ExportTargetsCsvAsync">Export CSV</button>
             </div>
@@ -164,7 +190,7 @@
                     <span>Set max depth</span>
                     <InputNumber @bind-Value="_targetBulkMaxDepth" />
                 </label>
-                <button type="button" class="btn" disabled="@(_targetDepthBusy || _selectedToolTargetIds.Count == 0)" @onclick="@(() => UpdateTargetMaxDepthAsync(false))">Apply to selected (@_selectedToolTargetIds.Count)</button>
+                <button type="button" class="btn" disabled="@(_targetDepthBusy || SelectedToolTargetCount == 0)" @onclick="@(() => UpdateTargetMaxDepthAsync(false))">Apply to selected (@SelectedToolTargetCount)</button>
                 <button type="button" class="btn danger" disabled="@(_targetDepthBusy || _targets.Count == 0)" @onclick="@(() => UpdateTargetMaxDepthAsync(true))">Apply to all (@_targets.Count)</button>
             </div>
 
@@ -174,10 +200,7 @@
                             AllowFiltering="true"
                             FilterMode="FilterMode.Advanced"
                             FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
-                            AllowPaging="true"
-                            PageSize="@_targetPageSize"
-                            PageSizeOptions="@_targetGridPageSizeOptions"
-                            ShowPagingSummary="true"
+                            AllowPaging="false"
                             AllowSorting="true"
                             AllowMultiColumnSorting="true"
                             AllowColumnResize="true"
@@ -186,29 +209,31 @@
                             AllowGrouping="true"
                             GroupPanelText="Drag a column header here to group targets"
                             AllowVirtualization="true"
+                            VirtualizationOverscanCount="24"
                             Density="@_radzenDensity"
                             EmptyText="No targets match the current filters."
-                            Style="height: 390px"
+                            Style="height: 860px"
                             class="ops-rz-grid">
                 <Columns>
                     <RadzenDataGridColumn TItem="TargetSummary" Title="Select" Width="90px" Filterable="false" Sortable="false" Groupable="false">
                         <Template Context="row">
-                            <input type="checkbox" checked="@_selectedToolTargetIds.Contains(row.Id)" @onchange="@((ChangeEventArgs e) => ToggleToolTarget(row.Id, e))" />
+                            <input @key="row.Id" type="checkbox" checked="@_selectedToolTargetIds.Contains(row.Id)" @onchange="@((ChangeEventArgs e) => ToggleToolTarget(row.Id, e))" />
                         </Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="TargetSummary" Property="CreatedAtUtc" Title="Created" Width="180px" SortOrder="SortOrder.Descending">
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="Id" Title='@ColumnTitle("target.Id", "Id")' Width="280px" Visible="false" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="CreatedAtUtc" Title='@ColumnTitle("target.CreatedAtUtc", "Created")' Width="180px" SortOrder="SortOrder.Descending">
                         <Template Context="row">@FormatOpsTime(row.CreatedAtUtc)</Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="TargetSummary" Property="RootDomain" Title="Root Domain" Width="260px" Frozen="true">
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="RootDomain" Title='@ColumnTitle("target.RootDomain", "Root Domain")' Width="260px" Frozen="true">
                         <Template Context="row">
                             <a class="mono" href="@RootDomainHref(row.RootDomain)" target="_blank" rel="noopener noreferrer">@row.RootDomain</a>
                         </Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="TargetSummary" Property="SubdomainCount" Title="Number of Subdomains" Width="190px" />
-                    <RadzenDataGridColumn TItem="TargetSummary" Property="ConfirmedAssetCount" Title="Number of Confirmed Assets" Width="230px" />
-                    <RadzenDataGridColumn TItem="TargetSummary" Property="QueuedAssetCount" Title="Number of Queued Assets" Width="210px" />
-                    <RadzenDataGridColumn TItem="TargetSummary" Property="GlobalMaxDepth" Title="Max Depth" Width="130px" />
-                    <RadzenDataGridColumn TItem="TargetSummary" Property="LastRunAtUtc" Title="Last Run Time" Width="180px">
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="SubdomainCount" Title='@ColumnTitle("target.SubdomainCount", "Number of Subdomains")' Width="190px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="ConfirmedAssetCount" Title='@ColumnTitle("target.ConfirmedAssetCount", "Number of Confirmed Assets")' Width="230px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="QueuedAssetCount" Title='@ColumnTitle("target.QueuedAssetCount", "Number of Queued Assets")' Width="210px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="GlobalMaxDepth" Title='@ColumnTitle("target.GlobalMaxDepth", "Max Depth")' Width="130px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="LastRunAtUtc" Title='@ColumnTitle("target.LastRunAtUtc", "Last Run Time")' Width="180px">
                         <Template Context="row">@FormatOpsTime(row.LastRunAtUtc)</Template>
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="TargetSummary" Title="Actions" Width="150px" Filterable="false" Sortable="false" Groupable="false">
@@ -313,6 +338,19 @@
                 <label class="switch-row"><input type="checkbox" @bind="_showAssetPipeline" /><span>Pipeline</span></label>
                 <label class="switch-row"><input type="checkbox" @bind="_showAssetHowFound" /><span>How found</span></label>
             </details>
+            <details class="ops-rz-column-toggles column-title-editor">
+                <summary>Display names</summary>
+                @foreach (var col in AssetColumnTitleOptions)
+                {
+                    <label>
+                        <span>@col.Label</span>
+                        <input type="text"
+                               class="ops-filter"
+                               value="@ColumnTitle(col.Key, col.DefaultTitle)"
+                               @oninput="@((ChangeEventArgs e) => SetColumnTitle(col.Key, e.Value?.ToString()))" />
+                    </label>
+                }
+            </details>
             <button type="button" class="btn ghost" @onclick="ClearAssetFilters">Clear filters</button>
             <button type="button" class="btn" @onclick="ExportAssetsCsvAsync">Export CSV</button>
         </div>
@@ -325,10 +363,7 @@
                         AllowFiltering="true"
                         FilterMode="FilterMode.Advanced"
                         FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
-                        AllowPaging="true"
-                        PageSize="@_assetGridPageSize"
-                        PageSizeOptions="@_assetGridPageSizeOptions"
-                        ShowPagingSummary="true"
+                        AllowPaging="false"
                         AllowSorting="true"
                         AllowMultiColumnSorting="true"
                         AllowColumnResize="true"
@@ -337,19 +372,27 @@
                         AllowGrouping="true"
                         GroupPanelText="Drag a column header here to group assets"
                         AllowVirtualization="true"
-                        VirtualizationOverscanCount="12"
+                        VirtualizationOverscanCount="24"
                         Density="@_radzenDensity"
                         EmptyText="No assets match the current filters."
-                        Style="height: 640px"
+                        Style="height: 860px"
                         class="ops-rz-grid">
             <Columns>
-                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="DiscoveredAtUtc" Title="Discovered" Width="180px">
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="Id" Title='@ColumnTitle("asset.Id", "Id")' Width="280px" Visible="false" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="TargetId" Title='@ColumnTitle("asset.TargetId", "Target Id")' Width="280px" Visible="false" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="DiscoveredAtUtc" Title='@ColumnTitle("asset.DiscoveredAtUtc", "Discovered")' Width="180px">
                     <Template Context="a">@FormatOpsTime(a.DiscoveredAtUtc)</Template>
                 </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="Kind" Title="Kind" Width="130px" />
-                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="LifecycleStatus" Title="Status" Width="150px" />
-                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="Depth" Title="Depth" Width="110px" Visible="@_showAssetDepth" />
-                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="RawValue" Title="Raw" Width="380px" Frozen="true">
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="LastSeenAtUtc" Title='@ColumnTitle("asset.LastSeenAtUtc", "Last Seen")' Width="180px" Visible="false">
+                    <Template Context="a">@FormatOpsTime(a.LastSeenAtUtc)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="Kind" Title='@ColumnTitle("asset.Kind", "Kind")' Width="130px" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="Category" Title='@ColumnTitle("asset.Category", "Category")' Width="150px" Visible="false" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="LifecycleStatus" Title='@ColumnTitle("asset.LifecycleStatus", "Status")' Width="150px" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="Depth" Title='@ColumnTitle("asset.Depth", "Depth")' Width="110px" Visible="@_showAssetDepth" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="Confidence" Title='@ColumnTitle("asset.Confidence", "Confidence")' Width="130px" Visible="false" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="DisplayName" Title='@ColumnTitle("asset.DisplayName", "Display Name")' Width="220px" Visible="false" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="RawValue" Title='@ColumnTitle("asset.RawValue", "Raw")' Width="380px" Frozen="true">
                     <Template Context="a">
                         @{
                             var href = ToLiveHref(a);
@@ -364,12 +407,19 @@
                         }
                     </Template>
                 </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="CanonicalKey" Title="Canonical" Width="320px" Visible="@_showAssetCanonical">
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="FinalUrl" Title='@ColumnTitle("asset.FinalUrl", "Final URL")' Width="380px">
+                    <Template Context="a"><span class="ops-rz-clip" title="@a.FinalUrl">@a.FinalUrl</span></Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="RedirectCount" Title='@ColumnTitle("asset.RedirectCount", "Redirects")' Width="120px" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="CanonicalKey" Title='@ColumnTitle("asset.CanonicalKey", "Canonical")' Width="320px" Visible="@_showAssetCanonical">
                     <Template Context="a"><span class="mono ops-rz-clip" title="@a.CanonicalKey">@a.CanonicalKey</span></Template>
                 </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="DiscoveredBy" Title="Pipeline" Width="180px" Visible="@_showAssetPipeline" />
-                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="DiscoveryContext" Title="How found" Width="360px" Visible="@_showAssetHowFound">
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="DiscoveredBy" Title='@ColumnTitle("asset.DiscoveredBy", "Pipeline")' Width="180px" Visible="@_showAssetPipeline" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="DiscoveryContext" Title='@ColumnTitle("asset.DiscoveryContext", "How found")' Width="360px" Visible="@_showAssetHowFound">
                     <Template Context="a"><span class="ops-rz-clip" title="@a.DiscoveryContext">@a.DiscoveryContext</span></Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="TypeDetailsJson" Title='@ColumnTitle("asset.TypeDetailsJson", "Type Details JSON")' Width="420px" Visible="false">
+                    <Template Context="a"><span class="ops-rz-clip" title="@a.TypeDetailsJson">@a.TypeDetailsJson</span></Template>
                 </RadzenDataGridColumn>
             </Columns>
         </RadzenDataGrid>
@@ -443,6 +493,19 @@
                     <label class="switch-row"><input type="checkbox" @bind="_showQueueTiming" /><span>Timing</span></label>
                     <label class="switch-row"><input type="checkbox" @bind="_showQueueErrors" /><span>Errors</span></label>
                 </details>
+                <details class="ops-rz-column-toggles column-title-editor">
+                    <summary>Display names</summary>
+                    @foreach (var col in QueueColumnTitleOptions)
+                    {
+                        <label>
+                            <span>@col.Label</span>
+                            <input type="text"
+                                   class="ops-filter"
+                                   value="@ColumnTitle(col.Key, col.DefaultTitle)"
+                                   @oninput="@((ChangeEventArgs e) => SetColumnTitle(col.Key, e.Value?.ToString()))" />
+                        </label>
+                    }
+                </details>
                 <button type="button" class="btn ghost" @onclick="ClearQueueFilters">Clear filters</button>
                 <button type="button" class="btn" @onclick="ExportQueueCsvAsync">Export CSV</button>
             </div>
@@ -455,10 +518,7 @@
                             AllowFiltering="true"
                             FilterMode="FilterMode.Advanced"
                             FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
-                            AllowPaging="true"
-                            PageSize="@_assetGridPageSize"
-                            PageSizeOptions="@_assetGridPageSizeOptions"
-                            ShowPagingSummary="true"
+                            AllowPaging="false"
                             AllowSorting="true"
                             AllowMultiColumnSorting="true"
                             AllowColumnResize="true"
@@ -467,18 +527,25 @@
                             AllowGrouping="true"
                             GroupPanelText="Drag a column header here to group queue rows"
                             AllowVirtualization="true"
-                            VirtualizationOverscanCount="12"
+                            VirtualizationOverscanCount="24"
                             Density="@_radzenDensity"
                             EmptyText="No queue rows match the current filters."
-                            Style="height: 640px"
+                            Style="height: 860px"
                             class="ops-rz-grid">
                 <Columns>
-                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="CreatedAtUtc" Title="Created" Width="180px">
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="Id" Title='@ColumnTitle("queue.Id", "Id")' Width="280px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="AssetId" Title='@ColumnTitle("queue.AssetId", "Asset Id")' Width="280px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="TargetId" Title='@ColumnTitle("queue.TargetId", "Target Id")' Width="280px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="CreatedAtUtc" Title='@ColumnTitle("queue.CreatedAtUtc", "Created")' Width="180px">
                         <Template Context="q">@FormatOpsTime(q.CreatedAtUtc)</Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="State" Title="State" Width="130px" />
-                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="AssetKind" Title="Kind" Width="130px" />
-                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="RequestUrl" Title="Request URL" Width="420px" Frozen="true">
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="UpdatedAtUtc" Title='@ColumnTitle("queue.UpdatedAtUtc", "Updated")' Width="180px" Visible="@_showQueueTiming">
+                        <Template Context="q">@FormatOpsTime(q.UpdatedAtUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="State" Title='@ColumnTitle("queue.State", "State")' Width="130px" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="AssetKind" Title='@ColumnTitle("queue.AssetKind", "Kind")' Width="130px" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="Method" Title='@ColumnTitle("queue.Method", "Method")' Width="100px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="RequestUrl" Title='@ColumnTitle("queue.RequestUrl", "Request URL")' Width="420px" Frozen="true">
                         <Template Context="q">
                             @{
                                 var href = ToLiveHref(q);
@@ -493,15 +560,44 @@
                             }
                         </Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="DomainKey" Title="Domain" Width="220px" Visible="@_showQueueDomain" />
-                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="AttemptCount" Title="Attempts" Width="120px" Visible="@_showQueueAttempts" />
-                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="Priority" Title="Priority" Width="110px" Visible="@_showQueueAttempts" />
-                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="LastHttpStatus" Title="HTTP" Width="110px" />
-                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="DurationMs" Title="Duration ms" Width="140px" Visible="@_showQueueTiming" />
-                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="UpdatedAtUtc" Title="Updated" Width="180px" Visible="@_showQueueTiming">
-                        <Template Context="q">@FormatOpsTime(q.UpdatedAtUtc)</Template>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="DomainKey" Title='@ColumnTitle("queue.DomainKey", "Domain")' Width="220px" Visible="@_showQueueDomain" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="AttemptCount" Title='@ColumnTitle("queue.AttemptCount", "Attempts")' Width="120px" Visible="@_showQueueAttempts" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="MaxAttempts" Title='@ColumnTitle("queue.MaxAttempts", "Max Attempts")' Width="140px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="Priority" Title='@ColumnTitle("queue.Priority", "Priority")' Width="110px" Visible="@_showQueueAttempts" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="NextAttemptAtUtc" Title='@ColumnTitle("queue.NextAttemptAtUtc", "Next Attempt")' Width="180px" Visible="false">
+                        <Template Context="q">@FormatOpsTime(q.NextAttemptAtUtc)</Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="LastError" Title="Last error" Width="360px" Visible="@_showQueueErrors">
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="StartedAtUtc" Title='@ColumnTitle("queue.StartedAtUtc", "Started")' Width="180px" Visible="false">
+                        <Template Context="q">@FormatOpsTime(q.StartedAtUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="CompletedAtUtc" Title='@ColumnTitle("queue.CompletedAtUtc", "Completed")' Width="180px" Visible="false">
+                        <Template Context="q">@FormatOpsTime(q.CompletedAtUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="LockedBy" Title='@ColumnTitle("queue.LockedBy", "Locked By")' Width="220px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="LockedUntilUtc" Title='@ColumnTitle("queue.LockedUntilUtc", "Locked Until")' Width="180px" Visible="false">
+                        <Template Context="q">@FormatOpsTime(q.LockedUntilUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="LastHttpStatus" Title='@ColumnTitle("queue.LastHttpStatus", "HTTP")' Width="110px" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="DurationMs" Title='@ColumnTitle("queue.DurationMs", "Duration ms")' Width="140px" Visible="@_showQueueTiming" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="RequestHeadersJson" Title='@ColumnTitle("queue.RequestHeadersJson", "Request Headers JSON")' Width="420px" Visible="false">
+                        <Template Context="q"><GridEllipsisCell Text="@q.RequestHeadersJson" Title="@q.RequestHeadersJson" /></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="RequestBody" Title='@ColumnTitle("queue.RequestBody", "Request Body")' Width="360px" Visible="false">
+                        <Template Context="q"><GridEllipsisCell Text="@q.RequestBody" Title="@q.RequestBody" /></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="ResponseHeadersJson" Title='@ColumnTitle("queue.ResponseHeadersJson", "Response Headers JSON")' Width="420px" Visible="false">
+                        <Template Context="q"><GridEllipsisCell Text="@q.ResponseHeadersJson" Title="@q.ResponseHeadersJson" /></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="ResponseBody" Title='@ColumnTitle("queue.ResponseBody", "Response Body")' Width="420px" Visible="false">
+                        <Template Context="q"><GridEllipsisCell Text="@q.ResponseBody" Title="@q.ResponseBody" /></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="ResponseContentType" Title='@ColumnTitle("queue.ResponseContentType", "Response Content Type")' Width="220px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="ResponseContentLength" Title='@ColumnTitle("queue.ResponseContentLength", "Response Length")' Width="150px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="FinalUrl" Title='@ColumnTitle("queue.FinalUrl", "Final URL")' Width="420px">
+                        <Template Context="q"><span class="ops-rz-clip" title="@q.FinalUrl">@q.FinalUrl</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="RedirectCount" Title='@ColumnTitle("queue.RedirectCount", "Redirects")' Width="120px" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="LastError" Title='@ColumnTitle("queue.LastError", "Last error")' Width="360px" Visible="@_showQueueErrors">
                         <Template Context="q"><span class="ops-rz-clip" title="@q.LastError">@q.LastError</span></Template>
                     </RadzenDataGridColumn>
                 </Columns>
@@ -522,6 +618,19 @@
                     <span>Search</span>
                     <input type="search" class="ops-filter" @bind="_workerSearch" placeholder="Worker, rollup, timestamp…" />
                 </label>
+                <details class="ops-rz-column-toggles column-title-editor">
+                    <summary>Display names</summary>
+                    @foreach (var col in WorkerColumnTitleOptions)
+                    {
+                        <label>
+                            <span>@col.Label</span>
+                            <input type="text"
+                                   class="ops-filter"
+                                   value="@ColumnTitle(col.Key, col.DefaultTitle)"
+                                   @oninput="@((ChangeEventArgs e) => SetColumnTitle(col.Key, e.Value?.ToString()))" />
+                        </label>
+                    }
+                </details>
                 <button type="button" class="btn" @onclick="ExportWorkersCsvAsync">Export CSV</button>
             </div>
 
@@ -531,10 +640,10 @@
                             AllowFiltering="true"
                             FilterMode="FilterMode.Advanced"
                             FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
-                            AllowPaging="true"
-                            @bind-PageSize="_sideGridPageSize"
-                            PageSizeOptions="@_sideGridPageSizeOptions"
-                            ShowPagingSummary="true"
+                            AllowPaging="false"
+                            AllowVirtualization="true"
+                            VirtualizationOverscanCount="24"
+                            Style="height: 860px"
                             AllowSorting="true"
                             AllowMultiColumnSorting="true"
                             AllowColumnResize="true"
@@ -546,14 +655,14 @@
                             EmptyText="Worker activity has not loaded yet."
                             class="ops-rz-grid">
                 <Columns>
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="WorkerKey" Title="Worker" Width="180px">
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="WorkerKey" Title='@ColumnTitle("worker.WorkerKey", "Worker")' Width="180px">
                         <Template Context="w"><strong>@w.WorkerKey</strong></Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="ToggleEnabled" Title="Enabled" Width="130px">
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="ToggleEnabled" Title='@ColumnTitle("worker.ToggleEnabled", "Enabled")' Width="130px">
                         <Template Context="w"><span class="@WorkerBadgeClass(w)">@(w.ToggleEnabled ? "Enabled" : "Paused")</span></Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="InstanceCount" Title="Instances" Width="120px" />
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Title="Desired" Width="260px" Filterable="false" Sortable="false" Groupable="false">
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="InstanceCount" Title='@ColumnTitle("worker.InstanceCount", "Instances")' Width="120px" />
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Title='@ColumnTitle("worker.DesiredCount", "Desired")' Width="260px" Filterable="false" Sortable="false" Groupable="false">
                         <Template Context="w">
                             @if (WorkerScaleFor(w.WorkerKey) is { } scale)
                             {
@@ -575,10 +684,10 @@
                             }
                         </Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="LastActivityUtc" Title="Last activity" Width="180px">
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="LastActivityUtc" Title='@ColumnTitle("worker.LastActivityUtc", "Last activity")' Width="180px">
                         <Template Context="w">@FormatOpsTime(w.LastActivityUtc)</Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="RollupActivityLabel" Title="Rollup" Width="280px">
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="RollupActivityLabel" Title='@ColumnTitle("worker.RollupActivityLabel", "Rollup")' Width="280px">
                         <Template Context="w"><span class="ops-rz-clip" title="@w.RollupActivityLabel">@w.RollupActivityLabel</span></Template>
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Title="Actions" Width="120px" Filterable="false" Sortable="false" Groupable="false">
@@ -591,43 +700,7 @@
                 </Columns>
             </RadzenDataGrid>
 
-            <h3 class="subhead">Rabbit queues</h3>
-            <div class="ops-rz-toolbar">
-                <label>
-                    <span>Search</span>
-                    <input type="search" class="ops-filter" @bind="_rabbitSearch" placeholder="Queue, worker, counts…" />
-                </label>
-                <button type="button" class="btn" @onclick="ExportRabbitCsvAsync">Export CSV</button>
-            </div>
 
-            <RadzenDataGrid TItem="RabbitQueueBriefDto"
-                            Data="@RadzenRabbitQueues"
-                            IsLoading="@_snapshotLoading"
-                            AllowFiltering="true"
-                            FilterMode="FilterMode.Advanced"
-                            FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
-                            AllowPaging="true"
-                            @bind-PageSize="_sideGridPageSize"
-                            PageSizeOptions="@_sideGridPageSizeOptions"
-                            ShowPagingSummary="true"
-                            AllowSorting="true"
-                            AllowMultiColumnSorting="true"
-                            AllowColumnResize="true"
-                            AllowColumnReorder="true"
-                            AllowColumnPicking="true"
-                            AllowGrouping="true"
-                            GroupPanelText="Drag a column header here to group queues"
-                            Density="@_radzenDensity"
-                            EmptyText="No RabbitMQ queue data is available."
-                            class="ops-rz-grid">
-                <Columns>
-                    <RadzenDataGridColumn TItem="RabbitQueueBriefDto" Property="Name" Title="Queue" Width="260px" />
-                    <RadzenDataGridColumn TItem="RabbitQueueBriefDto" Property="MessagesReady" Title="Ready" Width="110px" />
-                    <RadzenDataGridColumn TItem="RabbitQueueBriefDto" Property="MessagesUnacknowledged" Title="Unacked" Width="120px" />
-                    <RadzenDataGridColumn TItem="RabbitQueueBriefDto" Property="Consumers" Title="Consumers" Width="120px" />
-                    <RadzenDataGridColumn TItem="RabbitQueueBriefDto" Property="LikelyWorkerKey" Title="Worker" Width="180px" />
-                </Columns>
-            </RadzenDataGrid>
         </section>
     </section>
 </div>
@@ -644,9 +717,85 @@
     private readonly List<HttpRequestQueueRowDto> _requestQueue = [];
     private readonly List<WorkerKindSummaryDto> _workerSummaries = [];
     private readonly List<WorkerScaleTargetDto> _workerScaleTargets = [];
-    private readonly List<RabbitQueueBriefDto> _rabbitQueues = [];
     private readonly HashSet<Guid> _selectedToolTargetIds = [];
+    private int SelectedToolTargetCount => _selectedToolTargetIds.Count;
     private readonly Dictionary<string, int> _workerScaleInputs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _columnTitles = new(StringComparer.Ordinal);
+    private static readonly (string Key, string Label, string DefaultTitle)[] TargetColumnTitleOptions =
+    [
+        ("target.Id", "Id", "Id"),
+        ("target.CreatedAtUtc", "Created", "Created"),
+        ("target.RootDomain", "Root Domain", "Root Domain"),
+        ("target.SubdomainCount", "Number of Subdomains", "Number of Subdomains"),
+        ("target.ConfirmedAssetCount", "Number of Confirmed Assets", "Number of Confirmed Assets"),
+        ("target.QueuedAssetCount", "Number of Queued Assets", "Number of Queued Assets"),
+        ("target.GlobalMaxDepth", "Max Depth", "Max Depth"),
+        ("target.LastRunAtUtc", "Last Run Time", "Last Run Time"),
+    ];
+
+    private static readonly (string Key, string Label, string DefaultTitle)[] AssetColumnTitleOptions =
+    [
+        ("asset.Id", "Id", "Id"),
+        ("asset.TargetId", "Target Id", "Target Id"),
+        ("asset.DiscoveredAtUtc", "Discovered", "Discovered"),
+        ("asset.LastSeenAtUtc", "Last Seen", "Last Seen"),
+        ("asset.Kind", "Kind", "Kind"),
+        ("asset.Category", "Category", "Category"),
+        ("asset.LifecycleStatus", "Status", "Status"),
+        ("asset.Depth", "Depth", "Depth"),
+        ("asset.Confidence", "Confidence", "Confidence"),
+        ("asset.DisplayName", "Display Name", "Display Name"),
+        ("asset.RawValue", "Raw", "Raw"),
+        ("asset.FinalUrl", "Final URL", "Final URL"),
+        ("asset.RedirectCount", "Redirects", "Redirects"),
+        ("asset.CanonicalKey", "Canonical", "Canonical"),
+        ("asset.DiscoveredBy", "Pipeline", "Pipeline"),
+        ("asset.DiscoveryContext", "How found", "How found"),
+        ("asset.TypeDetailsJson", "Type Details JSON", "Type Details JSON"),
+    ];
+    private static readonly (string Key, string Label, string DefaultTitle)[] QueueColumnTitleOptions =
+    [
+        ("queue.Id", "Id", "Id"),
+        ("queue.AssetId", "Asset Id", "Asset Id"),
+        ("queue.TargetId", "Target Id", "Target Id"),
+        ("queue.CreatedAtUtc", "Created", "Created"),
+        ("queue.UpdatedAtUtc", "Updated", "Updated"),
+        ("queue.State", "State", "State"),
+        ("queue.AssetKind", "Kind", "Kind"),
+        ("queue.Method", "Method", "Method"),
+        ("queue.RequestUrl", "Request URL", "Request URL"),
+        ("queue.DomainKey", "Domain", "Domain"),
+        ("queue.AttemptCount", "Attempts", "Attempts"),
+        ("queue.MaxAttempts", "Max Attempts", "Max Attempts"),
+        ("queue.Priority", "Priority", "Priority"),
+        ("queue.NextAttemptAtUtc", "Next Attempt", "Next Attempt"),
+        ("queue.StartedAtUtc", "Started", "Started"),
+        ("queue.CompletedAtUtc", "Completed", "Completed"),
+        ("queue.LockedBy", "Locked By", "Locked By"),
+        ("queue.LockedUntilUtc", "Locked Until", "Locked Until"),
+        ("queue.LastHttpStatus", "HTTP", "HTTP"),
+        ("queue.DurationMs", "Duration ms", "Duration ms"),
+        ("queue.RequestHeadersJson", "Request Headers JSON", "Request Headers JSON"),
+        ("queue.RequestBody", "Request Body", "Request Body"),
+        ("queue.ResponseHeadersJson", "Response Headers JSON", "Response Headers JSON"),
+        ("queue.ResponseBody", "Response Body", "Response Body"),
+        ("queue.ResponseContentType", "Response Content Type", "Response Content Type"),
+        ("queue.ResponseContentLength", "Response Length", "Response Length"),
+        ("queue.FinalUrl", "Final URL", "Final URL"),
+        ("queue.RedirectCount", "Redirects", "Redirects"),
+        ("queue.LastError", "Last error", "Last error"),
+    ];
+
+
+    private static readonly (string Key, string Label, string DefaultTitle)[] WorkerColumnTitleOptions =
+    [
+        ("worker.WorkerKey", "Worker", "Worker"),
+        ("worker.ToggleEnabled", "Enabled", "Enabled"),
+        ("worker.InstanceCount", "Instances", "Instances"),
+        ("worker.DesiredCount", "Desired", "Desired"),
+        ("worker.LastActivityUtc", "Last activity", "Last activity"),
+        ("worker.RollupActivityLabel", "Rollup", "Rollup"),
+    ];
 
     private RadzenDataGrid<AssetGridRowDto>? _assetGrid;
     private RadzenDataGrid<HttpRequestQueueRowDto>? _queueGrid;
@@ -664,8 +813,6 @@
 
     private TargetEditForm? _targetEditing;
     private string _targetSearch = "";
-    private string _targetRootFilter = "";
-    private string _targetDepthFilter = "";
     private string _targetGroupBy = "";
     private string _targetFilter = "";
 
@@ -676,7 +823,6 @@
     private string _filterPipelineCol = "";
     private string _filterHowFoundCol = "";
     private string _assetGroupBy = "";
-    private int _assetTake = 5000;
     private bool _showAssetDepth = true;
     private bool _showAssetCanonical;
     private bool _showAssetPipeline = true;
@@ -693,7 +839,6 @@
     private bool _showQueueErrors = true;
 
     private string _workerSearch = "";
-    private string _rabbitSearch = "";
     private string? _workerBusyKey;
     private string? _workerScaleBusyKey;
 
@@ -732,19 +877,7 @@
     private int _queueRequestTimeoutSeconds = 30;
     private int _targetBulkMaxDepth = 12;
 
-    private readonly int[] _targetGridPageSizeOptions = [100, 250, 500];
-    private readonly int[] _assetGridPageSizeOptions = [1000, 2500, 5000];
-    private readonly int[] _sideGridPageSizeOptions = [5, 10, 25, 50];
-    private int _targetPageSize = 100;
-    private int _assetGridPageSize = 1000;
-    private int _sideGridPageSize = 10;
     private Density _radzenDensity = Density.Compact;
-
-    private readonly PaginationState _targetPagination = new() { ItemsPerPage = 25 };
-    private readonly PaginationState _assetPagination = new() { ItemsPerPage = 50 };
-    private readonly PaginationState _queuePagination = new() { ItemsPerPage = 50 };
-    private readonly PaginationState _workerPagination = new() { ItemsPerPage = 10 };
-    private readonly PaginationState _rabbitPagination = new() { ItemsPerPage = 10 };
 
     private IEnumerable<TargetSummary> RadzenTargets =>
         _targets.Where(t =>
@@ -754,22 +887,22 @@
             || GridTextFilter.Matches(t.SubdomainCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
             || GridTextFilter.Matches(t.ConfirmedAssetCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
             || GridTextFilter.Matches(t.QueuedAssetCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
-            || GridTextFilter.Matches(FormatOpsTime(t.LastRunAtUtc), _targetSearch))
-        .Where(t => GridTextFilter.Matches(t.RootDomain, _targetRootFilter))
-        .Where(t => GridTextFilter.Matches(t.GlobalMaxDepth.ToString(CultureInfo.InvariantCulture), _targetDepthFilter))
-        .OrderByDescending(t => t.CreatedAtUtc);
+            || GridTextFilter.Matches(FormatOpsTime(t.LastRunAtUtc), _targetSearch));
 
     private IEnumerable<AssetGridRowDto> RadzenAssets =>
         _assets.Where(a =>
             GridTextFilter.Matches(a.Kind, _filterAssets)
             || GridTextFilter.Matches(a.LifecycleStatus, _filterAssets)
             || GridTextFilter.Matches(a.RawValue, _filterAssets)
+            || GridTextFilter.Matches(a.FinalUrl, _filterAssets)
             || GridTextFilter.Matches(a.CanonicalKey, _filterAssets)
+            || GridTextFilter.Matches(a.DisplayName, _filterAssets)
+            || GridTextFilter.Matches(a.Category, _filterAssets)
             || GridTextFilter.Matches(a.DiscoveredBy, _filterAssets)
             || GridTextFilter.Matches(a.DiscoveryContext, _filterAssets))
         .Where(a => GridTextFilter.Matches(a.Kind, _filterKindCol))
         .Where(a => GridTextFilter.Matches(a.LifecycleStatus, _filterStatusCol))
-        .Where(a => GridTextFilter.Matches(a.RawValue, _filterRawCol) || GridTextFilter.Matches(a.CanonicalKey, _filterRawCol))
+        .Where(a => GridTextFilter.Matches(a.RawValue, _filterRawCol) || GridTextFilter.Matches(a.FinalUrl, _filterRawCol) || GridTextFilter.Matches(a.CanonicalKey, _filterRawCol))
         .Where(a => GridTextFilter.Matches(a.DiscoveredBy, _filterPipelineCol))
         .Where(a => GridTextFilter.Matches(a.DiscoveryContext, _filterHowFoundCol));
 
@@ -778,6 +911,12 @@
             GridTextFilter.Matches(q.RequestUrl, _filterQueueSearch)
             || GridTextFilter.Matches(q.DomainKey, _filterQueueSearch)
             || GridTextFilter.Matches(q.State, _filterQueueSearch)
+            || GridTextFilter.Matches(q.FinalUrl, _filterQueueSearch)
+            || GridTextFilter.Matches(q.LockedBy, _filterQueueSearch)
+            || GridTextFilter.Matches(q.RequestHeadersJson, _filterQueueSearch)
+            || GridTextFilter.Matches(q.RequestBody, _filterQueueSearch)
+            || GridTextFilter.Matches(q.ResponseHeadersJson, _filterQueueSearch)
+            || GridTextFilter.Matches(q.ResponseBody, _filterQueueSearch)
             || GridTextFilter.Matches(q.LastHttpStatus?.ToString(CultureInfo.InvariantCulture), _filterQueueSearch)
             || GridTextFilter.Matches(q.LastError, _filterQueueSearch))
         .Where(q => GridTextFilter.Matches(q.AssetKind, _filterQueueKindCol))
@@ -791,20 +930,27 @@
                 || GridTextFilter.Matches(w.RollupActivityLabel, _workerSearch)
                 || GridTextFilter.Matches(FormatOpsTime(w.LastActivityUtc), _workerSearch));
 
-    private IEnumerable<RabbitQueueBriefDto> RadzenRabbitQueues =>
-        _rabbitQueues
-            .Where(q =>
-                GridTextFilter.Matches(q.Name, _rabbitSearch)
-                || GridTextFilter.Matches(q.LikelyWorkerKey, _rabbitSearch)
-                || GridTextFilter.Matches(q.MessagesReady.ToString(CultureInfo.InvariantCulture), _rabbitSearch)
-                || GridTextFilter.Matches(q.MessagesUnacknowledged.ToString(CultureInfo.InvariantCulture), _rabbitSearch));
-
     private string LiveStateCss => Realtime.IsConnected ? "connected" : "disconnected";
     private string LiveStatusText => Realtime.IsConnected
         ? "Subscribed to command-center events"
         : "Live updates disconnected";
 
     private string QueueToggleButtonClass => _queueSettings?.Enabled == true ? "btn danger" : "btn primary";
+
+    private string ColumnTitle(string key, string defaultTitle) =>
+        _columnTitles.TryGetValue(key, out var title) && !string.IsNullOrWhiteSpace(title)
+            ? title
+            : defaultTitle;
+
+    private void SetColumnTitle(string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            _columnTitles.Remove(key);
+        else
+            _columnTitles[key] = value.Trim();
+
+        StateHasChanged();
+    }
 
     private static string WorkerBadgeClass(WorkerKindSummaryDto worker) =>
         worker.ToggleEnabled ? "badge badge-green" : "badge badge-gray";
@@ -890,7 +1036,7 @@
             {
                 try
                 {
-                    await Task.Delay(450, cts.Token);
+                    await Task.Delay(50, cts.Token);
                     await InvokeAsync(async () =>
                     {
                         await ReloadForEventAsync(evt);
@@ -973,12 +1119,11 @@
             }
             catch
             {
-                // Rabbit management may be unavailable; keep last good snapshot and fall back to focused endpoints.
+                // Keep the last good snapshot and fall back to focused endpoints.
             }
 
             await ReloadWorkerRowsAsync();
             await ReloadWorkerScaleAsync();
-            await ReloadRabbitQueuesAsync();
             await ReloadHttpQueueMetricsAsync();
             _snapshotLoadedAtUtc = DateTimeOffset.UtcNow;
         }
@@ -996,8 +1141,6 @@
         _workerSummaries.Clear();
         _workerSummaries.AddRange(_snapshot.Activity.WorkerSummaries);
 
-        _rabbitQueues.Clear();
-        _rabbitQueues.AddRange(_snapshot.RabbitQueues);
     }
 
     private async Task ReloadWorkerRowsAsync()
@@ -1060,26 +1203,6 @@
         }
     }
 
-    private async Task ReloadRabbitQueuesAsync()
-    {
-        if (_rabbitQueues.Count > 0)
-            return;
-
-        try
-        {
-            var queues = await Http.GetFromJsonAsync<List<RabbitQueueBriefDto>>("/api/ops/rabbit-queues");
-            if (queues is not null)
-            {
-                _rabbitQueues.Clear();
-                _rabbitQueues.AddRange(queues);
-            }
-        }
-        catch
-        {
-            // Keep last good rows.
-        }
-    }
-
     private async Task ReloadTargetsAsync()
     {
         _targetsLoading = true;
@@ -1137,12 +1260,10 @@
         _assetsLoading = true;
         try
         {
-            var take = Math.Clamp(_assetTake, 100, 5000);
-            _assetTake = take;
-            var qs = string.IsNullOrEmpty(_targetFilter)
-                ? $"?take={take}"
-                : $"?targetId={Uri.EscapeDataString(_targetFilter)}&take={take}";
-            var list = await Http.GetFromJsonAsync<List<AssetGridRowDto>>($"/api/assets{qs}");
+            var endpoint = string.IsNullOrEmpty(_targetFilter)
+                ? "/api/assets"
+                : $"/api/assets?targetId={Uri.EscapeDataString(_targetFilter)}";
+            var list = await Http.GetFromJsonAsync<List<AssetGridRowDto>>(endpoint);
             _assets.Clear();
             if (list is not null)
                 _assets.AddRange(list);
@@ -1170,8 +1291,8 @@
         try
         {
             var qs = string.IsNullOrEmpty(_targetFilter)
-                ? ""
-                : $"?targetId={Uri.EscapeDataString(_targetFilter)}";
+                ? "?state=Queued"
+                : $"?targetId={Uri.EscapeDataString(_targetFilter)}&state=Queued";
             var list = await Http.GetFromJsonAsync<List<HttpRequestQueueRowDto>>($"/api/http-request-queue{qs}");
             _requestQueue.Clear();
             if (list is not null)
@@ -1231,9 +1352,15 @@
             _selectedToolTargetIds.Add(id);
         else
             _selectedToolTargetIds.Remove(id);
+
+        StateHasChanged();
     }
 
-    private void ClearToolTargetSelection() => _selectedToolTargetIds.Clear();
+    private void ClearToolTargetSelection()
+    {
+        _selectedToolTargetIds.Clear();
+        StateHasChanged();
+    }
 
     private async Task UpdateTargetMaxDepthAsync(bool allTargets)
     {
@@ -1243,13 +1370,13 @@
             return;
         }
 
-        if (!allTargets && _selectedToolTargetIds.Count == 0)
+        if (!allTargets && SelectedToolTargetCount == 0)
         {
             _statusMessage = "Select at least one target first.";
             return;
         }
 
-        var targetCount = allTargets ? _targets.Count : _selectedToolTargetIds.Count;
+        var targetCount = allTargets ? _targets.Count : SelectedToolTargetCount;
         var scope = allTargets ? "all targets" : $"{targetCount} selected targets";
         var ok = await Js.InvokeAsync<bool>("confirm", $"Set max depth to {_targetBulkMaxDepth} for {scope}?");
         if (!ok)
@@ -1303,7 +1430,7 @@
     {
         if (_toolRestartBusy)
             return;
-        if (!allTargets && _selectedToolTargetIds.Count == 0)
+        if (!allTargets && SelectedToolTargetCount == 0)
             return;
 
         _toolRestartBusy = true;
@@ -1556,8 +1683,6 @@
     private void ClearTargetFilters()
     {
         _targetSearch = "";
-        _targetRootFilter = "";
-        _targetDepthFilter = "";
         _targetGroupBy = "";
     }
 
@@ -1747,20 +1872,6 @@
                 w.RollupActivityLabel,
             }));
 
-    private async Task ExportRabbitCsvAsync() =>
-        await ExportCsvAsync(
-            "nightmare-rabbit-queues-radzen.csv",
-            ["Name", "Messages", "MessagesReady", "MessagesUnacknowledged", "Consumers", "LikelyWorkerKey"],
-            RadzenRabbitQueues.Select(q => new[]
-            {
-                q.Name,
-                q.Messages.ToString(CultureInfo.InvariantCulture),
-                q.MessagesReady.ToString(CultureInfo.InvariantCulture),
-                q.MessagesUnacknowledged.ToString(CultureInfo.InvariantCulture),
-                q.Consumers.ToString(CultureInfo.InvariantCulture),
-                q.LikelyWorkerKey,
-            }));
-
     private async Task ExportCsvAsync(string fileName, string[] headers, IEnumerable<string?[]> rows)
     {
         var csv = BuildCsv(headers, rows);
@@ -1790,6 +1901,11 @@
     private static string FormatOpsTime(DateTimeOffset value) =>
         AppTimeFormat.Format(value);
 
+    private static string FormatMetricTriple(long? oneMinute, long? oneHour, long? oneDay) =>
+        oneMinute is null || oneHour is null || oneDay is null
+            ? "- / - / -"
+            : $"{oneMinute.Value.ToString("N0", CultureInfo.InvariantCulture)} / {oneHour.Value.ToString("N0", CultureInfo.InvariantCulture)} / {oneDay.Value.ToString("N0", CultureInfo.InvariantCulture)}";
+
     private static string RootDomainHref(string rootDomain)
     {
         var host = rootDomain.Trim();
@@ -1800,7 +1916,7 @@
     }
 
     private static string? ToLiveHref(AssetGridRowDto asset) =>
-        TryHttpHref(asset.RawValue) ?? TryHttpHref(asset.CanonicalKey);
+        TryHttpHref(asset.FinalUrl) ?? TryHttpHref(asset.RawValue) ?? TryHttpHref(asset.CanonicalKey);
 
     private static string? ToLiveHref(HttpRequestQueueRowDto row) =>
         TryHttpHref(row.FinalUrl) ?? TryHttpHref(row.RequestUrl);

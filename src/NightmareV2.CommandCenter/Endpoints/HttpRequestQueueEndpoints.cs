@@ -54,15 +54,20 @@ public static class HttpRequestQueueEndpoints
 
         app.MapGet(
                 "/api/http-request-queue",
-                async (NightmareDbContext db, Guid? targetId, bool? includeFailed, bool? includeCompleted, int? take, CancellationToken ct) =>
+                async (NightmareDbContext db, Guid? targetId, string? state, int? take, CancellationToken ct) =>
                 {
                     var q = db.HttpRequestQueue.AsNoTracking().AsQueryable();
                     if (targetId is { } tid)
                         q = q.Where(r => r.TargetId == tid);
+                    if (!string.IsNullOrWhiteSpace(state))
+                    {
+                        var requestedState = state.Trim();
+                        q = q.Where(r => r.State == requestedState);
+                    }
 
                     IQueryable<HttpRequestQueueItem> ordered = q.OrderByDescending(r => r.CreatedAtUtc);
                     if (take is > 0)
-                        ordered = ordered.Take(Math.Clamp(take.Value, 1, 5000));
+                        ordered = ordered.Take(Math.Clamp(take.Value, 1, 100_000));
 
                     var rows = await ordered
                         .Select(r => new HttpRequestQueueRowDto(
@@ -82,12 +87,19 @@ public static class HttpRequestQueueEndpoints
                             r.NextAttemptAtUtc,
                             r.StartedAtUtc,
                             r.CompletedAtUtc,
+                            r.LockedBy,
+                            r.LockedUntilUtc,
                             r.LastHttpStatus,
                             r.LastError,
+                            r.RequestHeadersJson,
+                            r.RequestBody,
+                            r.ResponseHeadersJson,
+                            r.ResponseBody,
                             r.DurationMs,
                             r.ResponseContentType,
                             r.ResponseContentLength,
-                            r.FinalUrl))
+                            r.FinalUrl,
+                            r.RedirectCount))
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
 
@@ -100,7 +112,9 @@ public static class HttpRequestQueueEndpoints
                 async (NightmareDbContext db, CancellationToken ct) =>
                 {
                     var now = DateTimeOffset.UtcNow;
+                    var oneMinuteAgo = now.AddMinutes(-1);
                     var oneHourAgo = now.AddHours(-1);
+                    var oneDayAgo = now.AddHours(-24);
 
                     var queued = await db.HttpRequestQueue.AsNoTracking()
                         .LongCountAsync(q => q.State == HttpRequestQueueState.Queued, ct)
@@ -120,9 +134,26 @@ public static class HttpRequestQueueEndpoints
                     var completedLastHour = await db.HttpRequestQueue.AsNoTracking()
                         .LongCountAsync(q => q.State == HttpRequestQueueState.Succeeded && q.CompletedAtUtc >= oneHourAgo, ct)
                         .ConfigureAwait(false);
+                    var failedLastMinute = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.State == HttpRequestQueueState.Failed && q.UpdatedAtUtc >= oneMinuteAgo, ct)
+                        .ConfigureAwait(false);
+                    var failedLastHour = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.State == HttpRequestQueueState.Failed && q.UpdatedAtUtc >= oneHourAgo, ct)
+                        .ConfigureAwait(false);
+                    var failedLast24Hours = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.State == HttpRequestQueueState.Failed && q.UpdatedAtUtc >= oneDayAgo, ct)
+                        .ConfigureAwait(false);
+                    var sentLastMinute = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.StartedAtUtc >= oneMinuteAgo, ct)
+                        .ConfigureAwait(false);
+                    var sentLastHour = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.StartedAtUtc >= oneHourAgo, ct)
+                        .ConfigureAwait(false);
+                    var sentLast24Hours = await db.HttpRequestQueue.AsNoTracking()
+                        .LongCountAsync(q => q.StartedAtUtc >= oneDayAgo, ct)
+                        .ConfigureAwait(false);
                     var oldestQueuedAt = await db.HttpRequestQueue.AsNoTracking()
-                        .Where(q => q.State == HttpRequestQueueState.Queued
-                            || (q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now))
+                        .Where(q => q.State == HttpRequestQueueState.Queued)
                         .OrderBy(q => q.CreatedAtUtc)
                         .Select(q => (DateTimeOffset?)q.CreatedAtUtc)
                         .FirstOrDefaultAsync(ct)
@@ -136,9 +167,15 @@ public static class HttpRequestQueueEndpoints
                             inFlight,
                             failed,
                             completedLastHour,
-                            queued + retry,
+                            queued,
                             oldestQueuedAt,
-                            oldestQueuedAt is null ? null : (long)(now - oldestQueuedAt.Value).TotalSeconds));
+                            oldestQueuedAt is null ? null : (long)(now - oldestQueuedAt.Value).TotalSeconds,
+                            failedLastMinute,
+                            failedLastHour,
+                            failedLast24Hours,
+                            sentLastMinute,
+                            sentLastHour,
+                            sentLast24Hours));
                 })
             .WithName("GetHttpRequestQueueMetrics");
     }

@@ -26,4 +26,10 @@ public class StoredAsset
 
     /// <summary>Type-specific payload (URL fetch request/response, timings, etc.).</summary>
     public string? TypeDetailsJson { get; set; }
+
+    /// <summary>Final URL reached after following redirects for URL assets.</summary>
+    public string? FinalUrl { get; set; }
+
+    /// <summary>Number of HTTP redirects encountered while fetching the URL asset.</summary>
+    public int RedirectCount { get; set; }
 }

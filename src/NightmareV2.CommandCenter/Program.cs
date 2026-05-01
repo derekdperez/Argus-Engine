@@ -309,6 +309,31 @@ static async Task<Dictionary<string, EcsService>> DescribeEcsServicesAsync(
     return response.Services.ToDictionary(s => s.ServiceName, StringComparer.Ordinal);
 }
 
+
+
+static async Task UpdateEcsServiceDesiredCountAsync(
+    IConfiguration configuration,
+    string serviceName,
+    int desiredCount,
+    CancellationToken ct)
+{
+    var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);
+    if (string.IsNullOrWhiteSpace(region))
+        throw new InvalidOperationException("AWS region is not configured and could not be inferred from EC2 metadata.");
+
+    var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
+    using var ecs = new AmazonECSClient(RegionEndpoint.GetBySystemName(region));
+    await ecs.UpdateServiceAsync(
+            new UpdateServiceRequest
+            {
+                Cluster = cluster,
+                Service = serviceName,
+                DesiredCount = desiredCount,
+            },
+            ct)
+        .ConfigureAwait(false);
+}
+
 static string ExtractTaskDefinitionVersion(string? taskDefinition)
 {
     if (string.IsNullOrWhiteSpace(taskDefinition))
@@ -729,15 +754,21 @@ app.MapPut(
 
 app.MapGet(
         "/api/http-request-queue",
-        async (NightmareDbContext db, Guid? targetId, bool? includeFailed, int? take, CancellationToken ct) =>
+        async (NightmareDbContext db, Guid? targetId, string? state, int? take, CancellationToken ct) =>
         {
             var q = db.HttpRequestQueue.AsNoTracking().AsQueryable();
             if (targetId is { } tid)
                 q = q.Where(r => r.TargetId == tid);
 
+            if (!string.IsNullOrWhiteSpace(state))
+            {
+                var requestedState = state.Trim();
+                q = q.Where(r => r.State == requestedState);
+            }
+
             IQueryable<HttpRequestQueueItem> ordered = q.OrderByDescending(r => r.CreatedAtUtc);
             if (take is > 0)
-                ordered = ordered.Take(Math.Clamp(take.Value, 1, 5000));
+                ordered = ordered.Take(Math.Clamp(take.Value, 1, 100_000));
 
             var rows = await ordered
                 .Select(r => new HttpRequestQueueRowDto(
@@ -757,12 +788,19 @@ app.MapGet(
                     r.NextAttemptAtUtc,
                     r.StartedAtUtc,
                     r.CompletedAtUtc,
+                    r.LockedBy,
+                    r.LockedUntilUtc,
                     r.LastHttpStatus,
                     r.LastError,
+                    r.RequestHeadersJson,
+                    r.RequestBody,
+                    r.ResponseHeadersJson,
+                    r.ResponseBody,
                     r.DurationMs,
                     r.ResponseContentType,
                     r.ResponseContentLength,
-                    r.FinalUrl))
+                    r.FinalUrl,
+                    r.RedirectCount))
                 .ToListAsync(ct)
                 .ConfigureAwait(false);
 
@@ -775,7 +813,9 @@ app.MapGet(
         async (NightmareDbContext db, CancellationToken ct) =>
         {
             var now = DateTimeOffset.UtcNow;
+            var oneMinuteAgo = now.AddMinutes(-1);
             var oneHourAgo = now.AddHours(-1);
+            var oneDayAgo = now.AddHours(-24);
 
             var queued = await db.HttpRequestQueue.AsNoTracking()
                 .LongCountAsync(q => q.State == HttpRequestQueueState.Queued, ct)
@@ -795,9 +835,26 @@ app.MapGet(
             var completedLastHour = await db.HttpRequestQueue.AsNoTracking()
                 .LongCountAsync(q => q.State == HttpRequestQueueState.Succeeded && q.CompletedAtUtc >= oneHourAgo, ct)
                 .ConfigureAwait(false);
+            var failedLastMinute = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.Failed && q.UpdatedAtUtc >= oneMinuteAgo, ct)
+                .ConfigureAwait(false);
+            var failedLastHour = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.Failed && q.UpdatedAtUtc >= oneHourAgo, ct)
+                .ConfigureAwait(false);
+            var failedLast24Hours = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.State == HttpRequestQueueState.Failed && q.UpdatedAtUtc >= oneDayAgo, ct)
+                .ConfigureAwait(false);
+            var sentLastMinute = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.StartedAtUtc >= oneMinuteAgo, ct)
+                .ConfigureAwait(false);
+            var sentLastHour = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.StartedAtUtc >= oneHourAgo, ct)
+                .ConfigureAwait(false);
+            var sentLast24Hours = await db.HttpRequestQueue.AsNoTracking()
+                .LongCountAsync(q => q.StartedAtUtc >= oneDayAgo, ct)
+                .ConfigureAwait(false);
             var oldestQueuedAt = await db.HttpRequestQueue.AsNoTracking()
-                .Where(q => q.State == HttpRequestQueueState.Queued
-                    || (q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now))
+                .Where(q => q.State == HttpRequestQueueState.Queued)
                 .OrderBy(q => q.CreatedAtUtc)
                 .Select(q => (DateTimeOffset?)q.CreatedAtUtc)
                 .FirstOrDefaultAsync(ct)
@@ -811,9 +868,15 @@ app.MapGet(
                     inFlight,
                     failed,
                     completedLastHour,
-                    queued + retry,
+                    queued,
                     oldestQueuedAt,
-                    oldestQueuedAt is null ? null : (long)(now - oldestQueuedAt.Value).TotalSeconds));
+                    oldestQueuedAt is null ? null : (long)(now - oldestQueuedAt.Value).TotalSeconds,
+                    failedLastMinute,
+                    failedLastHour,
+                    failedLast24Hours,
+                    sentLastMinute,
+                    sentLastHour,
+                    sentLast24Hours));
         })
     .WithName("GetHttpRequestQueueMetrics");
 
@@ -854,7 +917,6 @@ app.MapGet(
         "/api/assets",
         async (NightmareDbContext db, Guid? targetId, int? take, string? tag, CancellationToken ct) =>
         {
-            var limit = Math.Clamp(take ?? 500, 1, 5000);
             var q = db.Assets.AsNoTracking()
                 .Where(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed)
                 .OrderByDescending(a => a.DiscoveredAtUtc)
@@ -867,18 +929,28 @@ app.MapGet(
                 q = q.Where(a => db.AssetTags.Any(at => at.AssetId == a.Id && db.Tags.Any(t => t.Id == at.TagId && t.Slug == tagSlug)));
             }
 
-            var rows = await q.Take(limit)
+            if (take is > 0)
+                q = q.Take(Math.Clamp(take.Value, 1, 1_000_000));
+
+            var rows = await q
                 .Select(a => new AssetGridRowDto(
                     a.Id,
                     a.TargetId,
                     a.Kind.ToString(),
+                    a.Category.ToString(),
                     a.CanonicalKey,
                     a.RawValue,
+                    a.DisplayName,
                     a.Depth,
                     a.DiscoveredBy,
                     a.DiscoveryContext,
                     a.DiscoveredAtUtc,
-                    a.LifecycleStatus))
+                    a.LastSeenAtUtc,
+                    a.Confidence,
+                    a.LifecycleStatus,
+                    a.TypeDetailsJson,
+                    a.FinalUrl,
+                    a.RedirectCount))
                 .ToListAsync(ct)
                 .ConfigureAwait(false);
             return Results.Ok(rows);
@@ -951,68 +1023,46 @@ app.MapGet(
         "/api/high-value-findings",
         async (NightmareDbContext db, bool? criticalOnly, int? take, CancellationToken ct) =>
         {
-            var limit = Math.Clamp(take ?? 500, 1, 5000);
-            var fetchCount = Math.Clamp(limit * 6, limit, 30000);
-            var q = db.HighValueFindings.AsNoTracking()
-                .Where(f => f.SourceAssetId != null)
-                .Join(
-                    db.Assets.AsNoTracking(),
-                    f => f.SourceAssetId!.Value,
-                    a => a.Id,
-                    (f, a) => new { f, a })
-                .Join(
-                    db.Targets.AsNoTracking(),
-                    x => x.f.TargetId,
-                    t => t.Id,
-                    (x, t) => new { x.f, x.a, t.RootDomain });
+            var q =
+                from f in db.HighValueFindings.AsNoTracking()
+                join t in db.Targets.AsNoTracking() on f.TargetId equals t.Id
+                join a in db.Assets.AsNoTracking() on f.SourceAssetId equals (Guid?)a.Id into assetJoin
+                from a in assetJoin.DefaultIfEmpty()
+                select new
+                {
+                    f,
+                    t.RootDomain,
+                    AssetLifecycleStatus = a == null ? null : a.LifecycleStatus,
+                    TypeDetailsJson = a == null ? null : a.TypeDetailsJson,
+                };
+
             if (criticalOnly == true)
                 q = q.Where(x => x.f.Severity == "Critical");
-            var rows = await q
-                .OrderByDescending(x => x.f.DiscoveredAtUtc)
-                .Take(fetchCount)
-                .Select(x => new
-                {
-                    Row = new HighValueFindingRowDto(
-                        x.f.Id,
-                        x.f.TargetId,
-                        x.f.SourceAssetId,
-                        x.f.FindingType,
-                        x.f.Severity,
-                        x.f.PatternName,
-                        x.f.Category,
-                        x.f.MatchedText,
-                        x.f.SourceUrl,
-                        x.f.WorkerName,
-                        x.f.ImportanceScore,
-                        x.f.DiscoveredAtUtc,
-                        x.RootDomain),
-                    x.a.LifecycleStatus,
-                    x.a.DiscoveredBy,
-                    x.a.TypeDetailsJson,
-                })
+
+            var ordered = q.OrderByDescending(x => x.f.DiscoveredAtUtc);
+            var rowQuery = take is > 0
+                ? ordered.Take(Math.Clamp(take.Value, 1, 1_000_000))
+                : ordered;
+
+            var rows = await rowQuery
+                .Select(x => new HighValueFindingRowDto(
+                    x.f.Id,
+                    x.f.TargetId,
+                    x.f.SourceAssetId,
+                    x.f.FindingType,
+                    x.f.Severity,
+                    x.f.PatternName,
+                    x.f.Category ?? "",
+                    x.f.MatchedText ?? "",
+                    x.f.SourceUrl,
+                    x.f.WorkerName,
+                    x.f.ImportanceScore,
+                    x.f.DiscoveredAtUtc,
+                    x.RootDomain))
                 .ToListAsync(ct)
                 .ConfigureAwait(false);
-            var confirmedRows = rows
-                .Where(x => string.Equals(x.LifecycleStatus, AssetLifecycleStatus.Confirmed, StringComparison.Ordinal))
-                .ToList();
 
-            var allowedHighValuePaths = LoadHighValuePathSet();
-
-            var filtered = confirmedRows
-                .Select(x => new
-                {
-                    x.Row,
-                    x.DiscoveredBy,
-                    SnapshotOk = TryParseSnapshot(x.TypeDetailsJson, out var snap),
-                    Snapshot = snap,
-                })
-                .Where(x => x.SnapshotOk)
-                .Where(x => !LooksLikeSoft404(x.Snapshot))
-                .Where(x => FindingSourceIsAllowed(x.Row, x.DiscoveredBy, x.Snapshot, allowedHighValuePaths))
-                .Select(x => x.Row)
-                .Take(limit)
-                .ToList();
-            return Results.Ok(filtered);
+            return Results.Ok(rows);
         })
     .WithName("ListHighValueFindings");
 
@@ -1436,20 +1486,51 @@ app.MapGet(
                 }
             }
 
+            if (ecsConfigured)
+            {
+                foreach (var definition in definitions)
+                {
+                    if (overrides.ContainsKey(definition.ScaleKey))
+                        continue;
+                    if (!services.TryGetValue(definition.ServiceName, out var service))
+                        continue;
+
+                    var fallback = DefaultWorkerScalingSetting(definition.ScaleKey);
+                    var currentDesired = Math.Max(0, service.DesiredCount.GetValueOrDefault());
+                    if (currentDesired >= fallback.MinTasks)
+                        continue;
+
+                    try
+                    {
+                        await UpdateEcsServiceDesiredCountAsync(configuration, definition.ServiceName, fallback.MinTasks, ct)
+                            .ConfigureAwait(false);
+                        service.DesiredCount = fallback.MinTasks;
+                        status = "ECS service state loaded; default minimum worker counts reconciled.";
+                    }
+                    catch
+                    {
+                        // Keep the read-only state. Manual Set still returns the detailed ECS error.
+                    }
+                }
+            }
+
             var rows = definitions
                 .Select(
                     definition =>
                     {
                         overrides.TryGetValue(definition.ScaleKey, out var manual);
                         services.TryGetValue(definition.ServiceName, out var service);
+                        var fallback = DefaultWorkerScalingSetting(definition.ScaleKey);
+                        var displayedDesired = service?.DesiredCount;
+                        var displayedManual = manual?.DesiredCount ?? (service is null ? (int?)fallback.MinTasks : null);
                         return new WorkerScaleTargetDto(
                             definition.WorkerKey,
                             definition.ScaleKey,
                             definition.ServiceName,
-                            service?.DesiredCount,
+                            displayedDesired,
                             service?.RunningCount,
                             service?.PendingCount,
-                            manual?.DesiredCount,
+                            displayedManual,
                             ecsConfigured && service is not null,
                             service is null ? status : "ECS service state loaded.");
                     })
@@ -1674,6 +1755,24 @@ app.MapGet(
                     ct)
                 .ConfigureAwait(false);
 
+            var subdomainsDiscovered = await db.Assets.AsNoTracking()
+                .LongCountAsync(a => a.Kind == AssetKind.Subdomain, ct)
+                .ConfigureAwait(false);
+            var lastAssetCreatedAt = await db.Assets.AsNoTracking()
+                .OrderByDescending(a => a.DiscoveredAtUtc)
+                .Select(a => (DateTimeOffset?)a.DiscoveredAtUtc)
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+            var lastWorkerEventPublishedAt = await db.BusJournal.AsNoTracking()
+                .Where(e => e.Direction == "Publish")
+                .OrderByDescending(e => e.OccurredAtUtc)
+                .Select(e => (DateTimeOffset?)e.OccurredAtUtc)
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+            var queuedHttpAssets = await db.Assets.AsNoTracking()
+                .LongCountAsync(a => a.Kind == AssetKind.Url && a.LifecycleStatus == AssetLifecycleStatus.Queued, ct)
+                .ConfigureAwait(false);
+
             var domainCounts = await db.Assets.AsNoTracking()
                 .Join(db.Targets.AsNoTracking(), a => a.TargetId, t => t.Id, (_, t) => t.RootDomain)
                 .GroupBy(d => d)
@@ -1699,7 +1798,11 @@ app.MapGet(
                     top?.RootDomain,
                     top?.Count ?? 0,
                     domains10OrMore,
-                    domains10OrFewer));
+                    domains10OrFewer,
+                    subdomainsDiscovered,
+                    lastAssetCreatedAt,
+                    lastWorkerEventPublishedAt,
+                    queuedHttpAssets));
         })
     .WithName("OpsOverview");
 
@@ -1830,16 +1933,7 @@ app.MapPut(
             {
                 try
                 {
-                    var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
-                    using var ecs = new AmazonECSClient(RegionEndpoint.GetBySystemName(region));
-                    await ecs.UpdateServiceAsync(
-                            new UpdateServiceRequest
-                            {
-                                Cluster = cluster,
-                                Service = serviceName,
-                                DesiredCount = body.DesiredCount,
-                            },
-                            ct)
+                    await UpdateEcsServiceDesiredCountAsync(configuration, serviceName, body.DesiredCount, ct)
                         .ConfigureAwait(false);
                     ecsUpdated = true;
                     message = $"Set {serviceName} desired count to {body.DesiredCount}.";

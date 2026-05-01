@@ -205,8 +205,8 @@
 }
 
 .nightmare-dg-host.vq {
-    height: var(--dg-virtualized-height, 560px);
-    max-height: var(--dg-virtualized-height, 560px);
+    height: var(--dg-virtualized-height, 860px);
+    max-height: var(--dg-virtualized-height, 860px);
     overflow-y: auto;
 }
 

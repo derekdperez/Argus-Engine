@@ -108,19 +108,13 @@
 else
 {
     <section class="panel">
-        <div class="row">
-            <label>Column filters</label>
-            <input type="text" class="ops-filter" placeholder="Root domain" @bind="_targetRootFilter" />
-            <input type="text" class="ops-filter" placeholder="Max depth" @bind="_targetDepthFilter" />
-            <button type="button" @onclick="ClearTargetFilters">Clear all filters</button>
-        </div>
         <NightmareDataGrid TGridItem="TargetSummary"
                            Items="FilteredTargets"
                            @bind-SearchText="_targetSearch"
                            SearchPlaceholder="Search root domain or id…"
-                           ScrollPreset="@(_targetVirtualize ? NightmareDataGridScrollPreset.Virtualized : NightmareDataGridScrollPreset.Tall)"
-                           Virtualize="@_targetVirtualize"
-                           Pagination="_targetPagination"
+                           ScrollPreset="NightmareDataGridScrollPreset.Virtualized"
+                           Virtualize="true"
+                           VirtualizedHeightPixels="860"
                            ItemSize="44"
                            ItemKey="@(r => r.Id)"
                            OverscanCount="8"
@@ -137,18 +131,6 @@ else
                            StickyFirstColumn="true">
             <ConfigurationTemplate>
                 <div class="grid-config compact">
-                    <label>
-                        <span>Root domain</span>
-                        <input type="text" class="ops-filter" placeholder="Root domain" @bind="_targetRootFilter" />
-                    </label>
-                    <label>
-                        <span>Max depth</span>
-                        <input type="text" class="ops-filter" placeholder="Max depth" @bind="_targetDepthFilter" />
-                    </label>
-                    <label class="switch-row">
-                        <input type="checkbox" @bind="_targetVirtualize" />
-                        <span>Virtualized rows</span>
-                    </label>
                     <button type="button" class="btn ghost" @onclick="ClearTargetFilters">Clear filters</button>
                 </div>
             </ConfigurationTemplate>
@@ -177,10 +159,6 @@ else
     private TargetForm _form { get; set; } = new();
     private readonly List<TargetSummary> _rows = new();
     private string _targetSearch = "";
-    private string _targetRootFilter = "";
-    private string _targetDepthFilter = "";
-    private bool _targetVirtualize;
-    private readonly PaginationState _targetPagination = new() { ItemsPerPage = 50 };
     private string? _status;
     private string? _bulkStatus;
     private string? _bulkDepthStatus;
@@ -452,24 +430,15 @@ else
         GridTextFilter.Matches(r.RootDomain, q)
         || GridTextFilter.Matches(r.Id.ToString(), q);
 
-    private IQueryable<TargetSummary> FilteredTargets =>
-        _rows.AsQueryable().Where(r =>
-            GridTextFilter.Matches(r.RootDomain, _targetRootFilter)
-            && GridTextFilter.Matches(r.GlobalMaxDepth.ToString(), _targetDepthFilter));
+    private IQueryable<TargetSummary> FilteredTargets => _rows.AsQueryable();
 
-    private int FilteredTargetCount => FilteredTargets.Count();
+    private int FilteredTargetCount => _rows.Count;
 
-    private int TargetActiveFilterCount =>
-        CountActive(_targetRootFilter, _targetDepthFilter);
-
-    private static int CountActive(params string?[] values) =>
-        values.Count(value => !string.IsNullOrWhiteSpace(value));
+    private int TargetActiveFilterCount => 0;
 
     private void ClearTargetFilters()
     {
         _targetSearch = "";
-        _targetRootFilter = "";
-        _targetDepthFilter = "";
     }
 
     private sealed class TargetEditForm

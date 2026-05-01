@@ -468,3 +468,51 @@
 .ops-tool-actions {
     border-color: rgba(37, 99, 235, 0.22);
 }
+
+
+.compact-stats {
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+    gap: 0.65rem;
+}
+
+.compact-stats .stat-card {
+    padding: 0.75rem 0.85rem;
+    min-height: 4.5rem;
+}
+
+.compact-stats .stat-label {
+    font-size: 0.68rem;
+}
+
+.compact-stats .stat-value {
+    font-size: 1.35rem;
+}
+
+.compact-stats .stat-value.small {
+    font-size: 0.82rem;
+    line-height: 1.25;
+}
+
+@media (max-width: 1200px) {
+    .compact-stats {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+
+.column-title-editor {
+    max-width: 32rem;
+}
+
+.column-title-editor label {
+    grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 1fr);
+    align-items: center;
+}
+
+
+.column-title-editor[open] label {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 1fr);
+    align-items: center;
+    gap: 0.55rem;
+}

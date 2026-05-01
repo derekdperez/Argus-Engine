@@ -56,7 +56,11 @@ public sealed record OpsOverviewDto(
     string? TopDomainByAssets,
     long TopDomainAssetCount,
     long DomainsWithTenOrMoreAssets,
-    long DomainsWithFewerThanTenAssets);
+    long DomainsWithFewerThanTenAssets,
+    long SubdomainsDiscovered,
+    DateTimeOffset? LastAssetCreatedAtUtc,
+    DateTimeOffset? LastWorkerEventPublishedAtUtc,
+    long HttpQueueQueuedAssetCount);
 
 public sealed record OpsSnapshotDto(
     IReadOnlyList<WorkerSwitchDto> Workers,
@@ -164,7 +168,13 @@ public sealed record HttpRequestQueueMetricsDto(
     long CompletedLastHourCount,
     long BacklogCount,
     DateTimeOffset? OldestQueuedAtUtc,
-    long? OldestQueuedAgeSeconds);
+    long? OldestQueuedAgeSeconds,
+    long FailedLastMinuteCount,
+    long FailedLastHourCount,
+    long FailedLast24HoursCount,
+    long SentLastMinuteCount,
+    long SentLastHourCount,
+    long SentLast24HoursCount);
 
 public sealed record HttpRequestQueueRowDto(
     Guid Id,
@@ -183,24 +193,38 @@ public sealed record HttpRequestQueueRowDto(
     DateTimeOffset? NextAttemptAtUtc,
     DateTimeOffset? StartedAtUtc,
     DateTimeOffset? CompletedAtUtc,
+    string? LockedBy,
+    DateTimeOffset? LockedUntilUtc,
     int? LastHttpStatus,
     string? LastError,
+    string? RequestHeadersJson,
+    string? RequestBody,
+    string? ResponseHeadersJson,
+    string? ResponseBody,
     long? DurationMs,
     string? ResponseContentType,
     long? ResponseContentLength,
-    string? FinalUrl);
+    string? FinalUrl,
+    int RedirectCount);
 
 public sealed record AssetGridRowDto(
     Guid Id,
     Guid TargetId,
     string Kind,
+    string Category,
     string CanonicalKey,
     string RawValue,
+    string? DisplayName,
     int Depth,
     string DiscoveredBy,
     string DiscoveryContext,
     DateTimeOffset DiscoveredAtUtc,
-    string LifecycleStatus);
+    DateTimeOffset? LastSeenAtUtc,
+    decimal Confidence,
+    string LifecycleStatus,
+    string? TypeDetailsJson,
+    string? FinalUrl,
+    int RedirectCount);
 
 public sealed record HighValueFindingRowDto(
     Guid Id,

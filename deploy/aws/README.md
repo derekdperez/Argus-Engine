@@ -42,6 +42,8 @@ That mode:
 - Generates `deploy/aws/service-env` so ECS workers reach the self-hosted compose services through the EC2 private IP.
 - Builds/pushes ECR images and creates or updates ECS worker services.
 
+The mode is designed to be re-runnable. Existing roles, cluster, repositories, log groups, security group rules, generated env files, task definitions, and ECS services are reused when they already match the desired state. By default it tags ECS images with an immutable source-stamp tag so an unchanged rerun does not create a new task-definition revision or force a new ECS deployment. Set `NIGHTMARE_ECS_USE_MUTABLE_TAG=1` only if you intentionally want to keep deploying a mutable tag such as `latest`.
+
 Required before running:
 
 - The EC2 instance profile must allow ECS, ECR, IAM role creation/attachment, CloudWatch Logs, STS, and EC2 describe/security-group updates.

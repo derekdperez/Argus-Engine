@@ -20,6 +20,7 @@ repo_root="$(cd -- "${script_dir}/../.." && pwd)"
 : "${ECS_CREATE_LOG_GROUP:=true}"
 : "${SERVICE_ENV_FILE:=${script_dir}/service-env}"
 : "${UPDATE_DESIRED_COUNTS:=false}"
+: "${ECS_FORCE_NEW_DEPLOYMENT:=false}"
 
 export AWS_REGION
 export ECS_CLUSTER
@@ -113,19 +114,19 @@ task_memory() {
   esac
 }
 
-register_task_definition() {
+write_task_definition_json() {
   local service="$1"
-  local family image tmp
+  local output="$2"
+  local family image
   family="$(task_family "$service")"
   image="${registry}/${ECR_PREFIX}/${service}:${IMAGE_TAG}"
-  tmp="$(mktemp)"
 
   SERVICE_KEY="$service" \
   TASK_FAMILY="$family" \
   CONTAINER_IMAGE="$image" \
   TASK_CPU="$(task_cpu "$service")" \
   TASK_MEMORY="$(task_memory "$service")" \
-  python3 - "$SERVICE_ENV_FILE" >"$tmp" <<'PY'
+  python3 - "$SERVICE_ENV_FILE" >"$output" <<'PY'
 import json
 import os
 import sys
@@ -206,13 +207,111 @@ if task_role:
 
 print(json.dumps(task, separators=(",", ":")))
 PY
+}
+
+latest_task_definition() {
+  local family="$1"
+  aws ecs list-task-definitions \
+    --region "$AWS_REGION" \
+    --family-prefix "$family" \
+    --status ACTIVE \
+    --sort DESC \
+    --max-items 1 \
+    --query 'taskDefinitionArns[0]' \
+    --output text
+}
+
+task_definition_matches() {
+  local desired_file="$1"
+  local task_definition="$2"
+  local actual_file
+  actual_file="$(mktemp)"
+
+  aws ecs describe-task-definition \
+    --region "$AWS_REGION" \
+    --task-definition "$task_definition" \
+    --query 'taskDefinition' \
+    --output json >"$actual_file"
+
+  if python3 - "$desired_file" "$actual_file" <<'PY'
+import json
+import sys
+
+desired_path, actual_path = sys.argv[1], sys.argv[2]
+with open(desired_path, encoding="utf-8") as handle:
+    desired = json.load(handle)
+with open(actual_path, encoding="utf-8") as handle:
+    actual = json.load(handle)
+
+def norm_container(container):
+    keys = [
+        "name",
+        "image",
+        "essential",
+        "environment",
+        "logConfiguration",
+        "portMappings",
+        "healthCheck",
+    ]
+    normalized = {key: container[key] for key in keys if key in container}
+    if "environment" in normalized:
+        normalized["environment"] = sorted(normalized["environment"], key=lambda x: x["name"])
+    if "portMappings" in normalized:
+        normalized["portMappings"] = sorted(
+            normalized["portMappings"],
+            key=lambda x: (x.get("containerPort", 0), x.get("protocol", "")),
+        )
+    return normalized
+
+def norm_task(task):
+    normalized = {
+        "family": task.get("family"),
+        "networkMode": task.get("networkMode"),
+        "requiresCompatibilities": sorted(task.get("requiresCompatibilities", [])),
+        "cpu": str(task.get("cpu", "")),
+        "memory": str(task.get("memory", "")),
+        "executionRoleArn": task.get("executionRoleArn", ""),
+        "taskRoleArn": task.get("taskRoleArn", ""),
+        "containerDefinitions": [
+            norm_container(container)
+            for container in sorted(task.get("containerDefinitions", []), key=lambda x: x.get("name", ""))
+        ],
+    }
+    if not normalized["taskRoleArn"]:
+        normalized.pop("taskRoleArn")
+    return normalized
+
+sys.exit(0 if norm_task(desired) == norm_task(actual) else 1)
+PY
+  then
+    local result=0
+  else
+    local result=1
+  fi
+  rm -f "$actual_file"
+  return "$result"
+}
+
+ensure_task_definition() {
+  local service="$1"
+  local family desired_file latest
+  family="$(task_family "$service")"
+  desired_file="$(mktemp)"
+  write_task_definition_json "$service" "$desired_file"
+
+  latest="$(latest_task_definition "$family")"
+  if [[ "$latest" != "None" && -n "$latest" ]] && task_definition_matches "$desired_file" "$latest"; then
+    rm -f "$desired_file"
+    echo "$latest"
+    return 0
+  fi
 
   aws ecs register-task-definition \
     --region "$AWS_REGION" \
-    --cli-input-json "file://${tmp}" \
+    --cli-input-json "file://${desired_file}" \
     --query 'taskDefinition.taskDefinitionArn' \
     --output text
-  rm -f "$tmp"
+  rm -f "$desired_file"
 }
 
 service_status() {
@@ -275,23 +374,56 @@ PY
 for service in "${selected_services[@]}"; do
   ecs_service="$(service_name "$service")"
   desired="$(desired_count "$service")"
-  task_definition="$(register_task_definition "$service")"
+  task_definition="$(ensure_task_definition "$service")"
   status="$(service_status "$ecs_service")"
 
-  if [[ "$status" == "ACTIVE" || "$status" == "DRAINING" ]]; then
+  if [[ "$status" == "DRAINING" ]]; then
+    echo "ECS service ${ecs_service} is DRAINING; wait for deletion to complete before re-running." >&2
+    exit 1
+  fi
+
+  if [[ "$status" == "ACTIVE" ]]; then
+    current_task="$(
+      aws ecs describe-services \
+        --region "$AWS_REGION" \
+        --cluster "$ECS_CLUSTER" \
+        --services "$ecs_service" \
+        --query 'services[0].taskDefinition' \
+        --output text
+    )"
+    current_desired="$(
+      aws ecs describe-services \
+        --region "$AWS_REGION" \
+        --cluster "$ECS_CLUSTER" \
+        --services "$ecs_service" \
+        --query 'services[0].desiredCount' \
+        --output text
+    )"
     args=(
       ecs update-service
       --region "$AWS_REGION"
       --cluster "$ECS_CLUSTER"
       --service "$ecs_service"
-      --task-definition "$task_definition"
-      --force-new-deployment
     )
+    changed=0
+    if [[ "$current_task" != "$task_definition" ]]; then
+      args+=(--task-definition "$task_definition")
+      changed=1
+    fi
     if [[ "$UPDATE_DESIRED_COUNTS" == "true" ]]; then
       args+=(--desired-count "$desired")
+      [[ "$current_desired" == "$desired" ]] || changed=1
     fi
-    aws "${args[@]}" >/dev/null
-    echo "Updated ECS service ${ecs_service} to ${task_definition}"
+    if [[ "$ECS_FORCE_NEW_DEPLOYMENT" == "true" ]]; then
+      args+=(--force-new-deployment)
+      changed=1
+    fi
+    if [[ "$changed" == "1" ]]; then
+      aws "${args[@]}" >/dev/null
+      echo "Updated ECS service ${ecs_service} to ${task_definition}"
+    else
+      echo "ECS service ${ecs_service} already matches desired state"
+    fi
   else
     create_service "$service" "$ecs_service" "$task_definition" "$desired"
     echo "Created ECS service ${ecs_service} with desired count ${desired}"

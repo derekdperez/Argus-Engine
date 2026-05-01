@@ -8,6 +8,7 @@
   - `deploy/aws/destroy-ecs-services.sh` explicitly deletes worker or all Nightmare ECS services with confirmation env vars.
   - `deploy/deploy.sh --ecs-workers` now runs the EC2 self-hosted core stack and deploys workers to ECS.
   - `deploy/aws/bootstrap-ecs-from-ec2.sh` derives EC2/VPC settings, creates baseline ECS/IAM/ECR/log/security-group resources, and generates ECS env files for workers.
+  - Tightened ECS rerun idempotency: deploy uses immutable source-stamp image tags by default, reuses matching task-definition revisions, and skips ECS service updates when the service already matches desired state.
   - Updated AWS env examples, service env guidance, README, scaling guide, and gitignore for non-committed live AWS config.
   - Why: support ECS worker lifecycle management without embedding AWS orchestration into app runtime code.
 - Validation:

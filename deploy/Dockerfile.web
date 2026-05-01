@@ -23,13 +23,9 @@ COPY src/Resources/ src/Resources/
 RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj" \
     -c Release -o /app/publish --no-restore /p:UseAppHost=false \
-    && mkdir -p /app/publish/wwwroot/_framework \
-    && blazor_web_js="$(find /root/.nuget/packages /usr/share/dotnet -type f -name blazor.web.js 2>/dev/null | sort | tail -n 1 || true)" \
-    && if [ -n "$blazor_web_js" ]; then \
-        cp "$blazor_web_js" /app/publish/wwwroot/_framework/blazor.web.js; \
-        echo "Copied Blazor bootstrap asset from $blazor_web_js"; \
-    else \
-        echo "WARNING: could not find blazor.web.js during image build; relying on ASP.NET static web assets."; \
+    && if [ ! -f /app/publish/wwwroot/_framework/blazor.web.js ]; then \
+        echo "FATAL: dotnet publish did not produce blazor.web.js. The Blazor UI will not work." >&2; \
+        exit 1; \
     fi
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final

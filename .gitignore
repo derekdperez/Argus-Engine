@@ -26,6 +26,9 @@ deploy/.last-source-fingerprints
 deploy/.current-source-fingerprints
 deploy/.last-image-fingerprints
 deploy/.current-image-fingerprints
+deploy/.last-runtime-fingerprint
+deploy/.current-runtime-fingerprint
+deploy/.last-image-build-fingerprints
 
 .ai/
 .ai-debug/

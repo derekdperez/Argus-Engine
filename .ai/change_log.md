@@ -2,6 +2,12 @@
 
 ## 2026-05-01
 
+- Added Admin cloud usage tracking:
+  - New `cloud_resource_usage_samples` persistence tracks sampled ECS worker service running counts and current EC2 host uptime metadata.
+  - Added `/api/admin/usage` and `/admin` with cumulative ECS worker hours, 2200-hour monthly allowance usage, cumulative EC2 server hours, and HTTP queue traffic estimates.
+  - Added `deploy/aws/record-cloud-usage-sample.sh` and wired deploy/autoscaler flows to record cloud usage samples.
+  - Updated AWS deploy docs/env example to document usage sampling and the need for a regular autoscaler cadence.
+  - Why: give operators visibility into free-tier ECS worker-hour usage and rough application bandwidth.
 - Added ECS worker deployment and scaling helpers:
   - `deploy/aws/deploy-ecs-services.sh` registers task definitions from ECR images and creates/updates ECS services.
   - `deploy/aws/autoscale-ecs-workers.sh` scales spider, enum, port scan, high-value, and tech-id workers from Command Center queue metrics.

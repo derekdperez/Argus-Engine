@@ -43,6 +43,7 @@ That mode:
 - Builds/pushes ECR images.
 - Scales any existing ECS worker services to zero and waits for the old worker tasks to stop.
 - Creates or updates ECS worker services and scales them back up on the newest task definitions/images.
+- Records ECS worker and current EC2 host usage samples for the Command Center Admin page.
 
 The mode is designed to be re-runnable. Existing roles, cluster, repositories, log groups, security group rules, generated env files, task definitions, and ECS services are reused. The worker tasks themselves are intentionally replaced on each `--ecs-workers` deploy (`NIGHTMARE_ECS_REPLACE_WORKERS=1` by default) so each deploy exercises worker loss/recovery and guarantees new worker containers start from the latest pushed image. Set `NIGHTMARE_ECS_REPLACE_WORKERS=0` to converge in place without the scale-to-zero replacement step.
 
@@ -66,6 +67,8 @@ set -a
 set +a
 deploy/aws/autoscale-ecs-workers.sh
 ```
+
+Run the scaler on a steady cadence, such as every minute from cron or systemd timer, because the Admin usage totals integrate worker-hours from these samples.
 
 The manual workflow below is still useful when the core services are already reachable from ECS through managed databases/brokers or custom network plumbing.
 
@@ -122,6 +125,8 @@ The scaler handles:
 It scales desired counts between each worker's `ECS_MIN_*` and `ECS_MAX_*` values. Minimums default to `1` so each worker type stays warm; set a worker minimum to `0` if you want it destroyed when idle.
 
 The scaler also keeps services on the newest active task-definition revision by default (`ECS_AUTOSCALER_UPDATE_TASK_DEFINITION=true`). That lets a scheduled scaler roll workers forward after `deploy-ecs-services.sh` registers a newer task definition.
+
+By default the scaler records a usage sample after every run (`ECS_RECORD_USAGE_SAMPLE=true`). Command Center reads those samples on `/admin` and `/api/admin/usage` to estimate monthly ECS worker hours against the 2200-hour allowance, EC2 server hours, and application-level HTTP request/response bytes from the HTTP queue. The HTTP bandwidth figure is an application estimate from stored request/response data, not an AWS billing-metered VPC/NAT total.
 
 ## Destroy worker services
 

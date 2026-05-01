@@ -1,4 +1,5 @@
 @using NightmareV2.CommandCenter.Models
+@using NightmareV2.CommandCenter
 @page "/"
 @page "/ops"
 @rendermode InteractiveServer
@@ -435,14 +436,6 @@
                     <span>State</span>
                     <input type="text" class="ops-filter" @bind="_filterQueuePipelineCol" />
                 </label>
-                <label class="switch-row">
-                    <input type="checkbox" @bind="_showFailedQueueRequests" @bind:after="ReloadHttpQueueAsync" />
-                    <span>Show failed</span>
-                </label>
-                <label class="switch-row">
-                    <input type="checkbox" @bind="_showCompletedQueueRequests" @bind:after="ReloadHttpQueueAsync" />
-                    <span>Show completed</span>
-                </label>
                 <details class="ops-rz-column-toggles">
                     <summary>Columns</summary>
                     <label class="switch-row"><input type="checkbox" @bind="_showQueueDomain" /><span>Domain</span></label>
@@ -694,13 +687,10 @@
     private string _filterQueueRawCol = "";
     private string _filterQueuePipelineCol = "";
     private string _queueGroupBy = "";
-    private int _queueTake = 0;
     private bool _showQueueDomain = true;
     private bool _showQueueAttempts = true;
     private bool _showQueueTiming;
     private bool _showQueueErrors = true;
-    private bool _showFailedQueueRequests = true;
-    private bool _showCompletedQueueRequests = true;
 
     private string _workerSearch = "";
     private string _rabbitSearch = "";
@@ -1179,13 +1169,9 @@
         _queueLoading = true;
         try
         {
-            var take = Math.Clamp(_queueTake, 100, 5000);
-            _queueTake = take;
-            var includeFailed = _showFailedQueueRequests ? "true" : "false";
-            var includeCompleted = _showCompletedQueueRequests ? "true" : "false";
             var qs = string.IsNullOrEmpty(_targetFilter)
-                ? $"?take={take}&includeFailed={includeFailed}&includeCompleted={includeCompleted}"
-                : $"?targetId={Uri.EscapeDataString(_targetFilter)}&take={take}&includeFailed={includeFailed}&includeCompleted={includeCompleted}";
+                ? ""
+                : $"?targetId={Uri.EscapeDataString(_targetFilter)}";
             var list = await Http.GetFromJsonAsync<List<HttpRequestQueueRowDto>>($"/api/http-request-queue{qs}");
             _requestQueue.Clear();
             if (list is not null)
@@ -1799,10 +1785,10 @@
     }
 
     private static string FormatOpsTime(DateTimeOffset? value) =>
-        value is null ? "-" : FormatOpsTime(value.Value);
+        AppTimeFormat.Format(value);
 
     private static string FormatOpsTime(DateTimeOffset value) =>
-        value.ToOffset(TimeSpan.FromHours(-5)).ToString("MM/dd/yyyy hh:mm:ss", CultureInfo.InvariantCulture);
+        AppTimeFormat.Format(value);
 
     private static string RootDomainHref(string rootDomain)
     {

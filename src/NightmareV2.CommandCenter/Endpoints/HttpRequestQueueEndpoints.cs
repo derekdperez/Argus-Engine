@@ -56,20 +56,15 @@ public static class HttpRequestQueueEndpoints
                 "/api/http-request-queue",
                 async (NightmareDbContext db, Guid? targetId, bool? includeFailed, bool? includeCompleted, int? take, CancellationToken ct) =>
                 {
-                    var limit = Math.Clamp(take ?? 800, 1, 5000);
                     var q = db.HttpRequestQueue.AsNoTracking().AsQueryable();
                     if (targetId is { } tid)
                         q = q.Where(r => r.TargetId == tid);
 
-                    q = q.Where(r => r.State == HttpRequestQueueState.Queued
-                        || r.State == HttpRequestQueueState.Retry
-                        || r.State == HttpRequestQueueState.InFlight
-                        || (includeFailed == true && r.State == HttpRequestQueueState.Failed)
-                        || (includeCompleted == true && r.State == HttpRequestQueueState.Succeeded));
+                    IQueryable<HttpRequestQueueItem> ordered = q.OrderByDescending(r => r.CreatedAtUtc);
+                    if (take is > 0)
+                        ordered = ordered.Take(Math.Clamp(take.Value, 1, 5000));
 
-                    var rows = await q
-                        .OrderByDescending(r => r.CreatedAtUtc)
-                        .Take(limit)
+                    var rows = await ordered
                         .Select(r => new HttpRequestQueueRowDto(
                             r.Id,
                             r.AssetId,

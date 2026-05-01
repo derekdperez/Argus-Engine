@@ -321,6 +321,72 @@
 
 
 /* Radzen-based Ops variant. Keeps the existing command-center look while letting Radzen own the dense grid interactions. */
+.target-control-panel {
+    padding-top: 1rem;
+}
+
+.target-control-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.target-metrics {
+    display: flex;
+    align-items: center;
+    gap: 1.9rem;
+    flex-wrap: wrap;
+    color: var(--text);
+    font-size: 1rem;
+}
+
+.target-metrics strong,
+.target-add-form strong {
+    color: var(--text);
+    font-weight: 800;
+}
+
+.target-add-form {
+    display: grid;
+    grid-template-columns: auto minmax(13rem, 15rem) 7rem;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.target-control-grid {
+    display: grid;
+    grid-template-columns: minmax(13rem, 1fr) minmax(13rem, 1fr) minmax(10rem, 0.75fr) auto auto minmax(10rem, 0.9fr) auto auto;
+    gap: 0.7rem;
+    align-items: end;
+    margin: 0.55rem 0 1rem;
+}
+
+.target-control-grid label {
+    display: grid;
+    gap: 0.25rem;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.target-add-form input,
+.target-control-grid input,
+.target-control-grid select {
+    min-height: 2.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.65rem;
+    padding: 0.45rem 0.65rem;
+    background: var(--surface);
+    color: var(--text);
+}
+
+.target-add-form .btn,
+.target-control-grid .btn {
+    min-height: 2.25rem;
+}
+
 .ops-rz-toolbar {
     display: flex;
     gap: 0.7rem;
@@ -443,10 +509,19 @@
 }
 
 @media (max-width: 760px) {
+    .target-control-header,
+    .target-metrics,
     .ops-rz-toolbar {
         align-items: stretch;
     }
 
+    .target-add-form,
+    .target-control-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .target-add-form .btn,
+    .target-control-grid .btn,
     .ops-rz-toolbar label,
     .ops-rz-toolbar .btn,
     .radzen-density-picker {

@@ -110,40 +110,57 @@
         </div>
     </section>
     <section class="ops-layout-grid">
-        <section class="panel ops-primary-panel">
-            <div class="section-heading">
-                <div>
-                    <p class="eyebrow">Scope</p>
-                    <h2>Targets</h2>
+        <section class="panel ops-primary-panel target-control-panel">
+            <div class="target-control-header">
+                <div class="target-metrics">
+                    <strong>Targets</strong>
+                    <span>Total Targets: @TargetTotalCount.ToString("N0", CultureInfo.InvariantCulture)</span>
+                    <span>Confirmed Subdomains: @ConfirmedSubdomainTotal.ToString("N0", CultureInfo.InvariantCulture)</span>
+                    <span>Confirmed URLs: @ConfirmedUrlTotal.ToString("N0", CultureInfo.InvariantCulture)</span>
                 </div>
-                <span class="muted">@_targets.Count.ToString("N0") loaded</span>
+                <EditForm Model="TargetCreateForm" OnValidSubmit="CreateTargetAsync" FormName="@OpsTargetCreateFormName" method="post" class="target-add-form">
+                    <strong>Add New Target:</strong>
+                    <InputText @bind-Value="TargetCreateForm.RootDomain" placeholder="Domain" />
+                    <button type="submit" class="btn primary" disabled="@_targetCreateBusy">@(_targetCreateBusy ? "Adding..." : "Add")</button>
+                </EditForm>
             </div>
 
-            <div class="ops-card-row">
-                <EditForm Model="TargetCreateForm" OnValidSubmit="CreateTargetAsync" FormName="@OpsTargetCreateFormName" method="post" class="inline-form">
-                    <label>
-                        <span>Root domain</span>
-                        <InputText @bind-Value="TargetCreateForm.RootDomain" placeholder="example.com" />
-                    </label>
-                    <label class="short-field">
-                        <span>Depth</span>
-                        <InputNumber @bind-Value="TargetCreateForm.GlobalMaxDepth" />
-                    </label>
-                    <button type="submit" class="btn primary" disabled="@_targetCreateBusy">@(_targetCreateBusy ? "Queueing…" : "Queue target")</button>
-                </EditForm>
-
-                <div class="filter-cluster">
-                    <label>
-                        <span>Active target filter</span>
-                        <select @bind="_targetFilter" @bind:after="ReloadTargetScopedAsync">
-                            <option value="">All targets</option>
-                            @foreach (var t in _targets.OrderBy(t => t.RootDomain, StringComparer.OrdinalIgnoreCase))
-                            {
-                                <option value="@t.Id.ToString()">@t.RootDomain</option>
-                            }
-                        </select>
-                    </label>
-                </div>
+            <div class="target-control-grid">
+                <label>
+                    <span>Active target filter</span>
+                    <select @bind="_targetFilter" @bind:after="ReloadTargetScopedAsync">
+                        <option value="">All targets</option>
+                        @foreach (var t in _targets.OrderBy(t => t.RootDomain, StringComparer.OrdinalIgnoreCase))
+                        {
+                            <option value="@t.Id.ToString()">@t.RootDomain</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    <span>Search</span>
+                    <input type="search" class="ops-filter" @bind="_targetSearch" placeholder="Domain, id, depth..." />
+                </label>
+                <details class="ops-rz-column-toggles column-title-editor">
+                    <summary>Display names</summary>
+                    @foreach (var col in TargetColumnTitleOptions)
+                    {
+                        <label>
+                            <span>@col.Label</span>
+                            <input type="text"
+                                   class="ops-filter"
+                                   value="@ColumnTitle(col.Key, col.DefaultTitle)"
+                                   @oninput="@((ChangeEventArgs e) => SetColumnTitle(col.Key, e.Value?.ToString()))" />
+                        </label>
+                    }
+                </details>
+                <button type="button" class="btn ghost" @onclick="ClearTargetFilters">Clear filters</button>
+                <button type="button" class="btn" @onclick="ExportTargetsCsvAsync">Export CSV</button>
+                <label class="short-field">
+                    <span>Set max depth</span>
+                    <InputNumber @bind-Value="_targetBulkMaxDepth" />
+                </label>
+                <button type="button" class="btn" disabled="@(_targetDepthBusy || SelectedToolTargetCount == 0)" @onclick="@(() => UpdateTargetMaxDepthAsync(false))">Apply to selected (@SelectedToolTargetCount)</button>
+                <button type="button" class="btn danger" disabled="@(_targetDepthBusy || _targets.Count == 0)" @onclick="@(() => UpdateTargetMaxDepthAsync(true))">Apply to all (@_targets.Count)</button>
             </div>
 
             @if (_targetEditing is not null)
@@ -163,36 +180,6 @@
                     </EditForm>
                 </div>
             }
-
-            <div class="ops-rz-toolbar">
-                <label>
-                    <span>Search</span>
-                    <input type="search" class="ops-filter" @bind="_targetSearch" placeholder="Domain, id, depth…" />
-                </label>
-                <details class="ops-rz-column-toggles column-title-editor">
-                    <summary>Display names</summary>
-                    @foreach (var col in TargetColumnTitleOptions)
-                    {
-                        <label>
-                            <span>@col.Label</span>
-                            <input type="text"
-                                   class="ops-filter"
-                                   value="@ColumnTitle(col.Key, col.DefaultTitle)"
-                                   @oninput="@((ChangeEventArgs e) => SetColumnTitle(col.Key, e.Value?.ToString()))" />
-                        </label>
-                    }
-                </details>
-                <button type="button" class="btn ghost" @onclick="ClearTargetFilters">Clear filters</button>
-                <button type="button" class="btn" @onclick="ExportTargetsCsvAsync">Export CSV</button>
-            </div>
-            <div class="ops-rz-toolbar">
-                <label class="short-field">
-                    <span>Set max depth</span>
-                    <InputNumber @bind-Value="_targetBulkMaxDepth" />
-                </label>
-                <button type="button" class="btn" disabled="@(_targetDepthBusy || SelectedToolTargetCount == 0)" @onclick="@(() => UpdateTargetMaxDepthAsync(false))">Apply to selected (@SelectedToolTargetCount)</button>
-                <button type="button" class="btn danger" disabled="@(_targetDepthBusy || _targets.Count == 0)" @onclick="@(() => UpdateTargetMaxDepthAsync(true))">Apply to all (@_targets.Count)</button>
-            </div>
 
             <RadzenDataGrid TItem="TargetSummary"
                             Data="@RadzenTargets"
@@ -229,9 +216,10 @@
                             <a class="mono" href="@RootDomainHref(row.RootDomain)" target="_blank" rel="noopener noreferrer">@row.RootDomain</a>
                         </Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="TargetSummary" Property="SubdomainCount" Title='@ColumnTitle("target.SubdomainCount", "Number of Subdomains")' Width="190px" />
-                    <RadzenDataGridColumn TItem="TargetSummary" Property="ConfirmedAssetCount" Title='@ColumnTitle("target.ConfirmedAssetCount", "Number of Confirmed Assets")' Width="230px" />
-                    <RadzenDataGridColumn TItem="TargetSummary" Property="QueuedAssetCount" Title='@ColumnTitle("target.QueuedAssetCount", "Number of Queued Assets")' Width="210px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="SubdomainCount" Title='@ColumnTitle("target.SubdomainCount", "Subdomains")' Width="150px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="ConfirmedUrlCount" Title='@ColumnTitle("target.ConfirmedUrlCount", "URLs")' Width="130px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="ConfirmedAssetCount" Title='@ColumnTitle("target.ConfirmedAssetCount", "Asset Count")' Width="150px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="QueuedAssetCount" Title='@ColumnTitle("target.QueuedAssetCount", "Queued Requests")' Width="170px" />
                     <RadzenDataGridColumn TItem="TargetSummary" Property="GlobalMaxDepth" Title='@ColumnTitle("target.GlobalMaxDepth", "Max Depth")' Width="130px" />
                     <RadzenDataGridColumn TItem="TargetSummary" Property="LastRunAtUtc" Title='@ColumnTitle("target.LastRunAtUtc", "Last Run Time")' Width="180px">
                         <Template Context="row">@FormatOpsTime(row.LastRunAtUtc)</Template>
@@ -837,6 +825,9 @@
     private readonly List<Ec2WorkerMachineDto> _ec2WorkerMachines = [];
     private readonly HashSet<Guid> _selectedToolTargetIds = [];
     private int SelectedToolTargetCount => _selectedToolTargetIds.Count;
+    private int TargetTotalCount => _targets.Count;
+    private long ConfirmedSubdomainTotal => _targets.Sum(t => t.SubdomainCount);
+    private long ConfirmedUrlTotal => _targets.Sum(t => t.ConfirmedUrlCount);
     private readonly Dictionary<string, int> _workerScaleInputs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _columnTitles = new(StringComparer.Ordinal);
     private static readonly (string Key, string Label, string DefaultTitle)[] TargetColumnTitleOptions =
@@ -844,9 +835,10 @@
         ("target.Id", "Id", "Id"),
         ("target.CreatedAtUtc", "Created", "Created"),
         ("target.RootDomain", "Root Domain", "Root Domain"),
-        ("target.SubdomainCount", "Number of Subdomains", "Number of Subdomains"),
-        ("target.ConfirmedAssetCount", "Number of Confirmed Assets", "Number of Confirmed Assets"),
-        ("target.QueuedAssetCount", "Number of Queued Assets", "Number of Queued Assets"),
+        ("target.SubdomainCount", "Subdomains", "Subdomains"),
+        ("target.ConfirmedUrlCount", "URLs", "URLs"),
+        ("target.ConfirmedAssetCount", "Asset Count", "Asset Count"),
+        ("target.QueuedAssetCount", "Queued Requests", "Queued Requests"),
         ("target.GlobalMaxDepth", "Max Depth", "Max Depth"),
         ("target.LastRunAtUtc", "Last Run Time", "Last Run Time"),
     ];
@@ -1014,6 +1006,7 @@
             || GridTextFilter.Matches(t.Id.ToString(), _targetSearch)
             || GridTextFilter.Matches(t.GlobalMaxDepth.ToString(CultureInfo.InvariantCulture), _targetSearch)
             || GridTextFilter.Matches(t.SubdomainCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
+            || GridTextFilter.Matches(t.ConfirmedUrlCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
             || GridTextFilter.Matches(t.ConfirmedAssetCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
             || GridTextFilter.Matches(t.QueuedAssetCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
             || GridTextFilter.Matches(FormatOpsTime(t.LastRunAtUtc), _targetSearch));
@@ -2136,12 +2129,13 @@
     private async Task ExportTargetsCsvAsync() =>
         await ExportCsvAsync(
             "nightmare-targets.csv",
-            ["Created", "RootDomain", "SubdomainCount", "ConfirmedAssetCount", "QueuedAssetCount", "GlobalMaxDepth", "LastRunTime"],
+            ["Created", "RootDomain", "ConfirmedSubdomainCount", "ConfirmedUrlCount", "ConfirmedAssetCount", "QueuedRequestCount", "GlobalMaxDepth", "LastRunTime"],
             RadzenTargets.Select(t => new[]
             {
                 FormatOpsTime(t.CreatedAtUtc),
                 t.RootDomain,
                 t.SubdomainCount.ToString(CultureInfo.InvariantCulture),
+                t.ConfirmedUrlCount.ToString(CultureInfo.InvariantCulture),
                 t.ConfirmedAssetCount.ToString(CultureInfo.InvariantCulture),
                 t.QueuedAssetCount.ToString(CultureInfo.InvariantCulture),
                 t.GlobalMaxDepth.ToString(CultureInfo.InvariantCulture),

@@ -142,9 +142,11 @@ app.MapGet(
                     g => new
                     {
                         TargetId = g.Key,
-                        Subdomains = g.LongCount(a => a.Kind == AssetKind.Subdomain),
-                        Confirmed = g.LongCount(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
-                        Queued = g.LongCount(a => a.LifecycleStatus == AssetLifecycleStatus.Queued),
+                        ConfirmedSubdomains = g.LongCount(a => a.Kind == AssetKind.Subdomain
+                            && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
+                        ConfirmedAssets = g.LongCount(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
+                        ConfirmedUrls = g.LongCount(a => a.Kind == AssetKind.Url
+                            && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
                         LastAssetAtUtc = g.Max(a => (DateTimeOffset?)a.DiscoveredAtUtc),
                     })
                 .ToDictionaryAsync(x => x.TargetId, ct)
@@ -176,9 +178,10 @@ app.MapGet(
                             t.RootDomain,
                             t.GlobalMaxDepth,
                             t.CreatedAtUtc,
-                            assets?.Subdomains ?? 0,
-                            assets?.Confirmed ?? 0,
-                            queue?.Queued ?? assets?.Queued ?? 0,
+                            assets?.ConfirmedSubdomains ?? 0,
+                            assets?.ConfirmedAssets ?? 0,
+                            assets?.ConfirmedUrls ?? 0,
+                            queue?.Queued ?? 0,
                             lastRun);
                     })
                 .ToList();

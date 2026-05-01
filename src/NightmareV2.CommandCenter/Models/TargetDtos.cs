@@ -19,5 +19,6 @@ public sealed record TargetSummary(
     DateTimeOffset CreatedAtUtc,
     long SubdomainCount = 0,
     long ConfirmedAssetCount = 0,
+    long ConfirmedUrlCount = 0,
     long QueuedAssetCount = 0,
     DateTimeOffset? LastRunAtUtc = null);

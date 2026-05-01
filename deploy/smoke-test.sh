@@ -27,6 +27,29 @@ check_url() {
   fi
 }
 
+check_blazor_asset_from_home_page() {
+  local html asset url
+  html="$(curl -k -sS --max-time "$CURL_TIMEOUT" "${BASE_URL}/" || true)"
+  asset="$(printf '%s' "$html" \
+    | grep -Eo '<script[^>]+src="[^"]*blazor\.web[^"]*\.js[^"]*"' \
+    | head -n 1 \
+    | sed -E 's/.*src="([^"]+)".*/\1/' || true)"
+
+  if [[ -z "$asset" ]]; then
+    printf 'Home page body from %s:\n' "${BASE_URL}/" >&2
+    printf '%s\n' "$html" | sed -n '1,120p' >&2 || true
+    fail "Could not find the rendered Blazor framework script URL on the home page."
+  fi
+
+  case "$asset" in
+    http://* | https://*) url="$asset" ;;
+    /*) url="${BASE_URL%/}${asset}" ;;
+    *) url="${BASE_URL%/}/${asset}" ;;
+  esac
+
+  check_url "Blazor framework asset" "$url"
+}
+
 check_diagnostics() {
   local label="$1"
   local path="$2"
@@ -49,7 +72,7 @@ check_diagnostics() {
 printf 'Nightmare smoke test against %s\n' "$BASE_URL"
 check_url "Live health" "${BASE_URL}/health"
 check_url "Ready health" "${BASE_URL}/health/ready"
-check_url "Blazor framework asset" "${BASE_URL}/_framework/blazor.web.js"
+check_blazor_asset_from_home_page
 check_url "App stylesheet" "${BASE_URL}/app.css"
 check_diagnostics "Diagnostics self" "/api/diagnostics/self"
 check_diagnostics "Dependency diagnostics" "/api/diagnostics/dependencies"

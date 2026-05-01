@@ -2,6 +2,12 @@
 
 ## 2026-05-01
 
+- Added target max-depth bulk update workflow:
+  - New `PUT /api/targets/max-depth` updates `GlobalMaxDepth` for all targets or an explicit target-id list without changing root domains.
+  - `/targets` can apply a depth to all loaded targets or the current filtered target set.
+  - `/ops` can apply a depth to selected targets or all targets from the existing targets grid.
+  - Fixed the `/targets` bulk import form action to post to the existing multipart `/api/targets/bulk` endpoint.
+  - Why: make target crawl-depth tuning quick for one target, selected batches, filtered batches, or the whole corpus.
 - Added Admin cloud usage tracking:
   - New `cloud_resource_usage_samples` persistence tracks sampled ECS worker service running counts and current EC2 host uptime metadata.
   - Added `/api/admin/usage` and `/admin` with cumulative ECS worker hours, 2200-hour monthly allowance usage, cumulative EC2 server hours, and HTTP queue traffic estimates.

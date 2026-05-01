@@ -331,6 +331,47 @@ app.MapPut(
         })
     .WithName("UpdateTarget");
 
+app.MapPut(
+        "/api/targets/max-depth",
+        async (UpdateTargetMaxDepthRequest dto, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+        {
+            if (dto.GlobalMaxDepth <= 0)
+                return Results.BadRequest("globalMaxDepth must be greater than zero");
+
+            IQueryable<ReconTarget> query = db.Targets;
+            if (!dto.AllTargets)
+            {
+                if (dto.TargetIds is null || dto.TargetIds.Count == 0)
+                    return Results.BadRequest("targetIds is required unless allTargets is true");
+
+                var ids = dto.TargetIds.Distinct().ToArray();
+                query = query.Where(t => ids.Contains(t.Id));
+            }
+
+            var updated = await query
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(t => t.GlobalMaxDepth, dto.GlobalMaxDepth),
+                    ct)
+                .ConfigureAwait(false);
+
+            await hub.Clients.All.SendAsync(
+                    DiscoveryHubEvents.DomainEvent,
+                    new LiveUiEventDto(
+                        "TargetsMaxDepthUpdated",
+                        null,
+                        null,
+                        "targets",
+                        dto.AllTargets
+                            ? $"Max depth set to {dto.GlobalMaxDepth} for all targets"
+                            : $"Max depth set to {dto.GlobalMaxDepth} for {updated} targets",
+                        DateTimeOffset.UtcNow),
+                    cancellationToken: ct)
+                .ConfigureAwait(false);
+
+            return Results.Ok(new UpdateTargetMaxDepthResult(updated, dto.GlobalMaxDepth));
+        })
+    .WithName("UpdateTargetsMaxDepth");
+
 app.MapDelete(
         "/api/targets/{id:guid}",
         async (Guid id, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>

@@ -13,6 +13,7 @@
 - Bus journal capture is now buffered/batched via channel worker; direct per-event EF insert path has been removed from observers.
 - Spider architecture is now single-path through `HttpRequestQueueWorker`; legacy direct `AssetDiscovered` spider consumer path has been removed.
 - CommandCenter API routing now has feature modules in `Endpoints/*` for targets, HTTP queue, bus journal, and worker ops/reliability.
+- Target depth tuning is persisted on `ReconTarget.GlobalMaxDepth`; `PUT /api/targets/max-depth` is the depth-only bulk update path for selected/all targets.
 - Startup DB bootstrap logic is centralized in `StartupDatabaseBootstrap` and reused across services.
 - Command Center now exposes Docker runtime introspection (`/api/ops/docker-status`) and a UI status page (`/status`) backed by shelling out to Docker CLI (`docker ps`, `docker inspect`, `docker logs`).
 - Compose deploy now mounts Docker socket read-only into Command Center and runtime image includes Docker CLI so status endpoint can query host daemon.

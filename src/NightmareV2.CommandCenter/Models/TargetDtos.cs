@@ -4,6 +4,10 @@ public sealed record CreateTargetRequest(string RootDomain, int GlobalMaxDepth =
 
 public sealed record UpdateTargetRequest(string RootDomain, int GlobalMaxDepth = 12);
 
+public sealed record UpdateTargetMaxDepthRequest(int GlobalMaxDepth, IReadOnlyList<Guid>? TargetIds = null, bool AllTargets = false);
+
+public sealed record UpdateTargetMaxDepthResult(int Updated, int GlobalMaxDepth);
+
 public sealed record BulkImportRequest(IReadOnlyList<string>? Domains, int GlobalMaxDepth = 12);
 
 public sealed record BulkImportResult(int Created, int SkippedAlreadyExist, int SkippedEmptyOrInvalid, int SkippedDuplicateInBatch);

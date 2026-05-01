@@ -167,6 +167,14 @@
                 <button type="button" class="btn ghost" @onclick="ClearTargetFilters">Clear filters</button>
                 <button type="button" class="btn" @onclick="ExportTargetsCsvAsync">Export CSV</button>
             </div>
+            <div class="ops-rz-toolbar">
+                <label class="short-field">
+                    <span>Set max depth</span>
+                    <InputNumber @bind-Value="_targetBulkMaxDepth" />
+                </label>
+                <button type="button" class="btn" disabled="@(_targetDepthBusy || _selectedToolTargetIds.Count == 0)" @onclick="@(() => UpdateTargetMaxDepthAsync(false))">Apply to selected (@_selectedToolTargetIds.Count)</button>
+                <button type="button" class="btn danger" disabled="@(_targetDepthBusy || _targets.Count == 0)" @onclick="@(() => UpdateTargetMaxDepthAsync(true))">Apply to all (@_targets.Count)</button>
+            </div>
 
             <RadzenDataGrid TItem="TargetSummary"
                             Data="@RadzenTargets"
@@ -720,6 +728,7 @@
     private bool _queueLoading;
     private bool _snapshotLoading;
     private bool _targetCreateBusy;
+    private bool _targetDepthBusy;
     private bool _toolRestartBusy;
     private bool _queueSettingsBusy;
     private bool _autoRefresh = true;
@@ -735,6 +744,7 @@
     private int _queuePerDomainRequestsPerMinute = 6;
     private int _queueMaxConcurrency = 8;
     private int _queueRequestTimeoutSeconds = 30;
+    private int _targetBulkMaxDepth = 12;
 
     private readonly int[] _gridPageSizeOptions = [25, 50, 100, 250, 500];
     private readonly int[] _sideGridPageSizeOptions = [5, 10, 25, 50];
@@ -1222,6 +1232,60 @@
     }
 
     private void ClearToolTargetSelection() => _selectedToolTargetIds.Clear();
+
+    private async Task UpdateTargetMaxDepthAsync(bool allTargets)
+    {
+        if (_targetBulkMaxDepth <= 0)
+        {
+            _statusMessage = "Max depth must be greater than zero.";
+            return;
+        }
+
+        if (!allTargets && _selectedToolTargetIds.Count == 0)
+        {
+            _statusMessage = "Select at least one target first.";
+            return;
+        }
+
+        var targetCount = allTargets ? _targets.Count : _selectedToolTargetIds.Count;
+        var scope = allTargets ? "all targets" : $"{targetCount} selected targets";
+        var ok = await Js.InvokeAsync<bool>("confirm", $"Set max depth to {_targetBulkMaxDepth} for {scope}?");
+        if (!ok)
+            return;
+
+        _targetDepthBusy = true;
+        _statusMessage = "";
+        try
+        {
+            var ids = allTargets ? null : _selectedToolTargetIds.ToArray();
+            var response = await Http.PutAsJsonAsync(
+                    "/api/targets/max-depth",
+                    new UpdateTargetMaxDepthRequest(_targetBulkMaxDepth, ids, allTargets))
+                .ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.BadRequest)
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "Max depth could not be updated.").ConfigureAwait(false);
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var result = await response.Content.ReadFromJsonAsync<UpdateTargetMaxDepthResult>().ConfigureAwait(false);
+            if (!allTargets)
+                _selectedToolTargetIds.Clear();
+            _statusMessage = result is null
+                ? "Max depth updated."
+                : $"Updated {result.Updated} targets to max depth {result.GlobalMaxDepth}.";
+            await ReloadTargetsAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Max depth update failed: {ex.Message}";
+        }
+        finally
+        {
+            _targetDepthBusy = false;
+        }
+    }
 
     private async Task RestartEnumAsync(bool allTargets)
     {

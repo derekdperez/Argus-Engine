@@ -40,7 +40,7 @@
 <section class="panel">
     <h2>Bulk import</h2>
     <p class="muted">Plain text file: one root domain per line. Blank lines are ignored. Duplicates in the file or already in the database are skipped.</p>
-    <form method="post" action="/api/targets/bulk-file" enctype="multipart/form-data">
+    <form method="post" action="/api/targets/bulk" enctype="multipart/form-data">
         <div class="row">
             <label>
                 Max depth
@@ -79,6 +79,26 @@
         </EditForm>
     </section>
 }
+
+<section class="panel">
+    <h2>Update max depth</h2>
+    <div class="row">
+        <label>
+            Max depth
+            <InputNumber @bind-Value="_bulkMaxDepth" />
+        </label>
+        <button type="button" disabled="@(_bulkDepthBusy || FilteredTargetCount == 0)" @onclick="@(() => UpdateBulkDepthAsync(false))">
+            Apply to filtered (@FilteredTargetCount)
+        </button>
+        <button type="button" disabled="@(_bulkDepthBusy || _rows.Count == 0)" @onclick="@(() => UpdateBulkDepthAsync(true))">
+            Apply to all (@_rows.Count)
+        </button>
+    </div>
+    @if (!string.IsNullOrEmpty(_bulkDepthStatus))
+    {
+        <p role="status">@_bulkDepthStatus</p>
+    }
+</section>
 
 <h2>Recent targets</h2>
 @if (_rows.Count == 0)
@@ -163,7 +183,10 @@ else
     private readonly PaginationState _targetPagination = new() { ItemsPerPage = 50 };
     private string? _status;
     private string? _bulkStatus;
+    private string? _bulkDepthStatus;
     private bool _createBusy;
+    private bool _bulkDepthBusy;
+    private int _bulkMaxDepth = 12;
     private TargetEditForm? _editing;
     private DateTimeOffset? _lastLoadedAtUtc;
 
@@ -315,6 +338,59 @@ else
         }
     }
 
+    private async Task UpdateBulkDepthAsync(bool allTargets)
+    {
+        _bulkDepthStatus = null;
+        if (_bulkMaxDepth <= 0)
+        {
+            _bulkDepthStatus = "Max depth must be greater than zero.";
+            return;
+        }
+
+        var targetIds = allTargets
+            ? null
+            : FilteredTargets.Select(t => t.Id).Distinct().ToArray();
+        var targetCount = allTargets ? _rows.Count : targetIds?.Length ?? 0;
+        if (targetCount == 0)
+        {
+            _bulkDepthStatus = "No targets match the current filters.";
+            return;
+        }
+
+        var scope = allTargets ? "all targets" : $"{targetCount} filtered targets";
+        var ok = await Js.InvokeAsync<bool>("confirm", $"Set max depth to {_bulkMaxDepth} for {scope}?");
+        if (!ok)
+            return;
+
+        _bulkDepthBusy = true;
+        try
+        {
+            var response = await Http.PutAsJsonAsync(
+                "/api/targets/max-depth",
+                new UpdateTargetMaxDepthRequest(_bulkMaxDepth, targetIds, allTargets));
+            if (response.StatusCode == HttpStatusCode.BadRequest)
+            {
+                _bulkDepthStatus = await ReadResponseMessageAsync(response, "Max depth could not be updated.");
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var result = await response.Content.ReadFromJsonAsync<UpdateTargetMaxDepthResult>();
+            _bulkDepthStatus = result is null
+                ? "Max depth updated."
+                : $"Updated {result.Updated} targets to max depth {result.GlobalMaxDepth}.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _bulkDepthStatus = ex.Message;
+        }
+        finally
+        {
+            _bulkDepthBusy = false;
+        }
+    }
+
     private async Task BulkImportAsync(InputFileChangeEventArgs e)
     {
         _bulkStatus = null;
@@ -380,6 +456,8 @@ else
         _rows.AsQueryable().Where(r =>
             GridTextFilter.Matches(r.RootDomain, _targetRootFilter)
             && GridTextFilter.Matches(r.GlobalMaxDepth.ToString(), _targetDepthFilter));
+
+    private int FilteredTargetCount => FilteredTargets.Count();
 
     private int TargetActiveFilterCount =>
         CountActive(_targetRootFilter, _targetDepthFilter);

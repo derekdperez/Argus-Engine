@@ -20,15 +20,9 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
             throw new ArgumentException("A technology catalog root is required.", nameof(technologyDetectionRoot));
 
         var root = new DirectoryInfo(technologyDetectionRoot);
-        var technologyDir = new DirectoryInfo(Path.Combine(root.FullName, "technologies"));
-        if (!technologyDir.Exists)
-        {
-            // Backward-compatible path for the catalog already vendored in this repository.
-            technologyDir = new DirectoryInfo(Path.Combine(root.FullName, "TechIdentificationData"));
-        }
-
-        if (!technologyDir.Exists)
-            throw new DirectoryNotFoundException($"Technology catalog directory not found: {technologyDir.FullName}");
+        var technologyDirs = GetTechnologyDirectories(root).ToList();
+        if (technologyDirs.Count == 0)
+            throw new DirectoryNotFoundException($"Technology catalog directory not found under: {root.FullName}");
 
         var categories = LoadCategories(root);
         var technologies = new Dictionary<string, TechnologyDefinition>(StringComparer.OrdinalIgnoreCase);
@@ -36,7 +30,8 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
         var patternsCompiled = 0;
         var patternsSkipped = 0;
 
-        foreach (var file in technologyDir.EnumerateFiles("*.json").OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+        foreach (var file in technologyDirs
+            .SelectMany(d => d.EnumerateFiles("*.json").OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)))
         {
             if (file.Name.Equals("all.json", StringComparison.OrdinalIgnoreCase)
                 || file.Name.Equals("categories.json", StringComparison.OrdinalIgnoreCase)
@@ -79,6 +74,18 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
             patternsSkipped);
 
         return new TechnologyCatalog(technologies, categories, filesLoaded, patternsCompiled, patternsSkipped);
+    }
+
+    private static IEnumerable<DirectoryInfo> GetTechnologyDirectories(DirectoryInfo root)
+    {
+        // Load legacy Wappalyzer data first, then the current catalog so local overrides win by technology name.
+        var legacyDir = new DirectoryInfo(Path.Combine(root.FullName, "TechIdentificationData"));
+        if (legacyDir.Exists)
+            yield return legacyDir;
+
+        var technologyDir = new DirectoryInfo(Path.Combine(root.FullName, "technologies"));
+        if (technologyDir.Exists)
+            yield return technologyDir;
     }
 
     private TechnologyDefinition BuildDefinition(

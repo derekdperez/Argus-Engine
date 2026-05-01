@@ -140,6 +140,17 @@
   - Why: restore `dotnet publish` for `NightmareV2.CommandCenter` without relying on older contract DTO names.
 - Validation: `dotnet publish src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release -o ./.tmp/publish-command-center /p:UseAppHost=false` succeeded.
 
+- Added Operations worker scale controls and ECS manual desired-count path:
+  - Worker grid shows scalable ECS services with `-1`, textbox `Set`, and `+1` controls.
+  - Manual desired counts are persisted in `worker_scale_targets`; Command Center can update ECS immediately via AWS ECS SDK when AWS region/credentials are available.
+  - `deploy/aws/autoscale-ecs-workers.sh` reads `/api/workers/scale-overrides` and honors manual counts before queue-driven scaling.
+  - Why: let operators add/remove spider, enum, port scan, high-value, and technology-id workers directly from Operations without losing settings to the autoscaler.
+- Validation:
+  - `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj` succeeded.
+  - `dotnet test NightmareV2.slnx` passed (18/18).
+  - `git diff --check` passed with Git CRLF warnings only.
+  - `bash -n deploy/aws/autoscale-ecs-workers.sh` could not run on this Windows host because `/bin/bash` is unavailable.
+
 - Promoted the Radzen operations workspace to the default operations surface:
   - `/` and `/ops` now route to the full operations workspace; the old basic page moved to `/ops-basic`, and `/ops-radzen` remains as an alternate direct link.
   - Updated operations summary cards, target rollup columns, fixed UTC-5 display formatting, compact Radzen density, and button-style nav links.

@@ -1,7 +1,6 @@
 using Radzen;
 using Amazon;
 using Amazon.ECS;
-using Amazon.ECS.Model;
 using Amazon.Runtime;
 using System.Net.Http;
 using System.Text.Json;
@@ -32,6 +31,9 @@ using NightmareV2.Infrastructure.Data;
 using NightmareV2.Infrastructure.Messaging;
 using AssetAdmissionStage = NightmareV2.Contracts.AssetAdmissionStage;
 using AssetKind = NightmareV2.Contracts.AssetKind;
+using DescribeServicesRequest = Amazon.ECS.Model.DescribeServicesRequest;
+using EcsService = Amazon.ECS.Model.Service;
+using UpdateServiceRequest = Amazon.ECS.Model.UpdateServiceRequest;
 using UrlFetchSnapshot = NightmareV2.Application.Assets.UrlFetchSnapshot;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -261,7 +263,7 @@ static async Task<string?> ResolveAwsRegionAsync(IConfiguration configuration, C
     }
 }
 
-static async Task<Dictionary<string, Service>> DescribeEcsServicesAsync(
+static async Task<Dictionary<string, EcsService>> DescribeEcsServicesAsync(
     IConfiguration configuration,
     IEnumerable<string> serviceNames,
     CancellationToken ct)
@@ -1383,7 +1385,7 @@ app.MapGet(
                     })
                 .ToList();
 
-            Dictionary<string, Service> services = [];
+            Dictionary<string, EcsService> services = [];
             var ecsConfigured = false;
             var status = "ECS region is not configured and could not be inferred from EC2 metadata.";
             var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);

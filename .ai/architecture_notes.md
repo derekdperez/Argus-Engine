@@ -32,6 +32,7 @@
   - `deploy/deploy.sh --ecs-workers` is the EC2 self-hosted mode: compose runs Postgres/Redis/RabbitMQ/Command Center/Gatekeeper locally, local worker replicas are scaled to zero, and ECS worker tasks connect back to the EC2 private IP.
   - ECS worker deploys intentionally replace running worker tasks by scaling existing worker services to zero before updating/scaling back up; ECS services themselves are preserved.
   - Command Center remains the metrics source for scaling via `/api/http-request-queue/metrics` and `/api/ops/rabbit-queues`; AWS orchestration stays outside application runtime code.
+  - Manual ECS worker desired-count overrides are persisted in `worker_scale_targets`, exposed through `/api/workers/scale` and `/api/workers/scale-overrides`, and honored by `deploy/aws/autoscale-ecs-workers.sh` before queue-driven scaling.
 - Cloud usage tracking:
   - `cloud_resource_usage_samples` stores sampled running counts for ECS worker services and the current EC2 command-center host.
   - `deploy/aws/record-cloud-usage-sample.sh` is the external recorder; `deploy.sh --ecs-workers` and `autoscale-ecs-workers.sh` call it so deploy/reconcile activity produces usage samples.

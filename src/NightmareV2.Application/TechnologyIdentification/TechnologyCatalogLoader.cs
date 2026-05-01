@@ -88,7 +88,7 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
             yield return technologyDir;
     }
 
-    private TechnologyDefinition BuildDefinition(
+    private static TechnologyDefinition BuildDefinition(
         string name,
         JsonElement element,
         ref int patternsCompiled,

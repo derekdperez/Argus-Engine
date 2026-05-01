@@ -155,7 +155,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
         return current;
     }
 
-    private IReadOnlyList<TechnologyScanResult> ApplyExcludes(IReadOnlyList<TechnologyScanResult> results)
+    private static List<TechnologyScanResult> ApplyExcludes(IReadOnlyList<TechnologyScanResult> results)
     {
         var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var result in results)
@@ -169,11 +169,11 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
         }
 
         if (excluded.Count == 0)
-            return results;
+            return results.ToList();
 
         return results
             .Where(result => !excluded.Contains(result.TechnologyName))
-            .ToArray();
+            .ToList();
     }
 
     private List<TechnologyScanResult> ApplyImplies(IReadOnlyList<TechnologyScanResult> results)

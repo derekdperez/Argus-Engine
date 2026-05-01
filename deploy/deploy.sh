@@ -168,7 +168,7 @@ if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
   all_changed=( ${NIGHTMARE_CHANGED_SERVICES:-} ${NIGHTMARE_IMAGE_REBUILD_SERVICES:-} )
   changed_workers=()
   for w in worker-spider worker-enum worker-portscan worker-highvalue worker-techid; do
-    if [[ "${NIGHTMARE_DEPLOY_FRESH:-0}" == "1" || "${NIGHTMARE_RUNTIME_CONFIG_CHANGED:-0}" == "1" ]]; then
+    if [[ "${NIGHTMARE_DEPLOY_FRESH:-0}" == "1" ]]; then
       changed_workers+=("$w")
     elif [[ " ${all_changed[*]:-} " == *" $w "* ]]; then
       changed_workers+=("$w")

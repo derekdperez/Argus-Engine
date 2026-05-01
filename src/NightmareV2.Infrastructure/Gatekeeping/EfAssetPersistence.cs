@@ -20,6 +20,21 @@ public sealed class EfAssetPersistence(
     ILogger<EfAssetPersistence> logger) : IAssetPersistence
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false };
+    private static readonly Action<ILogger, Guid, Exception?> LogHttpRequestQueueAlreadyExists =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Debug,
+            new EventId(1, nameof(LogHttpRequestQueueAlreadyExists)),
+            "HTTP request queue row already exists for asset {AssetId}.");
+    private static readonly Action<ILogger, Guid, int, Exception?> LogUrlAssetSoft404 =
+        LoggerMessage.Define<Guid, int>(
+            LogLevel.Debug,
+            new EventId(2, nameof(LogUrlAssetSoft404)),
+            "URL asset {AssetId} returned HTTP {StatusCode} but response body looks like a 404/not-found error; leaving unconfirmed.");
+    private static readonly Action<ILogger, int, Guid, Exception?> LogScannableContentPublishRetryFailed =
+        LoggerMessage.Define<int, Guid>(
+            LogLevel.Warning,
+            new EventId(3, nameof(LogScannableContentPublishRetryFailed)),
+            "ScannableContentAvailable publish retry {Attempt} failed for asset {AssetId}.");
     private static readonly TimeSpan[] PublishRetryDelays =
     [
         TimeSpan.FromMilliseconds(150),
@@ -72,7 +87,7 @@ public sealed class EfAssetPersistence(
             && pg.SqlState == PostgresErrorCodes.UniqueViolation
             && pg.ConstraintName?.Contains("http_request_queue", StringComparison.OrdinalIgnoreCase) == true)
         {
-            logger.LogDebug(ex, "HTTP request queue row already exists for asset {AssetId}.", assetId);
+            LogHttpRequestQueueAlreadyExists(logger, assetId, ex);
         }
     }
 
@@ -178,10 +193,7 @@ public sealed class EfAssetPersistence(
 
         if (isSoft404)
         {
-            logger.LogDebug(
-                "URL asset {AssetId} returned HTTP {StatusCode} but response body looks like a 404/not-found error; leaving unconfirmed.",
-                assetId,
-                snapshot.StatusCode);
+            LogUrlAssetSoft404(logger, assetId, snapshot.StatusCode, null);
         }
 
         var isConfirmedResponse = isHttpSuccess
@@ -255,11 +267,7 @@ public sealed class EfAssetPersistence(
             }
             catch (Exception ex) when (attempt <= PublishRetryDelays.Length)
             {
-                logger.LogWarning(
-                    ex,
-                    "ScannableContentAvailable publish retry {Attempt} failed for asset {AssetId}.",
-                    attempt,
-                    assetId);
+                LogScannableContentPublishRetryFailed(logger, attempt, assetId, ex);
                 await DelayAsync(attempt - 1).ConfigureAwait(false);
             }
         }
@@ -323,7 +331,7 @@ public sealed class EfAssetPersistence(
         return p.TrimEnd('/');
     }
 
-    private static IReadOnlySet<string> LoadHighValuePathSet()
+    private static HashSet<string> LoadHighValuePathSet()
     {
         var dir = Path.Combine(AppContext.BaseDirectory, "Resources", "Wordlists", "high_value");
         var list = HighValueWordlistCatalog.LoadFromDirectory(dir);

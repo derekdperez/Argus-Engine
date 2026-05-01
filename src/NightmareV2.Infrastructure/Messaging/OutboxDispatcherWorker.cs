@@ -15,11 +15,26 @@ public sealed class OutboxDispatcherWorker(
     ILogger<OutboxDispatcherWorker> logger) : BackgroundService
 {
     private const int MaxAttemptsBeforeDeadLetter = 10;
+    private static readonly Action<ILogger, string, Exception?> LogOutboxDispatcherStarting =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(1, nameof(LogOutboxDispatcherStarting)),
+            "Outbox dispatcher {WorkerId} starting.");
+    private static readonly Action<ILogger, Exception?> LogOutboxDispatcherLoopFault =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(2, nameof(LogOutboxDispatcherLoopFault)),
+            "Outbox dispatcher loop fault.");
+    private static readonly Action<ILogger, Guid, int, string, Exception?> LogOutboxMessageDeadLettered =
+        LoggerMessage.Define<Guid, int, string>(
+            LogLevel.Error,
+            new EventId(3, nameof(LogOutboxMessageDeadLettered)),
+            "Outbox message {OutboxId} moved to dead-letter after {Attempts} attempts. Error: {Error}");
     private readonly string _workerId = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("Outbox dispatcher {WorkerId} starting.", _workerId);
+        LogOutboxDispatcherStarting(logger, _workerId, null);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -40,7 +55,7 @@ public sealed class OutboxDispatcherWorker(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Outbox dispatcher loop fault.");
+                LogOutboxDispatcherLoopFault(logger, ex);
                 await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
             }
         }
@@ -171,11 +186,7 @@ public sealed class OutboxDispatcherWorker(
                 ct)
             .ConfigureAwait(false);
 
-        logger.LogError(
-            "Outbox message {OutboxId} moved to dead-letter after {Attempts} attempts. Error: {Error}",
-            message.Id,
-            message.AttemptCount,
-            error);
+        LogOutboxMessageDeadLettered(logger, message.Id, message.AttemptCount, error, null);
     }
 
     private static bool TryDeserialize(OutboxMessage message, out object? payload, out Type? messageType)

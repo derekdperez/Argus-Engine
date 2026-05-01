@@ -10,6 +10,12 @@ namespace NightmareV2.Infrastructure.Messaging;
 
 public sealed class EfInboxDeduplicator(NightmareDbContext db, ILogger<EfInboxDeduplicator> logger) : IInboxDeduplicator
 {
+    private static readonly Action<ILogger, Guid, string, Exception?> LogDuplicateInboxEvent =
+        LoggerMessage.Define<Guid, string>(
+            LogLevel.Debug,
+            new EventId(1, nameof(LogDuplicateInboxEvent)),
+            "Skipping duplicate inbox event {EventId} for consumer {Consumer}.");
+
     public async Task<bool> TryBeginProcessingAsync(
         IEventEnvelope envelope,
         string consumer,
@@ -35,10 +41,7 @@ public sealed class EfInboxDeduplicator(NightmareDbContext db, ILogger<EfInboxDe
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg
             && pg.SqlState == PostgresErrorCodes.UniqueViolation)
         {
-            logger.LogDebug(
-                "Skipping duplicate inbox event {EventId} for consumer {Consumer}.",
-                envelope.EventId,
-                consumer);
+            LogDuplicateInboxEvent(logger, envelope.EventId, consumer, null);
             return false;
         }
     }

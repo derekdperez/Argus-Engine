@@ -125,7 +125,7 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
 
         modelBuilder.Entity<AssetRelationship>(e =>
         {
-            e.ToTable("asset_relationships");
+            e.ToTable("asset_relationships", t => t.HasCheckConstraint("ck_asset_relationship_no_self", "parent_asset_id <> child_asset_id"));
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnName("id");
             e.Property(x => x.TargetId).HasColumnName("target_id");
@@ -139,7 +139,6 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
             e.Property(x => x.PropertiesJson).HasColumnName("properties_json").HasColumnType("jsonb");
             e.Property(x => x.FirstSeenAtUtc).HasColumnName("first_seen_at_utc");
             e.Property(x => x.LastSeenAtUtc).HasColumnName("last_seen_at_utc");
-            e.HasCheckConstraint("ck_asset_relationship_no_self", "parent_asset_id <> child_asset_id");
             e.HasIndex(x => new { x.TargetId, x.ParentAssetId, x.ChildAssetId, x.RelationshipType }).IsUnique();
             e.HasIndex(x => new { x.TargetId, x.ParentAssetId, x.RelationshipType });
             e.HasIndex(x => new { x.TargetId, x.ChildAssetId, x.RelationshipType });

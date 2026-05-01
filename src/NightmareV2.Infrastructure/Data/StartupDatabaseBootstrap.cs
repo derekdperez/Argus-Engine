@@ -7,6 +7,22 @@ namespace NightmareV2.Infrastructure.Data;
 
 public static class StartupDatabaseBootstrap
 {
+    private static readonly Action<ILogger, Exception?> LogStartupDatabaseBootstrapSkipped =
+        LoggerMessage.Define(
+            LogLevel.Information,
+            new EventId(1, nameof(LogStartupDatabaseBootstrapSkipped)),
+            "Startup database bootstrap skipped (Nightmare:SkipStartupDatabase or NIGHTMARE_SKIP_STARTUP_DATABASE=1).");
+    private static readonly Action<ILogger, Exception?> LogStartupDatabaseBootstrapMigrated =
+        LoggerMessage.Define(
+            LogLevel.Information,
+            new EventId(2, nameof(LogStartupDatabaseBootstrapMigrated)),
+            "Startup database bootstrap completed via Migrate mode.");
+    private static readonly Action<ILogger, Exception?> LogStartupDatabaseBootstrapEnsureCreated =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(3, nameof(LogStartupDatabaseBootstrapEnsureCreated)),
+            "Startup database bootstrap used EnsureCreated compatibility mode. Set Nightmare:Database:BootstrapMode=Migrate after adding migrations.");
+
     public static async Task InitializeAsync(
         IServiceProvider services,
         IConfiguration configuration,
@@ -16,8 +32,7 @@ public static class StartupDatabaseBootstrap
     {
         if (ShouldSkipStartupDatabase(configuration))
         {
-            logger.LogInformation(
-                "Startup database bootstrap skipped (Nightmare:SkipStartupDatabase or NIGHTMARE_SKIP_STARTUP_DATABASE=1).");
+            LogStartupDatabaseBootstrapSkipped(logger, null);
             return;
         }
 
@@ -36,7 +51,7 @@ public static class StartupDatabaseBootstrap
                 await fs.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            logger.LogInformation("Startup database bootstrap completed via Migrate mode.");
+            LogStartupDatabaseBootstrapMigrated(logger, null);
             return;
         }
 
@@ -50,8 +65,7 @@ public static class StartupDatabaseBootstrap
             await fs.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        logger.LogWarning(
-            "Startup database bootstrap used EnsureCreated compatibility mode. Set Nightmare:Database:BootstrapMode=Migrate after adding migrations.");
+        LogStartupDatabaseBootstrapEnsureCreated(logger, null);
     }
 
     private static bool ShouldSkipStartupDatabase(IConfiguration configuration)

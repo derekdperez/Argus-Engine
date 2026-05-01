@@ -41,7 +41,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
             .ToArray();
     }
 
-    private void TryMatchPattern(TechnologyPattern pattern, TechnologyScanInput input, List<TechnologyScanResult> results)
+    private static void TryMatchPattern(TechnologyPattern pattern, TechnologyScanInput input, List<TechnologyScanResult> results)
     {
         switch (pattern.Source)
         {
@@ -127,7 +127,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
         }
     }
 
-    private IReadOnlyList<TechnologyScanResult> ApplyRequires(IReadOnlyList<TechnologyScanResult> results)
+    private List<TechnologyScanResult> ApplyRequires(IReadOnlyList<TechnologyScanResult> results)
     {
         var current = results.ToList();
         var changed = true;
@@ -176,7 +176,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
             .ToArray();
     }
 
-    private IReadOnlyList<TechnologyScanResult> ApplyImplies(IReadOnlyList<TechnologyScanResult> results)
+    private List<TechnologyScanResult> ApplyImplies(IReadOnlyList<TechnologyScanResult> results)
     {
         var output = results.ToList();
         var present = output.Select(x => x.TechnologyName).ToHashSet(StringComparer.OrdinalIgnoreCase);

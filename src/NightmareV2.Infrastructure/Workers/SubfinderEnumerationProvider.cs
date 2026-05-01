@@ -10,6 +10,22 @@ public sealed class SubfinderEnumerationProvider(
     ToolProcessRunner processRunner,
     ILogger<SubfinderEnumerationProvider> logger) : ISubdomainEnumerationProvider
 {
+    private static readonly Action<ILogger, string, Exception?> LogSubfinderStarted =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(1, nameof(LogSubfinderStarted)),
+            "subfinder started. RootDomain={RootDomain}");
+    private static readonly Action<ILogger, string, int?, string, Exception?> LogSubfinderFailed =
+        LoggerMessage.Define<string, int?, string>(
+            LogLevel.Warning,
+            new EventId(2, nameof(LogSubfinderFailed)),
+            "subfinder failed for {RootDomain}. ExitCode={ExitCode}. Error={Error}");
+    private static readonly Action<ILogger, string, int, Exception?> LogSubfinderCompleted =
+        LoggerMessage.Define<string, int>(
+            LogLevel.Information,
+            new EventId(3, nameof(LogSubfinderCompleted)),
+            "subfinder completed. RootDomain={RootDomain}, RawResults={RawResults}");
+
     public string Name => "subfinder";
 
     public async Task<IReadOnlyCollection<SubdomainEnumerationResult>> EnumerateAsync(
@@ -23,7 +39,7 @@ public sealed class SubfinderEnumerationProvider(
         var workingDirectory = opt.WorkingDirectory;
         Directory.CreateDirectory(workingDirectory);
 
-        logger.LogInformation("subfinder started. RootDomain={RootDomain}", request.RootDomain);
+        LogSubfinderStarted(logger, request.RootDomain, null);
         var result = await processRunner.RunAsync(
                 opt.Subfinder.BinaryPath,
                 ["-d", request.RootDomain, "-silent", "-json"],
@@ -34,11 +50,7 @@ public sealed class SubfinderEnumerationProvider(
 
         if (!result.Success)
         {
-            logger.LogWarning(
-                "subfinder failed for {RootDomain}. ExitCode={ExitCode}. Error={Error}",
-                request.RootDomain,
-                result.ExitCode,
-                result.Stderr);
+            LogSubfinderFailed(logger, request.RootDomain, result.ExitCode, result.Stderr, null);
             return [];
         }
 
@@ -51,7 +63,7 @@ public sealed class SubfinderEnumerationProvider(
                     Method = "passive",
                 })
             .ToList();
-        logger.LogInformation("subfinder completed. RootDomain={RootDomain}, RawResults={RawResults}", request.RootDomain, parsed.Count);
+        LogSubfinderCompleted(logger, request.RootDomain, parsed.Count, null);
         return parsed;
     }
 }

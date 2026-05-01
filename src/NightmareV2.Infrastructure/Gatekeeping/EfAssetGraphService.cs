@@ -15,6 +15,17 @@ public sealed class EfAssetGraphService(
     IAssetRelationshipValidator relationshipValidator,
     ILogger<EfAssetGraphService> logger) : IAssetGraphService
 {
+    private static readonly Action<ILogger, Guid, Exception?> LogSkipAssetGraphTargetMissing =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Debug,
+            new EventId(1, nameof(LogSkipAssetGraphTargetMissing)),
+            "Skip asset graph upsert: target {TargetId} not in recon_targets.");
+    private static readonly Action<ILogger, Guid, Guid, Guid, string, Exception?> LogRejectedAssetRelationship =
+        LoggerMessage.Define<Guid, Guid, Guid, string>(
+            LogLevel.Debug,
+            new EventId(2, nameof(LogRejectedAssetRelationship)),
+            "Rejected asset relationship. TargetId={TargetId}, ParentAssetId={ParentAssetId}, ChildAssetId={ChildAssetId}, Reason={Reason}");
+
     public async Task<AssetUpsertResult> UpsertAssetAsync(
         AssetDiscovered message,
         CanonicalAsset canonical,
@@ -25,7 +36,7 @@ public sealed class EfAssetGraphService(
             .ConfigureAwait(false);
         if (!targetExists)
         {
-            logger.LogDebug("Skip asset graph upsert: target {TargetId} not in recon_targets.", message.TargetId);
+            LogSkipAssetGraphTargetMissing(logger, message.TargetId, null);
             return new AssetUpsertResult(Guid.Empty, Inserted: false, RelationshipInserted: false, RelationshipUpdated: false, "target-missing");
         }
 
@@ -111,12 +122,7 @@ public sealed class EfAssetGraphService(
 
             if (result.RejectedReason is not null)
             {
-                logger.LogDebug(
-                    "Rejected asset relationship. TargetId={TargetId}, ParentAssetId={ParentAssetId}, ChildAssetId={ChildAssetId}, Reason={Reason}",
-                    message.TargetId,
-                    parentAssetId,
-                    child.Id,
-                    result.RejectedReason);
+                LogRejectedAssetRelationship(logger, message.TargetId, parentAssetId, child.Id, result.RejectedReason, null);
             }
 
             relationshipInserted = result.Inserted;

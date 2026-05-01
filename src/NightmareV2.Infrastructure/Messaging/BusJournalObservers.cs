@@ -35,7 +35,11 @@ public sealed class BusJournalConsumeObserver(BusJournalBuffer buffer) : IConsum
         where T : class =>
         Task.CompletedTask;
 
-    public Task ConsumeFault(ConsumeContext context, Exception exception) => Task.CompletedTask;
+    public Task ConsumeFault(ConsumeContext context, Exception exception)
+    {
+        GC.KeepAlive(buffer);
+        return Task.CompletedTask;
+    }
 
     public Task PostConsume<T>(ConsumeContext<T> context)
         where T : class
@@ -48,13 +52,21 @@ public sealed class BusJournalConsumeObserver(BusJournalBuffer buffer) : IConsum
         return Task.CompletedTask;
     }
 
-    public Task PostConsume(ConsumeContext context) => Task.CompletedTask;
+    public Task PostConsume(ConsumeContext context)
+    {
+        GC.KeepAlive(buffer);
+        return Task.CompletedTask;
+    }
 
     public Task PreConsume<T>(ConsumeContext<T> context)
         where T : class =>
         Task.CompletedTask;
 
-    public Task PreConsume(ConsumeContext context) => Task.CompletedTask;
+    public Task PreConsume(ConsumeContext context)
+    {
+        GC.KeepAlive(buffer);
+        return Task.CompletedTask;
+    }
 
     private static string? ResolveConsumerClrName<T>(ConsumeContext<T> context)
         where T : class

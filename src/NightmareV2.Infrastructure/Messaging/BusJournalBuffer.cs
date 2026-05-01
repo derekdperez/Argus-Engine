@@ -16,6 +16,16 @@ public sealed class BusJournalBuffer(
     private const string JournalEnabledKey = "Nightmare:BusJournal:Enabled";
     private const string JournalBatchSizeKey = "Nightmare:BusJournal:BatchSize";
     private const string JournalFlushIntervalKey = "Nightmare:BusJournal:FlushIntervalMs";
+    private static readonly Action<ILogger, Exception?> LogBusJournalChannelFull =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(1, nameof(LogBusJournalChannelFull)),
+            "Bus journal channel is full; oldest entries are being dropped.");
+    private static readonly Action<ILogger, Exception?> LogBusJournalBatchFlushFailed =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(2, nameof(LogBusJournalBatchFlushFailed)),
+            "Bus journal batch flush failed.");
 
     private readonly Channel<BusJournalEntry> _channel = Channel.CreateBounded<BusJournalEntry>(
         new BoundedChannelOptions(5000)
@@ -45,7 +55,7 @@ public sealed class BusJournalBuffer(
         };
 
         if (!_channel.Writer.TryWrite(entry))
-            logger.LogWarning("Bus journal channel is full; oldest entries are being dropped.");
+            LogBusJournalChannelFull(logger, null);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -75,7 +85,7 @@ public sealed class BusJournalBuffer(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Bus journal batch flush failed.");
+                LogBusJournalBatchFlushFailed(logger, ex);
                 await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
             }
         }

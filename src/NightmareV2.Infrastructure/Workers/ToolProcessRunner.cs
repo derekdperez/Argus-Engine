@@ -6,6 +6,27 @@ namespace NightmareV2.Infrastructure.Workers;
 
 public sealed class ToolProcessRunner(ILogger<ToolProcessRunner> logger)
 {
+    private static readonly Action<ILogger, string, int, string, Exception?> LogToolProcessFailed =
+        LoggerMessage.Define<string, int, string>(
+            LogLevel.Warning,
+            new EventId(1, nameof(LogToolProcessFailed)),
+            "Tool process failed. Binary={BinaryPath}, ExitCode={ExitCode}, Error={Error}");
+    private static readonly Action<ILogger, string, double, Exception?> LogToolProcessTimedOut =
+        LoggerMessage.Define<string, double>(
+            LogLevel.Warning,
+            new EventId(2, nameof(LogToolProcessTimedOut)),
+            "Tool process timed out. Binary={BinaryPath}, TimeoutSeconds={TimeoutSeconds}");
+    private static readonly Action<ILogger, string, string, Exception?> LogToolProcessCouldNotStart =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Warning,
+            new EventId(3, nameof(LogToolProcessCouldNotStart)),
+            "Tool process could not start. Binary={BinaryPath}, Error={Error}");
+    private static readonly Action<ILogger, string, Exception?> LogUnexpectedToolProcessFailure =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(4, nameof(LogUnexpectedToolProcessFailure)),
+            "Unexpected tool process failure. Binary={BinaryPath}");
+
     public async Task<ToolProcessResult> RunAsync(
         string binaryPath,
         IReadOnlyList<string> arguments,
@@ -46,11 +67,7 @@ public sealed class ToolProcessRunner(ILogger<ToolProcessRunner> logger)
             var success = process.ExitCode == 0;
             if (!success)
             {
-                logger.LogWarning(
-                    "Tool process failed. Binary={BinaryPath}, ExitCode={ExitCode}, Error={Error}",
-                    binaryPath,
-                    process.ExitCode,
-                    Truncate(stderr, 2000));
+                LogToolProcessFailed(logger, binaryPath, process.ExitCode, Truncate(stderr, 2000), null);
             }
 
             return new ToolProcessResult
@@ -64,12 +81,12 @@ public sealed class ToolProcessRunner(ILogger<ToolProcessRunner> logger)
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             TryKill(process);
-            logger.LogWarning("Tool process timed out. Binary={BinaryPath}, TimeoutSeconds={TimeoutSeconds}", binaryPath, timeout.TotalSeconds);
+            LogToolProcessTimedOut(logger, binaryPath, timeout.TotalSeconds, null);
             return new ToolProcessResult { Success = false, Stderr = $"timed out after {timeout.TotalSeconds:F0}s" };
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
-            logger.LogWarning("Tool process could not start. Binary={BinaryPath}, Error={Error}", binaryPath, ex.Message);
+            LogToolProcessCouldNotStart(logger, binaryPath, ex.Message, null);
             return new ToolProcessResult
             {
                 Success = false,
@@ -79,7 +96,7 @@ public sealed class ToolProcessRunner(ILogger<ToolProcessRunner> logger)
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Unexpected tool process failure. Binary={BinaryPath}", binaryPath);
+            LogUnexpectedToolProcessFailure(logger, binaryPath, ex);
             return new ToolProcessResult
             {
                 Success = false,

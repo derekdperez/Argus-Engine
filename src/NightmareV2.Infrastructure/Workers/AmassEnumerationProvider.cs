@@ -12,6 +12,32 @@ public sealed class AmassEnumerationProvider(
     IHostResolver hostResolver,
     ILogger<AmassEnumerationProvider> logger) : ISubdomainEnumerationProvider
 {
+    private static readonly Action<ILogger, string, string, Exception?> LogAmassStarted =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Information,
+            new EventId(1, nameof(LogAmassStarted)),
+            "amass started. RootDomain={RootDomain}, WordlistPath={WordlistPath}");
+    private static readonly Action<ILogger, string, string, Exception?> LogAmassWordlistMissing =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Warning,
+            new EventId(2, nameof(LogAmassWordlistMissing)),
+            "Amass wordlist was not found. RootDomain={RootDomain}, WordlistPath={WordlistPath}");
+    private static readonly Action<ILogger, string, int?, string, Exception?> LogAmassFailed =
+        LoggerMessage.Define<string, int?, string>(
+            LogLevel.Warning,
+            new EventId(3, nameof(LogAmassFailed)),
+            "amass failed for {RootDomain}. ExitCode={ExitCode}. Error={Error}");
+    private static readonly Action<ILogger, string, string, Exception?> LogWildcardDnsDetected =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Warning,
+            new EventId(4, nameof(LogWildcardDnsDetected)),
+            "Wildcard DNS detected for {RootDomain}. Provider={Provider}");
+    private static readonly Action<ILogger, string, int, Exception?> LogAmassCompleted =
+        LoggerMessage.Define<string, int>(
+            LogLevel.Information,
+            new EventId(5, nameof(LogAmassCompleted)),
+            "amass completed. RootDomain={RootDomain}, RawResults={RawResults}");
+
     public string Name => "amass";
 
     public async Task<IReadOnlyCollection<SubdomainEnumerationResult>> EnumerateAsync(
@@ -26,13 +52,10 @@ public sealed class AmassEnumerationProvider(
         Directory.CreateDirectory(workingDirectory);
 
         var wordlistPath = ResolveWordlistPath(opt.Amass.WordlistPath);
-        logger.LogInformation("amass started. RootDomain={RootDomain}, WordlistPath={WordlistPath}", request.RootDomain, wordlistPath);
+        LogAmassStarted(logger, request.RootDomain, wordlistPath, null);
         if (!File.Exists(wordlistPath))
         {
-            logger.LogWarning(
-                "Amass wordlist was not found. RootDomain={RootDomain}, WordlistPath={WordlistPath}",
-                request.RootDomain,
-                wordlistPath);
+            LogAmassWordlistMissing(logger, request.RootDomain, wordlistPath, null);
             return [];
         }
 
@@ -68,21 +91,14 @@ public sealed class AmassEnumerationProvider(
 
         if (!result.Success)
         {
-            logger.LogWarning(
-                "amass failed for {RootDomain}. ExitCode={ExitCode}. Error={Error}",
-                request.RootDomain,
-                result.ExitCode,
-                result.Stderr);
+            LogAmassFailed(logger, request.RootDomain, result.ExitCode, result.Stderr, null);
             return [];
         }
 
         var wildcardDetected = await DetectWildcardDnsAsync(request.RootDomain, cancellationToken).ConfigureAwait(false);
         if (wildcardDetected)
         {
-            logger.LogWarning(
-                "Wildcard DNS detected for {RootDomain}. Provider={Provider}",
-                request.RootDomain,
-                Name);
+            LogWildcardDnsDetected(logger, request.RootDomain, Name, null);
         }
 
         var parsed = SubdomainEnumerationParsers.ParseAmassOutputFile(outputFile)
@@ -94,7 +110,7 @@ public sealed class AmassEnumerationProvider(
                     Method = "active-bruteforce",
                 })
             .ToList();
-        logger.LogInformation("amass completed. RootDomain={RootDomain}, RawResults={RawResults}", request.RootDomain, parsed.Count);
+        LogAmassCompleted(logger, request.RootDomain, parsed.Count, null);
         return parsed;
     }
 

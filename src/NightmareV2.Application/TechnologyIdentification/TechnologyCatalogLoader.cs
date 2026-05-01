@@ -11,6 +11,11 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
     {
         WriteIndented = false,
     };
+    private static readonly Action<ILogger, int, int, int, int, Exception?> LogTechnologyCatalogLoaded =
+        LoggerMessage.Define<int, int, int, int>(
+            LogLevel.Information,
+            new EventId(1, nameof(LogTechnologyCatalogLoaded)),
+            "Technology catalog loaded: files={FilesLoaded}, technologies={TechnologyCount}, patternsCompiled={PatternsCompiled}, patternsSkipped={PatternsSkipped}");
 
     private readonly ILogger<TechnologyCatalogLoader> _logger = logger ?? NullLogger<TechnologyCatalogLoader>.Instance;
 
@@ -66,12 +71,7 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
             }
         }
 
-        _logger.LogInformation(
-            "Technology catalog loaded: files={FilesLoaded}, technologies={TechnologyCount}, patternsCompiled={PatternsCompiled}, patternsSkipped={PatternsSkipped}",
-            filesLoaded,
-            technologies.Count,
-            patternsCompiled,
-            patternsSkipped);
+        LogTechnologyCatalogLoaded(_logger, filesLoaded, technologies.Count, patternsCompiled, patternsSkipped, null);
 
         return new TechnologyCatalog(technologies, categories, filesLoaded, patternsCompiled, patternsSkipped);
     }
@@ -133,7 +133,7 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
             metadata);
     }
 
-    private void AddNamedPatternMap(
+    private static void AddNamedPatternMap(
         string technologyName,
         JsonElement element,
         string propertyName,
@@ -158,7 +158,7 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
         }
     }
 
-    private void AddPatternValues(
+    private static void AddPatternValues(
         string technologyName,
         JsonElement element,
         string propertyName,
@@ -174,7 +174,7 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
         AddPatternElement(technologyName, source, key, property, patterns, ref patternsCompiled, ref patternsSkipped);
     }
 
-    private void AddPatternElement(
+    private static void AddPatternElement(
         string technologyName,
         string source,
         string? key,
@@ -203,7 +203,7 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
         }
     }
 
-    private void AddPattern(
+    private static void AddPattern(
         string technologyName,
         string source,
         string? key,
@@ -235,7 +235,7 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
         }
     }
 
-    private static IReadOnlyDictionary<int, string> LoadCategories(DirectoryInfo root)
+    private static Dictionary<int, string> LoadCategories(DirectoryInfo root)
     {
         var categoryFile = new FileInfo(Path.Combine(root.FullName, "categories.json"));
         if (!categoryFile.Exists)
@@ -266,7 +266,7 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
             ? property.GetString()
             : null;
 
-    private static IReadOnlyList<int> ReadIntList(JsonElement element, string propertyName)
+    private static List<int> ReadIntList(JsonElement element, string propertyName)
     {
         if (!element.TryGetProperty(propertyName, out var property))
             return [];
@@ -287,7 +287,7 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
         return values;
     }
 
-    private static IReadOnlyList<string> ReadStringList(JsonElement element, string propertyName)
+    private static string[] ReadStringList(JsonElement element, string propertyName)
     {
         if (!element.TryGetProperty(propertyName, out var property))
             return [];
@@ -299,7 +299,7 @@ public sealed class TechnologyCatalogLoader(ILogger<TechnologyCatalogLoader>? lo
             .ToArray();
     }
 
-    private static IReadOnlyList<RelatedTechnologyRule> ReadRelatedRules(JsonElement element, string propertyName)
+    private static RelatedTechnologyRule[] ReadRelatedRules(JsonElement element, string propertyName)
     {
         if (!element.TryGetProperty(propertyName, out var property))
             return [];

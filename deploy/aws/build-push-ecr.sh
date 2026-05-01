@@ -36,10 +36,28 @@ build_and_push() {
   docker push "$image"
 }
 
-build_and_push "command-center" "deploy/Dockerfile.web" "NightmareV2.CommandCenter" "NightmareV2.CommandCenter.dll"
-build_and_push "gatekeeper" "deploy/Dockerfile.worker" "NightmareV2.Gatekeeper" "NightmareV2.Gatekeeper.dll"
-build_and_push "worker-spider" "deploy/Dockerfile.worker" "NightmareV2.Workers.Spider" "NightmareV2.Workers.Spider.dll"
-build_and_push "worker-enum" "deploy/Dockerfile.worker-enum" "NightmareV2.Workers.Enum" "NightmareV2.Workers.Enum.dll"
-build_and_push "worker-portscan" "deploy/Dockerfile.worker" "NightmareV2.Workers.PortScan" "NightmareV2.Workers.PortScan.dll"
-build_and_push "worker-highvalue" "deploy/Dockerfile.worker" "NightmareV2.Workers.HighValue" "NightmareV2.Workers.HighValue.dll"
-build_and_push "worker-techid" "deploy/Dockerfile.worker" "NightmareV2.Workers.TechnologyIdentification" "NightmareV2.Workers.TechnologyIdentification.dll"
+services=("$@")
+if [[ ${#services[@]} -eq 0 ]]; then
+  services=(
+    "command-center"
+    "gatekeeper"
+    "worker-spider"
+    "worker-enum"
+    "worker-portscan"
+    "worker-highvalue"
+    "worker-techid"
+  )
+fi
+
+for service in "${services[@]}"; do
+  case "$service" in
+    command-center) build_and_push "command-center" "deploy/Dockerfile.web" "NightmareV2.CommandCenter" "NightmareV2.CommandCenter.dll" ;;
+    gatekeeper) build_and_push "gatekeeper" "deploy/Dockerfile.worker" "NightmareV2.Gatekeeper" "NightmareV2.Gatekeeper.dll" ;;
+    worker-spider) build_and_push "worker-spider" "deploy/Dockerfile.worker" "NightmareV2.Workers.Spider" "NightmareV2.Workers.Spider.dll" ;;
+    worker-enum) build_and_push "worker-enum" "deploy/Dockerfile.worker-enum" "NightmareV2.Workers.Enum" "NightmareV2.Workers.Enum.dll" ;;
+    worker-portscan) build_and_push "worker-portscan" "deploy/Dockerfile.worker" "NightmareV2.Workers.PortScan" "NightmareV2.Workers.PortScan.dll" ;;
+    worker-highvalue) build_and_push "worker-highvalue" "deploy/Dockerfile.worker" "NightmareV2.Workers.HighValue" "NightmareV2.Workers.HighValue.dll" ;;
+    worker-techid) build_and_push "worker-techid" "deploy/Dockerfile.worker" "NightmareV2.Workers.TechnologyIdentification" "NightmareV2.Workers.TechnologyIdentification.dll" ;;
+    *) echo "Unknown service: $service" >&2; exit 1 ;;
+  esac
+done

@@ -163,22 +163,32 @@ if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
   . "$DEPLOY_DIR/aws/.env.generated"
   set +a
 
-  echo "Ensuring ECR repositories..."
-  "$DEPLOY_DIR/aws/create-ecr-repos.sh"
+  # shellcheck disable=SC2206
+  all_changed=( ${NIGHTMARE_CHANGED_SERVICES:-} ${NIGHTMARE_IMAGE_REBUILD_SERVICES:-} )
+  changed_workers=()
+  for w in worker-spider worker-enum worker-portscan worker-highvalue worker-techid; do
+    if [[ "${NIGHTMARE_DEPLOY_FRESH:-0}" == "1" || "${NIGHTMARE_RUNTIME_CONFIG_CHANGED:-0}" == "1" ]]; then
+      changed_workers+=("$w")
+    elif [[ " ${all_changed[*]:-} " == *" $w "* ]]; then
+      changed_workers+=("$w")
+    fi
+  done
 
-  echo "Building and pushing ECR images..."
-  "$DEPLOY_DIR/aws/build-push-ecr.sh"
+  if [[ ${#changed_workers[@]} -eq 0 ]]; then
+    echo "No worker services changed. Skipping ECR build and ECS task replacement."
+  else
+    echo "Ensuring ECR repositories..."
+    "$DEPLOY_DIR/aws/create-ecr-repos.sh"
 
-  if [[ "$NIGHTMARE_ECS_REPLACE_WORKERS" == "1" ]]; then
-    echo "Replacing existing ECS worker tasks..."
-    "$DEPLOY_DIR/aws/replace-ecs-worker-tasks.sh" \
-      worker-spider \
-      worker-enum \
-      worker-portscan \
-      worker-highvalue \
-      worker-techid
-    "$DEPLOY_DIR/aws/record-cloud-usage-sample.sh" || true
-    export UPDATE_DESIRED_COUNTS=true
+    echo "Building and pushing ECR images for: ${changed_workers[*]}"
+    "$DEPLOY_DIR/aws/build-push-ecr.sh" "${changed_workers[@]}"
+
+    if [[ "$NIGHTMARE_ECS_REPLACE_WORKERS" == "1" ]]; then
+      echo "Replacing existing ECS worker tasks for: ${changed_workers[*]}"
+      "$DEPLOY_DIR/aws/replace-ecs-worker-tasks.sh" "${changed_workers[@]}"
+      "$DEPLOY_DIR/aws/record-cloud-usage-sample.sh" || true
+      export UPDATE_DESIRED_COUNTS=true
+    fi
   fi
 
   echo "Creating/updating ECS worker services..."

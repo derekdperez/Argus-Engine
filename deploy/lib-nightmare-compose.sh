@@ -623,6 +623,19 @@ nightmare_export_build_stamp() {
   echo "BUILD_SOURCE_STAMP=${BUILD_SOURCE_STAMP}"
 }
 
+nightmare_export_component_versions() {
+  local root="${1:-}"
+  [[ -n "$root" ]] || return 1
+  local service version var_name project_path
+  while IFS= read -r service; do
+    project_path="$(nightmare_service_csproj "$service")"
+    version="$(grep -oPm1 '(?<=<Version>)[^<]+' "$root/$project_path" 2>/dev/null || echo '2.0.0')"
+    var_name="VERSION_${service//-/_}"
+    var_name="${var_name^^}"
+    export "$var_name=$version"
+  done < <(nightmare_all_dotnet_services)
+}
+
 nightmare_last_deploy_stamp_path() {
   : "${ROOT:?ROOT must point to DotNetSolution root}"
   echo "$ROOT/deploy/.last-deploy-stamp"

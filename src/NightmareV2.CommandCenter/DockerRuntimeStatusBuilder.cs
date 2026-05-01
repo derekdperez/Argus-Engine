@@ -146,7 +146,7 @@ internal static class DockerRuntimeStatusBuilder
             row.ID,
             row.Names ?? string.Empty,
             row.Image ?? string.Empty,
-            ExtractVersion(row.Image),
+            ExtractVersion(row.Image, row.Labels),
             TryParseDockerDate(image.Success ? image.StdOut.Trim() : ""),
             row.Status ?? string.Empty,
             health,
@@ -267,8 +267,23 @@ internal static class DockerRuntimeStatusBuilder
         !string.IsNullOrWhiteSpace(containerName)
         && containerName.Contains("filestore-db-init", StringComparison.OrdinalIgnoreCase);
 
-    private static string ExtractVersion(string? image)
+    private static string ExtractVersion(string? image, string? labels)
     {
+        if (!string.IsNullOrWhiteSpace(labels))
+        {
+            var parts = labels.Split(',');
+            foreach (var part in parts)
+            {
+                var kv = part.Split('=', 2);
+                if (kv.Length == 2 && kv[0].Trim().Equals("org.opencontainers.image.version", StringComparison.OrdinalIgnoreCase))
+                {
+                    var version = kv[1].Trim();
+                    if (!string.IsNullOrWhiteSpace(version))
+                        return version;
+                }
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(image))
             return "-";
 
@@ -385,7 +400,8 @@ internal static class DockerRuntimeStatusBuilder
         string ID,
         string Image,
         string Status,
-        string Names);
+        string Names,
+        string? Labels);
 
     private sealed record ComponentDefinition(string Key, string DisplayName, string Match);
 

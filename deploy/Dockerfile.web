@@ -53,6 +53,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
 # Default process is the web app. To run the dotnet host inside this image (e.g. --info), override entrypoint:
 #   docker run --rm --entrypoint dotnet <this-image> --info
 ARG BUILD_SOURCE_STAMP=unknown
+ARG COMPONENT_VERSION=2.0.0
 LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
+LABEL org.opencontainers.image.version="${COMPONENT_VERSION}"
 ENV NIGHTMARE_BUILD_STAMP=${BUILD_SOURCE_STAMP}
 ENTRYPOINT ["dotnet", "NightmareV2.CommandCenter.dll"]

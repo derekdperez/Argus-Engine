@@ -133,6 +133,7 @@ fi
 
 nightmare_maybe_git_pull "$ROOT"
 nightmare_export_build_stamp "$ROOT"
+nightmare_export_component_versions "$ROOT"
 if [[ "$NIGHTMARE_ECS_WORKERS" == "1" && "${NIGHTMARE_ECS_USE_MUTABLE_TAG:-0}" != "1" ]]; then
   ecs_source_stamp="$BUILD_SOURCE_STAMP"
   if [[ -d "$ROOT/.git" ]] && ! git -C "$ROOT" diff --quiet HEAD -- 2>/dev/null; then

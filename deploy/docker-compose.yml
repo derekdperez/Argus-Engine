@@ -110,6 +110,7 @@ services:
       dockerfile: deploy/Dockerfile.web
       args:
         <<: *dotnet-build-args
+        COMPONENT_VERSION: ${VERSION_COMMAND_CENTER:-2.0.0}
     environment:
       <<: *common-env
       ASPNETCORE_URLS: http://+:8080
@@ -150,6 +151,7 @@ services:
         <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Gatekeeper
         APP_DLL: NightmareV2.Gatekeeper.dll
+        COMPONENT_VERSION: ${VERSION_GATEKEEPER:-2.0.0}
     environment:
       <<: *common-env
       Nightmare__SkipStartupDatabase: "true"
@@ -170,6 +172,7 @@ services:
         <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Workers.Spider
         APP_DLL: NightmareV2.Workers.Spider.dll
+        COMPONENT_VERSION: ${VERSION_WORKER_SPIDER:-2.0.0}
     environment:
       <<: *common-env
       Nightmare__SkipStartupDatabase: "true"
@@ -194,6 +197,7 @@ services:
         <<: *enum-build-args
         PROJECT_DIR: NightmareV2.Workers.Enum
         APP_DLL: NightmareV2.Workers.Enum.dll
+        COMPONENT_VERSION: ${VERSION_WORKER_ENUM:-2.0.0}
     environment:
       <<: *common-env
       Nightmare__SkipStartupDatabase: "true"
@@ -230,6 +234,7 @@ services:
         <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Workers.PortScan
         APP_DLL: NightmareV2.Workers.PortScan.dll
+        COMPONENT_VERSION: ${VERSION_WORKER_PORTSCAN:-2.0.0}
     environment:
       <<: *common-env
       Nightmare__SkipStartupDatabase: "true"
@@ -250,6 +255,7 @@ services:
         <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Workers.HighValue
         APP_DLL: NightmareV2.Workers.HighValue.dll
+        COMPONENT_VERSION: ${VERSION_WORKER_HIGHVALUE:-2.0.0}
     environment:
       <<: *common-env
       Nightmare__SkipStartupDatabase: "true"
@@ -271,6 +277,7 @@ services:
         <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Workers.TechnologyIdentification
         APP_DLL: NightmareV2.Workers.TechnologyIdentification.dll
+        COMPONENT_VERSION: ${VERSION_WORKER_TECHID:-2.0.0}
     environment:
       <<: *common-env
       Nightmare__SkipStartupDatabase: "true"

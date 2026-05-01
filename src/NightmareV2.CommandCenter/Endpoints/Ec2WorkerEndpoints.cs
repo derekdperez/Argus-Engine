@@ -3,6 +3,8 @@ using System.Text.Json;
 using Amazon;
 using Amazon.EC2;
 using Amazon.EC2.Model;
+using EC2ResourceType = Amazon.EC2.ResourceType;
+using EC2Tag = Amazon.EC2.Model.Tag;
 using Amazon.Runtime;
 using Amazon.SimpleSystemsManagement;
 using Amazon.SimpleSystemsManagement.Model;
@@ -209,12 +211,12 @@ public static class Ec2WorkerEndpoints
             [
                 new TagSpecification
                 {
-                    ResourceType = Amazon.EC2.ResourceType.Instance,
+                    ResourceType = EC2ResourceType.Instance,
                     Tags =
                     [
-                        new Amazon.EC2.Model.Tag("Name", machine.Name),
-                        new Amazon.EC2.Model.Tag("Purpose", "nightmare-ec2-worker"),
-                        new Amazon.EC2.Model.Tag("NightmareEc2WorkerMachineId", machine.Id.ToString()),
+                        new EC2Tag("Name", machine.Name),
+                        new EC2Tag("Purpose", "nightmare-ec2-worker"),
+                        new EC2Tag("NightmareEc2WorkerMachineId", machine.Id.ToString()),
                     ],
                 },
             ],

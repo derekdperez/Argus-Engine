@@ -1369,7 +1369,7 @@ app.MapGet(
                     {
                         Last = g.Max(x => x.OccurredAtUtc),
                         Last1h = g.LongCount(x => x.OccurredAtUtc >= since1),
-                        Last24h = g.Count(),
+                        Last24h = (long)g.Count(),
                     },
                     StringComparer.Ordinal);
 
@@ -1384,7 +1384,7 @@ app.MapGet(
                 {
                     Last = spiderRows.Max(),
                     Last1h = spiderRows.LongCount(t => t >= since1),
-                    Last24h = spiderRows.LongCount(),
+                    Last24h = (long)spiderRows.Count,
                 };
             }
 

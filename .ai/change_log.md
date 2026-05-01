@@ -2,6 +2,10 @@
 
 ## 2026-05-01
 
+- Cleaned Command Center publish warnings:
+  - Resolved the remaining technology scanner and worker activity count type warnings so Command Center release build/publish completes with zero warnings.
+  - Validation: `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` and `dotnet publish src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release -o .tmp/publish-command-center-warnings /p:UseAppHost=false` both succeeded with `0 Warning(s)`.
+
 - Fixed Command Center ECS worker scale-up when services are missing:
   - Manual worker scaling now creates the ECS service from the latest active worker task definition when the service does not already exist and the requested desired count is greater than zero.
   - Creation uses the existing deployment environment conventions: `ECS_TASK_FAMILY_WORKER_*`, `ECS_SUBNETS`, `ECS_SECURITY_GROUPS`, `ECS_ASSIGN_PUBLIC_IP`, `ECS_LAUNCH_TYPE`, and `ECS_ENABLE_EXECUTE_COMMAND`.

@@ -155,7 +155,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
         return current;
     }
 
-    private static List<TechnologyScanResult> ApplyExcludes(IReadOnlyList<TechnologyScanResult> results)
+    private List<TechnologyScanResult> ApplyExcludes(IReadOnlyList<TechnologyScanResult> results)
     {
         var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var result in results)

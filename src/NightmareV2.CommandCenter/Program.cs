@@ -21,12 +21,12 @@ using NightmareV2.CommandCenter.Endpoints;
 using NightmareV2.CommandCenter.Hubs;
 using NightmareV2.CommandCenter.Models;
 using NightmareV2.CommandCenter.Realtime;
-using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure;
 using NightmareV2.Infrastructure.Data;
 using NightmareV2.Infrastructure.Messaging;
+using AssetAdmissionStage = NightmareV2.Contracts.AssetAdmissionStage;
 using AssetKind = NightmareV2.Contracts.AssetKind;
 using UrlFetchSnapshot = NightmareV2.Application.Assets.UrlFetchSnapshot;
 

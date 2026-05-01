@@ -99,7 +99,8 @@ public static class HttpRequestQueueEndpoints
                             r.ResponseContentType,
                             r.ResponseContentLength,
                             r.FinalUrl,
-                            r.RedirectCount))
+                            r.RedirectCount,
+                            r.RedirectChainJson))
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
 

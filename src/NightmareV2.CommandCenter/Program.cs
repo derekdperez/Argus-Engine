@@ -932,7 +932,8 @@ app.MapGet(
                     r.ResponseContentType,
                     r.ResponseContentLength,
                     r.FinalUrl,
-                    r.RedirectCount))
+                    r.RedirectCount,
+                    r.RedirectChainJson))
                 .ToListAsync(ct)
                 .ConfigureAwait(false);
 
@@ -1082,7 +1083,8 @@ app.MapGet(
                     a.LifecycleStatus,
                     a.TypeDetailsJson,
                     a.FinalUrl,
-                    a.RedirectCount))
+                    a.RedirectCount,
+                    a.RedirectChainJson))
                 .ToListAsync(ct)
                 .ConfigureAwait(false);
             return Results.Ok(rows);
@@ -1166,6 +1168,10 @@ app.MapGet(
                     t.RootDomain,
                     AssetLifecycleStatus = a == null ? null : a.LifecycleStatus,
                     TypeDetailsJson = a == null ? null : a.TypeDetailsJson,
+                    AssetRawValue = a == null ? null : a.RawValue,
+                    AssetFinalUrl = a == null ? null : a.FinalUrl,
+                    AssetRedirectCount = a == null ? 0 : a.RedirectCount,
+                    AssetRedirectChainJson = a == null ? null : a.RedirectChainJson,
                 };
 
             if (criticalOnly == true)
@@ -1186,7 +1192,11 @@ app.MapGet(
                     x.f.PatternName,
                     x.f.Category ?? "",
                     x.f.MatchedText ?? "",
-                    x.f.SourceUrl,
+                    string.IsNullOrWhiteSpace(x.AssetFinalUrl) ? x.f.SourceUrl : x.AssetFinalUrl,
+                    x.AssetRawValue,
+                    x.AssetFinalUrl,
+                    x.AssetRedirectCount,
+                    x.AssetRedirectChainJson,
                     x.f.WorkerName,
                     x.f.ImportanceScore,
                     x.f.DiscoveredAtUtc,

@@ -263,6 +263,7 @@ public sealed class HttpRequestQueueWorker(
             ResponseContentLength = ReadNullableInt64(reader, "response_content_length"),
             FinalUrl = ReadNullableString(reader, "final_url"),
             RedirectCount = ReadNullableInt32(reader, "redirect_count") ?? 0,
+            RedirectChainJson = ReadNullableString(reader, "redirect_chain_json"),
         };
 
     private static string? ReadNullableString(DbDataReader reader, string name)
@@ -366,6 +367,7 @@ public sealed class HttpRequestQueueWorker(
         var method = new HttpMethod(item.Method);
         var currentUrl = item.RequestUrl;
         var redirectCount = 0;
+        List<UrlRedirectHop> redirectChain = [];
         Dictionary<string, string> reqHeaders = new(StringComparer.OrdinalIgnoreCase);
 
         for (;;)
@@ -383,6 +385,11 @@ public sealed class HttpRequestQueueWorker(
                 && TryResolveRedirectUrl(currentUrl, location, out var nextUrl))
             {
                 redirectCount++;
+                redirectChain.Add(new UrlRedirectHop(
+                    currentUrl,
+                    nextUrl,
+                    (int)response.StatusCode,
+                    location.ToString()));
                 currentUrl = nextUrl;
                 continue;
             }
@@ -409,7 +416,8 @@ public sealed class HttpRequestQueueWorker(
                 contentType,
                 DateTimeOffset.UtcNow,
                 currentUrl,
-                redirectCount);
+                redirectCount,
+                redirectChain);
         }
     }
 
@@ -469,6 +477,7 @@ public sealed class HttpRequestQueueWorker(
         item.ResponseContentLength = snapshot.ResponseSizeBytes;
         item.FinalUrl = SanitizeForPostgresText(snapshot.FinalUrl);
         item.RedirectCount = Math.Max(0, snapshot.RedirectCount);
+        item.RedirectChainJson = SerializeRedirectChain(snapshot);
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
@@ -503,9 +512,15 @@ public sealed class HttpRequestQueueWorker(
         row.ResponseContentLength = snapshot.ResponseSizeBytes;
         row.FinalUrl = SanitizeForPostgresText(snapshot.FinalUrl);
         row.RedirectCount = Math.Max(0, snapshot.RedirectCount);
+        row.RedirectChainJson = SerializeRedirectChain(snapshot);
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
+
+    private static string? SerializeRedirectChain(UrlFetchSnapshot snapshot) =>
+        snapshot.RedirectChain is { Count: > 0 }
+            ? JsonSerializer.Serialize(snapshot.RedirectChain, JsonOptions)
+            : null;
 
     private async Task RetryOrFailAsync(HttpRequestQueueItem item, string error, CancellationToken ct)
     {

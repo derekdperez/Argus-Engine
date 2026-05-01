@@ -203,6 +203,7 @@ public sealed class EfAssetPersistence(
 
         var now = DateTimeOffset.UtcNow;
         var redirectCount = Math.Max(0, snapshot.RedirectCount);
+        var redirectChainJson = SerializeRedirectChain(snapshot);
         if (isConfirmedResponse)
         {
             await db.Assets
@@ -213,6 +214,7 @@ public sealed class EfAssetPersistence(
                         .SetProperty(a => a.TypeDetailsJson, json)
                         .SetProperty(a => a.FinalUrl, finalUrl)
                         .SetProperty(a => a.RedirectCount, redirectCount)
+                        .SetProperty(a => a.RedirectChainJson, redirectChainJson)
                         .SetProperty(a => a.LastSeenAtUtc, now),
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -227,6 +229,7 @@ public sealed class EfAssetPersistence(
                         .SetProperty(a => a.TypeDetailsJson, json)
                         .SetProperty(a => a.FinalUrl, finalUrl)
                         .SetProperty(a => a.RedirectCount, redirectCount)
+                        .SetProperty(a => a.RedirectChainJson, redirectChainJson)
                         .SetProperty(a => a.LastSeenAtUtc, now),
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -274,6 +277,11 @@ public sealed class EfAssetPersistence(
 
         throw new InvalidOperationException($"Failed to publish ScannableContentAvailable for asset {assetId} after retries.");
     }
+
+    private static string? SerializeRedirectChain(UrlFetchSnapshot snapshot) =>
+        snapshot.RedirectChain is { Count: > 0 }
+            ? JsonSerializer.Serialize(snapshot.RedirectChain, JsonOpts)
+            : null;
 
     private static string? ResolveFinalUrl(string? finalUrl, string? fallbackRaw)
     {

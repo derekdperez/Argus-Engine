@@ -64,7 +64,9 @@ public sealed class HighValueRegexConsumer(
         if (snap is null)
             return;
 
-        foreach (var hit in matcher.ScanUrlHttpExchange(m.SourceUrl, snap))
+        var effectiveSourceUrl = string.IsNullOrWhiteSpace(snap.FinalUrl) ? m.SourceUrl : snap.FinalUrl;
+
+        foreach (var hit in matcher.ScanUrlHttpExchange(effectiveSourceUrl, snap))
         {
             var severity = hit.ImportanceScore >= 10 ? "Critical" : hit.ImportanceScore >= 8 ? "High" : "Medium";
             var id = await writer.InsertFindingAsync(
@@ -76,7 +78,7 @@ public sealed class HighValueRegexConsumer(
                         hit.PatternName,
                         hit.Scope,
                         hit.MatchedSnippet,
-                        m.SourceUrl,
+                        effectiveSourceUrl,
                         WorkerKeys.HighValueRegex,
                         hit.ImportanceScore),
                     ct)
@@ -99,7 +101,7 @@ public sealed class HighValueRegexConsumer(
                         "critical_path_http_2xx",
                         "critical",
                         $"HTTP {snap.StatusCode}",
-                        m.SourceUrl,
+                        effectiveSourceUrl,
                         WorkerKeys.HighValueRegex,
                         10),
                     ct)

@@ -34,4 +34,5 @@ public sealed class HttpRequestQueueItem
     public long? ResponseContentLength { get; set; }
     public string? FinalUrl { get; set; }
     public int RedirectCount { get; set; }
+    public string? RedirectChainJson { get; set; }
 }

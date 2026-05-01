@@ -234,7 +234,8 @@ public sealed record HttpRequestQueueRowDto(
     string? ResponseContentType,
     long? ResponseContentLength,
     string? FinalUrl,
-    int RedirectCount);
+    int RedirectCount,
+    string? RedirectChainJson);
 
 public sealed record AssetGridRowDto(
     Guid Id,
@@ -253,7 +254,8 @@ public sealed record AssetGridRowDto(
     string LifecycleStatus,
     string? TypeDetailsJson,
     string? FinalUrl,
-    int RedirectCount);
+    int RedirectCount,
+    string? RedirectChainJson);
 
 public sealed record HighValueFindingRowDto(
     Guid Id,
@@ -265,6 +267,10 @@ public sealed record HighValueFindingRowDto(
     string Category,
     string MatchedText,
     string SourceUrl,
+    string? OriginalSourceUrl,
+    string? FinalSourceUrl,
+    int RedirectCount,
+    string? RedirectChainJson,
     string WorkerName,
     int? ImportanceScore,
     DateTimeOffset DiscoveredAtUtc,

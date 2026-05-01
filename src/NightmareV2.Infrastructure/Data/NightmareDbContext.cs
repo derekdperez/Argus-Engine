@@ -51,6 +51,7 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
             e.Property(x => x.TypeDetailsJson);
             e.Property(x => x.FinalUrl).HasColumnName("final_url").HasMaxLength(4096);
             e.Property(x => x.RedirectCount).HasColumnName("redirect_count");
+            e.Property(x => x.RedirectChainJson).HasColumnName("redirect_chain_json").HasColumnType("jsonb");
             e.HasIndex(x => new { x.TargetId, x.CanonicalKey }).IsUnique();
             e.HasIndex(x => new { x.TargetId, x.Kind });
             e.HasIndex(x => new { x.TargetId, x.Category });
@@ -290,6 +291,7 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
             e.Property(x => x.ResponseContentLength).HasColumnName("response_content_length");
             e.Property(x => x.FinalUrl).HasColumnName("final_url").HasMaxLength(4096);
             e.Property(x => x.RedirectCount).HasColumnName("redirect_count");
+            e.Property(x => x.RedirectChainJson).HasColumnName("redirect_chain_json").HasColumnType("jsonb");
             e.HasIndex(x => x.AssetId).IsUnique();
             e.HasIndex(x => new { x.State, x.NextAttemptAtUtc });
             e.HasIndex(x => new { x.DomainKey, x.StartedAtUtc });

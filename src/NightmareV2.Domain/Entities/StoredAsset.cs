@@ -32,4 +32,7 @@ public class StoredAsset
 
     /// <summary>Number of HTTP redirects encountered while fetching the URL asset.</summary>
     public int RedirectCount { get; set; }
+
+    /// <summary>JSON array describing each redirect hop for URL assets.</summary>
+    public string? RedirectChainJson { get; set; }
 }

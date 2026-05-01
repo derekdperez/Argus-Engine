@@ -13,8 +13,16 @@ public sealed record UrlFetchSnapshot(
     string? ContentType,
     DateTimeOffset CompletedAtUtc,
     string? FinalUrl = null,
-    int RedirectCount = 0)
+    int RedirectCount = 0,
+    IReadOnlyList<UrlRedirectHop>? RedirectChain = null)
 {
     /// <summary>Same as <see cref="ResponseSizeBytes"/>; use when mirroring HTTP Content-Length semantics.</summary>
     public long? ContentLength => ResponseSizeBytes;
 }
+
+public sealed record UrlRedirectHop(
+    string FromUrl,
+    string ToUrl,
+    int StatusCode,
+    string? LocationHeader);
+

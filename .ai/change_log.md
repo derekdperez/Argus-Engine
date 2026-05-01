@@ -9,6 +9,7 @@
   - `deploy/deploy.sh --ecs-workers` now runs the EC2 self-hosted core stack and deploys workers to ECS.
   - `deploy/aws/bootstrap-ecs-from-ec2.sh` derives EC2/VPC settings, creates baseline ECS/IAM/ECR/log/security-group resources, and generates ECS env files for workers.
   - Tightened ECS rerun idempotency: deploy uses immutable source-stamp image tags by default, reuses matching task-definition revisions, and skips ECS service updates when the service already matches desired state.
+  - Added `deploy/aws/replace-ecs-worker-tasks.sh` and wired `deploy.sh --ecs-workers` to scale ECS workers to zero before recreating them on updated task definitions/images.
   - Updated AWS env examples, service env guidance, README, scaling guide, and gitignore for non-committed live AWS config.
   - Why: support ECS worker lifecycle management without embedding AWS orchestration into app runtime code.
 - Validation:

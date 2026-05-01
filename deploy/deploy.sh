@@ -16,12 +16,13 @@
 #
 # Optional environment:
 #   NIGHTMARE_DEPLOY_MODE=image|hot  image=normal cached image deploy (default); hot=publish/copy/restart changed running services.
-#   NIGHTMARE_GIT_PULL=1   Run git pull --ff-only in the repo before building (remote must be ff-only).
+#   NIGHTMARE_GIT_PULL=1   Run git pull --ff-only in the repo before building (remote must be ff-only). Defaults to 1 for --ecs-workers.
 #   NIGHTMARE_NO_CACHE=1      docker compose build --no-cache (also implied by -fresh)
 #   NIGHTMARE_PULL_IMAGES=1    docker compose build --pull. Defaults to 0 for fast deploys.
 #   NIGHTMARE_FORCE_RECREATE=1 Force recreate containers. Defaults to 0 for fast deploys.
 #   NIGHTMARE_SKIP_INSTALL=1   Do not install Docker / curl / git; fail if docker or compose is missing.
 #   NIGHTMARE_DEPLOY_FRESH=1   Same as passing -fresh on the command line.
+#   NIGHTMARE_ECS_REPLACE_WORKERS=1  In --ecs-workers mode, stop existing ECS worker tasks before recreating them.
 #   SUBFINDER_PACKAGE=...  Optional go install package for the worker image subfinder binary.
 #   AMASS_PACKAGE=...      Optional go install package for the worker image amass binary.
 #   COMPOSE_BAKE=true|false    Multi-service compose builds may use "bake"; scripts default to false for stability.
@@ -41,6 +42,7 @@ cd "$ROOT"
 NIGHTMARE_DEPLOY_FRESH="${NIGHTMARE_DEPLOY_FRESH:-0}"
 NIGHTMARE_DEPLOY_MODE="${NIGHTMARE_DEPLOY_MODE:-image}"
 NIGHTMARE_ECS_WORKERS="${NIGHTMARE_ECS_WORKERS:-0}"
+NIGHTMARE_ECS_REPLACE_WORKERS="${NIGHTMARE_ECS_REPLACE_WORKERS:-1}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --ecs-workers)
@@ -91,6 +93,7 @@ Environment:
   NIGHTMARE_PULL_IMAGES=1
   NIGHTMARE_FORCE_RECREATE=1
   NIGHTMARE_ECS_WORKERS=1
+  NIGHTMARE_ECS_REPLACE_WORKERS=1
 EOF
       exit 0
       ;;
@@ -103,6 +106,10 @@ done
 export NIGHTMARE_DEPLOY_FRESH
 export NIGHTMARE_DEPLOY_MODE
 export NIGHTMARE_ECS_WORKERS
+export NIGHTMARE_ECS_REPLACE_WORKERS
+if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
+  export NIGHTMARE_GIT_PULL="${NIGHTMARE_GIT_PULL:-1}"
+fi
 
 # shellcheck source=deploy/lib-nightmare-compose.sh
 source "$DEPLOY_DIR/lib-nightmare-compose.sh"
@@ -162,6 +169,17 @@ if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
   echo "Building and pushing ECR images..."
   "$DEPLOY_DIR/aws/build-push-ecr.sh"
 
+  if [[ "$NIGHTMARE_ECS_REPLACE_WORKERS" == "1" ]]; then
+    echo "Replacing existing ECS worker tasks..."
+    "$DEPLOY_DIR/aws/replace-ecs-worker-tasks.sh" \
+      worker-spider \
+      worker-enum \
+      worker-portscan \
+      worker-highvalue \
+      worker-techid
+    export UPDATE_DESIRED_COUNTS=true
+  fi
+
   echo "Creating/updating ECS worker services..."
   "$DEPLOY_DIR/aws/deploy-ecs-services.sh" \
     worker-spider \
@@ -192,6 +210,7 @@ echo "  ./deploy/logs.sh --follow worker-spider   # follow one service"
 echo "  docker compose -f deploy/docker-compose.yml down"
 if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
   echo "  deploy/aws/autoscale-ecs-workers.sh        # run from cron/EventBridge for continuous ECS worker scaling"
+  echo "  ./deploy/deploy.sh --ecs-workers        # pull latest GitHub code, replace ECS worker tasks"
   echo "  CONFIRM_DESTROY_ECS_WORKERS=yes deploy/aws/destroy-ecs-services.sh workers"
 fi
 echo "(or docker-compose -f deploy/docker-compose.yml ... if you use V1)"

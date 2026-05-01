@@ -28,4 +28,5 @@
   - `deploy/aws/deploy-ecs-services.sh` owns ECS task-definition registration and ECS service create/update from ECR images.
   - `deploy/aws/autoscale-ecs-workers.sh` owns queue-driven ECS desired-count updates for spider, enum, port scan, high-value, and technology-id worker services.
   - `deploy/deploy.sh --ecs-workers` is the EC2 self-hosted mode: compose runs Postgres/Redis/RabbitMQ/Command Center/Gatekeeper locally, local worker replicas are scaled to zero, and ECS worker tasks connect back to the EC2 private IP.
+  - ECS worker deploys intentionally replace running worker tasks by scaling existing worker services to zero before updating/scaling back up; ECS services themselves are preserved.
   - Command Center remains the metrics source for scaling via `/api/http-request-queue/metrics` and `/api/ops/rabbit-queues`; AWS orchestration stays outside application runtime code.

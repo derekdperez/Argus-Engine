@@ -40,9 +40,17 @@ That mode:
 - Creates the ECS cluster, ECR repositories, CloudWatch log group, ECS task execution role, task role, and ECS worker security group when missing.
 - Opens inbound access from the ECS worker security group to the EC2 host security group on `5432`, `6379`, `5672`, `15672`, and `8080`.
 - Generates `deploy/aws/service-env` so ECS workers reach the self-hosted compose services through the EC2 private IP.
-- Builds/pushes ECR images and creates or updates ECS worker services.
+- Builds/pushes ECR images.
+- Scales any existing ECS worker services to zero and waits for the old worker tasks to stop.
+- Creates or updates ECS worker services and scales them back up on the newest task definitions/images.
 
-The mode is designed to be re-runnable. Existing roles, cluster, repositories, log groups, security group rules, generated env files, task definitions, and ECS services are reused when they already match the desired state. By default it tags ECS images with an immutable source-stamp tag so an unchanged rerun does not create a new task-definition revision or force a new ECS deployment. Set `NIGHTMARE_ECS_USE_MUTABLE_TAG=1` only if you intentionally want to keep deploying a mutable tag such as `latest`.
+The mode is designed to be re-runnable. Existing roles, cluster, repositories, log groups, security group rules, generated env files, task definitions, and ECS services are reused. The worker tasks themselves are intentionally replaced on each `--ecs-workers` deploy (`NIGHTMARE_ECS_REPLACE_WORKERS=1` by default) so each deploy exercises worker loss/recovery and guarantees new worker containers start from the latest pushed image. Set `NIGHTMARE_ECS_REPLACE_WORKERS=0` to converge in place without the scale-to-zero replacement step.
+
+`--ecs-workers` defaults `NIGHTMARE_GIT_PULL=1`, so it runs `git pull --ff-only` before building. Disable that only when you intentionally want to deploy the checked-out working tree:
+
+```bash
+NIGHTMARE_GIT_PULL=0 ./deploy/deploy.sh --ecs-workers
+```
 
 Required before running:
 

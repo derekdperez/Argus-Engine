@@ -21,6 +21,7 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
     public DbSet<CloudResourceUsageSample> CloudResourceUsageSamples => Set<CloudResourceUsageSample>();
     public DbSet<WorkerScaleTarget> WorkerScaleTargets => Set<WorkerScaleTarget>();
     public DbSet<WorkerScalingSetting> WorkerScalingSettings => Set<WorkerScalingSetting>();
+    public DbSet<Ec2WorkerMachine> Ec2WorkerMachines => Set<Ec2WorkerMachine>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -205,6 +206,39 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
                 t.HasCheckConstraint("ck_worker_scaling_settings_max_gte_min", "max_tasks >= min_tasks");
                 t.HasCheckConstraint("ck_worker_scaling_settings_target_positive", "target_backlog_per_task > 0");
             });
+        });
+
+        modelBuilder.Entity<Ec2WorkerMachine>(e =>
+        {
+            e.ToTable("ec2_worker_machines", t =>
+            {
+                t.HasCheckConstraint("ck_ec2_worker_machines_spider_nonnegative", "spider_workers >= 0");
+                t.HasCheckConstraint("ck_ec2_worker_machines_enum_nonnegative", "enum_workers >= 0");
+                t.HasCheckConstraint("ck_ec2_worker_machines_portscan_nonnegative", "portscan_workers >= 0");
+                t.HasCheckConstraint("ck_ec2_worker_machines_highvalue_nonnegative", "highvalue_workers >= 0");
+                t.HasCheckConstraint("ck_ec2_worker_machines_techid_nonnegative", "technology_identification_workers >= 0");
+            });
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(128).IsRequired();
+            e.Property(x => x.InstanceId).HasColumnName("instance_id").HasMaxLength(64);
+            e.Property(x => x.AwsState).HasColumnName("aws_state").HasMaxLength(64).IsRequired();
+            e.Property(x => x.PublicIpAddress).HasColumnName("public_ip_address").HasMaxLength(64);
+            e.Property(x => x.PrivateIpAddress).HasColumnName("private_ip_address").HasMaxLength(64);
+            e.Property(x => x.InstanceType).HasColumnName("instance_type").HasMaxLength(64);
+            e.Property(x => x.LastCommandId).HasColumnName("last_command_id").HasMaxLength(128);
+            e.Property(x => x.LastCommandStatus).HasColumnName("last_command_status").HasMaxLength(64);
+            e.Property(x => x.StatusMessage).HasColumnName("status_message").HasMaxLength(1024);
+            e.Property(x => x.SpiderWorkers).HasColumnName("spider_workers");
+            e.Property(x => x.EnumWorkers).HasColumnName("enum_workers");
+            e.Property(x => x.PortScanWorkers).HasColumnName("portscan_workers");
+            e.Property(x => x.HighValueWorkers).HasColumnName("highvalue_workers");
+            e.Property(x => x.TechnologyIdentificationWorkers).HasColumnName("technology_identification_workers");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.Property(x => x.LastAppliedAtUtc).HasColumnName("last_applied_at_utc");
+            e.HasIndex(x => x.InstanceId).IsUnique();
+            e.HasIndex(x => x.AwsState);
         });
 
         modelBuilder.Entity<CloudResourceUsageSample>(e =>

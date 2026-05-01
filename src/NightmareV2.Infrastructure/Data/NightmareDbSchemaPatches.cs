@@ -106,6 +106,40 @@ public static class NightmareDbSchemaPatches
 
         await db.Database.ExecuteSqlRawAsync(
                 """
+                CREATE TABLE IF NOT EXISTS ec2_worker_machines (
+                    id uuid PRIMARY KEY,
+                    name character varying(128) NOT NULL,
+                    instance_id character varying(64) NULL UNIQUE,
+                    aws_state character varying(64) NOT NULL,
+                    public_ip_address character varying(64) NULL,
+                    private_ip_address character varying(64) NULL,
+                    instance_type character varying(64) NULL,
+                    last_command_id character varying(128) NULL,
+                    last_command_status character varying(64) NULL,
+                    status_message character varying(1024) NULL,
+                    spider_workers integer NOT NULL,
+                    enum_workers integer NOT NULL,
+                    portscan_workers integer NOT NULL,
+                    highvalue_workers integer NOT NULL,
+                    technology_identification_workers integer NOT NULL,
+                    created_at_utc timestamp with time zone NOT NULL,
+                    updated_at_utc timestamp with time zone NOT NULL,
+                    last_applied_at_utc timestamp with time zone NULL,
+                    CONSTRAINT ck_ec2_worker_machines_spider_nonnegative CHECK (spider_workers >= 0),
+                    CONSTRAINT ck_ec2_worker_machines_enum_nonnegative CHECK (enum_workers >= 0),
+                    CONSTRAINT ck_ec2_worker_machines_portscan_nonnegative CHECK (portscan_workers >= 0),
+                    CONSTRAINT ck_ec2_worker_machines_highvalue_nonnegative CHECK (highvalue_workers >= 0),
+                    CONSTRAINT ck_ec2_worker_machines_techid_nonnegative CHECK (technology_identification_workers >= 0)
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_ec2_worker_machines_aws_state
+                    ON ec2_worker_machines (aws_state);
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
                 ALTER TABLE stored_assets
                     ADD COLUMN IF NOT EXISTS asset_category smallint NOT NULL DEFAULT 0,
                     ADD COLUMN IF NOT EXISTS display_name character varying(512) NULL,

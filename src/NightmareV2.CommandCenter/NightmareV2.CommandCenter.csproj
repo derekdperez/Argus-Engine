@@ -9,7 +9,9 @@
     <ProjectReference Include="..\NightmareV2.Infrastructure\NightmareV2.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="AWSSDK.EC2" Version="4.0.21" />
     <PackageReference Include="AWSSDK.ECS" Version="4.0.20.1" />
+    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.7.13" />
     <PackageReference Include="Microsoft.AspNetCore.Components.QuickGrid" Version="10.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.0" />
     <PackageReference Include="Radzen.Blazor" Version="10.3.2" />

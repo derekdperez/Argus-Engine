@@ -241,3 +241,27 @@ public sealed record DockerContainerStatusDto(
     string Status,
     string Color,
     IReadOnlyList<string> LogTail);
+
+public sealed record AdminUsageSnapshotDto(
+    DateTimeOffset AtUtc,
+    DateTimeOffset MonthStartUtc,
+    decimal EcsWorkerHoursMonthToDate,
+    decimal EcsWorkerFreeTierHours,
+    decimal EcsWorkerHoursRemaining,
+    decimal EcsWorkerPercentUsed,
+    decimal Ec2ServerHoursMonthToDate,
+    long HttpRequestCountMonthToDate,
+    long HttpTrafficBytesMonthToDate,
+    long HttpRequestBytesMonthToDate,
+    long HttpResponseBytesMonthToDate,
+    long HttpTrafficBytesAllTime,
+    DateTimeOffset? LastCloudUsageSampleAtUtc,
+    IReadOnlyList<CloudUsageResourceDto> CloudResources);
+
+public sealed record CloudUsageResourceDto(
+    string ResourceKind,
+    string ResourceId,
+    string ResourceName,
+    int LastRunningCount,
+    DateTimeOffset? LastSampledAtUtc,
+    decimal HoursMonthToDate);

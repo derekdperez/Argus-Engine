@@ -18,6 +18,7 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<AssetTag> AssetTags => Set<AssetTag>();
     public DbSet<TechnologyDetection> TechnologyDetections => Set<TechnologyDetection>();
+    public DbSet<CloudResourceUsageSample> CloudResourceUsageSamples => Set<CloudResourceUsageSample>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -174,6 +175,20 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
             e.ToTable("worker_switches");
             e.HasKey(x => x.WorkerKey);
             e.Property(x => x.WorkerKey).HasMaxLength(64);
+        });
+
+        modelBuilder.Entity<CloudResourceUsageSample>(e =>
+        {
+            e.ToTable("cloud_resource_usage_samples");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id").UseIdentityAlwaysColumn();
+            e.Property(x => x.SampledAtUtc).HasColumnName("sampled_at_utc");
+            e.Property(x => x.ResourceKind).HasColumnName("resource_kind").HasMaxLength(64).IsRequired();
+            e.Property(x => x.ResourceId).HasColumnName("resource_id").HasMaxLength(256).IsRequired();
+            e.Property(x => x.ResourceName).HasColumnName("resource_name").HasMaxLength(256).IsRequired();
+            e.Property(x => x.RunningCount).HasColumnName("running_count");
+            e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
+            e.HasIndex(x => new { x.ResourceKind, x.ResourceId, x.SampledAtUtc });
         });
 
 

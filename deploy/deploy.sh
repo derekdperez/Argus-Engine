@@ -177,6 +177,7 @@ if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
       worker-portscan \
       worker-highvalue \
       worker-techid
+    "$DEPLOY_DIR/aws/record-cloud-usage-sample.sh" || true
     export UPDATE_DESIRED_COUNTS=true
   fi
 
@@ -189,6 +190,7 @@ if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
     worker-techid
 
   echo "Applying one autoscale pass..."
+  export ECS_AUTOSCALER_WAIT_STABLE=true
   "$DEPLOY_DIR/aws/autoscale-ecs-workers.sh" || true
 fi
 

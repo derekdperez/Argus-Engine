@@ -6,6 +6,8 @@ set -euo pipefail
 : "${COMMAND_CENTER_URL:?Set COMMAND_CENTER_URL}"
 : "${ECS_AUTOSCALER_UPDATE_TASK_DEFINITION:=true}"
 : "${ECS_AUTOSCALER_FORCE_NEW_DEPLOYMENT:=false}"
+: "${ECS_AUTOSCALER_WAIT_STABLE:=false}"
+: "${ECS_RECORD_USAGE_SAMPLE:=true}"
 
 workers=("$@")
 if [[ ${#workers[@]} -eq 0 ]]; then
@@ -100,6 +102,7 @@ latest_task_definition() {
 
 http_metrics_json=""
 rabbit_queues_json=""
+updated_services=()
 
 for worker in "${workers[@]}"; do
   ecs_service="$(service_name "$worker")"
@@ -173,6 +176,7 @@ print(total)
 
   if [[ "$current_desired" != "$desired" || "$task_changed" == "true" || "$ECS_AUTOSCALER_FORCE_NEW_DEPLOYMENT" == "true" ]]; then
     aws "${update_args[@]}" >/dev/null
+    updated_services+=("$ecs_service")
     if [[ "$task_changed" == "true" ]]; then
       echo "Updated ${ecs_service} to desired=${desired} taskDefinition=${latest_task}"
     else
@@ -182,3 +186,15 @@ print(total)
     echo "No scale change needed for ${ecs_service}"
   fi
 done
+
+if [[ "$ECS_AUTOSCALER_WAIT_STABLE" == "true" && ${#updated_services[@]} -gt 0 ]]; then
+  aws ecs wait services-stable \
+    --region "$AWS_REGION" \
+    --cluster "$ECS_CLUSTER" \
+    --services "${updated_services[@]}"
+fi
+
+if [[ "$ECS_RECORD_USAGE_SAMPLE" == "true" ]]; then
+  script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+  "${script_dir}/record-cloud-usage-sample.sh" || true
+fi

@@ -1,0 +1,168 @@
+@using NightmareV2.CommandCenter.Models
+@page "/admin"
+@rendermode InteractiveServer
+@using System.Net.Http.Json
+@inject HttpClient Http
+
+<PageTitle>Admin - Nightmare v2</PageTitle>
+
+<div class="page-shell admin-page">
+    <section class="page-hero">
+        <div>
+            <p class="eyebrow">Administration</p>
+            <h1>Admin</h1>
+            <p class="hero-copy">Cloud usage, worker-hour budget, and HTTP traffic totals for the current UTC billing month.</p>
+        </div>
+        <div class="hero-actions">
+            <button type="button" class="btn primary" disabled="@_loading" @onclick="ReloadAsync">Refresh</button>
+            @if (_snapshot is not null)
+            {
+                <span class="muted">Updated @_snapshot.AtUtc.ToString("u")</span>
+            }
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="alert">@_error</div>
+    }
+
+    @if (_snapshot is null)
+    {
+        <section class="panel">
+            <p class="muted">Loading usage snapshot...</p>
+        </section>
+    }
+    else
+    {
+        <section class="stat-grid">
+            <div class="stat-card">
+                <div class="stat-label">Cumulative ECS Worker Hours</div>
+                <div class="stat-value">@_snapshot.EcsWorkerHoursMonthToDate.ToString("N2")</div>
+                <div class="stat-note">@_snapshot.EcsWorkerHoursRemaining.ToString("N2") of @_snapshot.EcsWorkerFreeTierHours.ToString("N0") remaining</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Free Tier Used</div>
+                <div class="stat-value">@_snapshot.EcsWorkerPercentUsed.ToString("N2")%</div>
+                <div class="usage-meter" aria-label="ECS worker free tier usage">
+                    <span style="width:@UsageBarWidth"></span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Cumulative EC2 Server Hours</div>
+                <div class="stat-value">@_snapshot.Ec2ServerHoursMonthToDate.ToString("N2")</div>
+                <div class="stat-note">Current UTC month</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">HTTP Traffic This Month</div>
+                <div class="stat-value small">@FormatBytes(_snapshot.HttpTrafficBytesMonthToDate)</div>
+                <div class="stat-note">@_snapshot.HttpRequestCountMonthToDate.ToString("N0") completed requests</div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Traffic</p>
+                    <h2>HTTP bandwidth estimate</h2>
+                </div>
+                <span class="muted">Since @_snapshot.MonthStartUtc.ToString("u")</span>
+            </div>
+            <div class="admin-traffic-grid">
+                <div>
+                    <span class="muted">Request bytes</span>
+                    <strong>@FormatBytes(_snapshot.HttpRequestBytesMonthToDate)</strong>
+                </div>
+                <div>
+                    <span class="muted">Response bytes</span>
+                    <strong>@FormatBytes(_snapshot.HttpResponseBytesMonthToDate)</strong>
+                </div>
+                <div>
+                    <span class="muted">All-time recorded traffic</span>
+                    <strong>@FormatBytes(_snapshot.HttpTrafficBytesAllTime)</strong>
+                </div>
+            </div>
+            <p class="muted">Traffic is estimated from stored HTTP queue request/response headers, request bodies, and response content lengths.</p>
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Cloud samples</p>
+                    <h2>Resource-hour rollup</h2>
+                </div>
+                <span class="muted">Last sample @(_snapshot.LastCloudUsageSampleAtUtc?.ToString("u") ?? "-")</span>
+            </div>
+            <table class="admin-table">
+                <thead>
+                <tr>
+                    <th>Kind</th>
+                    <th>Resource</th>
+                    <th>Running</th>
+                    <th>Month hours</th>
+                    <th>Last sample</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var row in _snapshot.CloudResources)
+                {
+                    <tr>
+                        <td>@row.ResourceKind</td>
+                        <td>
+                            <strong>@row.ResourceName</strong>
+                            <span class="muted mono">@row.ResourceId</span>
+                        </td>
+                        <td>@row.LastRunningCount</td>
+                        <td>@row.HoursMonthToDate.ToString("N2")</td>
+                        <td>@(row.LastSampledAtUtc?.ToString("u") ?? "-")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    private AdminUsageSnapshotDto? _snapshot;
+    private string _error = string.Empty;
+    private bool _loading;
+
+    private string UsageBarWidth => $"{Math.Clamp(_snapshot?.EcsWorkerPercentUsed ?? 0, 0, 100):0.##}%";
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _error = string.Empty;
+        try
+        {
+            _snapshot = await Http.GetFromJsonAsync<AdminUsageSnapshotDto>("/api/admin/usage").ConfigureAwait(false);
+            if (_snapshot is null)
+                _error = "Usage payload was empty.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var value = (double)Math.Max(0, bytes);
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value:N2} {units[unit]}";
+    }
+}

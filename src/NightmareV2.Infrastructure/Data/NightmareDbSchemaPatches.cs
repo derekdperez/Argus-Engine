@@ -60,6 +60,24 @@ public static class NightmareDbSchemaPatches
 
         await db.Database.ExecuteSqlRawAsync(
                 """
+                CREATE TABLE IF NOT EXISTS cloud_resource_usage_samples (
+                    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                    sampled_at_utc timestamp with time zone NOT NULL,
+                    resource_kind character varying(64) NOT NULL,
+                    resource_id character varying(256) NOT NULL,
+                    resource_name character varying(256) NOT NULL,
+                    running_count integer NOT NULL,
+                    metadata_json jsonb NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_cloud_resource_usage_kind_resource_sampled
+                    ON cloud_resource_usage_samples (resource_kind, resource_id, sampled_at_utc);
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
                 ALTER TABLE stored_assets
                     ADD COLUMN IF NOT EXISTS asset_category smallint NOT NULL DEFAULT 0,
                     ADD COLUMN IF NOT EXISTS display_name character varying(512) NULL,

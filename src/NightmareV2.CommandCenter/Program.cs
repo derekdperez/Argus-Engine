@@ -96,6 +96,7 @@ app.UseAntiforgery();
 
 DiagnosticsEndpoints.Map(app);
 DataMaintenanceEndpoints.Map(app);
+AdminUsageEndpoints.Map(app);
 EventTraceEndpoints.Map(app);
 AssetGraphEndpoints.Map(app);
 TagEndpoints.Map(app);

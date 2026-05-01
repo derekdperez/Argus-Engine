@@ -1,5 +1,17 @@
 # AI Change Log
 
+## 2026-05-01
+
+- Added ECS worker deployment and scaling helpers:
+  - `deploy/aws/deploy-ecs-services.sh` registers task definitions from ECR images and creates/updates ECS services.
+  - `deploy/aws/autoscale-ecs-workers.sh` scales spider, enum, port scan, high-value, and tech-id workers from Command Center queue metrics.
+  - `deploy/aws/destroy-ecs-services.sh` explicitly deletes worker or all Nightmare ECS services with confirmation env vars.
+  - Updated AWS env examples, service env guidance, README, scaling guide, and gitignore for non-committed live AWS config.
+  - Why: support ECS worker lifecycle management without embedding AWS orchestration into app runtime code.
+- Validation:
+  - `dotnet test NightmareV2.slnx` passed (18/18).
+  - Bash/AWS live validation not run because this Windows environment lacks a usable Bash runtime and AWS CLI/config.
+
 ## 2026-04-30
 
 - Added Command Center Events live trace:

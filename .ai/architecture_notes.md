@@ -24,3 +24,7 @@
 - Provider execution boundary:
   - `subfinder` and `amass` run in separate jobs with isolated failure/retry behavior.
   - Job outputs are normalized and scope-filtered before emission, then globally deduped downstream by existing canonical asset/gatekeeper flow.
+- AWS ECS deployment boundary:
+  - `deploy/aws/deploy-ecs-services.sh` owns ECS task-definition registration and ECS service create/update from ECR images.
+  - `deploy/aws/autoscale-ecs-workers.sh` owns queue-driven ECS desired-count updates for spider, enum, port scan, high-value, and technology-id worker services.
+  - Command Center remains the metrics source for scaling via `/api/http-request-queue/metrics` and `/api/ops/rabbit-queues`; AWS orchestration stays outside application runtime code.

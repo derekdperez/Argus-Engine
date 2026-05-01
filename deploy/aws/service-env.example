@@ -1,4 +1,6 @@
-# Use these environment variables in ECS task definitions.
+# Copy to deploy/aws/service-env and replace with production values.
+# Use routable hostnames/IPs that resolve from ECS tasks in your VPC; the compose
+# hostnames below are examples only.
 ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=nightmare_v2;Username=nightmare;Password=nightmare
 ConnectionStrings__FileStore=Host=postgres;Port=5432;Database=nightmare_v2_files;Username=nightmare;Password=nightmare
 ConnectionStrings__Redis=redis:6379

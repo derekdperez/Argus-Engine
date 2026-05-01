@@ -1,8 +1,22 @@
-# HTTP Request Worker Scaling Guide
+# Worker Scaling Guide
 
-This guide explains how to scale the NightmareV2 HTTP request workers to support high-throughput reconn aissance scanning. The system supports both local Docker Compose deployment and distributed EC2 deployment.
+This guide explains how to scale NightmareV2 workers to support high-throughput reconnaissance scanning. The system supports local Docker Compose, ECS services, and the older distributed EC2 worker deployment.
 
 ## Architecture Overview
+
+### ECS service model
+
+Production ECS deployments use one independently scalable service per worker class:
+
+| ECS service key | Work source | Scaling signal |
+|---|---|---|
+| `worker-spider` | Durable Postgres HTTP request queue | `/api/http-request-queue/metrics` backlog |
+| `worker-enum` | RabbitMQ subdomain enumeration jobs | `/api/ops/rabbit-queues` ready + unacknowledged messages for `Enum` |
+| `worker-portscan` | RabbitMQ port scan jobs | `/api/ops/rabbit-queues` messages for `PortScan` |
+| `worker-highvalue` | RabbitMQ high-value regex/path work | `/api/ops/rabbit-queues` messages for `HighValueRegex` and `HighValuePaths` |
+| `worker-techid` | RabbitMQ technology identification work | `/api/ops/rabbit-queues` messages for `TechnologyIdentification` |
+
+`deploy/aws/deploy-ecs-services.sh` registers a fresh task definition from the current ECR image tag and creates or updates ECS services. `deploy/aws/autoscale-ecs-workers.sh` recalculates each worker service desired count and can move services to the newest active task-definition revision.
 
 ### Worker Configuration
 
@@ -89,6 +103,8 @@ Example response:
 ```
 
 ## EC2 Deployment Setup
+
+The EC2 deployment path is retained for direct Docker worker fleets. Prefer ECS for new production worker scaling unless you specifically need host-level control.
 
 ### Prerequisites
 

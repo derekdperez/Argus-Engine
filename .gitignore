@@ -10,6 +10,10 @@
 # Last successful deploy fingerprint (incremental deploy skips docker build when unchanged)
 deploy/.last-deploy-stamp
 
+# Live AWS/ECS service environment values can contain database and broker credentials.
+deploy/aws/.env
+deploy/aws/service-env
+
 # Fast deploy fingerprints
 deploy/.last-deploy-fingerprints
 deploy/.current-deploy-fingerprints

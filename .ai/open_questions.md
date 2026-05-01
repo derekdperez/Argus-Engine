@@ -8,3 +8,4 @@
 - What default SLO/error-budget thresholds should be enforced for production (current defaults are conservative placeholders in `Nightmare:Reliability`)?
 - For `/api/ops/docker-status`, should Command Center run with Docker daemon access (socket mount + CLI), or should runtime status move to a sidecar/agent service?
 - Should we persist per-provider enumeration job status (`queued/running/completed/failed`) as first-class data, or keep provider execution visibility log-only for now?
+- Which production ECS launch target should be canonical long-term: Fargate-only, ECS on EC2, or both? Current ECS helpers default to Fargate but leave cluster, VPC, load-balancer, database, and broker choices external.

@@ -155,7 +155,7 @@ nightmare_compose_full_redeploy
 if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
   echo ""
   echo "Bootstrapping ECS resources from this EC2 instance..."
-  "$DEPLOY_DIR/aws/bootstrap-ecs-from-ec2.sh"
+  bash "$DEPLOY_DIR/aws/bootstrap-ecs-from-ec2.sh"
 
   # shellcheck source=/dev/null
   set -a
@@ -178,21 +178,21 @@ if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
     echo "No worker services changed. Skipping ECR build and ECS task replacement."
   else
     echo "Ensuring ECR repositories..."
-    "$DEPLOY_DIR/aws/create-ecr-repos.sh"
+    bash "$DEPLOY_DIR/aws/create-ecr-repos.sh"
 
     echo "Building and pushing ECR images for: ${changed_workers[*]}"
-    "$DEPLOY_DIR/aws/build-push-ecr.sh" "${changed_workers[@]}"
+    bash "$DEPLOY_DIR/aws/build-push-ecr.sh" "${changed_workers[@]}"
 
     if [[ "$NIGHTMARE_ECS_REPLACE_WORKERS" == "1" ]]; then
       echo "Replacing existing ECS worker tasks for: ${changed_workers[*]}"
-      "$DEPLOY_DIR/aws/replace-ecs-worker-tasks.sh" "${changed_workers[@]}"
-      "$DEPLOY_DIR/aws/record-cloud-usage-sample.sh" || true
+      bash "$DEPLOY_DIR/aws/replace-ecs-worker-tasks.sh" "${changed_workers[@]}"
+      bash "$DEPLOY_DIR/aws/record-cloud-usage-sample.sh" || true
       export UPDATE_DESIRED_COUNTS=true
     fi
   fi
 
   echo "Creating/updating ECS worker services..."
-  "$DEPLOY_DIR/aws/deploy-ecs-services.sh" \
+  bash "$DEPLOY_DIR/aws/deploy-ecs-services.sh" \
     worker-spider \
     worker-enum \
     worker-portscan \
@@ -201,7 +201,7 @@ if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
 
   echo "Applying one autoscale pass..."
   export ECS_AUTOSCALER_WAIT_STABLE=true
-  "$DEPLOY_DIR/aws/autoscale-ecs-workers.sh" || true
+  bash "$DEPLOY_DIR/aws/autoscale-ecs-workers.sh" || true
 fi
 
 echo ""
@@ -223,7 +223,7 @@ echo "  docker compose -f deploy/docker-compose.yml down"
 if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
   echo "  deploy/aws/autoscale-ecs-workers.sh        # run from cron/EventBridge for continuous ECS worker scaling"
   echo "  ./deploy/deploy.sh --ecs-workers        # pull latest GitHub code, replace ECS worker tasks"
-  echo "  CONFIRM_DESTROY_ECS_WORKERS=yes deploy/aws/destroy-ecs-services.sh workers"
+  echo "  CONFIRM_DESTROY_ECS_WORKERS=yes bash deploy/aws/destroy-ecs-services.sh workers"
 fi
 echo "(or docker-compose -f deploy/docker-compose.yml ... if you use V1)"
 echo ""

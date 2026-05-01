@@ -16,6 +16,7 @@ using NightmareV2.Infrastructure.TechnologyIdentification;
 using NightmareV2.Infrastructure.Messaging;
 using NightmareV2.Infrastructure.Workers;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 using StackExchange.Redis;
 
 namespace NightmareV2.Infrastructure;
@@ -33,6 +34,8 @@ public static class DependencyInjection
                 "Database=nightmare_v2_files",
                 StringComparison.OrdinalIgnoreCase)
             ?? "Host=localhost;Port=5432;Database=nightmare_v2_files;Username=nightmare;Password=nightmare";
+        pgConn = ApplyDefaultMaxPoolSize(pgConn, configuration.GetValue<int?>("Nightmare:Postgres:MaxPoolSize") ?? 8);
+        fileStoreConn = ApplyDefaultMaxPoolSize(fileStoreConn, configuration.GetValue<int?>("Nightmare:FileStore:MaxPoolSize") ?? 4);
 
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConn));
 
@@ -72,5 +75,18 @@ public static class DependencyInjection
         services.AddSingleton<BusJournalConsumeObserver>();
 
         return services;
+    }
+
+    private static string ApplyDefaultMaxPoolSize(string connectionString, int maxPoolSize)
+    {
+        if (maxPoolSize <= 0)
+            return connectionString;
+
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        if (builder.ContainsKey("Max Pool Size") || builder.ContainsKey("Maximum Pool Size"))
+            return connectionString;
+
+        builder.MaxPoolSize = maxPoolSize;
+        return builder.ConnectionString;
     }
 }

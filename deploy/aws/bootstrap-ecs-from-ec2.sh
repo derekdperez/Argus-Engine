@@ -171,6 +171,8 @@ if [[ ! -f "$service_env_file" || "${ECS_OVERWRITE_SERVICE_ENV:-0}" == "1" ]]; t
 # ECS worker tasks use the EC2 host private IP to reach the self-hosted compose stack.
 ConnectionStrings__Postgres=Host=${private_ip};Port=5432;Database=nightmare_v2;Username=nightmare;Password=nightmare
 ConnectionStrings__FileStore=Host=${private_ip};Port=5432;Database=nightmare_v2_files;Username=nightmare;Password=nightmare
+Nightmare__Postgres__MaxPoolSize=8
+Nightmare__FileStore__MaxPoolSize=4
 ConnectionStrings__Redis=${private_ip}:6379
 RabbitMq__Host=${private_ip}
 RabbitMq__Username=nightmare

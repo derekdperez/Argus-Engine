@@ -163,6 +163,17 @@
   - `git diff --check` passed with Git CRLF warnings only.
   - `C:\Program Files\Git\bin\bash.exe -n deploy/apply-ec2-worker-scale.sh` succeeded.
 
+- Fixed Postgres connection exhaustion risk:
+  - Centralized default Npgsql pool caps in infrastructure (`Nightmare:Postgres:MaxPoolSize` default 8, `Nightmare:FileStore:MaxPoolSize` default 4) without overriding explicit connection-string pool settings.
+  - Raised local compose Postgres `max_connections` default to 300 and exposed matching deploy/env knobs.
+  - Propagated pool cap settings into ECS service env generation/examples.
+  - Why: prevent the default 10 spider + 10 enum worker compose stack, ECS workers, and EC2 workers from exhausting Postgres clients through uncapped per-process pools.
+- Validation:
+  - `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded.
+  - `dotnet test src/tests/NightmareV2.Infrastructure.Tests/NightmareV2.Infrastructure.Tests.csproj -c Release --no-restore` exited 0.
+  - `docker compose -f deploy/docker-compose.yml config --quiet` succeeded.
+  - `git diff --check` passed with Git CRLF warnings only.
+
 - Added Operations worker scale controls and ECS manual desired-count path:
   - Worker grid shows scalable ECS services with `-1`, textbox `Set`, and `+1` controls.
   - Manual desired counts are persisted in `worker_scale_targets`; Command Center can update ECS immediately via AWS ECS SDK when AWS region/credentials are available.

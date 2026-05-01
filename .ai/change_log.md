@@ -174,6 +174,16 @@
   - `docker compose -f deploy/docker-compose.yml config --quiet` succeeded.
   - `git diff --check` passed with Git CRLF warnings only.
 
+- Condensed Operations target controls and corrected target rollups:
+  - Reworked the `/ops` Targets control panel into a compact header/control row with target totals, confirmed subdomain/URL totals, add-target input, filter/search/export, and max-depth controls.
+  - Added confirmed URL count to `TargetSummary` and the target grid/export.
+  - Changed target rollups so Subdomains, URLs, and Asset Count are confirmed-only; Queued Requests now comes only from the HTTP request queue.
+  - Why: match the compact Operations target layout and avoid mixing queued/unconfirmed asset counts into target grid metrics.
+- Validation:
+  - `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded.
+  - `dotnet test src/tests/NightmareV2.CommandCenter.Tests/NightmareV2.CommandCenter.Tests.csproj -c Release --no-restore` exited 0.
+  - `git diff --check` passed with Git CRLF warnings only.
+
 - Added Operations worker scale controls and ECS manual desired-count path:
   - Worker grid shows scalable ECS services with `-1`, textbox `Set`, and `+1` controls.
   - Manual desired counts are persisted in `worker_scale_targets`; Command Center can update ECS immediately via AWS ECS SDK when AWS region/credentials are available.

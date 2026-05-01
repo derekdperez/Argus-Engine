@@ -90,6 +90,22 @@ public static class NightmareDbSchemaPatches
 
         await db.Database.ExecuteSqlRawAsync(
                 """
+                CREATE TABLE IF NOT EXISTS worker_scaling_settings (
+                    scale_key character varying(64) PRIMARY KEY,
+                    min_tasks integer NOT NULL,
+                    max_tasks integer NOT NULL,
+                    target_backlog_per_task integer NOT NULL,
+                    updated_at_utc timestamp with time zone NOT NULL,
+                    CONSTRAINT ck_worker_scaling_settings_min_nonnegative CHECK (min_tasks >= 0),
+                    CONSTRAINT ck_worker_scaling_settings_max_gte_min CHECK (max_tasks >= min_tasks),
+                    CONSTRAINT ck_worker_scaling_settings_target_positive CHECK (target_backlog_per_task > 0)
+                );
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await db.Database.ExecuteSqlRawAsync(
+                """
                 ALTER TABLE stored_assets
                     ADD COLUMN IF NOT EXISTS asset_category smallint NOT NULL DEFAULT 0,
                     ADD COLUMN IF NOT EXISTS display_name character varying(512) NULL,

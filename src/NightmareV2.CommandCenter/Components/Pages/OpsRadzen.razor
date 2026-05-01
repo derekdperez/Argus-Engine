@@ -31,12 +31,7 @@
             </div>
         </div>
         <div class="hero-actions">
-            <button type="button" class="btn primary" disabled="@_loadingAll" @onclick="ReloadAllAsync">Refresh all</button>
-            <button type="button" class="btn" @onclick="StartRealtimeAsync">Reconnect live updates</button>
-            <label class="switch-row">
-                <input type="checkbox" @bind="_autoRefresh" />
-                <span>Auto-apply live updates</span>
-            </label>
+            <span class="muted">Live event updates enabled</span>
         </div>
     </section>
 
@@ -160,10 +155,6 @@
                     <span>Depth</span>
                     <input type="text" class="ops-filter" @bind="_targetDepthFilter" />
                 </label>
-                <label class="switch-row">
-                    <input type="checkbox" @bind="_targetVirtualize" />
-                    <span>Virtualize rows</span>
-                </label>
                 <button type="button" class="btn ghost" @onclick="ClearTargetFilters">Clear filters</button>
                 <button type="button" class="btn" @onclick="ExportTargetsCsvAsync">Export CSV</button>
             </div>
@@ -183,8 +174,8 @@
                             FilterMode="FilterMode.Advanced"
                             FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
                             AllowPaging="true"
-                            @bind-PageSize="_targetPageSize"
-                            PageSizeOptions="@_gridPageSizeOptions"
+                            PageSize="@_targetPageSize"
+                            PageSizeOptions="@_targetGridPageSizeOptions"
                             ShowPagingSummary="true"
                             AllowSorting="true"
                             AllowMultiColumnSorting="true"
@@ -193,7 +184,7 @@
                             AllowColumnPicking="true"
                             AllowGrouping="true"
                             GroupPanelText="Drag a column header here to group targets"
-                            AllowVirtualization="@_targetVirtualize"
+                            AllowVirtualization="true"
                             Density="@_radzenDensity"
                             EmptyText="No targets match the current filters."
                             Style="height: 390px"
@@ -238,7 +229,7 @@
                     <p class="eyebrow">Inventory</p>
                     <h2>Assets</h2>
                 </div>
-                <button type="button" class="btn" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">Refresh assets</button>
+                <span class="muted">Updated by live events</span>
             </div>
 
         @if (_maintenanceStatus is { Enabled: true })
@@ -314,14 +305,6 @@
                 <span>Raw/canonical</span>
                 <input type="text" class="ops-filter" @bind="_filterRawCol" />
             </label>
-            <label>
-                <span>Load</span>
-                <input type="number" min="100" max="5000" step="100" @bind="_assetTake" @bind:after="ReloadAssetsAsync" />
-            </label>
-            <label class="switch-row">
-                <input type="checkbox" @bind="_assetVirtualize" />
-                <span>Virtualize rows</span>
-            </label>
             <details class="ops-rz-column-toggles">
                 <summary>Columns</summary>
                 <label class="switch-row"><input type="checkbox" @bind="_showAssetDepth" /><span>Depth</span></label>
@@ -342,8 +325,8 @@
                         FilterMode="FilterMode.Advanced"
                         FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
                         AllowPaging="true"
-                        @bind-PageSize="_largeGridPageSize"
-                        PageSizeOptions="@_gridPageSizeOptions"
+                        PageSize="@_assetGridPageSize"
+                        PageSizeOptions="@_assetGridPageSizeOptions"
                         ShowPagingSummary="true"
                         AllowSorting="true"
                         AllowMultiColumnSorting="true"
@@ -352,7 +335,7 @@
                         AllowColumnPicking="true"
                         AllowGrouping="true"
                         GroupPanelText="Drag a column header here to group assets"
-                        AllowVirtualization="@_assetVirtualize"
+                        AllowVirtualization="true"
                         VirtualizationOverscanCount="12"
                         Density="@_radzenDensity"
                         EmptyText="No assets match the current filters."
@@ -398,7 +381,7 @@
                     <p class="eyebrow">HTTP</p>
                     <h2>Request queue</h2>
                 </div>
-                <button type="button" class="btn" @onclick="ReloadHttpQueueAsync" disabled="@_queueLoading">Refresh queue</button>
+                <span class="muted">Updated by live events</span>
             </div>
 
             @if (_queueSettings is not null)
@@ -452,10 +435,6 @@
                     <span>State</span>
                     <input type="text" class="ops-filter" @bind="_filterQueuePipelineCol" />
                 </label>
-                <label>
-                    <span>Load</span>
-                    <input type="number" min="100" max="5000" step="100" @bind="_queueTake" @bind:after="ReloadHttpQueueAsync" />
-                </label>
                 <label class="switch-row">
                     <input type="checkbox" @bind="_showFailedQueueRequests" @bind:after="ReloadHttpQueueAsync" />
                     <span>Show failed</span>
@@ -463,10 +442,6 @@
                 <label class="switch-row">
                     <input type="checkbox" @bind="_showCompletedQueueRequests" @bind:after="ReloadHttpQueueAsync" />
                     <span>Show completed</span>
-                </label>
-                <label class="switch-row">
-                    <input type="checkbox" @bind="_queueVirtualize" />
-                    <span>Virtualize rows</span>
                 </label>
                 <details class="ops-rz-column-toggles">
                     <summary>Columns</summary>
@@ -488,8 +463,8 @@
                             FilterMode="FilterMode.Advanced"
                             FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
                             AllowPaging="true"
-                            @bind-PageSize="_largeGridPageSize"
-                            PageSizeOptions="@_gridPageSizeOptions"
+                            PageSize="@_assetGridPageSize"
+                            PageSizeOptions="@_assetGridPageSizeOptions"
                             ShowPagingSummary="true"
                             AllowSorting="true"
                             AllowMultiColumnSorting="true"
@@ -498,7 +473,7 @@
                             AllowColumnPicking="true"
                             AllowGrouping="true"
                             GroupPanelText="Drag a column header here to group queue rows"
-                            AllowVirtualization="@_queueVirtualize"
+                            AllowVirtualization="true"
                             VirtualizationOverscanCount="12"
                             Density="@_radzenDensity"
                             EmptyText="No queue rows match the current filters."
@@ -546,7 +521,7 @@
                     <p class="eyebrow">Workers</p>
                     <h2>Activity + controls</h2>
                 </div>
-                <button type="button" class="btn" @onclick="ReloadVolatileAsync" disabled="@_snapshotLoading">Refresh workers</button>
+                <span class="muted">Updated by live events</span>
             </div>
 
             <div class="ops-rz-toolbar">
@@ -699,7 +674,6 @@
     private string _targetRootFilter = "";
     private string _targetDepthFilter = "";
     private string _targetGroupBy = "";
-    private bool _targetVirtualize;
     private string _targetFilter = "";
 
     private string _filterAssets = "";
@@ -709,8 +683,7 @@
     private string _filterPipelineCol = "";
     private string _filterHowFoundCol = "";
     private string _assetGroupBy = "";
-    private int _assetTake = 2000;
-    private bool _assetVirtualize;
+    private int _assetTake = 5000;
     private bool _showAssetDepth = true;
     private bool _showAssetCanonical;
     private bool _showAssetPipeline = true;
@@ -721,8 +694,7 @@
     private string _filterQueueRawCol = "";
     private string _filterQueuePipelineCol = "";
     private string _queueGroupBy = "";
-    private int _queueTake = 2000;
-    private bool _queueVirtualize;
+    private int _queueTake = 0;
     private bool _showQueueDomain = true;
     private bool _showQueueAttempts = true;
     private bool _showQueueTiming;
@@ -756,7 +728,6 @@
     private bool _targetDepthBusy;
     private bool _toolRestartBusy;
     private bool _queueSettingsBusy;
-    private bool _autoRefresh = true;
     private string _statusMessage = "";
     private string _queueSettingsMessage = "";
     private DateTimeOffset? _lastLiveEventUtc;
@@ -771,10 +742,11 @@
     private int _queueRequestTimeoutSeconds = 30;
     private int _targetBulkMaxDepth = 12;
 
-    private readonly int[] _gridPageSizeOptions = [25, 50, 100, 250, 500];
+    private readonly int[] _targetGridPageSizeOptions = [100, 250, 500];
+    private readonly int[] _assetGridPageSizeOptions = [1000, 2500, 5000];
     private readonly int[] _sideGridPageSizeOptions = [5, 10, 25, 50];
-    private int _targetPageSize = 25;
-    private int _largeGridPageSize = 50;
+    private int _targetPageSize = 100;
+    private int _assetGridPageSize = 1000;
     private int _sideGridPageSize = 10;
     private Density _radzenDensity = Density.Compact;
 
@@ -840,7 +812,7 @@
     private string LiveStateCss => Realtime.IsConnected ? "connected" : "disconnected";
     private string LiveStatusText => Realtime.IsConnected
         ? "Subscribed to command-center events"
-        : "Live updates disconnected; fallback refresh is active";
+        : "Live updates disconnected";
 
     private string QueueToggleButtonClass => _queueSettings?.Enabled == true ? "btn danger" : "btn primary";
 
@@ -884,7 +856,6 @@
 
         await ReloadAllAsync();
         await StartRealtimeAsync();
-        _ = ResilienceRefreshAsync();
     }
 
     private async Task StartRealtimeAsync()
@@ -919,9 +890,6 @@
 
     private void ScheduleLiveReload(LiveUiEventDto evt)
     {
-        if (!_autoRefresh)
-            return;
-
         _liveReloadCts?.Cancel();
         _liveReloadCts?.Dispose();
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_pollCts.Token);
@@ -971,32 +939,6 @@
         else
         {
             await ReloadVolatileAsync();
-        }
-    }
-
-    private async Task ResilienceRefreshAsync()
-    {
-        try
-        {
-            while (!_pollCts.IsCancellationRequested)
-            {
-                await Task.Delay(TimeSpan.FromSeconds(30), _pollCts.Token);
-                if (!_autoRefresh)
-                    continue;
-
-                if (!Realtime.IsConnected)
-                {
-                    await InvokeAsync(async () =>
-                    {
-                        await ReloadVolatileAsync();
-                        await ReloadTargetScopedAsync();
-                        StateHasChanged();
-                    });
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
         }
     }
 
@@ -1193,7 +1135,6 @@
             }
             catch
             {
-                // Live connection fallback will continue to refresh.
             }
         }
 

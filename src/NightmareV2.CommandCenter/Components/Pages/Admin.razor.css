@@ -70,3 +70,11 @@
     font-size: 0.78rem;
     margin-top: 0.15rem;
 }
+
+.admin-number {
+    width: 7rem;
+    min-height: 2rem;
+    border: 1px solid var(--border);
+    border-radius: 0.55rem;
+    padding: 0.3rem 0.45rem;
+}

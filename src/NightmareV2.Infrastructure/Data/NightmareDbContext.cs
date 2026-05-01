@@ -20,6 +20,7 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
     public DbSet<TechnologyDetection> TechnologyDetections => Set<TechnologyDetection>();
     public DbSet<CloudResourceUsageSample> CloudResourceUsageSamples => Set<CloudResourceUsageSample>();
     public DbSet<WorkerScaleTarget> WorkerScaleTargets => Set<WorkerScaleTarget>();
+    public DbSet<WorkerScalingSetting> WorkerScalingSettings => Set<WorkerScalingSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -186,6 +187,23 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
             e.Property(x => x.DesiredCount).HasColumnName("desired_count");
             e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
             e.ToTable(t => t.HasCheckConstraint("ck_worker_scale_targets_desired_count_nonnegative", "desired_count >= 0"));
+        });
+
+        modelBuilder.Entity<WorkerScalingSetting>(e =>
+        {
+            e.ToTable("worker_scaling_settings");
+            e.HasKey(x => x.ScaleKey);
+            e.Property(x => x.ScaleKey).HasColumnName("scale_key").HasMaxLength(64);
+            e.Property(x => x.MinTasks).HasColumnName("min_tasks");
+            e.Property(x => x.MaxTasks).HasColumnName("max_tasks");
+            e.Property(x => x.TargetBacklogPerTask).HasColumnName("target_backlog_per_task");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("ck_worker_scaling_settings_min_nonnegative", "min_tasks >= 0");
+                t.HasCheckConstraint("ck_worker_scaling_settings_max_gte_min", "max_tasks >= min_tasks");
+                t.HasCheckConstraint("ck_worker_scaling_settings_target_positive", "target_backlog_per_task > 0");
+            });
         });
 
         modelBuilder.Entity<CloudResourceUsageSample>(e =>

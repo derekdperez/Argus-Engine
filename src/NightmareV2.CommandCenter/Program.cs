@@ -208,6 +208,29 @@ static (string ScaleKey, string DefaultServiceName)? WorkerScaleTargetForKey(str
         _ => null,
     };
 
+static (string ScaleKey, string DefaultServiceName, string DisplayName)[] WorkerScaleDefinitions() =>
+[
+    ("worker-spider", "nightmare-worker-spider", "Spider Worker"),
+    ("worker-enum", "nightmare-worker-enum", "Subdomain Enum Worker"),
+    ("worker-portscan", "nightmare-worker-portscan", "Port Scan Worker"),
+    ("worker-highvalue", "nightmare-worker-highvalue", "High Value Worker"),
+    ("worker-techid", "nightmare-worker-techid", "Technology Identification Worker"),
+];
+
+static WorkerScalingSettingsDto DefaultWorkerScalingSetting(string scaleKey)
+{
+    var displayName = WorkerScaleDefinitions().FirstOrDefault(d => d.ScaleKey == scaleKey).DisplayName ?? scaleKey;
+    return scaleKey switch
+    {
+        "worker-spider" => new(scaleKey, displayName, 1, 50, 100, DateTimeOffset.UnixEpoch),
+        "worker-enum" => new(scaleKey, displayName, 1, 20, 25, DateTimeOffset.UnixEpoch),
+        "worker-portscan" => new(scaleKey, displayName, 1, 20, 100, DateTimeOffset.UnixEpoch),
+        "worker-highvalue" => new(scaleKey, displayName, 1, 20, 100, DateTimeOffset.UnixEpoch),
+        "worker-techid" => new(scaleKey, displayName, 1, 20, 100, DateTimeOffset.UnixEpoch),
+        _ => new(scaleKey, displayName, 1, 20, 100, DateTimeOffset.UnixEpoch),
+    };
+}
+
 static string EcsServiceNameForScaleKey(IConfiguration configuration, string scaleKey, string defaultServiceName)
 {
     var envName = scaleKey switch
@@ -284,6 +307,16 @@ static async Task<Dictionary<string, EcsService>> DescribeEcsServicesAsync(
         .ConfigureAwait(false);
 
     return response.Services.ToDictionary(s => s.ServiceName, StringComparer.Ordinal);
+}
+
+static string ExtractTaskDefinitionVersion(string? taskDefinition)
+{
+    if (string.IsNullOrWhiteSpace(taskDefinition))
+        return "-";
+
+    var slash = taskDefinition.LastIndexOf('/', StringComparison.Ordinal);
+    var familyRevision = slash >= 0 ? taskDefinition[(slash + 1)..] : taskDefinition;
+    return familyRevision;
 }
 
 static async Task QueueRootSpiderSeedsAsync(
@@ -1433,6 +1466,163 @@ app.MapGet(
             return Results.Ok(rows);
         })
     .WithName("WorkerScaleTargets");
+
+app.MapGet(
+        "/api/workers/scaling-settings",
+        async (NightmareDbContext db, CancellationToken ct) =>
+        {
+            var persisted = await db.WorkerScalingSettings.AsNoTracking()
+                .ToDictionaryAsync(s => s.ScaleKey, StringComparer.Ordinal, ct)
+                .ConfigureAwait(false);
+
+            var rows = WorkerScaleDefinitions()
+                .Select(
+                    definition =>
+                    {
+                        var fallback = DefaultWorkerScalingSetting(definition.ScaleKey);
+                        return persisted.TryGetValue(definition.ScaleKey, out var row)
+                            ? new WorkerScalingSettingsDto(
+                                definition.ScaleKey,
+                                definition.DisplayName,
+                                row.MinTasks,
+                                row.MaxTasks,
+                                row.TargetBacklogPerTask,
+                                row.UpdatedAtUtc)
+                            : fallback;
+                    })
+                .ToList();
+
+            return Results.Ok(rows);
+        })
+    .WithName("WorkerScalingSettings");
+
+app.MapPut(
+        "/api/workers/scaling-settings/{scaleKey}",
+        async (string scaleKey, WorkerScalingSettingsPatchDto body, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+        {
+            if (!WorkerScaleDefinitions().Any(d => string.Equals(d.ScaleKey, scaleKey, StringComparison.Ordinal)))
+                return Results.BadRequest($"Unknown worker scale key: {scaleKey}");
+
+            if (body.MinTasks < 0)
+                return Results.BadRequest("minTasks must be greater than or equal to zero.");
+            if (body.MaxTasks < body.MinTasks)
+                return Results.BadRequest("maxTasks must be greater than or equal to minTasks.");
+            if (body.TargetBacklogPerTask <= 0)
+                return Results.BadRequest("targetBacklogPerTask must be greater than zero.");
+
+            var now = DateTimeOffset.UtcNow;
+            var row = await db.WorkerScalingSettings.FirstOrDefaultAsync(s => s.ScaleKey == scaleKey, ct).ConfigureAwait(false);
+            if (row is null)
+            {
+                row = new WorkerScalingSetting { ScaleKey = scaleKey };
+                db.WorkerScalingSettings.Add(row);
+            }
+
+            row.MinTasks = body.MinTasks;
+            row.MaxTasks = body.MaxTasks;
+            row.TargetBacklogPerTask = body.TargetBacklogPerTask;
+            row.UpdatedAtUtc = now;
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            await hub.Clients.All.SendAsync(
+                    DiscoveryHubEvents.DomainEvent,
+                    new LiveUiEventDto("WorkerScalingSettingsChanged", null, null, "workers", $"{scaleKey} scaling settings updated", now),
+                    cancellationToken: ct)
+                .ConfigureAwait(false);
+
+            var displayName = WorkerScaleDefinitions().First(d => d.ScaleKey == scaleKey).DisplayName;
+            return Results.Ok(new WorkerScalingSettingsDto(scaleKey, displayName, row.MinTasks, row.MaxTasks, row.TargetBacklogPerTask, now));
+        })
+    .WithName("UpdateWorkerScalingSettings");
+
+app.MapGet(
+        "/api/ops/ecs-status",
+        async (IConfiguration configuration, CancellationToken ct) =>
+        {
+            var at = DateTimeOffset.UtcNow;
+            var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);
+            var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
+            if (string.IsNullOrWhiteSpace(region))
+            {
+                return Results.Ok(
+                    new EcsRuntimeStatusDto(
+                        at,
+                        false,
+                        cluster,
+                        "unknown",
+                        "gray",
+                        "AWS region is not configured and could not be inferred from EC2 metadata.",
+                        []));
+            }
+
+            var definitions = WorkerScaleDefinitions()
+                .Select(d => new
+                {
+                    d.ScaleKey,
+                    d.DisplayName,
+                    ServiceName = EcsServiceNameForScaleKey(configuration, d.ScaleKey, d.DefaultServiceName),
+                })
+                .ToList();
+
+            try
+            {
+                var services = await DescribeEcsServicesAsync(configuration, definitions.Select(d => d.ServiceName), ct).ConfigureAwait(false);
+                var rows = definitions
+                    .Select(
+                        definition =>
+                        {
+                            services.TryGetValue(definition.ServiceName, out var service);
+                            if (service is null)
+                            {
+                                return new EcsServiceStatusDto(
+                                    definition.ScaleKey,
+                                    definition.ServiceName,
+                                    "missing",
+                                    "-",
+                                    null,
+                                    0,
+                                    0,
+                                    0,
+                                    "-",
+                                    "service not found",
+                                    "red");
+                            }
+
+                            var deployment = service.Deployments
+                                .OrderByDescending(d => d.UpdatedAt)
+                                .FirstOrDefault();
+                            var status = service.Status ?? "unknown";
+                            var deploymentStatus = deployment?.Status ?? "unknown";
+                            var color = status.Equals("ACTIVE", StringComparison.OrdinalIgnoreCase)
+                                ? service.RunningCount >= service.DesiredCount && service.PendingCount == 0 ? "green" : "yellow"
+                                : "red";
+                            var taskDefinition = deployment?.TaskDefinition ?? service.TaskDefinition ?? "-";
+
+                            return new EcsServiceStatusDto(
+                                definition.ScaleKey,
+                                service.ServiceName,
+                                status,
+                                ExtractTaskDefinitionVersion(taskDefinition),
+                                deployment?.CreatedAt is { } created ? new DateTimeOffset(created, TimeSpan.Zero) : null,
+                                service.DesiredCount,
+                                service.RunningCount,
+                                service.PendingCount,
+                                taskDefinition,
+                                deploymentStatus,
+                                color);
+                        })
+                    .ToList();
+
+                var overallColor = rows.Any(r => r.Color == "red") ? "red" : rows.Any(r => r.Color == "yellow") ? "yellow" : "green";
+                var overallStatus = overallColor == "green" ? "healthy" : overallColor == "yellow" ? "degraded" : "critical";
+                return Results.Ok(new EcsRuntimeStatusDto(at, true, cluster, overallStatus, overallColor, null, rows));
+            }
+            catch (Exception ex)
+            {
+                return Results.Ok(new EcsRuntimeStatusDto(at, false, cluster, "unknown", "gray", ex.Message, []));
+            }
+        })
+    .WithName("EcsRuntimeStatus");
 
 app.MapGet(
         "/api/ops/snapshot",

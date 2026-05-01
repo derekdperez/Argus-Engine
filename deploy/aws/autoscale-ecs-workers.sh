@@ -47,6 +47,9 @@ scale_min() {
   local worker="$1"
   local sanitized="${worker//-/_}"
   local var="ECS_MIN_${sanitized^^}"
+  local configured
+  configured="$(scaling_setting_for "$worker" minTasks)"
+  if [[ "$configured" =~ ^[0-9]+$ ]]; then echo "$configured"; return; fi
   case "$worker" in
     worker-spider) echo "${!var:-${HTTP_QUEUE_MIN_TASKS:-1}}" ;;
     *) echo "${!var:-1}" ;;
@@ -57,6 +60,9 @@ scale_max() {
   local worker="$1"
   local sanitized="${worker//-/_}"
   local var="ECS_MAX_${sanitized^^}"
+  local configured
+  configured="$(scaling_setting_for "$worker" maxTasks)"
+  if [[ "$configured" =~ ^[0-9]+$ ]]; then echo "$configured"; return; fi
   case "$worker" in
     worker-spider) echo "${!var:-${HTTP_QUEUE_MAX_TASKS:-50}}" ;;
     *) echo "${!var:-20}" ;;
@@ -67,6 +73,9 @@ target_backlog() {
   local worker="$1"
   local sanitized="${worker//-/_}"
   local var="ECS_TARGET_BACKLOG_PER_TASK_${sanitized^^}"
+  local configured
+  configured="$(scaling_setting_for "$worker" targetBacklogPerTask)"
+  if [[ "$configured" =~ ^[0-9]+$ ]]; then echo "$configured"; return; fi
   case "$worker" in
     worker-spider) echo "${!var:-${HTTP_QUEUE_TARGET_BACKLOG_PER_TASK:-100}}" ;;
     worker-enum) echo "${!var:-25}" ;;
@@ -86,6 +95,25 @@ desired_for() {
   if (( desired < min )); then desired="$min"; fi
   if (( desired > max )); then desired="$max"; fi
   echo "$desired"
+}
+
+scaling_setting_for() {
+  local worker="$1"
+  local prop="$2"
+  SCALE_SETTINGS_JSON="$scale_settings_json" WORKER="$worker" PROP="$prop" python3 -c '
+import json
+import os
+worker = os.environ["WORKER"]
+prop = os.environ["PROP"]
+try:
+    rows = json.loads(os.environ.get("SCALE_SETTINGS_JSON", "[]"))
+except json.JSONDecodeError:
+    rows = []
+for row in rows:
+    if row.get("scaleKey") == worker and row.get(prop) is not None:
+        print(int(row[prop]))
+        break
+'
 }
 
 manual_desired_for() {
@@ -117,6 +145,7 @@ latest_task_definition() {
     --output text
 }
 
+scale_settings_json="$(curl -fsS "${COMMAND_CENTER_URL%/}/api/workers/scaling-settings" 2>/dev/null || echo '[]')"
 scale_overrides_json="$(curl -fsS "${COMMAND_CENTER_URL%/}/api/workers/scale-overrides" 2>/dev/null || echo '[]')"
 http_metrics_json=""
 rabbit_queues_json=""

@@ -1,4 +1,5 @@
 @using NightmareV2.CommandCenter.Models
+@using NightmareV2.CommandCenter
 @page "/status"
 @rendermode InteractiveServer
 @using System.Net.Http.Json
@@ -12,11 +13,14 @@
 <h1>System Status</h1>
 
 <div class="toolbar">
-    <button type="button" @onclick="ReloadAsync" disabled="@_loading">Refresh</button>
     @if (_snapshot is not null)
     {
-        <span class="muted">Updated @_snapshot.AtUtc.ToString("u")</span>
+        <span class="muted">Updated @AppTimeFormat.Format(_snapshot.AtUtc)</span>
         <span class="badge @ToBadgeClass(_snapshot.Color)">@_snapshot.Status</span>
+    }
+    @if (_ecsSnapshot is not null)
+    {
+        <span class="badge @ToBadgeClass(_ecsSnapshot.Color)">ECS @_ecsSnapshot.Status</span>
     }
 </div>
 
@@ -37,6 +41,8 @@ else
             <thead>
             <tr>
                 <th>Component</th>
+                <th>Version</th>
+                <th>First Released</th>
                 <th>Status</th>
                 <th>Reason</th>
             </tr>
@@ -46,6 +52,8 @@ else
             {
                 <tr>
                     <td>@c.DisplayName</td>
+                    <td class="mono">@c.Version</td>
+                    <td>@AppTimeFormat.Format(c.FirstReleasedAtUtc)</td>
                     <td><span class="badge @ToBadgeClass(c.Color)">@c.Status</span></td>
                     <td>@c.Reason</td>
                 </tr>
@@ -60,6 +68,8 @@ else
             <thead>
             <tr>
                 <th>Image</th>
+                <th>Version</th>
+                <th>First Released</th>
                 <th>Containers</th>
                 <th>Healthy</th>
                 <th>Degraded</th>
@@ -72,6 +82,8 @@ else
             {
                 <tr>
                     <td class="mono">@image.Image</td>
+                    <td class="mono">@image.Version</td>
+                    <td>@AppTimeFormat.Format(image.FirstReleasedAtUtc)</td>
                     <td>@image.ContainerCount</td>
                     <td>@image.HealthyContainers</td>
                     <td>@image.DegradedContainers</td>
@@ -84,6 +96,52 @@ else
     </section>
 
     <section class="panel">
+        <h2>ECS Services</h2>
+        @if (_ecsSnapshot is null)
+        {
+            <p class="muted">Loading ECS state...</p>
+        }
+        else if (!_ecsSnapshot.EcsAvailable)
+        {
+            <p class="muted">@_ecsSnapshot.Error</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                <tr>
+                    <th>Worker</th>
+                    <th>Service</th>
+                    <th>Version</th>
+                    <th>First Released</th>
+                    <th>Desired</th>
+                    <th>Running</th>
+                    <th>Pending</th>
+                    <th>Status</th>
+                    <th>Deployment</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var service in _ecsSnapshot.Services)
+                {
+                    <tr>
+                        <td>@service.WorkerKey</td>
+                        <td class="mono">@service.ServiceName</td>
+                        <td class="mono">@service.Version</td>
+                        <td>@AppTimeFormat.Format(service.FirstReleasedAtUtc)</td>
+                        <td>@service.DesiredCount</td>
+                        <td>@service.RunningCount</td>
+                        <td>@service.PendingCount</td>
+                        <td><span class="badge @ToBadgeClass(service.Color)">@service.ServiceStatus</span></td>
+                        <td>@service.DeploymentStatus</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="panel">
         <h2>Containers + Last 300 Log Lines</h2>
         @foreach (var container in _snapshot.Containers)
         {
@@ -92,6 +150,7 @@ else
                     <span class="badge @ToBadgeClass(container.Color)">@container.Status</span>
                     <strong>@container.Name</strong>
                     <span class="muted">@container.Image</span>
+                    <span class="muted">version: @container.Version</span>
                     <span class="muted">docker: @container.DockerStatusText</span>
                     <span class="muted">health: @container.HealthCheckStatus</span>
                 </summary>
@@ -103,6 +162,7 @@ else
 
 @code {
     private DockerRuntimeStatusDto? _snapshot;
+    private EcsRuntimeStatusDto? _ecsSnapshot;
     private string _error = string.Empty;
     private bool _loading;
     private readonly CancellationTokenSource _pollCts = new();
@@ -166,6 +226,7 @@ else
         try
         {
             _snapshot = await Http.GetFromJsonAsync<DockerRuntimeStatusDto>("/api/ops/docker-status").ConfigureAwait(false);
+            _ecsSnapshot = await Http.GetFromJsonAsync<EcsRuntimeStatusDto>("/api/ops/ecs-status").ConfigureAwait(false);
             if (_snapshot is null)
                 _error = "Status payload was empty.";
             else if (!string.IsNullOrWhiteSpace(_snapshot.Error))

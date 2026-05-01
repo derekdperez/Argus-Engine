@@ -1,5 +1,6 @@
 using NightmareV2.CommandCenter.Models;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -42,6 +43,8 @@ internal static class DockerRuntimeStatusBuilder
                     c => new DockerComponentHealthDto(
                         c.Key,
                         c.DisplayName,
+                        "-",
+                        null,
                         "unknown",
                         "gray",
                         "docker runtime unavailable"))
@@ -114,11 +117,17 @@ internal static class DockerRuntimeStatusBuilder
             $"logs --tail {LogTailLines} --timestamps {row.ID}",
             TimeSpan.FromSeconds(20),
             cancellationToken);
+        var imageTask = RunCommandAsync(
+            "docker",
+            $"image inspect --format \"{{{{.Created}}}}\" {row.Image}",
+            TimeSpan.FromSeconds(10),
+            cancellationToken);
 
-        await Task.WhenAll(inspectTask, logsTask).ConfigureAwait(false);
+        await Task.WhenAll(inspectTask, logsTask, imageTask).ConfigureAwait(false);
 
         var inspect = await inspectTask.ConfigureAwait(false);
         var logs = await logsTask.ConfigureAwait(false);
+        var image = await imageTask.ConfigureAwait(false);
 
         var health = inspect.Success
             ? inspect.StdOut.Trim()
@@ -137,6 +146,8 @@ internal static class DockerRuntimeStatusBuilder
             row.ID,
             row.Names ?? string.Empty,
             row.Image ?? string.Empty,
+            ExtractVersion(row.Image),
+            TryParseDockerDate(image.Success ? image.StdOut.Trim() : ""),
             row.Status ?? string.Empty,
             health,
             status,
@@ -155,11 +166,17 @@ internal static class DockerRuntimeStatusBuilder
 
             if (matches.Count == 0)
             {
-                rows.Add(new DockerComponentHealthDto(component.Key, component.DisplayName, "critical", "red", "container not found"));
+                rows.Add(new DockerComponentHealthDto(component.Key, component.DisplayName, "-", null, "critical", "red", "container not found"));
                 continue;
             }
 
             var worst = SelectWorstStatus(matches.Select(m => m.Status));
+            var firstReleased = matches
+                .Where(m => m.ImageCreatedAtUtc is not null)
+                .Select(m => m.ImageCreatedAtUtc!.Value)
+                .DefaultIfEmpty()
+                .Min();
+            DateTimeOffset? firstReleasedOrNull = firstReleased == default ? null : firstReleased;
             var reason = component.Key == "filestore-db-init" && worst == "healthy"
                 ? "one-shot init completed successfully"
                 : worst switch
@@ -169,7 +186,15 @@ internal static class DockerRuntimeStatusBuilder
                 "critical" => "container stopped or unhealthy",
                 _ => "status unknown",
             };
-            rows.Add(new DockerComponentHealthDto(component.Key, component.DisplayName, worst, StatusToColor(worst), reason));
+            rows.Add(
+                new DockerComponentHealthDto(
+                    component.Key,
+                    component.DisplayName,
+                    matches.Select(m => m.Version).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? "-",
+                    firstReleasedOrNull,
+                    worst,
+                    StatusToColor(worst),
+                    reason));
         }
 
         return rows;
@@ -187,8 +212,15 @@ internal static class DockerRuntimeStatusBuilder
                     var degraded = g.LongCount(c => c.Status == "degraded");
                     var critical = g.LongCount(c => c.Status == "critical");
                     var status = critical > 0 ? "critical" : degraded > 0 ? "degraded" : "healthy";
+                    var firstReleased = g
+                        .Where(c => c.ImageCreatedAtUtc is not null)
+                        .Select(c => c.ImageCreatedAtUtc!.Value)
+                        .DefaultIfEmpty()
+                        .Min();
                     return new DockerImageStatusDto(
                         g.Key,
+                        g.Select(c => c.Version).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? "-",
+                        firstReleased == default ? null : firstReleased,
                         total,
                         healthy,
                         degraded,
@@ -234,6 +266,29 @@ internal static class DockerRuntimeStatusBuilder
     private static bool IsOneShotInitContainer(string? containerName) =>
         !string.IsNullOrWhiteSpace(containerName)
         && containerName.Contains("filestore-db-init", StringComparison.OrdinalIgnoreCase);
+
+    private static string ExtractVersion(string? image)
+    {
+        if (string.IsNullOrWhiteSpace(image))
+            return "-";
+
+        var trimmed = image.Trim();
+        var atIndex = trimmed.IndexOf('@', StringComparison.Ordinal);
+        if (atIndex >= 0)
+        {
+            var digest = trimmed[(atIndex + 1)..];
+            return digest.Length > 18 ? digest[..18] : digest;
+        }
+
+        var lastSlash = trimmed.LastIndexOf('/', StringComparison.Ordinal);
+        var lastColon = trimmed.LastIndexOf(':', StringComparison.Ordinal);
+        return lastColon > lastSlash ? trimmed[(lastColon + 1)..] : "latest";
+    }
+
+    private static DateTimeOffset? TryParseDockerDate(string value) =>
+        DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
+            ? parsed
+            : null;
 
     private static string SelectWorstStatus(IEnumerable<string> statuses)
     {

@@ -1,4 +1,5 @@
 @using NightmareV2.CommandCenter.Models
+@using NightmareV2.CommandCenter
 @page "/admin"
 @rendermode InteractiveServer
 @using System.Net.Http.Json
@@ -14,10 +15,9 @@
             <p class="hero-copy">Cloud usage, worker-hour budget, and HTTP traffic totals for the current UTC billing month.</p>
         </div>
         <div class="hero-actions">
-            <button type="button" class="btn primary" disabled="@_loading" @onclick="ReloadAsync">Refresh</button>
             @if (_snapshot is not null)
             {
-                <span class="muted">Updated @_snapshot.AtUtc.ToString("u")</span>
+                <span class="muted">Updated @AppTimeFormat.Format(_snapshot.AtUtc)</span>
             }
         </div>
     </section>
@@ -66,7 +66,7 @@
                     <p class="eyebrow">Traffic</p>
                     <h2>HTTP bandwidth estimate</h2>
                 </div>
-                <span class="muted">Since @_snapshot.MonthStartUtc.ToString("u")</span>
+                <span class="muted">Since @AppTimeFormat.Format(_snapshot.MonthStartUtc)</span>
             </div>
             <div class="admin-traffic-grid">
                 <div>
@@ -91,7 +91,7 @@
                     <p class="eyebrow">Cloud samples</p>
                     <h2>Resource-hour rollup</h2>
                 </div>
-                <span class="muted">Last sample @(_snapshot.LastCloudUsageSampleAtUtc?.ToString("u") ?? "-")</span>
+                <span class="muted">Last sample @AppTimeFormat.Format(_snapshot.LastCloudUsageSampleAtUtc)</span>
             </div>
             <table class="admin-table">
                 <thead>
@@ -114,7 +114,48 @@
                         </td>
                         <td>@row.LastRunningCount</td>
                         <td>@row.HoursMonthToDate.ToString("N2")</td>
-                        <td>@(row.LastSampledAtUtc?.ToString("u") ?? "-")</td>
+                        <td>@AppTimeFormat.Format(row.LastSampledAtUtc)</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">ECS scaling</p>
+                    <h2>Worker autoscaling settings</h2>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_scalingMessage))
+                {
+                    <span class="muted">@_scalingMessage</span>
+                }
+            </div>
+            <table class="admin-table">
+                <thead>
+                <tr>
+                    <th>Worker</th>
+                    <th>Min tasks</th>
+                    <th>Max tasks</th>
+                    <th>Target backlog/task</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var row in _scalingSettings)
+                {
+                    <tr>
+                        <td>
+                            <strong>@row.DisplayName</strong>
+                            <span class="muted mono">@row.ScaleKey</span>
+                        </td>
+                        <td><input class="admin-number" type="number" min="0" @bind="row.MinTasks" /></td>
+                        <td><input class="admin-number" type="number" min="0" @bind="row.MaxTasks" /></td>
+                        <td><input class="admin-number" type="number" min="1" @bind="row.TargetBacklogPerTask" /></td>
+                        <td>@AppTimeFormat.Format(row.UpdatedAtUtc == DateTimeOffset.UnixEpoch ? null : row.UpdatedAtUtc)</td>
+                        <td><button type="button" class="btn small primary" disabled="@_scalingBusy" @onclick="@(() => SaveScalingAsync(row))">Save</button></td>
                     </tr>
                 }
                 </tbody>
@@ -125,8 +166,11 @@
 
 @code {
     private AdminUsageSnapshotDto? _snapshot;
+    private readonly List<EditableWorkerScalingSetting> _scalingSettings = [];
     private string _error = string.Empty;
+    private string _scalingMessage = string.Empty;
     private bool _loading;
+    private bool _scalingBusy;
 
     private string UsageBarWidth => $"{Math.Clamp(_snapshot?.EcsWorkerPercentUsed ?? 0, 0, 100):0.##}%";
 
@@ -139,6 +183,10 @@
         try
         {
             _snapshot = await Http.GetFromJsonAsync<AdminUsageSnapshotDto>("/api/admin/usage").ConfigureAwait(false);
+            var settings = await Http.GetFromJsonAsync<List<WorkerScalingSettingsDto>>("/api/workers/scaling-settings").ConfigureAwait(false);
+            _scalingSettings.Clear();
+            if (settings is not null)
+                _scalingSettings.AddRange(settings.Select(EditableWorkerScalingSetting.FromDto));
             if (_snapshot is null)
                 _error = "Usage payload was empty.";
         }
@@ -149,6 +197,38 @@
         finally
         {
             _loading = false;
+        }
+    }
+
+    private async Task SaveScalingAsync(EditableWorkerScalingSetting row)
+    {
+        _scalingBusy = true;
+        _scalingMessage = "";
+        try
+        {
+            var response = await Http.PutAsJsonAsync(
+                    $"/api/workers/scaling-settings/{Uri.EscapeDataString(row.ScaleKey)}",
+                    new WorkerScalingSettingsPatchDto(row.MinTasks, row.MaxTasks, row.TargetBacklogPerTask))
+                .ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+            {
+                var updated = await response.Content.ReadFromJsonAsync<WorkerScalingSettingsDto>().ConfigureAwait(false);
+                if (updated is not null)
+                    row.Apply(updated);
+                _scalingMessage = "Saved.";
+            }
+            else
+            {
+                _scalingMessage = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _scalingMessage = ex.Message;
+        }
+        finally
+        {
+            _scalingBusy = false;
         }
     }
 
@@ -164,5 +244,35 @@
         }
 
         return $"{value:N2} {units[unit]}";
+    }
+
+    private sealed class EditableWorkerScalingSetting
+    {
+        public string ScaleKey { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public int MinTasks { get; set; }
+        public int MaxTasks { get; set; }
+        public int TargetBacklogPerTask { get; set; }
+        public DateTimeOffset UpdatedAtUtc { get; set; }
+
+        public static EditableWorkerScalingSetting FromDto(WorkerScalingSettingsDto dto) =>
+            new()
+            {
+                ScaleKey = dto.ScaleKey,
+                DisplayName = dto.DisplayName,
+                MinTasks = dto.MinTasks,
+                MaxTasks = dto.MaxTasks,
+                TargetBacklogPerTask = dto.TargetBacklogPerTask,
+                UpdatedAtUtc = dto.UpdatedAtUtc,
+            };
+
+        public void Apply(WorkerScalingSettingsDto dto)
+        {
+            DisplayName = dto.DisplayName;
+            MinTasks = dto.MinTasks;
+            MaxTasks = dto.MaxTasks;
+            TargetBacklogPerTask = dto.TargetBacklogPerTask;
+            UpdatedAtUtc = dto.UpdatedAtUtc;
+        }
     }
 }

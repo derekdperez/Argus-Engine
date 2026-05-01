@@ -241,12 +241,16 @@ public sealed record DockerRuntimeStatusDto(
 public sealed record DockerComponentHealthDto(
     string Key,
     string DisplayName,
+    string Version,
+    DateTimeOffset? FirstReleasedAtUtc,
     string Status,
     string Color,
     string Reason);
 
 public sealed record DockerImageStatusDto(
     string Image,
+    string Version,
+    DateTimeOffset? FirstReleasedAtUtc,
     long ContainerCount,
     long HealthyContainers,
     long DegradedContainers,
@@ -258,11 +262,35 @@ public sealed record DockerContainerStatusDto(
     string Id,
     string Name,
     string Image,
+    string Version,
+    DateTimeOffset? ImageCreatedAtUtc,
     string DockerStatusText,
     string HealthCheckStatus,
     string Status,
     string Color,
     IReadOnlyList<string> LogTail);
+
+public sealed record EcsRuntimeStatusDto(
+    DateTimeOffset AtUtc,
+    bool EcsAvailable,
+    string ClusterName,
+    string Status,
+    string Color,
+    string? Error,
+    IReadOnlyList<EcsServiceStatusDto> Services);
+
+public sealed record EcsServiceStatusDto(
+    string WorkerKey,
+    string ServiceName,
+    string ServiceStatus,
+    string Version,
+    DateTimeOffset? FirstReleasedAtUtc,
+    int DesiredCount,
+    int RunningCount,
+    int PendingCount,
+    string TaskDefinition,
+    string DeploymentStatus,
+    string Color);
 
 public sealed record AdminUsageSnapshotDto(
     DateTimeOffset AtUtc,
@@ -287,3 +315,16 @@ public sealed record CloudUsageResourceDto(
     int LastRunningCount,
     DateTimeOffset? LastSampledAtUtc,
     decimal HoursMonthToDate);
+
+public sealed record WorkerScalingSettingsDto(
+    string ScaleKey,
+    string DisplayName,
+    int MinTasks,
+    int MaxTasks,
+    int TargetBacklogPerTask,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record WorkerScalingSettingsPatchDto(
+    int MinTasks,
+    int MaxTasks,
+    int TargetBacklogPerTask);

@@ -101,13 +101,13 @@ public static class AdminUsageEndpoints
                 if (!existing.Add(service.ServiceName))
                     continue;
 
-                var start = service.CreatedAt == default
-                    ? monthStart
-                    : new DateTimeOffset(service.CreatedAt, TimeSpan.Zero);
+                var start = service.CreatedAt is { } createdAt && createdAt != default
+                    ? new DateTimeOffset(createdAt, TimeSpan.Zero)
+                    : monthStart;
                 if (start < monthStart)
                     start = monthStart;
 
-                var running = Math.Max(0, service.RunningCount);
+                var running = Math.Max(0, service.RunningCount.GetValueOrDefault());
                 var hours = now > start ? running * DecimalHours(now - start) : 0m;
                 cloud.Add(
                     new CloudUsageResourceDto(

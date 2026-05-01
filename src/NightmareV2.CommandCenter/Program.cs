@@ -314,7 +314,7 @@ static string ExtractTaskDefinitionVersion(string? taskDefinition)
     if (string.IsNullOrWhiteSpace(taskDefinition))
         return "-";
 
-    var slash = taskDefinition.LastIndexOf('/', StringComparison.Ordinal);
+    var slash = taskDefinition.LastIndexOf("/", StringComparison.Ordinal);
     var familyRevision = slash >= 0 ? taskDefinition[(slash + 1)..] : taskDefinition;
     return familyRevision;
 }
@@ -1585,8 +1585,11 @@ app.MapGet(
                                 .FirstOrDefault();
                             var status = service.Status ?? "unknown";
                             var deploymentStatus = deployment?.Status ?? "unknown";
+                            var desiredCount = Math.Max(0, service.DesiredCount.GetValueOrDefault());
+                            var runningCount = Math.Max(0, service.RunningCount.GetValueOrDefault());
+                            var pendingCount = Math.Max(0, service.PendingCount.GetValueOrDefault());
                             var color = status.Equals("ACTIVE", StringComparison.OrdinalIgnoreCase)
-                                ? service.RunningCount >= service.DesiredCount && service.PendingCount == 0 ? "green" : "yellow"
+                                ? runningCount >= desiredCount && pendingCount == 0 ? "green" : "yellow"
                                 : "red";
                             var taskDefinition = deployment?.TaskDefinition ?? service.TaskDefinition ?? "-";
 
@@ -1596,9 +1599,9 @@ app.MapGet(
                                 status,
                                 ExtractTaskDefinitionVersion(taskDefinition),
                                 deployment?.CreatedAt is { } created ? new DateTimeOffset(created, TimeSpan.Zero) : null,
-                                service.DesiredCount,
-                                service.RunningCount,
-                                service.PendingCount,
+                                desiredCount,
+                                runningCount,
+                                pendingCount,
                                 taskDefinition,
                                 deploymentStatus,
                                 color);

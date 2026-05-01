@@ -41,10 +41,7 @@ RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=l
 
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
 ARG APP_DLL
-ARG BUILD_SOURCE_STAMP=unknown
-LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
-ENV APP_DLL=${APP_DLL}
-ENV NIGHTMARE_BUILD_STAMP=${BUILD_SOURCE_STAMP}
+
 ENV SubdomainEnumeration__Subfinder__BinaryPath=/usr/local/bin/subfinder
 ENV SubdomainEnumeration__Amass__BinaryPath=/usr/local/bin/amass
 ENV SubdomainEnumeration__Amass__WordlistPath=data/wordlists/subdomains-high-value.txt
@@ -56,4 +53,8 @@ COPY --from=recon-tools /out/subfinder /usr/local/bin/subfinder
 COPY --from=recon-tools /out/amass /usr/local/bin/amass
 COPY deploy/wordlists/subdomains.txt /opt/nightmare/wordlists/subdomains.txt
 COPY --from=build /app/publish .
+ENV APP_DLL=${APP_DLL}
+ARG BUILD_SOURCE_STAMP=unknown
+LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
+ENV NIGHTMARE_BUILD_STAMP=${BUILD_SOURCE_STAMP}
 ENTRYPOINT ["sh", "-c", "exec dotnet /app/${APP_DLL}"]

@@ -1,0 +1,439 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "NightmareV2.CommandCenter/2.1.0": {
+        "dependencies": {
+          "AWSSDK.EC2": "4.0.21",
+          "AWSSDK.ECS": "4.0.20.1",
+          "AWSSDK.SimpleSystemsManagement": "4.0.7.13",
+          "Microsoft.AspNetCore.Components.QuickGrid": "10.0.0",
+          "Microsoft.AspNetCore.SignalR.Client": "10.0.0",
+          "NightmareV2.Application": "1.0.0",
+          "NightmareV2.Contracts": "1.0.0",
+          "NightmareV2.Domain": "1.0.0",
+          "NightmareV2.Infrastructure": "1.0.0",
+          "Radzen.Blazor": "10.3.2"
+        },
+        "runtime": {
+          "NightmareV2.CommandCenter.dll": {}
+        }
+      },
+      "AWSSDK.Core/4.0.4": {
+        "runtime": {
+          "lib/net8.0/AWSSDK.Core.dll": {
+            "assemblyVersion": "4.0.0.0",
+            "fileVersion": "4.0.4.0"
+          }
+        }
+      },
+      "AWSSDK.EC2/4.0.21": {
+        "dependencies": {
+          "AWSSDK.Core": "4.0.4"
+        },
+        "runtime": {
+          "lib/net8.0/AWSSDK.EC2.dll": {
+            "assemblyVersion": "4.0.0.0",
+            "fileVersion": "4.0.21.0"
+          }
+        }
+      },
+      "AWSSDK.ECS/4.0.20.1": {
+        "dependencies": {
+          "AWSSDK.Core": "4.0.4"
+        },
+        "runtime": {
+          "lib/net8.0/AWSSDK.ECS.dll": {
+            "assemblyVersion": "4.0.0.0",
+            "fileVersion": "4.0.20.1"
+          }
+        }
+      },
+      "AWSSDK.SimpleSystemsManagement/4.0.7.13": {
+        "dependencies": {
+          "AWSSDK.Core": "4.0.4"
+        },
+        "runtime": {
+          "lib/net8.0/AWSSDK.SimpleSystemsManagement.dll": {
+            "assemblyVersion": "4.0.0.0",
+            "fileVersion": "4.0.7.13"
+          }
+        }
+      },
+      "MassTransit/8.5.4": {
+        "dependencies": {
+          "MassTransit.Abstractions": "8.5.4"
+        },
+        "runtime": {
+          "lib/net9.0/MassTransit.dll": {
+            "assemblyVersion": "8.5.4.0",
+            "fileVersion": "8.5.4.0"
+          }
+        }
+      },
+      "MassTransit.Abstractions/8.5.4": {
+        "runtime": {
+          "lib/net9.0/MassTransit.Abstractions.dll": {
+            "assemblyVersion": "8.5.4.0",
+            "fileVersion": "8.5.4.0"
+          }
+        }
+      },
+      "MassTransit.RabbitMQ/8.5.4": {
+        "dependencies": {
+          "MassTransit": "8.5.4",
+          "RabbitMQ.Client": "7.1.2"
+        },
+        "runtime": {
+          "lib/net9.0/MassTransit.RabbitMqTransport.dll": {
+            "assemblyVersion": "8.5.4.0",
+            "fileVersion": "8.5.4.0"
+          }
+        }
+      },
+      "Microsoft.AspNetCore.Components.QuickGrid/10.0.0": {
+        "runtime": {
+          "lib/net10.0/Microsoft.AspNetCore.Components.QuickGrid.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.25.52411"
+          }
+        }
+      },
+      "Microsoft.AspNetCore.Http.Connections.Client/10.0.0": {
+        "runtime": {
+          "lib/net10.0/Microsoft.AspNetCore.Http.Connections.Client.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.25.52411"
+          }
+        }
+      },
+      "Microsoft.AspNetCore.SignalR.Client/10.0.0": {
+        "dependencies": {
+          "Microsoft.AspNetCore.Http.Connections.Client": "10.0.0",
+          "Microsoft.AspNetCore.SignalR.Client.Core": "10.0.0"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.AspNetCore.SignalR.Client.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.25.52411"
+          }
+        }
+      },
+      "Microsoft.AspNetCore.SignalR.Client.Core/10.0.0": {
+        "runtime": {
+          "lib/net10.0/Microsoft.AspNetCore.SignalR.Client.Core.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.25.52411"
+          }
+        }
+      },
+      "Microsoft.EntityFrameworkCore/10.0.0": {
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore.Abstractions": "10.0.0"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.EntityFrameworkCore.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.25.52411"
+          }
+        }
+      },
+      "Microsoft.EntityFrameworkCore.Abstractions/10.0.0": {
+        "runtime": {
+          "lib/net10.0/Microsoft.EntityFrameworkCore.Abstractions.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.25.52411"
+          }
+        }
+      },
+      "Microsoft.EntityFrameworkCore.Relational/10.0.0": {
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore": "10.0.0"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.EntityFrameworkCore.Relational.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.25.52411"
+          }
+        }
+      },
+      "Npgsql/10.0.0": {
+        "runtime": {
+          "lib/net10.0/Npgsql.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.0.0"
+          }
+        }
+      },
+      "Npgsql.EntityFrameworkCore.PostgreSQL/10.0.0": {
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore": "10.0.0",
+          "Microsoft.EntityFrameworkCore.Relational": "10.0.0",
+          "Npgsql": "10.0.0"
+        },
+        "runtime": {
+          "lib/net10.0/Npgsql.EntityFrameworkCore.PostgreSQL.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.0.0"
+          }
+        }
+      },
+      "Pipelines.Sockets.Unofficial/2.2.8": {
+        "runtime": {
+          "lib/net5.0/Pipelines.Sockets.Unofficial.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "2.2.8.1080"
+          }
+        }
+      },
+      "RabbitMQ.Client/7.1.2": {
+        "runtime": {
+          "lib/net8.0/RabbitMQ.Client.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.1.2.0"
+          }
+        }
+      },
+      "Radzen.Blazor/10.3.2": {
+        "runtime": {
+          "lib/net10.0/Radzen.Blazor.dll": {
+            "assemblyVersion": "10.3.2.0",
+            "fileVersion": "10.3.2.0"
+          }
+        }
+      },
+      "StackExchange.Redis/2.9.17": {
+        "dependencies": {
+          "Pipelines.Sockets.Unofficial": "2.2.8"
+        },
+        "runtime": {
+          "lib/net8.0/StackExchange.Redis.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.9.17.8862"
+          }
+        }
+      },
+      "NightmareV2.Application/1.0.0": {
+        "dependencies": {
+          "MassTransit.Abstractions": "8.5.4",
+          "NightmareV2.Contracts": "1.0.0",
+          "NightmareV2.Domain": "1.0.0"
+        },
+        "runtime": {
+          "NightmareV2.Application.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "NightmareV2.Contracts/1.0.0": {
+        "runtime": {
+          "NightmareV2.Contracts.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "NightmareV2.Domain/1.0.0": {
+        "dependencies": {
+          "NightmareV2.Contracts": "1.0.0"
+        },
+        "runtime": {
+          "NightmareV2.Domain.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "NightmareV2.Infrastructure/1.0.0": {
+        "dependencies": {
+          "MassTransit": "8.5.4",
+          "MassTransit.RabbitMQ": "8.5.4",
+          "Microsoft.EntityFrameworkCore": "10.0.0",
+          "NightmareV2.Application": "1.0.0",
+          "NightmareV2.Contracts": "1.0.0",
+          "NightmareV2.Domain": "1.0.0",
+          "Npgsql.EntityFrameworkCore.PostgreSQL": "10.0.0",
+          "StackExchange.Redis": "2.9.17"
+        },
+        "runtime": {
+          "NightmareV2.Infrastructure.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "NightmareV2.CommandCenter/2.1.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "AWSSDK.Core/4.0.4": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-RjBk1WDrOCpsSRGn6j2lYhgiyYnXEhMctwJevNnIPIIGpgj49ifbU6FmG1Dk+1M/VSuqeTQ1WVsssziTty7b2w==",
+      "path": "awssdk.core/4.0.4",
+      "hashPath": "awssdk.core.4.0.4.nupkg.sha512"
+    },
+    "AWSSDK.EC2/4.0.21": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-2CcEvY90kOEvAxP0uCscrMXM0q57FosEXMdOVO6V2OkCQvqLjjTvlDeRh0NiYBtrKjn5z+zeyn2l0s9Y68fu+A==",
+      "path": "awssdk.ec2/4.0.21",
+      "hashPath": "awssdk.ec2.4.0.21.nupkg.sha512"
+    },
+    "AWSSDK.ECS/4.0.20.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-NUS+YMMzFqA4f2+hv6q7ExMjSNF4+GgcsRHmaFicsunTLYREbr3I05Iq4TyTGmb9+YBTeDhg0h5xS79yTuUUZw==",
+      "path": "awssdk.ecs/4.0.20.1",
+      "hashPath": "awssdk.ecs.4.0.20.1.nupkg.sha512"
+    },
+    "AWSSDK.SimpleSystemsManagement/4.0.7.13": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-9haAOMnmAhGUqdzTEMIj532C3c4H9EJA/MV7VQREYyUguZyG4WRoYs2VLiciIJRxz2EVNK1xA9YbOaDYT0HYYw==",
+      "path": "awssdk.simplesystemsmanagement/4.0.7.13",
+      "hashPath": "awssdk.simplesystemsmanagement.4.0.7.13.nupkg.sha512"
+    },
+    "MassTransit/8.5.4": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-uNmFkIICpCZ6AWSJfWfQJc4jjVhQygdPY4/yFEiOZkIVbwEbpFrJTjThzSSinbZFCtyYQMBN6RqHghVMwQy7pA==",
+      "path": "masstransit/8.5.4",
+      "hashPath": "masstransit.8.5.4.nupkg.sha512"
+    },
+    "MassTransit.Abstractions/8.5.4": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-6rIDZNr+mldYiIyiFXY4l4p3BsUDVQDtHpRwoZOQY7/T6TboAqCV4fbLM4tDwZqV8OOWbJHs1a4wQyyAOYwHGA==",
+      "path": "masstransit.abstractions/8.5.4",
+      "hashPath": "masstransit.abstractions.8.5.4.nupkg.sha512"
+    },
+    "MassTransit.RabbitMQ/8.5.4": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-k/kuewjqOxiPXfLW6GZsKIgtH1GcY7tUXk0bN8Z7etgGGnaE9JaVBFd/jDSprzP6xMtxc10+KEF9AXkJX7r32g==",
+      "path": "masstransit.rabbitmq/8.5.4",
+      "hashPath": "masstransit.rabbitmq.8.5.4.nupkg.sha512"
+    },
+    "Microsoft.AspNetCore.Components.QuickGrid/10.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-auZSKtJ3nyhEk+zIC28fIL7oA1nDGce9ZhUKy75jp1lP66JykcD1wv1PnMzigsd6BMROhhnfoLxMDDCUTz3eKA==",
+      "path": "microsoft.aspnetcore.components.quickgrid/10.0.0",
+      "hashPath": "microsoft.aspnetcore.components.quickgrid.10.0.0.nupkg.sha512"
+    },
+    "Microsoft.AspNetCore.Http.Connections.Client/10.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-7nSER+de0V6mWTcdUqBJZlm1XMz+Y2mTHzL3B/msVF+JfSXXZtKNVC18TI7AeSz4PD//b5qpy8n0RQEIVByfJw==",
+      "path": "microsoft.aspnetcore.http.connections.client/10.0.0",
+      "hashPath": "microsoft.aspnetcore.http.connections.client.10.0.0.nupkg.sha512"
+    },
+    "Microsoft.AspNetCore.SignalR.Client/10.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-XHPNPLqPX7CVJ5JuaumTP58sAVrQG4TqFKLFOtN1mZIwgEUHKwtDeMwL0G8dIvy9zcpi7os4CYAHvA1bUUTzVw==",
+      "path": "microsoft.aspnetcore.signalr.client/10.0.0",
+      "hashPath": "microsoft.aspnetcore.signalr.client.10.0.0.nupkg.sha512"
+    },
+    "Microsoft.AspNetCore.SignalR.Client.Core/10.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-MrXjT7YNV0e1Jb3Hai6kX/Ot7X2SlONHv5IC5XNGeycTTLu3qitJ7DXZUsPPZs6yanWIOsIKjPEY58ARHdRKGg==",
+      "path": "microsoft.aspnetcore.signalr.client.core/10.0.0",
+      "hashPath": "microsoft.aspnetcore.signalr.client.core.10.0.0.nupkg.sha512"
+    },
+    "Microsoft.EntityFrameworkCore/10.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-hHa2amRjMyBLUH/KTML6FgIAhZ0VFYkhCKwWEax0rO6iNeM1P5MflyeQLE5dniSIOZHc3Oqyv5UIyTFO4e1Auw==",
+      "path": "microsoft.entityframeworkcore/10.0.0",
+      "hashPath": "microsoft.entityframeworkcore.10.0.0.nupkg.sha512"
+    },
+    "Microsoft.EntityFrameworkCore.Abstractions/10.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-C+TT9k7f1GQ8agOfV512K9iwrzi76RXVSDiLx+iWC9pz3QhEpSF1Dyk+FpVvd8ULQ+rqymfM8KQ7g48ttQVyMg==",
+      "path": "microsoft.entityframeworkcore.abstractions/10.0.0",
+      "hashPath": "microsoft.entityframeworkcore.abstractions.10.0.0.nupkg.sha512"
+    },
+    "Microsoft.EntityFrameworkCore.Relational/10.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-A3MX1ee7RDxWCUdx/KqP+74fbksz0UIhkVZh56YHvbPkEKsffCXgHU3LGkRDwqR/MrBNWLCWC/IVX79tzM30ZA==",
+      "path": "microsoft.entityframeworkcore.relational/10.0.0",
+      "hashPath": "microsoft.entityframeworkcore.relational.10.0.0.nupkg.sha512"
+    },
+    "Npgsql/10.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-xZAYhPOU2rUIFpV48xsqhCx9vXs6Y+0jX2LCoSEfDFYMw9jtAOUk3iQsCnDLrFIv9NT3JGMihn7nnuZsPKqJmA==",
+      "path": "npgsql/10.0.0",
+      "hashPath": "npgsql.10.0.0.nupkg.sha512"
+    },
+    "Npgsql.EntityFrameworkCore.PostgreSQL/10.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-E2+uSWxSB8LdsUVwPaqRWOcGOP92biry2JEwc0KJMdLJF+aZdczeIdEXVwEyv4nSVMQJH0o8tLhyAMiR6VF0lw==",
+      "path": "npgsql.entityframeworkcore.postgresql/10.0.0",
+      "hashPath": "npgsql.entityframeworkcore.postgresql.10.0.0.nupkg.sha512"
+    },
+    "Pipelines.Sockets.Unofficial/2.2.8": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-zG2FApP5zxSx6OcdJQLbZDk2AVlN2BNQD6MorwIfV6gVj0RRxWPEp2LXAxqDGZqeNV1Zp0BNPcNaey/GXmTdvQ==",
+      "path": "pipelines.sockets.unofficial/2.2.8",
+      "hashPath": "pipelines.sockets.unofficial.2.2.8.nupkg.sha512"
+    },
+    "RabbitMQ.Client/7.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-y3c6ulgULScWthHw5PLM1ShHRLhxg0vCtzX/hh61gRgNecL3ZC3WoBW2HYHoXOVRqTl99Br9E7CZEytGZEsCyQ==",
+      "path": "rabbitmq.client/7.1.2",
+      "hashPath": "rabbitmq.client.7.1.2.nupkg.sha512"
+    },
+    "Radzen.Blazor/10.3.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wleqMVX9Iy1o8wl7JkwptBZg/rYoDarpNRIZBLNTOodqUBDEaM1L00Lq6hx/8nUrY7yaiWcj8OHAkdx2ObFDRw==",
+      "path": "radzen.blazor/10.3.2",
+      "hashPath": "radzen.blazor.10.3.2.nupkg.sha512"
+    },
+    "StackExchange.Redis/2.9.17": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Enpv0bfMP6SRownWx1CmaHantT9626Z6QSdHOidKlm0zLrBaPe7ueQf5phJH6Zkf3lDe5rr6JvXAgEP1ogijug==",
+      "path": "stackexchange.redis/2.9.17",
+      "hashPath": "stackexchange.redis.2.9.17.nupkg.sha512"
+    },
+    "NightmareV2.Application/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "NightmareV2.Contracts/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "NightmareV2.Domain/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "NightmareV2.Infrastructure/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

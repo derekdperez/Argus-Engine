@@ -192,17 +192,15 @@ if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
     fi
   fi
 
-  echo "Creating/updating ECS worker services..."
-  bash "$DEPLOY_DIR/aws/deploy-ecs-services.sh" \
-    worker-spider \
-    worker-enum \
-    worker-portscan \
-    worker-highvalue \
-    worker-techid
+  if [[ ${#changed_workers[@]} -gt 0 ]]; then
+    echo "Creating/updating ECS worker services for: ${changed_workers[*]}"
+    bash "$DEPLOY_DIR/aws/deploy-ecs-services.sh" "${changed_workers[@]}"
 
-  echo "Applying one autoscale pass..."
-  export ECS_AUTOSCALER_WAIT_STABLE=true
-  bash "$DEPLOY_DIR/aws/autoscale-ecs-workers.sh" || true
+    echo "Applying one autoscale pass..."
+    bash "$DEPLOY_DIR/aws/autoscale-ecs-workers.sh" || true
+  else
+    echo "No ECS worker services need updating."
+  fi
 fi
 
 echo ""

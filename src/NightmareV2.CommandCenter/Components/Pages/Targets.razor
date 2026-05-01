@@ -157,7 +157,7 @@ else
                     <strong><GridCodeCell Text="@row.RootDomain" /></strong>
                 </TemplateColumn>
                 <PropertyColumn Title="Max depth" Property="@(row => row.GlobalMaxDepth)" Sortable="true" />
-                <TemplateColumn Title="Created (UTC)" Context="row" SortBy="@SortTargetCreated">
+                <TemplateColumn Title="Created" Context="row" SortBy="@SortTargetCreated">
                     <GridDateCell Value="@row.CreatedAtUtc" />
                 </TemplateColumn>
                 <TemplateColumn Title="Actions" Context="row">

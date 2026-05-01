@@ -1,14 +1,13 @@
-@using System.Globalization
+@using NightmareV2.CommandCenter
 @if (Value is { } v)
 {
-    <span title="@v.ToString("O", CultureInfo.InvariantCulture)">@v.ToString(Format, CultureInfo.InvariantCulture)</span>
+    <span title="@AppTimeFormat.Format(v)">@AppTimeFormat.Format(v)</span>
 }
 else
 {
-    <span class="muted">—</span>
+    <span class="muted">-</span>
 }
 
 @code {
     [Parameter] public DateTimeOffset? Value { get; set; }
-    [Parameter] public string Format { get; set; } = "u";
 }

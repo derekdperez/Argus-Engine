@@ -447,8 +447,8 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
         value switch
         {
             null => string.Empty,
-            DateTime dateTime => dateTime.ToString("O", CultureInfo.InvariantCulture),
-            DateTimeOffset dateTimeOffset => dateTimeOffset.ToString("O", CultureInfo.InvariantCulture),
+            DateTime dateTime => AppTimeFormat.Format(new DateTimeOffset(dateTime.ToUniversalTime())),
+            DateTimeOffset dateTimeOffset => AppTimeFormat.Format(dateTimeOffset),
             IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture) ?? string.Empty,
             _ => value.ToString() ?? string.Empty,
         };

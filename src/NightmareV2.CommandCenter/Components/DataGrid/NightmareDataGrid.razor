@@ -1,5 +1,6 @@
 @typeparam TGridItem
 @using Microsoft.AspNetCore.Components.QuickGrid
+@using NightmareV2.CommandCenter
 
 <div @attributes="AdditionalAttributes"
      class="nightmare-dg @DensityCssClass @CssClass"
@@ -75,14 +76,7 @@
             <div class="nightmare-dg-toolbar-actions">
                 @if (LastUpdatedUtc is not null)
                 {
-                    <span class="nightmare-dg-updated muted small">Updated @LastUpdatedUtc.Value.ToLocalTime().ToString("T")</span>
-                }
-
-                @if (RefreshRequested.HasDelegate)
-                {
-                    <button type="button" class="btn small" @onclick="InvokeRefreshAsync" disabled="@IsLoading">
-                        @RefreshButtonText
-                    </button>
+                    <span class="nightmare-dg-updated muted small">Updated @AppTimeFormat.Format(LastUpdatedUtc)</span>
                 }
 
                 @if (EnableCsvExport)

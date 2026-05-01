@@ -75,7 +75,9 @@
             </div>
         </ConfigurationTemplate>
         <ChildContent>
-            <PropertyColumn Title="Discovered (UTC)" Property="@(r => r.DiscoveredAtUtc)" Format="u" Sortable="true" IsDefaultSortColumn="true" InitialSortDirection="Descending" />
+            <TemplateColumn Title="Discovered" Context="r" SortBy="@SortFindingDiscovered" IsDefaultSortColumn="true" InitialSortDirection="Descending">
+                <GridDateCell Value="@r.DiscoveredAtUtc" />
+            </TemplateColumn>
             <TemplateColumn Title="Severity" Context="r" SortBy="@SortFindingSeverity">
                 <strong>@r.Severity</strong>
             </TemplateColumn>
@@ -115,6 +117,9 @@
     private bool _loading;
     private DateTimeOffset? _lastLoadedAtUtc;
     private readonly PaginationState _findingPagination = new() { ItemsPerPage = 50 };
+
+    private static readonly GridSort<HighValueFindingRowDto> SortFindingDiscovered =
+        GridSort<HighValueFindingRowDto>.ByDescending(static r => r.DiscoveredAtUtc);
 
     private static readonly GridSort<HighValueFindingRowDto> SortFindingSeverity =
         GridSort<HighValueFindingRowDto>.ByAscending(static r => r.Severity);

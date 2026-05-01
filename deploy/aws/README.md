@@ -72,6 +72,14 @@ Run the scaler on a steady cadence, such as every minute from cron or systemd ti
 
 The manual workflow below is still useful when the core services are already reachable from ECS through managed databases/brokers or custom network plumbing.
 
+## Manual EC2 worker controls
+
+The Operations page also has an `EC2 Workers` section for launching and scaling worker-only EC2 machines independently from ECS. Command Center persists the machine list, enforces a maximum of two active EC2 worker machines, launches instances with the configured AMI/subnet/security group, and uses AWS Systems Manager Run Command to apply per-machine worker counts.
+
+Set the `EC2_WORKER_*` values in the Command Center environment before using the page. At minimum, configure the region, instance profile or role, subnet/security group, repository URL/branch, and routable service endpoints for Postgres, Redis, and RabbitMQ. The EC2 worker instance profile must allow SSM Managed Instance Core so Command Center can send scale commands after the instance boots.
+
+Remote EC2 worker machines run `deploy/docker-compose.ec2-workers.yml` through `deploy/apply-ec2-worker-scale.sh`. They do not run Postgres, Redis, RabbitMQ, Command Center, or Gatekeeper locally; they connect back to the configured core host.
+
 Create local, non-committed config files:
 
 ```bash

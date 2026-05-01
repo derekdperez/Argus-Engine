@@ -607,6 +607,123 @@
         <section class="panel">
             <div class="section-heading">
                 <div>
+                    <p class="eyebrow">EC2 Workers</p>
+                    <h2>Manual machine scaling</h2>
+                </div>
+                <span class="muted">@ActiveEc2WorkerMachineCount.ToString(CultureInfo.InvariantCulture) / 2 machines active</span>
+            </div>
+
+            <div class="ops-rz-toolbar">
+                <label>
+                    <span>Name</span>
+                    <input type="text" class="ops-filter" @bind="_ec2WorkerName" placeholder="ec2-worker-a" />
+                </label>
+                <label>
+                    <span>Spider</span>
+                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreateSpider" />
+                </label>
+                <label>
+                    <span>Enum</span>
+                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreateEnum" />
+                </label>
+                <label>
+                    <span>Port scan</span>
+                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreatePortScan" />
+                </label>
+                <label>
+                    <span>High value</span>
+                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreateHighValue" />
+                </label>
+                <label>
+                    <span>Tech ID</span>
+                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreateTechId" />
+                </label>
+                <button type="button" class="btn primary" disabled="@(!CanCreateEc2WorkerMachine)" @onclick="CreateEc2WorkerMachineAsync">Add machine</button>
+                <button type="button" class="btn" disabled="@_ec2WorkerBusy" @onclick="ReloadEc2WorkerMachinesAsync">Refresh</button>
+            </div>
+
+            <RadzenDataGrid TItem="Ec2WorkerMachineDto"
+                            Data="@_ec2WorkerMachines"
+                            IsLoading="@_ec2WorkerBusy"
+                            AllowFiltering="true"
+                            FilterMode="FilterMode.Advanced"
+                            FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                            AllowPaging="false"
+                            AllowSorting="true"
+                            AllowColumnResize="true"
+                            AllowColumnReorder="true"
+                            Density="@_radzenDensity"
+                            EmptyText="No EC2 worker machines have been created."
+                            class="ops-rz-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Title="Selected" Width="110px" Filterable="false" Sortable="false">
+                        <Template Context="m">
+                            <button type="button" class="btn small" @onclick="@(() => SelectEc2WorkerMachine(m))">
+                                @(m.Id == _selectedEc2WorkerMachineId ? "Selected" : "Select")
+                            </button>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="Name" Title="Name" Width="180px">
+                        <Template Context="m"><strong>@m.Name</strong></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="AwsState" Title="State" Width="130px">
+                        <Template Context="m"><span class="@Ec2WorkerStateBadgeClass(m)">@m.AwsState</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="InstanceId" Title="Instance" Width="190px" />
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="PublicIpAddress" Title="Public IP" Width="140px" />
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="PrivateIpAddress" Title="Private IP" Width="140px" />
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="InstanceType" Title="Type" Width="130px" />
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Title="Workers" Width="300px" Filterable="false" Sortable="false">
+                        <Template Context="m"><span class="ops-rz-clip" title="@Ec2WorkerCountsSummary(m.Workers)">@Ec2WorkerCountsSummary(m.Workers)</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="LastCommandStatus" Title="SSM" Width="150px" />
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="StatusMessage" Title="Message" Width="320px">
+                        <Template Context="m"><span class="ops-rz-clip" title="@m.StatusMessage">@m.StatusMessage</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="UpdatedAtUtc" Title="Updated" Width="180px">
+                        <Template Context="m">@FormatOpsTime(m.UpdatedAtUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Title="Actions" Width="130px" Filterable="false" Sortable="false">
+                        <Template Context="m">
+                            <button type="button" class="btn small danger" disabled="@_ec2WorkerBusy" @onclick="@(() => RemoveEc2WorkerMachineAsync(m))">Remove</button>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+
+            @if (SelectedEc2WorkerMachine is { } selectedEc2Worker)
+            {
+                <div class="ops-rz-toolbar">
+                    <strong>Scale @selectedEc2Worker.Name</strong>
+                    <label>
+                        <span>Spider</span>
+                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScaleSpider" />
+                    </label>
+                    <label>
+                        <span>Enum</span>
+                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScaleEnum" />
+                    </label>
+                    <label>
+                        <span>Port scan</span>
+                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScalePortScan" />
+                    </label>
+                    <label>
+                        <span>High value</span>
+                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScaleHighValue" />
+                    </label>
+                    <label>
+                        <span>Tech ID</span>
+                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScaleTechId" />
+                    </label>
+                    <button type="button" class="btn primary" disabled="@_ec2WorkerBusy" @onclick="ScaleSelectedEc2WorkerMachineAsync">Apply scale</button>
+                    <button type="button" class="btn danger" disabled="@_ec2WorkerBusy" @onclick="@(() => RemoveEc2WorkerMachineAsync(selectedEc2Worker))">Remove machine</button>
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
                     <p class="eyebrow">Workers</p>
                     <h2>Activity + controls</h2>
                 </div>
@@ -717,6 +834,7 @@
     private readonly List<HttpRequestQueueRowDto> _requestQueue = [];
     private readonly List<WorkerKindSummaryDto> _workerSummaries = [];
     private readonly List<WorkerScaleTargetDto> _workerScaleTargets = [];
+    private readonly List<Ec2WorkerMachineDto> _ec2WorkerMachines = [];
     private readonly HashSet<Guid> _selectedToolTargetIds = [];
     private int SelectedToolTargetCount => _selectedToolTargetIds.Count;
     private readonly Dictionary<string, int> _workerScaleInputs = new(StringComparer.Ordinal);
@@ -839,6 +957,19 @@
     private string _workerSearch = "";
     private string? _workerBusyKey;
     private string? _workerScaleBusyKey;
+    private Guid? _selectedEc2WorkerMachineId;
+    private string _ec2WorkerName = "";
+    private int _ec2CreateSpider;
+    private int _ec2CreateEnum;
+    private int _ec2CreatePortScan;
+    private int _ec2CreateHighValue;
+    private int _ec2CreateTechId;
+    private int _ec2ScaleSpider;
+    private int _ec2ScaleEnum;
+    private int _ec2ScalePortScan;
+    private int _ec2ScaleHighValue;
+    private int _ec2ScaleTechId;
+    private bool _ec2WorkerBusy;
 
     private string _maintenanceApiKey = "";
     private string _phraseClearTargets = "";
@@ -928,6 +1059,17 @@
                 || GridTextFilter.Matches(w.RollupActivityLabel, _workerSearch)
                 || GridTextFilter.Matches(FormatOpsTime(w.LastActivityUtc), _workerSearch));
 
+    private int ActiveEc2WorkerMachineCount =>
+        _ec2WorkerMachines.Count(m => Ec2WorkerMachineIsActive(m.AwsState));
+
+    private bool CanCreateEc2WorkerMachine =>
+        !_ec2WorkerBusy && ActiveEc2WorkerMachineCount < 2;
+
+    private Ec2WorkerMachineDto? SelectedEc2WorkerMachine =>
+        _selectedEc2WorkerMachineId is null
+            ? null
+            : _ec2WorkerMachines.FirstOrDefault(m => m.Id == _selectedEc2WorkerMachineId.Value);
+
     private string LiveStateCss => Realtime.IsConnected ? "connected" : "disconnected";
     private string LiveStatusText => Realtime.IsConnected
         ? "Subscribed to command-center events"
@@ -982,6 +1124,22 @@
             : $"manual {scale.ManualDesiredCount.Value.ToString(CultureInfo.InvariantCulture)}";
         return $"{manual}; ECS desired {desired}, running {running}, pending {pending}";
     }
+
+    private static string Ec2WorkerCountsSummary(Ec2WorkerCountsDto counts) =>
+        $"spider {counts.Spider.ToString(CultureInfo.InvariantCulture)}, enum {counts.Enum.ToString(CultureInfo.InvariantCulture)}, port {counts.PortScan.ToString(CultureInfo.InvariantCulture)}, high {counts.HighValue.ToString(CultureInfo.InvariantCulture)}, tech {counts.TechnologyIdentification.ToString(CultureInfo.InvariantCulture)}";
+
+    private static bool Ec2WorkerMachineIsActive(string? state) =>
+        !string.Equals(state, "terminated", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(state, "terminating", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(state, "shutting-down", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(state, "error", StringComparison.OrdinalIgnoreCase);
+
+    private static string Ec2WorkerStateBadgeClass(Ec2WorkerMachineDto machine) =>
+        string.Equals(machine.AwsState, "running", StringComparison.OrdinalIgnoreCase)
+            ? "badge badge-green"
+            : Ec2WorkerMachineIsActive(machine.AwsState)
+                ? "badge badge-gray"
+                : "badge badge-red";
 
     protected override async Task OnInitializedAsync()
     {
@@ -1122,6 +1280,7 @@
 
             await ReloadWorkerRowsAsync();
             await ReloadWorkerScaleAsync();
+            await ReloadEc2WorkerMachinesAsync();
             await ReloadHttpQueueMetricsAsync();
             _snapshotLoadedAtUtc = DateTimeOffset.UtcNow;
         }
@@ -1198,6 +1357,180 @@
         catch
         {
             _workerScaleTargets.Clear();
+        }
+    }
+
+    private async Task ReloadEc2WorkerMachinesAsync()
+    {
+        _ec2WorkerBusy = true;
+        try
+        {
+            var machines = await Http.GetFromJsonAsync<List<Ec2WorkerMachineDto>>("/api/ec2-workers/machines").ConfigureAwait(false);
+            _ec2WorkerMachines.Clear();
+            if (machines is null)
+                return;
+
+            _ec2WorkerMachines.AddRange(machines);
+            if (_selectedEc2WorkerMachineId is null || _ec2WorkerMachines.All(m => m.Id != _selectedEc2WorkerMachineId.Value))
+                _selectedEc2WorkerMachineId = _ec2WorkerMachines.FirstOrDefault(m => Ec2WorkerMachineIsActive(m.AwsState))?.Id
+                    ?? _ec2WorkerMachines.FirstOrDefault()?.Id;
+
+            if (SelectedEc2WorkerMachine is { } selected)
+                ApplyEc2ScaleInputs(selected.Workers);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Could not load EC2 worker machines: {ex.Message}";
+            _ec2WorkerMachines.Clear();
+        }
+        finally
+        {
+            _ec2WorkerBusy = false;
+        }
+    }
+
+    private async Task CreateEc2WorkerMachineAsync()
+    {
+        if (!CanCreateEc2WorkerMachine)
+        {
+            _statusMessage = "EC2 workers are limited to two active machines.";
+            return;
+        }
+
+        _ec2WorkerBusy = true;
+        _statusMessage = "";
+        try
+        {
+            var request = new Ec2WorkerMachineCreateRequest(
+                _ec2WorkerName,
+                CreateEc2WorkerCounts(_ec2CreateSpider, _ec2CreateEnum, _ec2CreatePortScan, _ec2CreateHighValue, _ec2CreateTechId));
+            var response = await Http.PostAsJsonAsync("/api/ec2-workers/machines", request).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "EC2 worker machine could not be created.").ConfigureAwait(false);
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<Ec2WorkerMachineMutationResult>().ConfigureAwait(false);
+            if (result is not null)
+            {
+                _selectedEc2WorkerMachineId = result.Machine.Id;
+                ApplyEc2ScaleInputs(result.Machine.Workers);
+                _statusMessage = result.Message;
+            }
+            else
+            {
+                _statusMessage = "EC2 worker machine requested.";
+            }
+
+            _ec2WorkerName = "";
+            await ReloadEc2WorkerMachinesAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"EC2 worker create failed: {ex.Message}";
+        }
+        finally
+        {
+            _ec2WorkerBusy = false;
+        }
+    }
+
+    private void SelectEc2WorkerMachine(Ec2WorkerMachineDto machine)
+    {
+        _selectedEc2WorkerMachineId = machine.Id;
+        ApplyEc2ScaleInputs(machine.Workers);
+        _statusMessage = "";
+    }
+
+    private void ApplyEc2ScaleInputs(Ec2WorkerCountsDto counts)
+    {
+        _ec2ScaleSpider = Math.Max(0, counts.Spider);
+        _ec2ScaleEnum = Math.Max(0, counts.Enum);
+        _ec2ScalePortScan = Math.Max(0, counts.PortScan);
+        _ec2ScaleHighValue = Math.Max(0, counts.HighValue);
+        _ec2ScaleTechId = Math.Max(0, counts.TechnologyIdentification);
+    }
+
+    private static Ec2WorkerCountsDto CreateEc2WorkerCounts(
+        int spider,
+        int enumWorkers,
+        int portScan,
+        int highValue,
+        int technologyIdentification) =>
+        new(
+            Math.Max(0, spider),
+            Math.Max(0, enumWorkers),
+            Math.Max(0, portScan),
+            Math.Max(0, highValue),
+            Math.Max(0, technologyIdentification));
+
+    private async Task ScaleSelectedEc2WorkerMachineAsync()
+    {
+        var machine = SelectedEc2WorkerMachine;
+        if (machine is null)
+        {
+            _statusMessage = "Select an EC2 worker machine first.";
+            return;
+        }
+
+        _ec2WorkerBusy = true;
+        _statusMessage = "";
+        try
+        {
+            var request = new Ec2WorkerMachineScaleRequest(
+                CreateEc2WorkerCounts(_ec2ScaleSpider, _ec2ScaleEnum, _ec2ScalePortScan, _ec2ScaleHighValue, _ec2ScaleTechId));
+            var response = await Http.PutAsJsonAsync($"/api/ec2-workers/machines/{machine.Id}/scale", request).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "EC2 worker machine could not be scaled.").ConfigureAwait(false);
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<Ec2WorkerMachineMutationResult>().ConfigureAwait(false);
+            _statusMessage = result?.Message ?? "EC2 worker scale command sent.";
+            await ReloadEc2WorkerMachinesAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"EC2 worker scale failed: {ex.Message}";
+        }
+        finally
+        {
+            _ec2WorkerBusy = false;
+        }
+    }
+
+    private async Task RemoveEc2WorkerMachineAsync(Ec2WorkerMachineDto machine)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", $"Terminate EC2 worker machine {machine.Name}?");
+        if (!ok)
+            return;
+
+        _ec2WorkerBusy = true;
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/ec2-workers/machines/{machine.Id}").ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "EC2 worker machine could not be removed.").ConfigureAwait(false);
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<Ec2WorkerMachineMutationResult>().ConfigureAwait(false);
+            _statusMessage = result?.Message ?? "EC2 worker machine termination requested.";
+            if (_selectedEc2WorkerMachineId == machine.Id)
+                _selectedEc2WorkerMachineId = null;
+            await ReloadEc2WorkerMachinesAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"EC2 worker remove failed: {ex.Message}";
+        }
+        finally
+        {
+            _ec2WorkerBusy = false;
         }
     }
 

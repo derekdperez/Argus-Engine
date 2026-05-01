@@ -166,8 +166,12 @@ public static class Ec2WorkerEndpoints
                             .ConfigureAwait(false);
                     }
 
-                    machine.AwsState = "terminating";
-                    machine.StatusMessage = "EC2 termination requested.";
+                    var alreadyTerminal = string.IsNullOrWhiteSpace(machine.InstanceId)
+                        || machine.AwsState.Equals("terminated", StringComparison.OrdinalIgnoreCase);
+                    machine.AwsState = alreadyTerminal ? "terminated" : "terminating";
+                    machine.StatusMessage = alreadyTerminal
+                        ? "EC2 worker machine removed from active controls."
+                        : "EC2 termination requested.";
                     machine.UpdatedAtUtc = DateTimeOffset.UtcNow;
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
                     await NotifyChangedAsync(hub, $"{machine.Name} EC2 worker machine termination requested", ct).ConfigureAwait(false);
@@ -205,12 +209,12 @@ public static class Ec2WorkerEndpoints
             [
                 new TagSpecification
                 {
-                    ResourceType = ResourceType.Instance,
+                    ResourceType = Amazon.EC2.ResourceType.Instance,
                     Tags =
                     [
-                        new Tag("Name", machine.Name),
-                        new Tag("Purpose", "nightmare-ec2-worker"),
-                        new Tag("NightmareEc2WorkerMachineId", machine.Id.ToString()),
+                        new Amazon.EC2.Model.Tag("Name", machine.Name),
+                        new Amazon.EC2.Model.Tag("Purpose", "nightmare-ec2-worker"),
+                        new Amazon.EC2.Model.Tag("NightmareEc2WorkerMachineId", machine.Id.ToString()),
                     ],
                 },
             ],
@@ -274,14 +278,14 @@ public static class Ec2WorkerEndpoints
 
     private static async Task<Dictionary<string, Instance>> DescribeInstancesAsync(
         AmazonEC2Client ec2,
-        IReadOnlyCollection<string> instanceIds,
+        List<string> instanceIds,
         CancellationToken ct)
     {
         if (instanceIds.Count == 0)
             return [];
 
         var response = await ec2.DescribeInstancesAsync(
-                new DescribeInstancesRequest { InstanceIds = instanceIds.ToList() },
+                new DescribeInstancesRequest { InstanceIds = instanceIds },
                 ct)
             .ConfigureAwait(false);
 
@@ -412,8 +416,8 @@ public static class Ec2WorkerEndpoints
         if (includeGitPull)
         {
             sb.AppendLine("git fetch origin");
-            sb.AppendLine($"git checkout {ShellQuote(branch)}");
-            sb.AppendLine($"git pull --ff-only origin {ShellQuote(branch)} || git pull origin {ShellQuote(branch)}");
+            sb.AppendLine(FormattableString.Invariant($"git checkout {ShellQuote(branch)}"));
+            sb.AppendLine(FormattableString.Invariant($"git pull --ff-only origin {ShellQuote(branch)} || git pull origin {ShellQuote(branch)}"));
         }
 
         sb.AppendLine("cat > deploy/ec2-worker.env <<'NIGHTMARE_EC2_WORKER_ENV'");
@@ -421,8 +425,8 @@ public static class Ec2WorkerEndpoints
         sb.AppendLine("NIGHTMARE_EC2_WORKER_ENV");
         sb.AppendLine("chmod 600 deploy/ec2-worker.env || true");
         sb.AppendLine("chmod +x deploy/apply-ec2-worker-scale.sh || true");
-        sb.AppendLine(
-            $"EC2_WORKER_SPIDER={counts.Spider} EC2_WORKER_ENUM={counts.Enum} EC2_WORKER_PORTSCAN={counts.PortScan} EC2_WORKER_HIGHVALUE={counts.HighValue} EC2_WORKER_TECHID={counts.TechnologyIdentification} ./deploy/apply-ec2-worker-scale.sh");
+        sb.AppendLine(FormattableString.Invariant(
+            $"EC2_WORKER_SPIDER={counts.Spider} EC2_WORKER_ENUM={counts.Enum} EC2_WORKER_PORTSCAN={counts.PortScan} EC2_WORKER_HIGHVALUE={counts.HighValue} EC2_WORKER_TECHID={counts.TechnologyIdentification} ./deploy/apply-ec2-worker-scale.sh"));
         return sb.ToString();
     }
 

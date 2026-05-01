@@ -152,6 +152,17 @@
   - Why: restore `dotnet publish` for `NightmareV2.CommandCenter` without relying on older contract DTO names.
 - Validation: `dotnet publish src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release -o ./.tmp/publish-command-center /p:UseAppHost=false` succeeded.
 
+- Added manual EC2 worker machine scaling:
+  - Persisted EC2 worker machine state and per-machine worker counts, exposed through `/api/ec2-workers/machines`.
+  - Added Operations page `EC2 Workers` grid and controls to add up to two EC2 machines, select a machine, set spider/enum/port/high-value/technology-id worker counts, and remove machines.
+  - Added EC2 worker compose/apply scripts and AWS deployment configuration notes for SSM-driven remote scaling.
+  - Why: provide EC2 worker capacity independent of ECS worker services, with manual operator control from Command Center.
+- Validation:
+  - `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded.
+  - `dotnet test src/tests/NightmareV2.CommandCenter.Tests/NightmareV2.CommandCenter.Tests.csproj -c Release --no-restore` exited 0.
+  - `git diff --check` passed with Git CRLF warnings only.
+  - `C:\Program Files\Git\bin\bash.exe -n deploy/apply-ec2-worker-scale.sh` succeeded.
+
 - Added Operations worker scale controls and ECS manual desired-count path:
   - Worker grid shows scalable ECS services with `-1`, textbox `Set`, and `+1` controls.
   - Manual desired counts are persisted in `worker_scale_targets`; Command Center can update ECS immediately via AWS ECS SDK when AWS region/credentials are available.

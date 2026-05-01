@@ -2,6 +2,14 @@
 
 ## 2026-05-01
 
+- Fixed Command Center ECS worker scale-up when services are missing:
+  - Manual worker scaling now creates the ECS service from the latest active worker task definition when the service does not already exist and the requested desired count is greater than zero.
+  - Creation uses the existing deployment environment conventions: `ECS_TASK_FAMILY_WORKER_*`, `ECS_SUBNETS`, `ECS_SECURITY_GROUPS`, `ECS_ASSIGN_PUBLIC_IP`, `ECS_LAUNCH_TYPE`, and `ECS_ENABLE_EXECUTE_COMMAND`.
+  - Why: `UpdateService` cannot create a missing ECS service, so the app could save desired counts without actually materializing worker services.
+- Validation:
+  - `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded.
+  - Live ECS creation was not run from this local Windows workspace.
+
 - Fixed technology-identification worker Docker publish collision:
   - Legacy `TechIdentificationData` JSON files now publish under `Resources/TechnologyDetection/TechIdentificationData` instead of being flattened into `Resources/TechnologyDetection/technologies`.
   - `TechnologyCatalogLoader` now merges legacy data first and current `technologies` data second, preserving both catalogs while allowing current definitions to override by technology name.

@@ -29,10 +29,19 @@ using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure;
 using NightmareV2.Infrastructure.Data;
 using NightmareV2.Infrastructure.Messaging;
+using AssignPublicIp = Amazon.ECS.AssignPublicIp;
 using AssetAdmissionStage = NightmareV2.Contracts.AssetAdmissionStage;
 using AssetKind = NightmareV2.Contracts.AssetKind;
+using AwsVpcConfiguration = Amazon.ECS.Model.AwsVpcConfiguration;
+using CreateServiceRequest = Amazon.ECS.Model.CreateServiceRequest;
+using DeploymentConfiguration = Amazon.ECS.Model.DeploymentConfiguration;
 using DescribeServicesRequest = Amazon.ECS.Model.DescribeServicesRequest;
 using EcsService = Amazon.ECS.Model.Service;
+using ListTaskDefinitionsRequest = Amazon.ECS.Model.ListTaskDefinitionsRequest;
+using LaunchType = Amazon.ECS.LaunchType;
+using NetworkConfiguration = Amazon.ECS.Model.NetworkConfiguration;
+using SortOrder = Amazon.ECS.SortOrder;
+using TaskDefinitionStatus = Amazon.ECS.TaskDefinitionStatus;
 using UpdateServiceRequest = Amazon.ECS.Model.UpdateServiceRequest;
 using UrlFetchSnapshot = NightmareV2.Application.Assets.UrlFetchSnapshot;
 
@@ -248,6 +257,31 @@ static string EcsServiceNameForScaleKey(IConfiguration configuration, string sca
         : configuration[envName] ?? defaultServiceName;
 }
 
+static string EcsTaskFamilyForScaleKey(IConfiguration configuration, string scaleKey)
+{
+    var envName = scaleKey switch
+    {
+        "worker-spider" => "ECS_TASK_FAMILY_WORKER_SPIDER",
+        "worker-enum" => "ECS_TASK_FAMILY_WORKER_ENUM",
+        "worker-portscan" => "ECS_TASK_FAMILY_WORKER_PORTSCAN",
+        "worker-highvalue" => "ECS_TASK_FAMILY_WORKER_HIGHVALUE",
+        "worker-techid" => "ECS_TASK_FAMILY_WORKER_TECHID",
+        _ => "",
+    };
+
+    return string.IsNullOrWhiteSpace(envName)
+        ? $"nightmare-v2-{scaleKey}"
+        : configuration[envName] ?? $"nightmare-v2-{scaleKey}";
+}
+
+static List<string> SplitCsvConfiguration(string? value) =>
+    string.IsNullOrWhiteSpace(value)
+        ? []
+        : value
+            .Replace(' ', ',')
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
 static async Task<string?> ResolveAwsRegionAsync(IConfiguration configuration, CancellationToken ct)
 {
     var configured = configuration["AWS_REGION"]
@@ -332,6 +366,100 @@ static async Task UpdateEcsServiceDesiredCountAsync(
             },
             ct)
         .ConfigureAwait(false);
+}
+
+static async Task<(bool Changed, string Action)> EnsureEcsWorkerServiceDesiredCountAsync(
+    IConfiguration configuration,
+    string scaleKey,
+    string serviceName,
+    int desiredCount,
+    CancellationToken ct)
+{
+    var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);
+    if (string.IsNullOrWhiteSpace(region))
+        throw new InvalidOperationException("AWS region is not configured and could not be inferred from EC2 metadata.");
+
+    var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
+    using var ecs = new AmazonECSClient(RegionEndpoint.GetBySystemName(region));
+    var services = await ecs.DescribeServicesAsync(
+            new DescribeServicesRequest
+            {
+                Cluster = cluster,
+                Services = [serviceName],
+            },
+            ct)
+        .ConfigureAwait(false);
+
+    var service = services.Services.FirstOrDefault(s => string.Equals(s.ServiceName, serviceName, StringComparison.Ordinal));
+    if (service is not null)
+    {
+        if (!string.Equals(service.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"ECS service {serviceName} is {service.Status}; wait for it to become ACTIVE or finish deletion.");
+
+        await ecs.UpdateServiceAsync(
+                new UpdateServiceRequest
+                {
+                    Cluster = cluster,
+                    Service = serviceName,
+                    DesiredCount = desiredCount,
+                },
+                ct)
+            .ConfigureAwait(false);
+
+        return (true, "updated");
+    }
+
+    if (desiredCount == 0)
+        return (false, "saved");
+
+    var family = EcsTaskFamilyForScaleKey(configuration, scaleKey);
+    var taskDefinitions = await ecs.ListTaskDefinitionsAsync(
+            new ListTaskDefinitionsRequest
+            {
+                FamilyPrefix = family,
+                Status = TaskDefinitionStatus.ACTIVE,
+                Sort = SortOrder.DESC,
+                MaxResults = 1,
+            },
+            ct)
+        .ConfigureAwait(false);
+    var taskDefinition = taskDefinitions.TaskDefinitionArns.FirstOrDefault();
+    if (string.IsNullOrWhiteSpace(taskDefinition))
+        throw new InvalidOperationException($"No active ECS task definition was found for family {family}. Run deploy/aws/deploy-ecs-services.sh or ./deploy/deploy.sh --ecs-workers once to register it.");
+
+    var subnets = SplitCsvConfiguration(configuration["ECS_SUBNETS"]);
+    var securityGroups = SplitCsvConfiguration(configuration["ECS_SECURITY_GROUPS"]);
+    if (subnets.Count == 0 || securityGroups.Count == 0)
+        throw new InvalidOperationException("ECS_SUBNETS and ECS_SECURITY_GROUPS must be configured before Command Center can create worker services.");
+
+    var request = new CreateServiceRequest
+    {
+        Cluster = cluster,
+        ServiceName = serviceName,
+        TaskDefinition = taskDefinition,
+        DesiredCount = desiredCount,
+        LaunchType = LaunchType.FindValue(configuration["ECS_LAUNCH_TYPE"] ?? "FARGATE"),
+        DeploymentConfiguration = new DeploymentConfiguration
+        {
+            MinimumHealthyPercent = configuration.GetValue<int?>("ECS_MIN_HEALTHY_PERCENT") ?? 100,
+            MaximumPercent = configuration.GetValue<int?>("ECS_MAX_PERCENT") ?? 200,
+        },
+        NetworkConfiguration = new NetworkConfiguration
+        {
+            AwsvpcConfiguration = new AwsVpcConfiguration
+            {
+                Subnets = subnets,
+                SecurityGroups = securityGroups,
+                AssignPublicIp = AssignPublicIp.FindValue(configuration["ECS_ASSIGN_PUBLIC_IP"] ?? "DISABLED"),
+            },
+        },
+    };
+
+    if (bool.TryParse(configuration["ECS_ENABLE_EXECUTE_COMMAND"], out var enableExecuteCommand) && enableExecuteCommand)
+        request.EnableExecuteCommand = true;
+
+    await ecs.CreateServiceAsync(request, ct).ConfigureAwait(false);
+    return (true, "created");
 }
 
 static string ExtractTaskDefinitionVersion(string? taskDefinition)
@@ -1933,14 +2061,19 @@ app.MapPut(
             {
                 try
                 {
-                    await UpdateEcsServiceDesiredCountAsync(configuration, serviceName, body.DesiredCount, ct)
+                    var result = await EnsureEcsWorkerServiceDesiredCountAsync(configuration, scaleKey, serviceName, body.DesiredCount, ct)
                         .ConfigureAwait(false);
-                    ecsUpdated = true;
-                    message = $"Set {serviceName} desired count to {body.DesiredCount}.";
+                    ecsUpdated = result.Changed;
+                    message = result.Action switch
+                    {
+                        "created" => $"Created {serviceName} and set desired count to {body.DesiredCount}.",
+                        "updated" => $"Set {serviceName} desired count to {body.DesiredCount}.",
+                        _ => $"Manual worker count saved for {serviceName}.",
+                    };
                 }
                 catch (AmazonECSException ex)
                 {
-                    message = $"Manual worker count saved, but ECS update failed: {ex.Message}";
+                    message = $"Manual worker count saved, but ECS update/create failed: {ex.Message}";
                 }
                 catch (AmazonServiceException ex)
                 {
@@ -1948,7 +2081,7 @@ app.MapPut(
                 }
                 catch (Exception ex)
                 {
-                    message = $"Manual worker count saved, but ECS update failed: {ex.Message}";
+                    message = $"Manual worker count saved, but ECS update/create failed: {ex.Message}";
                 }
             }
 

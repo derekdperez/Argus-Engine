@@ -467,7 +467,7 @@ static string ExtractTaskDefinitionVersion(string? taskDefinition)
     if (string.IsNullOrWhiteSpace(taskDefinition))
         return "-";
 
-    var slash = taskDefinition.LastIndexOf("/", StringComparison.Ordinal);
+    var slash = taskDefinition.LastIndexOf('/');
     var familyRevision = slash >= 0 ? taskDefinition[(slash + 1)..] : taskDefinition;
     return familyRevision;
 }
@@ -1369,7 +1369,7 @@ app.MapGet(
                     {
                         Last = g.Max(x => x.OccurredAtUtc),
                         Last1h = g.LongCount(x => x.OccurredAtUtc >= since1),
-                        Last24h = g.LongCount(),
+                        Last24h = g.Count(),
                     },
                     StringComparer.Ordinal);
 
@@ -1986,9 +1986,7 @@ static async Task InitializeStartupDatabasesAsync(WebApplication app, bool skipS
     var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
     if (skipStartupDatabase)
     {
-        startupLog.LogWarning(
-            "Startup database EnsureCreated skipped (Nightmare:SkipStartupDatabase or NIGHTMARE_SKIP_STARTUP_DATABASE=1). "
-            + "APIs that need Postgres will still fail until a database is reachable.");
+        StartupLogMessages.StartupDatabaseSkipped(startupLog);
         return;
     }
 
@@ -2013,15 +2011,12 @@ static async Task InitializeStartupDatabasesAsync(WebApplication app, bool skipS
                     includeFileStore: true,
                     app.Lifetime.ApplicationStopping)
                 .ConfigureAwait(false);
-            startupLog.LogInformation("Startup database initialization completed.");
+            StartupLogMessages.StartupDatabaseInitializationCompleted(startupLog);
             return;
         }
         catch (Exception ex) when (attempt <= retryDelays.Length && !app.Lifetime.ApplicationStopping.IsCancellationRequested)
         {
-            startupLog.LogWarning(
-                ex,
-                "Startup database initialization failed on attempt {Attempt}; retrying.",
-                attempt);
+            StartupLogMessages.StartupDatabaseInitializationRetry(startupLog, ex, attempt);
             await Task.Delay(retryDelays[attempt - 1], app.Lifetime.ApplicationStopping).ConfigureAwait(false);
         }
         catch (Exception ex) when (!app.Lifetime.ApplicationStopping.IsCancellationRequested)
@@ -2029,9 +2024,7 @@ static async Task InitializeStartupDatabasesAsync(WebApplication app, bool skipS
             if (!continueOnFailure)
                 throw;
 
-            startupLog.LogError(
-                ex,
-                "Startup database initialization failed after retries. Command Center will continue to serve /health and diagnostics, but database-backed APIs will fail until Postgres/schema is fixed.");
+            StartupLogMessages.StartupDatabaseInitializationFailed(startupLog, ex);
             return;
         }
     }

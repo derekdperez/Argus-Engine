@@ -280,8 +280,8 @@ internal static class DockerRuntimeStatusBuilder
             return digest.Length > 18 ? digest[..18] : digest;
         }
 
-        var lastSlash = trimmed.LastIndexOf("/", StringComparison.Ordinal);
-        var lastColon = trimmed.LastIndexOf(":", StringComparison.Ordinal);
+        var lastSlash = trimmed.LastIndexOf('/');
+        var lastColon = trimmed.LastIndexOf(':');
         return lastColon > lastSlash ? trimmed[(lastColon + 1)..] : "latest";
     }
 

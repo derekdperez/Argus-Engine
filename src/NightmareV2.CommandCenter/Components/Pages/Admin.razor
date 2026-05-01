@@ -27,10 +27,16 @@
         <div class="alert">@_error</div>
     }
 
-    @if (_snapshot is null)
+    @if (_loading && _snapshot is null)
     {
         <section class="panel">
             <p class="muted">Loading usage snapshot...</p>
+        </section>
+    }
+    else if (_snapshot is null)
+    {
+        <section class="panel">
+            <p class="muted">Usage snapshot unavailable.</p>
         </section>
     }
     else

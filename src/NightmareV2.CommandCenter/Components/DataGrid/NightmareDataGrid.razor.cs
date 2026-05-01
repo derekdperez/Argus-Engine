@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Reflection;
+using System.Buffers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
@@ -17,9 +18,10 @@ namespace NightmareV2.CommandCenter.Components.DataGrid;
 public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly SearchValues<char> CsvEscapeChars = SearchValues.Create(['"', ',', '\r', '\n']);
     private readonly PaginationState _fallbackPagination = new();
 
-    private IReadOnlyList<TGridItem> _effectiveRows = [];
+    private List<TGridItem> _effectiveRows = [];
     private IReadOnlyList<GridGroup<TGridItem>>? _groups;
     private int _totalRowCount;
     private int _visibleRowCount;
@@ -392,7 +394,7 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
         await Js.InvokeVoidAsync("nightmareUi.downloadTextFile", fileName, csv, "text/csv;charset=utf-8");
     }
 
-    private static string BuildCsv(IReadOnlyList<TGridItem> rows)
+    private static string BuildCsv(List<TGridItem> rows)
     {
         var props = typeof(TGridItem)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
@@ -470,7 +472,7 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
 
     private static string EscapeCsv(string value)
     {
-        if (value.IndexOfAny(new[] { '"', ',', '\r', '\n' }) < 0)
+        if (value.AsSpan().IndexOfAny(CsvEscapeChars) < 0)
             return value;
 
         return '"' + value.Replace("\"", "\"\"", StringComparison.Ordinal) + '"';
@@ -565,10 +567,11 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
     {
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
+        GC.SuppressFinalize(this);
         await ValueTask.CompletedTask;
     }
 
-    private sealed record GridGroup<TRow>(string Key, IReadOnlyList<TRow> Items)
+    private sealed record GridGroup<TRow>(string Key, List<TRow> Items)
     {
         public IQueryable<TRow> Query => Items.AsQueryable();
     }

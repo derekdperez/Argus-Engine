@@ -29,9 +29,13 @@
     <p class="error">@_error</p>
 }
 
-@if (_snapshot is null)
+@if (_loading && _snapshot is null)
 {
     <p>Loading status...</p>
+}
+else if (_snapshot is null)
+{
+    <p>Status unavailable.</p>
 }
 else
 {

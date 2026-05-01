@@ -20,14 +20,14 @@
 
 <section class="panel">
     <h2>Add target</h2>
-    <EditForm Model="_form" OnValidSubmit="CreateAsync" FormName="@AddTargetFormName" method="post">
+    <EditForm Model="Form" OnValidSubmit="CreateAsync" FormName="@AddTargetFormName" method="post">
         <div>
             <label>Root domain</label>
-            <InputText @bind-Value="_form.RootDomain" placeholder="example.com" />
+            <InputText @bind-Value="Form.RootDomain" placeholder="example.com" />
         </div>
         <div>
             <label>Max depth</label>
-            <InputNumber @bind-Value="_form.GlobalMaxDepth" />
+            <InputNumber @bind-Value="Form.GlobalMaxDepth" />
         </div>
         <button type="submit" disabled="@_createBusy">@(_createBusy ? "Publishing…" : "Publish TargetCreated")</button>
     </EditForm>
@@ -44,7 +44,7 @@
         <div class="row">
             <label>
                 Max depth
-                <input type="number" name="globalMaxDepth" min="1" value="@(_form.GlobalMaxDepth > 0 ? _form.GlobalMaxDepth : 12)" />
+                <input type="number" name="globalMaxDepth" min="1" value="@(Form.GlobalMaxDepth > 0 ? Form.GlobalMaxDepth : 12)" />
             </label>
             <label>
                 Target file
@@ -156,7 +156,8 @@ else
     private const string EditTargetFormName = "edit-target";
 
     [SupplyParameterFromForm(FormName = AddTargetFormName)]
-    private TargetForm _form { get; set; } = new();
+    private TargetForm? _form { get; set; }
+    private TargetForm Form => _form ??= new();
     private readonly List<TargetSummary> _rows = new();
     private string _targetSearch = "";
     private string? _status;
@@ -230,7 +231,7 @@ else
         _createBusy = true;
         try
         {
-            var response = await Http.PostAsJsonAsync("/api/targets", new CreateTargetRequest(_form.RootDomain, _form.GlobalMaxDepth));
+            var response = await Http.PostAsJsonAsync("/api/targets", new CreateTargetRequest(Form.RootDomain, Form.GlobalMaxDepth));
             if (response.StatusCode == HttpStatusCode.BadRequest || response.StatusCode == HttpStatusCode.Conflict)
             {
                 _status = await ReadResponseMessageAsync(response, "Target could not be created.");
@@ -239,7 +240,7 @@ else
 
             response.EnsureSuccessStatusCode();
             _status = "Target queued.";
-            _form = new TargetForm { GlobalMaxDepth = _form.GlobalMaxDepth > 0 ? _form.GlobalMaxDepth : 12 };
+            _form = new TargetForm { GlobalMaxDepth = Form.GlobalMaxDepth > 0 ? Form.GlobalMaxDepth : 12 };
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -381,7 +382,7 @@ else
             using var reader = new StreamReader(stream);
             var text = await reader.ReadToEndAsync();
             var lines = TargetRootNormalization.SplitLines(text).ToList();
-            var response = await Http.PostAsJsonAsync("/api/targets/bulk", new BulkImportRequest(lines, _form.GlobalMaxDepth));
+            var response = await Http.PostAsJsonAsync("/api/targets/bulk", new BulkImportRequest(lines, Form.GlobalMaxDepth));
             if (response.StatusCode == HttpStatusCode.BadRequest)
             {
                 _bulkStatus = await response.Content.ReadAsStringAsync();

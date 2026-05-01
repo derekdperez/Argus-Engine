@@ -33,7 +33,7 @@
             </div>
         </div>
         <div class="hero-actions">
-            <span class="muted">Live event updates enabled</span>
+            <span class="muted">@(_loadingAll ? "Refreshing workspace..." : "Live event updates enabled")</span>
         </div>
     </section>
 
@@ -120,14 +120,14 @@
             </div>
 
             <div class="ops-card-row">
-                <EditForm Model="_targetCreateForm" OnValidSubmit="CreateTargetAsync" FormName="@OpsTargetCreateFormName" method="post" class="inline-form">
+                <EditForm Model="TargetCreateForm" OnValidSubmit="CreateTargetAsync" FormName="@OpsTargetCreateFormName" method="post" class="inline-form">
                     <label>
                         <span>Root domain</span>
-                        <InputText @bind-Value="_targetCreateForm.RootDomain" placeholder="example.com" />
+                        <InputText @bind-Value="TargetCreateForm.RootDomain" placeholder="example.com" />
                     </label>
                     <label class="short-field">
                         <span>Depth</span>
-                        <InputNumber @bind-Value="_targetCreateForm.GlobalMaxDepth" />
+                        <InputNumber @bind-Value="TargetCreateForm.GlobalMaxDepth" />
                     </label>
                     <button type="submit" class="btn primary" disabled="@_targetCreateBusy">@(_targetCreateBusy ? "Queueing…" : "Queue target")</button>
                 </EditForm>
@@ -809,11 +809,11 @@
     private MaintenanceStatusDto? _maintenanceStatus;
 
     [SupplyParameterFromForm(FormName = OpsTargetCreateFormName)]
-    private TargetForm _targetCreateForm { get; set; } = new();
+    private TargetForm? _targetCreateForm { get; set; }
+    private TargetForm TargetCreateForm => _targetCreateForm ??= new();
 
     private TargetEditForm? _targetEditing;
     private string _targetSearch = "";
-    private string _targetGroupBy = "";
     private string _targetFilter = "";
 
     private string _filterAssets = "";
@@ -822,7 +822,6 @@
     private string _filterRawCol = "";
     private string _filterPipelineCol = "";
     private string _filterHowFoundCol = "";
-    private string _assetGroupBy = "";
     private bool _showAssetDepth = true;
     private bool _showAssetCanonical;
     private bool _showAssetPipeline = true;
@@ -832,7 +831,6 @@
     private string _filterQueueKindCol = "";
     private string _filterQueueRawCol = "";
     private string _filterQueuePipelineCol = "";
-    private string _queueGroupBy = "";
     private bool _showQueueDomain = true;
     private bool _showQueueAttempts = true;
     private bool _showQueueTiming;
@@ -1469,7 +1467,7 @@
         _statusMessage = "";
         try
         {
-            var response = await Http.PostAsJsonAsync("/api/targets", new CreateTargetRequest(_targetCreateForm.RootDomain, _targetCreateForm.GlobalMaxDepth));
+            var response = await Http.PostAsJsonAsync("/api/targets", new CreateTargetRequest(TargetCreateForm.RootDomain, TargetCreateForm.GlobalMaxDepth));
             if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict)
             {
                 _statusMessage = await ReadResponseMessageAsync(response, "Target could not be created.");
@@ -1478,7 +1476,7 @@
 
             response.EnsureSuccessStatusCode();
             _statusMessage = "Target queued.";
-            _targetCreateForm = new TargetForm { GlobalMaxDepth = _targetCreateForm.GlobalMaxDepth > 0 ? _targetCreateForm.GlobalMaxDepth : 12 };
+            _targetCreateForm = new TargetForm { GlobalMaxDepth = TargetCreateForm.GlobalMaxDepth > 0 ? TargetCreateForm.GlobalMaxDepth : 12 };
             await ReloadTargetsAsync();
         }
         catch (Exception ex)
@@ -1683,7 +1681,6 @@
     private void ClearTargetFilters()
     {
         _targetSearch = "";
-        _targetGroupBy = "";
     }
 
     private void ClearAssetFilters()
@@ -1694,7 +1691,6 @@
         _filterRawCol = "";
         _filterPipelineCol = "";
         _filterHowFoundCol = "";
-        _assetGroupBy = "";
     }
 
     private void ClearQueueFilters()
@@ -1703,7 +1699,6 @@
         _filterQueueKindCol = "";
         _filterQueueRawCol = "";
         _filterQueuePipelineCol = "";
-        _queueGroupBy = "";
     }
 
     private async Task<HttpResponseMessage> MaintenancePostAsync<T>(string relativeUri, T body)

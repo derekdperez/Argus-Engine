@@ -1,5 +1,12 @@
 # AI Change Log
 
+## 2026-05-02
+
+- Fixed HighValue worker Docker publish failure:
+  - Changed default `HttpClient` registration in `NightmareV2.Workers.HighValue` to use `AddHttpClient(string.Empty)` before adding `WorkerHttpClientHandler`.
+  - Why: the worker calls `IHttpClientFactory.CreateClient()` and the parameterless `AddHttpClient()` overload does not return an `IHttpClientBuilder` for chaining `AddHttpMessageHandler`.
+  - Validation: `dotnet publish src/NightmareV2.Workers.HighValue/NightmareV2.Workers.HighValue.csproj -c Release -o .tmp/publish-worker-highvalue /p:UseAppHost=false` succeeded. Docker build validation could not run because the local Docker daemon was unavailable.
+
 ## 2026-05-01
 
 - Made the Ops page first response lightweight:

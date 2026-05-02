@@ -22,7 +22,7 @@ spider="${EC2_WORKER_SPIDER:-0}"
 enum="${EC2_WORKER_ENUM:-0}"
 portscan="${EC2_WORKER_PORTSCAN:-0}"
 highvalue="${EC2_WORKER_HIGHVALUE:-0}"
-techid="${EC2_WORKER_TECHID:-0}"
+techid="${EC2_WORKER_TECHID:-5}"
 
 for value in "$spider" "$enum" "$portscan" "$highvalue" "$techid"; do
   if [[ ! "$value" =~ ^[0-9]+$ ]]; then

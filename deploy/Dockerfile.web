@@ -22,7 +22,9 @@ COPY src/NightmareV2.Infrastructure/ src/NightmareV2.Infrastructure/
 COPY src/Resources/ src/Resources/
 RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj" \
-    -c Release -o /app/publish --no-restore /p:UseAppHost=false
+    -c Release -o /app/publish --no-restore /p:UseAppHost=false \
+    && test -s /app/publish/wwwroot/_framework/blazor.web.js \
+    && ! grep -q "^404: Not Found" /app/publish/wwwroot/_framework/blazor.web.js
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 

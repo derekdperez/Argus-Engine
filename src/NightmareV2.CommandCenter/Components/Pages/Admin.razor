@@ -175,12 +175,28 @@
     private readonly List<EditableWorkerScalingSetting> _scalingSettings = [];
     private string _error = string.Empty;
     private string _scalingMessage = string.Empty;
-    private bool _loading;
+    private bool _initialLoadStarted;
+    private bool _loading = true;
     private bool _scalingBusy;
 
     private string UsageBarWidth => $"{Math.Clamp(_snapshot?.EcsWorkerPercentUsed ?? 0, 0, 100):0.##}%";
 
-    protected override Task OnInitializedAsync() => ReloadAsync();
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialLoadStarted)
+        {
+            _initialLoadStarted = true;
+            _ = InvokeAsync(ReloadAndRefreshAsync);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task ReloadAndRefreshAsync()
+    {
+        await ReloadAsync();
+        await InvokeAsync(StateHasChanged);
+    }
 
     private async Task ReloadAsync()
     {

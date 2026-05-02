@@ -168,15 +168,33 @@ else
     private DockerRuntimeStatusDto? _snapshot;
     private EcsRuntimeStatusDto? _ecsSnapshot;
     private string _error = string.Empty;
-    private bool _loading;
+    private bool _initialLoadStarted;
+    private bool _loading = true;
     private readonly CancellationTokenSource _pollCts = new();
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
         Realtime.DomainEventReceived += OnRealtimeEvent;
+        return Task.CompletedTask;
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialLoadStarted)
+        {
+            _initialLoadStarted = true;
+            _ = InvokeAsync(LoadInitialAsync);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadInitialAsync()
+    {
         await ReloadAsync().ConfigureAwait(false);
         await StartRealtimeAsync().ConfigureAwait(false);
         _ = PollAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task StartRealtimeAsync()

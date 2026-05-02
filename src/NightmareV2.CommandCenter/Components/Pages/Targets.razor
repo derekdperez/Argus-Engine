@@ -101,7 +101,13 @@
 </section>
 
 <h2>Recent targets</h2>
-@if (_rows.Count == 0)
+@if (_loading && _lastLoadedAtUtc is null)
+{
+    <section class="panel">
+        <p class="muted">Loading targets...</p>
+    </section>
+}
+else if (_rows.Count == 0)
 {
     <p>No targets yet.</p>
 }
@@ -163,13 +169,15 @@ else
     private string? _status;
     private string? _bulkStatus;
     private string? _bulkDepthStatus;
+    private bool _initialLoadStarted;
+    private bool _loading = true;
     private bool _createBusy;
     private bool _bulkDepthBusy;
     private int _bulkMaxDepth = 12;
     private TargetEditForm? _editing;
     private DateTimeOffset? _lastLoadedAtUtc;
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
         var uri = Nav.ToAbsoluteUri(Nav.Uri);
         var query = QueryHelpers.ParseQuery(uri.Query);
@@ -177,8 +185,25 @@ else
             _bulkStatus = bulkStatus.ToString();
 
         Realtime.DomainEventReceived += OnRealtimeEvent;
+        return Task.CompletedTask;
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialLoadStarted)
+        {
+            _initialLoadStarted = true;
+            _ = InvokeAsync(LoadInitialAsync);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadInitialAsync()
+    {
         await ReloadAsync();
         await StartRealtimeAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task StartRealtimeAsync()
@@ -207,6 +232,7 @@ else
 
     private async Task ReloadAsync()
     {
+        _loading = true;
         try
         {
             var list = await Http.GetFromJsonAsync<List<TargetSummary>>("/api/targets");
@@ -219,6 +245,10 @@ else
         catch
         {
             _status = "Could not load targets (is the API running?)";
+        }
+        finally
+        {
+            _loading = false;
         }
     }
 

@@ -2,6 +2,13 @@
 
 ## 2026-05-02
 
+- Split CommandCenter startup composition out of `Program.cs`:
+  - Reduced `Program.cs` to composition-only startup: service registration, database initialization, middleware, endpoint registration, Razor component mapping, and `RunAsync`.
+  - Added `Startup/` extensions for CommandCenter service registration, middleware, and startup database initialization.
+  - Added a central endpoint registration extension and moved the remaining inline Program endpoint block into `CommandCenterInlineEndpoints` as a behavior-preserving first split.
+  - Why: make later endpoint/service hardening work easier without combining it with the ArgusEngine rename.
+  - Validation: `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release`, `dotnet test src/tests/NightmareV2.CommandCenter.Tests/NightmareV2.CommandCenter.Tests.csproj -c Release --no-restore`, and `git diff --check` succeeded. Build still reports existing Application analyzer warnings.
+
 - Added browser-side chunked target bulk import:
   - The Targets page now uses browser JavaScript to read the selected file, split it into 20 chunks, and post each chunk to `/api/targets/bulk`.
   - The UI shows chunk progress, updates cumulative import counts after every server response, and reloads target data as chunks are inserted.

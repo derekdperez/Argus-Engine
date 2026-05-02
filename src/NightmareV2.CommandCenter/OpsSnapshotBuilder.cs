@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using NightmareV2.Application.Workers;
 using NightmareV2.CommandCenter.Models;
 using NightmareV2.Domain.Entities;
@@ -33,7 +34,12 @@ internal static class OpsSnapshotBuilder
 
     public static void RegisterHttpClient(WebApplicationBuilder builder)
     {
-        builder.Services.AddHttpClient(HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(12));
+        RegisterHttpClient(builder.Services);
+    }
+
+    public static void RegisterHttpClient(IServiceCollection services)
+    {
+        services.AddHttpClient(HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(12));
     }
 
     public static async Task<OpsSnapshotDto> BuildAsync(

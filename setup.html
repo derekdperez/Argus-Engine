@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Argus Engine — Setup</title>
+  <meta name="description" content="Argus Engine documentation: architecture, setup, usage, and responsible operation for an event-driven reconnaissance platform.">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html" aria-label="Argus Engine home">
+        <span class="brand-mark">A</span>
+        <span>
+          <strong>Argus Engine</strong>
+          <small>SETUP INSTRUCTIONS</small>
+        </span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav id="site-nav" class="site-nav" aria-label="Primary navigation">
+        <a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="usage.html">Usage</a>
+<a class="active" href="setup.html">Setup</a>
+<a href="operations.html">Operations</a>
+<a href="responsible-use.html">Responsible Use</a>
+        <a class="nav-cta" href="https://github.com/derekdperez/Argus-Engine">GitHub</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <section class="page-hero">
+      <div class="container narrow">
+        <p class="eyebrow">Setup instructions</p>
+        <h1>Run Argus Engine with the repository’s actual stack.</h1>
+        <p class="lede">The current repo is a .NET 10 solution with Docker-based local orchestration. These instructions avoid imaginary install commands and stay close to the files that exist today.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">Prerequisites</p>
+          <h2>Install the platform tools first.</h2>
+        </div>
+        <div class="card-grid three">
+          <article class="card">
+            <h3>Git</h3>
+            <p>Required to clone the repository and manage local changes to configuration, docs, and deployment files.</p>
+          </article>
+          <article class="card">
+            <h3>Docker + Compose</h3>
+            <p>Recommended for a full local stack because the compose file wires together the web service, workers, Postgres, Redis, and RabbitMQ.</p>
+          </article>
+          <article class="card">
+            <h3>.NET 10 SDK</h3>
+            <p>Required for source builds, tests, and direct project execution outside containers. Keep SDK and package versions aligned with the repo.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section muted">
+      <div class="container split">
+        <div>
+          <p class="section-kicker">Path A</p>
+          <h2>Run the local Docker stack.</h2>
+          <p class="prose">Use this path when you want the closest approximation of the platform topology.</p>
+        </div>
+        <div class="copy-card">
+          <div class="copy-card-header">
+            <strong>Local stack</strong>
+            <button class="copy-button" data-copy-target="#docker-setup">Copy</button>
+          </div>
+          <pre id="docker-setup"><code>git clone https://github.com/derekdperez/Argus-Engine.git
+cd Argus-Engine
+
+# Build and start the full local stack.
+docker compose -f deploy/docker-compose.yml up -d --build
+
+# Confirm services are running.
+docker compose -f deploy/docker-compose.yml ps
+
+# Follow logs while the stack settles.
+docker compose -f deploy/docker-compose.yml logs -f</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container split">
+        <div>
+          <p class="section-kicker">Path B</p>
+          <h2>Build and test from source.</h2>
+          <p class="prose">Use this path when you are editing code, validating project references, or running deterministic test suites.</p>
+        </div>
+        <div class="copy-card">
+          <div class="copy-card-header">
+            <strong>Source workflow</strong>
+            <button class="copy-button" data-copy-target="#source-setup">Copy</button>
+          </div>
+          <pre id="source-setup"><code>git clone https://github.com/derekdperez/Argus-Engine.git
+cd Argus-Engine
+
+dotnet --info
+dotnet restore NightmareV2.slnx
+dotnet test NightmareV2.slnx
+
+# Run the web/Command Center project during development.
+dotnet run --project src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="section muted">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">Configuration checklist</p>
+          <h2>Do this before importing any real target.</h2>
+        </div>
+        <div class="feature-list">
+          <div>
+            <h3>Connection strings</h3>
+            <p>Confirm Postgres, file-store database, Redis, and RabbitMQ settings. The compose defaults are for local development, not production secrets.</p>
+          </div>
+          <div>
+            <h3>Worker scale</h3>
+            <p>Start conservatively. Increase worker replicas only after you understand queue depth, external tool behavior, and program rate limits.</p>
+          </div>
+          <div>
+            <h3>Scope policy</h3>
+            <p>Document allowed roots, exclusions, windows, and rate expectations before the Gatekeeper admits work.</p>
+          </div>
+          <div>
+            <h3>Diagnostics exposure</h3>
+            <p>Do not expose diagnostics or maintenance endpoints on the public internet without authentication, rate limits, and audit logging.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container split">
+        <div>
+          <p class="section-kicker">Troubleshooting</p>
+          <h2>Common setup checks.</h2>
+        </div>
+        <div class="prose">
+          <p><strong>Containers build but services do not connect:</strong> verify the compose network, service names, and connection strings.</p>
+          <p><strong>Database startup fails:</strong> reset local volumes only if you can lose local data, then rebuild.</p>
+          <p><strong>Workers are idle:</strong> confirm RabbitMQ is reachable, Gatekeeper is publishing events, and the relevant worker service is running.</p>
+          <p><strong>Tests fail after dependency changes:</strong> restore packages from a clean workspace and avoid upgrading package versions without checking project compatibility.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <a class="brand footer-brand" href="index.html">
+          <span class="brand-mark">A</span>
+          <span>
+            <strong>Argus Engine</strong>
+            <small>Codename references: NightmareV2</small>
+          </span>
+        </a>
+        <p>Documentation copy for a modular, event-driven reconnaissance system. Use only on systems you own or are explicitly authorized to test.</p>
+      </div>
+      <div>
+        <h2>Project</h2>
+        <a href="https://github.com/derekdperez/Argus-Engine">Repository</a>
+        <a href="https://github.com/derekdperez/Argus-Engine/issues">Issues</a>
+        <a href="https://github.com/derekdperez/Argus-Engine/releases">Releases</a>
+      </div>
+      <div>
+        <h2>Docs</h2>
+        <a href="architecture.html">Architecture</a>
+        <a href="setup.html">Setup</a>
+        <a href="usage.html">Usage tutorial</a>
+        <a href="responsible-use.html">Responsible use</a>
+      </div>
+    </div>
+  </footer>
+  <script src="assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Argus Engine — Architecture</title>
+  <meta name="description" content="Argus Engine documentation: architecture, setup, usage, and responsible operation for an event-driven reconnaissance platform.">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html" aria-label="Argus Engine home">
+        <span class="brand-mark">A</span>
+        <span>
+          <strong>Argus Engine</strong>
+          <small>DESIGN OVERVIEW</small>
+        </span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav id="site-nav" class="site-nav" aria-label="Primary navigation">
+        <a href="index.html">Overview</a>
+<a class="active" href="architecture.html">Architecture</a>
+<a href="usage.html">Usage</a>
+<a href="setup.html">Setup</a>
+<a href="operations.html">Operations</a>
+<a href="responsible-use.html">Responsible Use</a>
+        <a class="nav-cta" href="https://github.com/derekdperez/Argus-Engine">GitHub</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <section class="page-hero">
+      <div class="container narrow">
+        <p class="eyebrow">In-depth design overview</p>
+        <h1>Argus Engine is an event-driven reconnaissance pipeline.</h1>
+        <p class="lede">The platform separates intake, orchestration, storage, and execution so each part can be reasoned about, tested, scaled, and operated independently.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="architecture-diagram" role="img" aria-label="Argus Engine architecture diagram">
+          <div class="diagram-node large">Command Center<br><small>Blazor + Minimal API</small></div>
+          <div class="diagram-arrow">target roots, dashboards, ops APIs</div>
+          <div class="diagram-node">Gatekeeper<br><small>scope, dedupe, fan-out</small></div>
+          <div class="diagram-grid">
+            <div class="diagram-node">Contracts<br><small>events + messages</small></div>
+            <div class="diagram-node">Application<br><small>orchestration rules</small></div>
+            <div class="diagram-node">Domain<br><small>asset model</small></div>
+            <div class="diagram-node">Infrastructure<br><small>Postgres, Redis, RabbitMQ</small></div>
+          </div>
+          <div class="diagram-workers">
+            <div>Enum Worker</div>
+            <div>Port Scan Worker</div>
+            <div>Spider Worker</div>
+            <div>Technology ID Worker</div>
+            <div>High-Value Worker</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section muted">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">System responsibilities</p>
+          <h2>Clear boundaries make the platform easier to explain and safer to operate.</h2>
+        </div>
+        <div class="card-grid two">
+          <article class="card">
+            <h3>Control plane</h3>
+            <p>The Command Center owns operator interaction: target import, queue visibility, diagnostics, runtime status, and reliability indicators. Public copy should describe this as an operations surface, not a consumer SaaS dashboard.</p>
+          </article>
+          <article class="card">
+            <h3>Admission plane</h3>
+            <p>Gatekeeper decides whether work should enter the pipeline. It is the right place to emphasize normalization, scope evaluation, deduplication, failure release, and controlled fan-out.</p>
+          </article>
+          <article class="card">
+            <h3>Execution plane</h3>
+            <p>Workers perform bounded tasks from queues. This keeps enumeration, spidering, scanning, technology identification, and signal extraction independently deployable.</p>
+          </article>
+          <article class="card">
+            <h3>Persistence and messaging</h3>
+            <p>Postgres stores durable state, Redis supports deduplication/coordination, and RabbitMQ carries MassTransit events between services. Do not claim “agentless,” “serverless,” or “single binary” behavior.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container split">
+        <div>
+          <p class="section-kicker">Event flow</p>
+          <h2>How a target becomes a review queue.</h2>
+        </div>
+        <div class="timeline">
+          <div class="timeline-item">
+            <strong>1. Operator submits approved scope</strong>
+            <p>A root domain, host, or environment is imported through the Command Center or configured ingestion path.</p>
+          </div>
+          <div class="timeline-item">
+            <strong>2. Gatekeeper normalizes and checks</strong>
+            <p>The system canonicalizes target roots, evaluates scope boundaries, and suppresses duplicate work before publishing events.</p>
+          </div>
+          <div class="timeline-item">
+            <strong>3. Workers expand observations</strong>
+            <p>Specialized workers discover subdomains, reachable endpoints, service hints, technologies, links, API shapes, and high-value patterns.</p>
+          </div>
+          <div class="timeline-item">
+            <strong>4. State is persisted and surfaced</strong>
+            <p>Assets, relationships, queue metrics, reliability signals, and findings are stored for review in the Command Center.</p>
+          </div>
+          <div class="timeline-item">
+            <strong>5. Humans validate</strong>
+            <p>Researchers reproduce, assess impact, remove false positives, and decide what is reportable.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section muted">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">Worker roles</p>
+          <h2>Describe workers by evidence collected, not hype.</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Worker</th>
+                <th>Primary role</th>
+                <th>Suggested copy</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Enumeration</td>
+                <td>Subdomain and target expansion.</td>
+                <td>“Discovers candidate assets and emits normalized observations for downstream checks.”</td>
+              </tr>
+              <tr>
+                <td>Port Scan</td>
+                <td>Service exposure discovery.</td>
+                <td>“Identifies reachable services for approved hosts without implying exploitability.”</td>
+              </tr>
+              <tr>
+                <td>Spider</td>
+                <td>HTTP content traversal and link extraction.</td>
+                <td>“Harvests links, parameters, and API hints from fetched content for review.”</td>
+              </tr>
+              <tr>
+                <td>Technology Identification</td>
+                <td>Fingerprinting from HTML, headers, cookies, and catalogs.</td>
+                <td>“Turns response signals into technology labels that guide manual testing.”</td>
+              </tr>
+              <tr>
+                <td>High-Value</td>
+                <td>Pattern matching for noteworthy paths or indicators.</td>
+                <td>“Prioritizes leads that deserve human validation.”</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container split">
+        <div>
+          <p class="section-kicker">Data model language</p>
+          <h2>Use asset graph terms.</h2>
+        </div>
+        <div class="prose">
+          <p>Use consistent nouns: <strong>target roots</strong> are approved starting points, <strong>assets</strong> are normalized discovered entities, <strong>observations</strong> are collected signals, <strong>relationships</strong> connect assets, <strong>queue state</strong> describes work progress, and <strong>findings</strong> are review items rather than confirmed vulnerabilities.</p>
+          <p>This language avoids overclaiming. It also maps cleanly to the tested areas called out in the repository: asset category rules, graph relationship rules, scope evaluation, URL classification, queue state transitions, and worker behavior.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <a class="brand footer-brand" href="index.html">
+          <span class="brand-mark">A</span>
+          <span>
+            <strong>Argus Engine</strong>
+            <small>Codename references: NightmareV2</small>
+          </span>
+        </a>
+        <p>Documentation copy for a modular, event-driven reconnaissance system. Use only on systems you own or are explicitly authorized to test.</p>
+      </div>
+      <div>
+        <h2>Project</h2>
+        <a href="https://github.com/derekdperez/Argus-Engine">Repository</a>
+        <a href="https://github.com/derekdperez/Argus-Engine/issues">Issues</a>
+        <a href="https://github.com/derekdperez/Argus-Engine/releases">Releases</a>
+      </div>
+      <div>
+        <h2>Docs</h2>
+        <a href="architecture.html">Architecture</a>
+        <a href="setup.html">Setup</a>
+        <a href="usage.html">Usage tutorial</a>
+        <a href="responsible-use.html">Responsible use</a>
+      </div>
+    </div>
+  </footer>
+  <script src="assets/site.js"></script>
+</body>
+</html>

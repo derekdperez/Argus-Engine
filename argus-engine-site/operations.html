@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Argus Engine — Operations</title>
+  <meta name="description" content="Argus Engine documentation: architecture, setup, usage, and responsible operation for an event-driven reconnaissance platform.">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html" aria-label="Argus Engine home">
+        <span class="brand-mark">A</span>
+        <span>
+          <strong>Argus Engine</strong>
+          <small>OPERATIONS</small>
+        </span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav id="site-nav" class="site-nav" aria-label="Primary navigation">
+        <a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="usage.html">Usage</a>
+<a href="setup.html">Setup</a>
+<a class="active" href="operations.html">Operations</a>
+<a href="responsible-use.html">Responsible Use</a>
+        <a class="nav-cta" href="https://github.com/derekdperez/Argus-Engine">GitHub</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <section class="page-hero">
+      <div class="container narrow">
+        <p class="eyebrow">Operations and reliability</p>
+        <h1>Make recon repeatable, observable, and reversible.</h1>
+        <p class="lede">Operational copy should focus on safe defaults, queue health, durable state, idempotent event handling, and the ability to stop or roll back when reliability budgets are exceeded.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">What to monitor</p>
+          <h2>Signals that matter during a run.</h2>
+        </div>
+        <div class="card-grid three">
+          <article class="card">
+            <h3>Queue health</h3>
+            <p>Track backlog, lease/retry state, duplicate suppression, and worker activity before increasing scope or concurrency.</p>
+          </article>
+          <article class="card">
+            <h3>Persistence health</h3>
+            <p>Watch Postgres connection pools, file-store writes, schema state, and slow queries under worker load.</p>
+          </article>
+          <article class="card">
+            <h3>Message health</h3>
+            <p>Track RabbitMQ connectivity, MassTransit outbox/inbox behavior, duplicate delivery, and consumer failures.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section muted">
+      <div class="container split">
+        <div>
+          <p class="section-kicker">Existing reliability language</p>
+          <h2>Promote implemented safeguards accurately.</h2>
+        </div>
+        <div class="prose">
+          <p>The production checklist indicates reliability baseline APIs, error-budget and rollback signals, an outbox/inbox idempotency foundation, buffered async bus journaling, durable spider execution, adaptive spider concurrency, real enumeration and port-scan services, endpoint modules by bounded context, and startup options validation.</p>
+          <p>Copy should describe those as reliability foundations. Do not imply a completed production hardening story while items such as EF Core migration jobs, transport cutover, authenticated diagnostics, and chaos/performance tests remain open.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container split">
+        <div>
+          <p class="section-kicker">Suggested runbook</p>
+          <h2>Operate in small, reviewable increments.</h2>
+        </div>
+        <div class="timeline">
+          <div class="timeline-item">
+            <strong>Preflight</strong>
+            <p>Confirm authorization, configuration, queue health, storage health, and worker scale.</p>
+          </div>
+          <div class="timeline-item">
+            <strong>Start small</strong>
+            <p>Import a narrow slice of approved scope and verify that Gatekeeper, workers, and persistence behave as expected.</p>
+          </div>
+          <div class="timeline-item">
+            <strong>Observe</strong>
+            <p>Watch worker activity, diagnostics, queue state, and database load while the run is active.</p>
+          </div>
+          <div class="timeline-item">
+            <strong>Pause when noisy</strong>
+            <p>Reduce scope, lower worker scale, or stop the stack if the signal-to-noise ratio or reliability budget degrades.</p>
+          </div>
+          <div class="timeline-item">
+            <strong>Review and archive</strong>
+            <p>Validate findings, attach evidence, record false positives, and store run notes with the engagement record.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <a class="brand footer-brand" href="index.html">
+          <span class="brand-mark">A</span>
+          <span>
+            <strong>Argus Engine</strong>
+            <small>Codename references: NightmareV2</small>
+          </span>
+        </a>
+        <p>Documentation copy for a modular, event-driven reconnaissance system. Use only on systems you own or are explicitly authorized to test.</p>
+      </div>
+      <div>
+        <h2>Project</h2>
+        <a href="https://github.com/derekdperez/Argus-Engine">Repository</a>
+        <a href="https://github.com/derekdperez/Argus-Engine/issues">Issues</a>
+        <a href="https://github.com/derekdperez/Argus-Engine/releases">Releases</a>
+      </div>
+      <div>
+        <h2>Docs</h2>
+        <a href="architecture.html">Architecture</a>
+        <a href="setup.html">Setup</a>
+        <a href="usage.html">Usage tutorial</a>
+        <a href="responsible-use.html">Responsible use</a>
+      </div>
+    </div>
+  </footer>
+  <script src="assets/site.js"></script>
+</body>
+</html>

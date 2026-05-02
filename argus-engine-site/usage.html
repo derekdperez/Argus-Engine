@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Argus Engine — Usage</title>
+  <meta name="description" content="Argus Engine documentation: architecture, setup, usage, and responsible operation for an event-driven reconnaissance platform.">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html" aria-label="Argus Engine home">
+        <span class="brand-mark">A</span>
+        <span>
+          <strong>Argus Engine</strong>
+          <small>USAGE TUTORIAL</small>
+        </span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav id="site-nav" class="site-nav" aria-label="Primary navigation">
+        <a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a class="active" href="usage.html">Usage</a>
+<a href="setup.html">Setup</a>
+<a href="operations.html">Operations</a>
+<a href="responsible-use.html">Responsible Use</a>
+        <a class="nav-cta" href="https://github.com/derekdperez/Argus-Engine">GitHub</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <section class="page-hero">
+      <div class="container narrow">
+        <p class="eyebrow">Usage tutorial</p>
+        <h1>Operate Argus Engine as a recon workflow, not a push-button attack tool.</h1>
+        <p class="lede">The recommended workflow is deliberate: confirm authorization, import scope, let workers collect evidence, and manually validate every lead before reporting.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container split">
+        <div>
+          <p class="section-kicker">Before every run</p>
+          <h2>Build an engagement record.</h2>
+        </div>
+        <div class="checklist">
+          <label><input type="checkbox"> I have written authorization for the target or it is my own lab/internal asset.</label>
+          <label><input type="checkbox"> I have reviewed program rules, rate limits, excluded assets, and testing windows.</label>
+          <label><input type="checkbox"> I know where output will be stored and who may access it.</label>
+          <label><input type="checkbox"> I understand that Argus produces leads; I must validate impact manually.</label>
+        </div>
+      </div>
+    </section>
+
+    <section class="section muted">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">Tutorial flow</p>
+          <h2>From approved target to reviewed findings.</h2>
+        </div>
+        <div class="timeline">
+          <div class="timeline-item">
+            <strong>Step 1 — Start the local stack</strong>
+            <p>Use the compose-based setup from the repository so the Command Center, workers, Postgres, Redis, and RabbitMQ start together.</p>
+            <pre><code>docker compose -f deploy/docker-compose.yml up -d --build</code></pre>
+          </div>
+          <div class="timeline-item">
+            <strong>Step 2 — Open the Command Center</strong>
+            <p>Use the local URL exposed by the running web service. Confirm that queues, worker activity, and reliability views are healthy before importing scope.</p>
+          </div>
+          <div class="timeline-item">
+            <strong>Step 3 — Import authorized target roots</strong>
+            <p>Add only approved domains, hosts, or lab environments. Keep notes about the source of authorization and any limits that should affect worker configuration.</p>
+          </div>
+          <div class="timeline-item">
+            <strong>Step 4 — Let Gatekeeper admit work</strong>
+            <p>Gatekeeper should normalize roots, apply scope rules, deduplicate work, and fan out events. If work is rejected, fix the scope record instead of bypassing controls.</p>
+          </div>
+          <div class="timeline-item">
+            <strong>Step 5 — Review observations</strong>
+            <p>Use the Command Center to inspect discovered assets, service hints, technology labels, spidered URLs, high-value indicators, and queue state.</p>
+          </div>
+          <div class="timeline-item">
+            <strong>Step 6 — Validate manually</strong>
+            <p>Argus should not be described as confirming vulnerabilities by itself. A researcher must reproduce behavior, assess impact, and remove false positives.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">Example operator notes</p>
+          <h2>Keep the run auditable.</h2>
+        </div>
+        <div class="copy-grid">
+          <div class="copy-card">
+            <div class="copy-card-header">
+              <strong>Scope note</strong>
+              <button class="copy-button" data-copy-target="#scope-note">Copy</button>
+            </div>
+            <pre id="scope-note"><code>Engagement: Example internal lab
+Allowed roots: example.test, api.example.test
+Excluded: production payment systems, third-party SaaS
+Rate limit: conservative; no disruptive testing
+Purpose: inventory, technology mapping, lead triage</code></pre>
+          </div>
+          <div class="copy-card">
+            <div class="copy-card-header">
+              <strong>Finding review note</strong>
+              <button class="copy-button" data-copy-target="#finding-note">Copy</button>
+            </div>
+            <pre id="finding-note"><code>Observation:
+Evidence:
+Affected asset:
+Why it matters:
+Manual validation performed:
+False-positive checks:
+Next action:</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section callout-band">
+      <div class="container split">
+        <div>
+          <p class="section-kicker">Tone guidance</p>
+          <h2>Replace “guaranteed bugs” with “better triage.”</h2>
+        </div>
+        <div class="prose">
+          <p>Recommended phrasing: “Argus Engine reduces repetitive recon work and surfaces leads for review.” Avoid claiming automatic exploitation, guaranteed vulnerabilities, stealth scanning, bypassing rate limits, or hands-off reporting.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <a class="brand footer-brand" href="index.html">
+          <span class="brand-mark">A</span>
+          <span>
+            <strong>Argus Engine</strong>
+            <small>Codename references: NightmareV2</small>
+          </span>
+        </a>
+        <p>Documentation copy for a modular, event-driven reconnaissance system. Use only on systems you own or are explicitly authorized to test.</p>
+      </div>
+      <div>
+        <h2>Project</h2>
+        <a href="https://github.com/derekdperez/Argus-Engine">Repository</a>
+        <a href="https://github.com/derekdperez/Argus-Engine/issues">Issues</a>
+        <a href="https://github.com/derekdperez/Argus-Engine/releases">Releases</a>
+      </div>
+      <div>
+        <h2>Docs</h2>
+        <a href="architecture.html">Architecture</a>
+        <a href="setup.html">Setup</a>
+        <a href="usage.html">Usage tutorial</a>
+        <a href="responsible-use.html">Responsible use</a>
+      </div>
+    </div>
+  </footer>
+  <script src="assets/site.js"></script>
+</body>
+</html>

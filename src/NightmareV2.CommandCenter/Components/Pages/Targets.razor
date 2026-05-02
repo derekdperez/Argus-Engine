@@ -4,6 +4,7 @@
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.AspNetCore.Components.QuickGrid
+@using Microsoft.JSInterop
 @using NightmareV2.CommandCenter.Components.DataGrid
 @using NightmareV2.CommandCenter.Components.DataGrid.Cells
 @using NightmareV2.CommandCenter.Models
@@ -47,7 +48,7 @@
         </label>
         <label>
             Target file
-            <InputFile OnChange="BulkImportAsync" accept=".txt,text/plain" disabled="@_bulkImportBusy" />
+            <input @ref="_bulkImportFileInput" type="file" accept=".txt,text/plain" disabled="@_bulkImportBusy" @onchange="StartBulkImportFromBrowserAsync" />
         </label>
     </div>
     @if (_bulkImportBusy || _bulkImportChunksCompleted > 0)
@@ -184,6 +185,7 @@ else
     private int _bulkImportMaxDepth = 12;
     private int _bulkImportChunksCompleted;
     private string _bulkImportProgressText = "";
+    private ElementReference _bulkImportFileInput;
     private TargetEditForm? _editing;
     private DateTimeOffset? _lastLoadedAtUtc;
 
@@ -410,64 +412,29 @@ else
         }
     }
 
-    private async Task BulkImportAsync(InputFileChangeEventArgs e)
+    private async Task StartBulkImportFromBrowserAsync()
     {
         _bulkStatus = null;
         _bulkImportProgressText = "";
         _bulkImportChunksCompleted = 0;
-        var file = e.File;
-        if (file is null)
-            return;
 
         if (_bulkImportBusy)
             return;
 
         _bulkImportBusy = true;
-        var totalCreated = 0;
-        var totalSkippedExisting = 0;
-        var totalSkippedInvalid = 0;
-        var totalSkippedDuplicate = 0;
-
         try
         {
-            await using var stream = file.OpenReadStream(maxAllowedSize: 5_000_000);
-            using var reader = new StreamReader(stream);
-            var text = await reader.ReadToEndAsync();
-            var lines = TargetRootNormalization.SplitLines(text).ToList();
+            _bulkImportProgressText = $"Preparing {BulkImportChunkCount} browser-side chunks...";
+            await InvokeAsync(StateHasChanged);
+            using var dotNetRef = DotNetObjectReference.Create(this);
+            var result = await Js.InvokeAsync<BulkImportTotals>(
+                "nightmareUi.importTargetFileInChunks",
+                _bulkImportFileInput,
+                dotNetRef,
+                _bulkImportMaxDepth > 0 ? _bulkImportMaxDepth : 12,
+                BulkImportChunkCount);
 
-            var chunks = SplitIntoChunks(lines, BulkImportChunkCount);
-            for (var i = 0; i < chunks.Count; i++)
-            {
-                _bulkImportProgressText = $"Uploading chunk {i + 1} of {BulkImportChunkCount}...";
-                await InvokeAsync(StateHasChanged);
-
-                var response = await Http.PostAsJsonAsync(
-                    "/api/targets/bulk",
-                    new BulkImportRequest(chunks[i], _bulkImportMaxDepth > 0 ? _bulkImportMaxDepth : 12));
-                if (response.StatusCode == HttpStatusCode.BadRequest)
-                {
-                    _bulkStatus = await response.Content.ReadAsStringAsync();
-                    return;
-                }
-
-                response.EnsureSuccessStatusCode();
-                var result = await response.Content.ReadFromJsonAsync<BulkImportResult>();
-                if (result is not null)
-                {
-                    totalCreated += result.Created;
-                    totalSkippedExisting += result.SkippedAlreadyExist;
-                    totalSkippedInvalid += result.SkippedEmptyOrInvalid;
-                    totalSkippedDuplicate += result.SkippedDuplicateInBatch;
-                }
-
-                _bulkImportChunksCompleted = i + 1;
-                _bulkImportProgressText = $"Chunk {i + 1} imported. Created {totalCreated:N0} targets so far.";
-                await ReloadAsync();
-                await InvokeAsync(StateHasChanged);
-            }
-
-            _bulkStatus =
-                $"Import finished. Created {totalCreated}, skipped {totalSkippedExisting} already in DB, {totalSkippedDuplicate} duplicate lines in file, {totalSkippedInvalid} empty or invalid lines.";
+            _bulkStatus = FormatBulkImportStatus(result.Created, result.SkippedAlreadyExist, result.SkippedDuplicateInBatch, result.SkippedEmptyOrInvalid);
             _bulkImportProgressText = "Import complete.";
         }
         catch (Exception ex)
@@ -480,18 +447,40 @@ else
         }
     }
 
-    private static List<IReadOnlyList<string>> SplitIntoChunks(IReadOnlyList<string> lines, int chunkCount)
+    [JSInvokable]
+    public async Task OnBulkImportChunkCompleted(
+        int completedChunks,
+        int totalChunks,
+        int created,
+        int skippedAlreadyExist,
+        int skippedEmptyOrInvalid,
+        int skippedDuplicateInBatch,
+        int totalCreated,
+        int totalSkippedAlreadyExist,
+        int totalSkippedEmptyOrInvalid,
+        int totalSkippedDuplicateInBatch)
     {
-        var chunks = new List<IReadOnlyList<string>>(chunkCount);
-        var total = lines.Count;
-        for (var i = 0; i < chunkCount; i++)
-        {
-            var start = (int)Math.Floor((double)total * i / chunkCount);
-            var end = (int)Math.Floor((double)total * (i + 1) / chunkCount);
-            chunks.Add(lines.Skip(start).Take(end - start).ToArray());
-        }
+        _bulkImportChunksCompleted = completedChunks;
+        _bulkImportProgressText =
+            $"Chunk {completedChunks} of {totalChunks} inserted: {created:N0} created, {skippedAlreadyExist:N0} existing, {skippedDuplicateInBatch:N0} duplicates, {skippedEmptyOrInvalid:N0} invalid.";
+        _bulkStatus = FormatBulkImportStatus(totalCreated, totalSkippedAlreadyExist, totalSkippedDuplicateInBatch, totalSkippedEmptyOrInvalid);
+        await ReloadAsync();
+        await InvokeAsync(StateHasChanged);
+    }
 
-        return chunks;
+    private static string FormatBulkImportStatus(
+        int created,
+        int skippedAlreadyExist,
+        int skippedDuplicateInBatch,
+        int skippedEmptyOrInvalid) =>
+        $"Created {created}, skipped {skippedAlreadyExist} already in DB, {skippedDuplicateInBatch} duplicate lines in file, {skippedEmptyOrInvalid} empty or invalid lines.";
+
+    private sealed class BulkImportTotals
+    {
+        public int Created { get; set; }
+        public int SkippedAlreadyExist { get; set; }
+        public int SkippedEmptyOrInvalid { get; set; }
+        public int SkippedDuplicateInBatch { get; set; }
     }
 
     private static async Task<string> ReadResponseMessageAsync(HttpResponseMessage response, string fallback)

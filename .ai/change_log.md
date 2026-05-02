@@ -2,6 +2,12 @@
 
 ## 2026-05-01
 
+- Fixed CommandCenter `blazor.web.js` parse failure:
+  - Removed deploy-time manual copy/download of `_framework/blazor.web.js` from the Docker image build and hot-swap publish path.
+  - Updated `App.razor` to resolve `_framework/blazor.web.js` through `@Assets[...]`.
+  - Why: failed fallback downloads can publish `404: Not Found` as JavaScript, causing `Unexpected token ':'` in the browser console.
+  - Validation: pending.
+
 - Cleaned Command Center publish warnings:
   - Resolved the remaining technology scanner and worker activity count type warnings so Command Center release build/publish completes with zero warnings.
   - Validation: `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` and `dotnet publish src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release -o .tmp/publish-command-center-warnings /p:UseAppHost=false` both succeeded with `0 Warning(s)`.

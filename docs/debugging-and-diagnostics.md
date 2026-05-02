@@ -187,7 +187,7 @@ If either fails, debug the Command Center image and `App.razor` asset paths firs
 | Docker build exits before containers start | Dockerfile or external tool version | `docker compose -f deploy/docker-compose.yml build SERVICE` |
 | Container exits immediately | Runtime config or startup exception | `./deploy/logs.sh --errors SERVICE` |
 | `/health` passes but `/health/ready` fails | Database dependency | `./deploy/smoke-test.sh` |
-| `blazor.web.js` returns 404 | Blazor static asset publishing/pathing | `curl -i http://localhost:8080/_framework/blazor.web.js` |
+| `blazor.web.js` returns 404 or `Unexpected token ':'` | Blazor static asset publishing/pathing; the script may contain `404: Not Found` | `curl -i http://localhost:8080/_framework/blazor.web.js` |
 | Workers run but no work progresses | RabbitMQ, outbox, or worker toggles | `./deploy/logs.sh --errors gatekeeper worker-enum worker-spider` |
 
 ## Security note

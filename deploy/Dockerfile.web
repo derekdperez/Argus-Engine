@@ -22,10 +22,7 @@ COPY src/NightmareV2.Infrastructure/ src/NightmareV2.Infrastructure/
 COPY src/Resources/ src/Resources/
 RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj" \
-    -c Release -o /app/publish --no-restore /p:UseAppHost=false \
-    && mkdir -p /app/publish/wwwroot/_framework \
-    && blazor_js="$(find /root/.nuget/packages /usr/share/dotnet -type f -name blazor.web.js 2>/dev/null | sort | tail -n 1)" \
-    && if [ -n "$blazor_js" ]; then cp "$blazor_js" /app/publish/wwwroot/_framework/blazor.web.js || true; else curl -sSL "https://raw.githubusercontent.com/dotnet/aspnetcore/main/src/Components/Web.JS/dist/Release/blazor.web.js" -o /app/publish/wwwroot/_framework/blazor.web.js; fi
+    -c Release -o /app/publish --no-restore /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 

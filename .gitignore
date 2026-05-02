@@ -43,4 +43,8 @@ unpack.py
 debug.ps1
 debug.sh
 debug_results.json
+pack.ps1
+unpack.ps1
+packed.json
+packed.zip
 

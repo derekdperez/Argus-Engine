@@ -1,57 +1,56 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="night">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="ArgusEngine, code-named NightmareV2, is Derek Perez's .NET reconnaissance and operations platform. Explore the project, architecture, and Derek's .NET modernization career." />
-  <meta name="theme-color" content="#0b1020" />
-  <title>ArgusEngine | Derek Perez — .NET Modernization + AI-Augmented Engineering</title>
+  <meta
+    name="description"
+    content="ArgusEngine, code-named NightmareV2, is Derek Perez's ethical hacking and bug bounty reconnaissance platform built with .NET."
+  />
+  <meta name="theme-color" content="#050607" />
+  <title>ArgusEngine // NightmareV2</title>
 
   <style>
     :root {
-      --bg: #070a12;
-      --bg-2: #0b1020;
-      --surface: rgba(255,255,255,.07);
-      --surface-2: rgba(255,255,255,.11);
-      --text: #eef3ff;
-      --muted: #9eacc7;
-      --line: rgba(255,255,255,.12);
-      --accent: #7c5cff;
-      --accent-2: #00e0ff;
-      --accent-3: #61ffb5;
-      --danger: #ff5c90;
-      --shadow: 0 24px 80px rgba(0,0,0,.35);
-      --radius: 24px;
-      --radius-sm: 16px;
-      --max: 1180px;
+      --bg: #050607;
+      --bg2: #080d0b;
+      --panel: rgba(8, 16, 13, 0.82);
+      --panel2: rgba(13, 26, 21, 0.72);
+      --text: #d8ffe9;
+      --muted: #7aa88f;
+      --dim: #456555;
+      --line: rgba(77, 255, 158, 0.18);
+      --line2: rgba(77, 255, 158, 0.34);
+      --green: #42ff9e;
+      --cyan: #34e7ff;
+      --red: #ff456f;
+      --yellow: #e7ff6a;
+      --purple: #a66bff;
+      --shadow: 0 0 32px rgba(66, 255, 158, 0.08);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --max: 1120px;
     }
 
-    html[data-theme="light"] {
-      --bg: #f6f8ff;
-      --bg-2: #ffffff;
-      --surface: rgba(15,23,42,.06);
-      --surface-2: rgba(15,23,42,.1);
-      --text: #121827;
-      --muted: #526071;
-      --line: rgba(15,23,42,.13);
-      --accent: #5f43e9;
-      --accent-2: #007f9c;
-      --accent-3: #008f5d;
-      --shadow: 0 24px 70px rgba(15,23,42,.15);
+    * {
+      box-sizing: border-box;
     }
 
-    * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
+    html {
+      scroll-behavior: smooth;
+      background: var(--bg);
+    }
+
     body {
       margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color: var(--text);
-      background:
-        radial-gradient(circle at 18% 10%, rgba(124,92,255,.35), transparent 32rem),
-        radial-gradient(circle at 80% 0%, rgba(0,224,255,.21), transparent 30rem),
-        radial-gradient(circle at 58% 72%, rgba(97,255,181,.16), transparent 32rem),
-        linear-gradient(180deg, var(--bg), var(--bg-2) 42%, var(--bg));
       min-height: 100vh;
+      color: var(--text);
+      font-family: var(--sans);
+      background:
+        radial-gradient(circle at 18% 18%, rgba(66, 255, 158, 0.11), transparent 24rem),
+        radial-gradient(circle at 82% 8%, rgba(52, 231, 255, 0.08), transparent 22rem),
+        radial-gradient(circle at 70% 86%, rgba(166, 107, 255, 0.07), transparent 26rem),
+        linear-gradient(180deg, #030403 0%, #07100c 44%, #030403 100%);
       overflow-x: hidden;
     }
 
@@ -59,13 +58,35 @@
       content: "";
       position: fixed;
       inset: 0;
-      z-index: -2;
-      opacity: .13;
+      z-index: -3;
+      pointer-events: none;
       background-image:
-        linear-gradient(var(--line) 1px, transparent 1px),
-        linear-gradient(90deg, var(--line) 1px, transparent 1px);
-      background-size: 44px 44px;
-      mask-image: linear-gradient(to bottom, #000, transparent 86%);
+        linear-gradient(rgba(66, 255, 158, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(66, 255, 158, 0.035) 1px, transparent 1px);
+      background-size: 28px 28px;
+      mask-image: linear-gradient(to bottom, #000, transparent 85%);
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      pointer-events: none;
+      opacity: 0.13;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 2px,
+        rgba(66, 255, 158, 0.18) 3px,
+        transparent 4px
+      );
+      mix-blend-mode: screen;
+    }
+
+    ::selection {
+      color: #031008;
+      background: var(--green);
     }
 
     a {
@@ -73,500 +94,640 @@
       text-decoration: none;
     }
 
-    .skip-link {
-      position: fixed;
-      left: 1rem;
-      top: -10rem;
-      z-index: 999;
-      padding: .8rem 1rem;
-      border-radius: 999px;
-      background: var(--text);
-      color: var(--bg);
-      transition: top .2s ease;
+    button,
+    input {
+      font: inherit;
     }
 
-    .skip-link:focus { top: 1rem; }
+    .matrix {
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      opacity: 0.22;
+      pointer-events: none;
+    }
 
     .container {
-      width: min(calc(100% - 2rem), var(--max));
-      margin-inline: auto;
+      width: min(calc(100% - 28px), var(--max));
+      margin: 0 auto;
     }
 
-    header {
+    .skip-link {
+      position: fixed;
+      top: -100px;
+      left: 14px;
+      z-index: 1000;
+      background: var(--green);
+      color: #031008;
+      border: 1px solid #aaffd1;
+      padding: 9px 12px;
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+
+    .skip-link:focus {
+      top: 14px;
+    }
+
+    .topbar {
       position: sticky;
       top: 0;
       z-index: 50;
-      backdrop-filter: blur(18px);
-      background: color-mix(in srgb, var(--bg) 74%, transparent);
       border-bottom: 1px solid var(--line);
+      background: rgba(3, 6, 5, 0.86);
+      backdrop-filter: blur(16px);
     }
 
     .nav {
-      min-height: 76px;
+      min-height: 58px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 1rem;
+      gap: 14px;
     }
 
     .brand {
       display: inline-flex;
       align-items: center;
-      gap: .8rem;
-      font-weight: 850;
-      letter-spacing: -.03em;
+      gap: 10px;
+      font-family: var(--mono);
+      letter-spacing: -0.04em;
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--green);
+      text-transform: uppercase;
     }
 
     .brand-mark {
-      width: 42px;
-      height: 42px;
+      position: relative;
       display: grid;
       place-items: center;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background:
-        linear-gradient(135deg, rgba(124,92,255,.95), rgba(0,224,255,.7)),
-        var(--surface);
-      box-shadow: 0 14px 36px rgba(124,92,255,.28);
-      color: white;
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--line2);
+      background: rgba(66, 255, 158, 0.07);
+      box-shadow: inset 0 0 20px rgba(66, 255, 158, 0.1), 0 0 24px rgba(66, 255, 158, 0.08);
+    }
+
+    .brand-mark::before,
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      border-color: var(--green);
+      border-style: solid;
+    }
+
+    .brand-mark::before {
+      left: -1px;
+      top: -1px;
+      border-width: 1px 0 0 1px;
+    }
+
+    .brand-mark::after {
+      right: -1px;
+      bottom: -1px;
+      border-width: 0 1px 1px 0;
     }
 
     .brand small {
       display: block;
+      margin-top: 1px;
       color: var(--muted);
-      font-weight: 650;
-      letter-spacing: 0;
-      margin-top: .1rem;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      font-weight: 700;
     }
 
     .nav-links {
       display: flex;
       align-items: center;
-      gap: .35rem;
+      gap: 4px;
     }
 
     .nav-links a,
-    .icon-btn,
-    .menu-btn {
+    .mini-btn {
       border: 1px solid transparent;
+      padding: 7px 9px;
       color: var(--muted);
-      border-radius: 999px;
-      padding: .62rem .86rem;
-      font-weight: 750;
-      font-size: .92rem;
-      transition: .2s ease;
+      background: transparent;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: 140ms ease;
     }
 
     .nav-links a:hover,
     .nav-links a.active,
-    .icon-btn:hover,
-    .menu-btn:hover {
-      color: var(--text);
-      background: var(--surface);
+    .mini-btn:hover {
+      color: var(--green);
       border-color: var(--line);
-      transform: translateY(-1px);
+      background: rgba(66, 255, 158, 0.06);
+      box-shadow: 0 0 18px rgba(66, 255, 158, 0.08);
     }
 
-    .nav-actions {
-      display: flex;
-      align-items: center;
-      gap: .5rem;
+    .menu {
+      display: none;
     }
 
-    .icon-btn,
-    .menu-btn {
-      cursor: pointer;
-      background: transparent;
-      color: var(--text);
+    main {
+      position: relative;
     }
 
-    .menu-btn { display: none; }
+    section {
+      padding: 66px 0;
+      scroll-margin-top: 74px;
+    }
 
     .hero {
-      position: relative;
-      padding: 6rem 0 4.5rem;
+      min-height: calc(100vh - 58px);
+      display: grid;
+      align-items: center;
+      padding: 72px 0;
     }
 
     .hero-grid {
       display: grid;
-      grid-template-columns: 1.12fr .88fr;
-      gap: 2rem;
+      grid-template-columns: 1.02fr 0.98fr;
+      gap: 24px;
       align-items: center;
     }
 
-    .eyebrow {
+    .tag {
       display: inline-flex;
       align-items: center;
-      gap: .55rem;
+      gap: 8px;
       width: fit-content;
-      padding: .45rem .7rem;
       border: 1px solid var(--line);
-      border-radius: 999px;
+      background: rgba(66, 255, 158, 0.055);
       color: var(--muted);
-      background: var(--surface);
-      font-size: .9rem;
-      font-weight: 760;
+      padding: 7px 9px;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
     }
 
-    .pulse {
-      width: .55rem;
-      height: .55rem;
-      border-radius: 50%;
-      background: var(--accent-3);
-      box-shadow: 0 0 0 .35rem color-mix(in srgb, var(--accent-3) 22%, transparent);
+    .tag::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      background: var(--green);
+      box-shadow: 0 0 14px var(--green);
     }
 
-    h1, h2, h3 {
-      margin: 0;
-      letter-spacing: -.05em;
-      line-height: 1;
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
     }
 
     h1 {
-      margin-top: 1.2rem;
-      font-size: clamp(3.25rem, 8vw, 7.2rem);
-      max-width: 11ch;
+      margin: 18px 0 0;
+      max-width: 12ch;
+      font-family: var(--mono);
+      font-size: clamp(40px, 8vw, 88px);
+      line-height: 0.92;
+      letter-spacing: -0.085em;
+      text-transform: uppercase;
     }
 
     h2 {
-      font-size: clamp(2.25rem, 5vw, 4.45rem);
-      max-width: 12ch;
+      margin: 9px 0 0;
+      max-width: 14ch;
+      font-family: var(--mono);
+      font-size: clamp(27px, 5vw, 54px);
+      line-height: 0.95;
+      letter-spacing: -0.07em;
+      text-transform: uppercase;
     }
 
     h3 {
-      font-size: 1.35rem;
-      letter-spacing: -.035em;
-      line-height: 1.15;
+      margin-bottom: 10px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 17px;
+      line-height: 1.2;
+      letter-spacing: -0.035em;
     }
 
-    .gradient-text {
-      background: linear-gradient(100deg, var(--text), var(--accent-2), var(--accent-3));
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
+    .glitch {
+      position: relative;
+      display: inline-block;
+      color: var(--text);
+      text-shadow:
+        0 0 22px rgba(66, 255, 158, 0.22),
+        2px 0 rgba(255, 69, 111, 0.45),
+        -2px 0 rgba(52, 231, 255, 0.35);
+    }
+
+    .glitch::before,
+    .glitch::after {
+      content: attr(data-text);
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.6;
+    }
+
+    .glitch::before {
+      color: var(--cyan);
+      transform: translate(1px, 0);
+      clip-path: inset(0 0 58% 0);
+      animation: glitchA 2.6s infinite steps(2, end);
+    }
+
+    .glitch::after {
+      color: var(--red);
+      transform: translate(-1px, 0);
+      clip-path: inset(62% 0 0 0);
+      animation: glitchB 3.2s infinite steps(2, end);
+    }
+
+    @keyframes glitchA {
+      0%, 86%, 100% { transform: translate(1px, 0); }
+      87% { transform: translate(6px, -2px); }
+      88% { transform: translate(-4px, 2px); }
+      90% { transform: translate(1px, 0); }
+    }
+
+    @keyframes glitchB {
+      0%, 78%, 100% { transform: translate(-1px, 0); }
+      79% { transform: translate(-6px, 1px); }
+      80% { transform: translate(4px, -1px); }
+      82% { transform: translate(-1px, 0); }
     }
 
     .lead {
-      margin: 1.4rem 0 0;
+      max-width: 62ch;
+      margin: 18px 0 0;
       color: var(--muted);
-      font-size: clamp(1.05rem, 2vw, 1.28rem);
-      line-height: 1.75;
-      max-width: 66ch;
+      font-size: 15px;
+      line-height: 1.72;
     }
 
-    .hero-actions,
-    .card-actions {
+    .lead strong {
+      color: var(--green);
+      font-weight: 800;
+    }
+
+    .hero-actions {
       display: flex;
       flex-wrap: wrap;
-      gap: .8rem;
-      margin-top: 1.8rem;
+      gap: 10px;
+      margin-top: 24px;
     }
 
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: .55rem;
-      min-height: 46px;
-      padding: .82rem 1rem;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      background: var(--surface);
-      color: var(--text);
-      font-weight: 850;
-      box-shadow: none;
+      min-height: 39px;
+      border: 1px solid var(--line2);
+      background: rgba(66, 255, 158, 0.065);
+      color: var(--green);
+      padding: 9px 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      box-shadow: inset 0 0 20px rgba(66, 255, 158, 0.04);
       cursor: pointer;
-      transition: .22s ease;
-    }
-
-    .btn.primary {
-      border-color: transparent;
-      color: white;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      box-shadow: 0 18px 46px rgba(0,224,255,.18);
+      transition: 150ms ease;
     }
 
     .btn:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--shadow);
+      transform: translateY(-1px);
+      background: rgba(66, 255, 158, 0.12);
+      box-shadow: var(--shadow), inset 0 0 24px rgba(66, 255, 158, 0.06);
     }
 
-    .btn:focus-visible,
-    .icon-btn:focus-visible,
-    .menu-btn:focus-visible,
-    input:focus-visible {
-      outline: 3px solid color-mix(in srgb, var(--accent-2) 60%, transparent);
-      outline-offset: 3px;
+    .btn.danger {
+      border-color: rgba(255, 69, 111, 0.38);
+      color: #ff7d99;
+      background: rgba(255, 69, 111, 0.055);
     }
 
-    .hero-panel {
-      position: relative;
-      min-height: 520px;
+    .btn.secondary {
+      color: var(--cyan);
+      border-color: rgba(52, 231, 255, 0.32);
+      background: rgba(52, 231, 255, 0.055);
+    }
+
+    .hero-meta {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      max-width: 680px;
+      margin-top: 24px;
+    }
+
+    .meta {
       border: 1px solid var(--line);
-      border-radius: calc(var(--radius) + 8px);
-      background:
-        linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.04)),
-        var(--surface);
-      box-shadow: var(--shadow);
-      overflow: hidden;
+      background: rgba(3, 8, 6, 0.6);
+      padding: 10px;
+      min-height: 72px;
     }
 
-    .hero-panel::before {
-      content: "";
-      position: absolute;
-      inset: -30%;
-      background:
-        radial-gradient(circle, rgba(0,224,255,.28), transparent 24%),
-        conic-gradient(from 140deg, transparent, rgba(124,92,255,.55), transparent, rgba(97,255,181,.4), transparent);
-      animation: spin 18s linear infinite;
-      opacity: .72;
+    .meta b {
+      display: block;
+      color: var(--green);
+      font-family: var(--mono);
+      font-size: 18px;
+      letter-spacing: -0.06em;
     }
 
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    .meta span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.35;
+      text-transform: uppercase;
     }
 
     .terminal {
-      position: absolute;
-      inset: 1rem;
-      z-index: 1;
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      background: color-mix(in srgb, var(--bg) 82%, transparent);
-      backdrop-filter: blur(24px);
+      position: relative;
+      border: 1px solid var(--line2);
+      background:
+        linear-gradient(180deg, rgba(66, 255, 158, 0.07), transparent 32%),
+        rgba(1, 5, 3, 0.86);
+      box-shadow: 0 0 0 1px rgba(66, 255, 158, 0.04), 0 24px 80px rgba(0, 0, 0, 0.48);
       overflow: hidden;
     }
 
-    .terminal-top {
+    .terminal::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(255, 69, 111, 0.12), transparent 12%, transparent 88%, rgba(52, 231, 255, 0.11)),
+        radial-gradient(circle at 50% 0%, rgba(66, 255, 158, 0.11), transparent 18rem);
+      opacity: 0.72;
+    }
+
+    .terminal-head {
+      position: relative;
+      z-index: 1;
       display: flex;
       align-items: center;
-      gap: .48rem;
-      padding: .95rem 1rem;
+      justify-content: space-between;
+      gap: 12px;
       border-bottom: 1px solid var(--line);
+      padding: 9px 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
     }
 
-    .dot { width: .72rem; height: .72rem; border-radius: 50%; }
-    .dot.red { background: #ff5c7a; }
-    .dot.yellow { background: #ffc857; }
-    .dot.green { background: #61ffb5; }
+    .lights {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .light {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--dim);
+    }
+
+    .light.red { background: var(--red); }
+    .light.yellow { background: var(--yellow); }
+    .light.green { background: var(--green); }
 
     .terminal-body {
-      padding: 1.2rem;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: .91rem;
+      position: relative;
+      z-index: 1;
+      min-height: 430px;
+      padding: 14px;
       color: var(--muted);
-      line-height: 1.8;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.65;
     }
 
-    .terminal-line {
-      display: flex;
-      gap: .75rem;
-      align-items: flex-start;
-      border-bottom: 1px dashed color-mix(in srgb, var(--line) 80%, transparent);
-      padding: .58rem 0;
+    .prompt {
+      color: var(--green);
     }
 
-    .terminal-line strong {
-      color: var(--accent-3);
-      min-width: 6rem;
+    .cyan {
+      color: var(--cyan);
     }
 
-    .meter {
-      height: .62rem;
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      overflow: hidden;
-      background: rgba(255,255,255,.06);
-      margin-top: .45rem;
+    .red {
+      color: var(--red);
     }
 
-    .meter span {
-      display: block;
-      height: 100%;
-      border-radius: inherit;
-      background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--accent-3));
-      width: var(--w);
+    .yellow {
+      color: var(--yellow);
     }
 
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1rem;
-      margin-top: 2rem;
+    .ascii {
+      color: rgba(66, 255, 158, 0.8);
+      white-space: pre;
+      overflow-x: auto;
+      margin: 0 0 12px;
+      font-size: 11px;
+      line-height: 1.1;
     }
 
-    .stat {
-      border: 1px solid var(--line);
-      border-radius: var(--radius-sm);
-      background: var(--surface);
-      padding: 1rem;
+    .terminal-log {
+      min-height: 225px;
+      white-space: pre-wrap;
     }
 
-    .stat b {
-      display: block;
-      font-size: 1.45rem;
-      letter-spacing: -.04em;
+    .cursor::after {
+      content: "█";
+      display: inline-block;
+      margin-left: 2px;
+      color: var(--green);
+      animation: blink 1s steps(1, end) infinite;
     }
 
-    .stat span {
-      color: var(--muted);
-      font-size: .9rem;
-      font-weight: 680;
+    @keyframes blink {
+      50% { opacity: 0; }
     }
 
-    section {
-      padding: 5rem 0;
-      scroll-margin-top: 92px;
+    .notice {
+      margin-top: 12px;
+      border: 1px solid rgba(231, 255, 106, 0.25);
+      background: rgba(231, 255, 106, 0.055);
+      color: #eaff9d;
+      padding: 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.55;
     }
 
     .section-head {
       display: flex;
       justify-content: space-between;
+      gap: 22px;
       align-items: end;
-      gap: 1.5rem;
-      margin-bottom: 1.5rem;
+      margin-bottom: 18px;
     }
 
-    .section-head p {
+    .section-copy {
       max-width: 58ch;
       color: var(--muted);
-      line-height: 1.75;
-      margin: 0;
+      font-size: 14px;
+      line-height: 1.7;
+      margin-bottom: 0;
     }
 
-    .grid-3 {
+    .grid {
       display: grid;
+      gap: 10px;
+    }
+
+    .grid.three {
       grid-template-columns: repeat(3, 1fr);
-      gap: 1rem;
     }
 
-    .grid-2 {
-      display: grid;
+    .grid.two {
       grid-template-columns: repeat(2, 1fr);
-      gap: 1rem;
     }
 
     .card {
       position: relative;
       border: 1px solid var(--line);
-      border-radius: var(--radius);
       background:
-        linear-gradient(180deg, rgba(255,255,255,.085), rgba(255,255,255,.035)),
-        var(--surface);
-      padding: 1.35rem;
-      box-shadow: 0 18px 60px rgba(0,0,0,.12);
+        linear-gradient(180deg, rgba(66, 255, 158, 0.055), rgba(66, 255, 158, 0.018)),
+        rgba(3, 8, 6, 0.76);
+      padding: 15px;
+      min-height: 100%;
       overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      left: -1px;
+      top: -1px;
+      width: 22px;
+      height: 22px;
+      border-top: 1px solid var(--green);
+      border-left: 1px solid var(--green);
+      opacity: 0.48;
     }
 
     .card::after {
       content: "";
       position: absolute;
-      inset: auto 1rem 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, var(--accent-2), transparent);
-      opacity: 0;
-      transition: opacity .2s ease;
+      right: -1px;
+      bottom: -1px;
+      width: 22px;
+      height: 22px;
+      border-right: 1px solid var(--green);
+      border-bottom: 1px solid var(--green);
+      opacity: 0.26;
     }
 
-    .card:hover::after { opacity: .75; }
+    .card:hover {
+      border-color: var(--line2);
+      box-shadow: var(--shadow);
+    }
 
     .card p {
       color: var(--muted);
-      line-height: 1.7;
+      font-size: 13px;
+      line-height: 1.68;
+      margin-bottom: 0;
     }
 
-    .kicker {
-      color: var(--accent-2);
+    .eyebrow {
+      display: block;
+      margin-bottom: 10px;
+      color: var(--green);
+      font-family: var(--mono);
+      font-size: 11px;
       font-weight: 900;
+      letter-spacing: 0.09em;
       text-transform: uppercase;
-      letter-spacing: .12em;
-      font-size: .76rem;
-      margin-bottom: .85rem;
     }
 
-    .pill-row {
+    .chips {
       display: flex;
       flex-wrap: wrap;
-      gap: .55rem;
-      margin-top: 1rem;
+      gap: 6px;
+      margin-top: 13px;
     }
 
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: .4rem;
+    .chip {
       border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: .45rem .65rem;
+      background: rgba(66, 255, 158, 0.045);
       color: var(--muted);
-      background: var(--surface);
-      font-size: .85rem;
-      font-weight: 760;
+      padding: 5px 7px;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
     }
 
-    .architecture {
+    .pipeline {
       display: grid;
-      grid-template-columns: 1fr auto 1fr auto 1fr;
-      gap: .75rem;
+      grid-template-columns: 1fr 34px 1fr 34px 1fr;
+      gap: 8px;
       align-items: stretch;
-      margin-top: 1.5rem;
     }
 
-    .arch-node {
-      border: 1px solid var(--line);
-      border-radius: 22px;
-      padding: 1rem;
-      background: var(--surface);
-      min-height: 130px;
-    }
-
-    .arch-arrow {
+    .arrow {
       display: grid;
       place-items: center;
-      color: var(--accent-2);
-      font-size: 1.6rem;
-      opacity: .8;
+      color: var(--green);
+      font-family: var(--mono);
+      font-size: 20px;
+      opacity: 0.72;
     }
 
-    .timeline {
-      position: relative;
-      display: grid;
-      gap: 1rem;
+    .codebox {
+      border: 1px solid var(--line);
+      background: rgba(0, 0, 0, 0.36);
+      padding: 13px;
+      overflow-x: auto;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.65;
     }
 
-    .timeline-item {
-      display: grid;
-      grid-template-columns: 9rem 1fr;
-      gap: 1rem;
-      align-items: start;
+    .codebox strong {
+      color: var(--green);
+      font-weight: 800;
     }
 
-    .timeline-date {
-      color: var(--accent-3);
-      font-weight: 900;
-      letter-spacing: -.02em;
-    }
-
-    .blog-tools {
+    .blog-controls {
       display: flex;
-      gap: .8rem;
-      flex-wrap: wrap;
-      margin: 1.5rem 0;
-      align-items: center;
       justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
     }
 
     .search {
-      flex: 1 1 280px;
+      flex: 1 1 260px;
       display: flex;
       align-items: center;
-      gap: .65rem;
-      min-height: 48px;
+      gap: 8px;
       border: 1px solid var(--line);
-      border-radius: 999px;
-      background: var(--surface);
-      padding: 0 .9rem;
+      background: rgba(3, 8, 6, 0.72);
+      min-height: 38px;
+      padding: 0 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
     }
 
     .search input {
@@ -575,112 +736,100 @@
       outline: 0;
       background: transparent;
       color: var(--text);
-      font: inherit;
-      font-weight: 700;
+      font-family: var(--mono);
+      font-size: 12px;
     }
 
     .filters {
       display: flex;
+      gap: 6px;
       flex-wrap: wrap;
-      gap: .5rem;
     }
 
     .filter {
       border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: .65rem .8rem;
-      background: var(--surface);
+      background: rgba(66, 255, 158, 0.035);
       color: var(--muted);
-      font-weight: 850;
+      padding: 8px 9px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
       cursor: pointer;
-      transition: .2s ease;
     }
 
     .filter.active,
     .filter:hover {
-      color: var(--text);
-      background: var(--surface-2);
-      border-color: color-mix(in srgb, var(--accent-2) 45%, var(--line));
-    }
-
-    .post {
-      display: flex;
-      flex-direction: column;
-      min-height: 100%;
+      color: var(--green);
+      border-color: var(--line2);
+      background: rgba(66, 255, 158, 0.085);
     }
 
     .post time {
-      color: var(--muted);
-      font-weight: 750;
-      font-size: .88rem;
+      display: block;
+      margin-bottom: 9px;
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
     }
 
-    .post .btn {
-      margin-top: auto;
-      width: fit-content;
-    }
-
-    .quote-card {
-      padding: 2rem;
-      border-radius: calc(var(--radius) + 8px);
-      background:
-        radial-gradient(circle at top right, rgba(0,224,255,.18), transparent 28rem),
-        linear-gradient(135deg, rgba(124,92,255,.18), rgba(255,255,255,.04));
-    }
-
-    blockquote {
-      margin: 0;
-      font-size: clamp(1.35rem, 3vw, 2.35rem);
-      line-height: 1.22;
-      letter-spacing: -.045em;
-      font-weight: 850;
-    }
-
-    .contact-panel {
+    .contact {
       display: grid;
-      grid-template-columns: 1.1fr .9fr;
-      gap: 1rem;
+      grid-template-columns: 1fr 0.82fr;
+      gap: 10px;
       align-items: stretch;
     }
 
-    .contact-list {
+    .links {
       display: grid;
-      gap: .75rem;
+      gap: 8px;
     }
 
-    .contact-item {
+    .link-row {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      gap: 1rem;
+      gap: 10px;
       border: 1px solid var(--line);
-      border-radius: 18px;
-      background: var(--surface);
-      padding: .9rem;
+      background: rgba(66, 255, 158, 0.035);
+      padding: 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+      transition: 140ms ease;
     }
 
-    .contact-item span {
-      color: var(--muted);
-      font-weight: 700;
+    .link-row:hover {
+      color: var(--green);
+      border-color: var(--line2);
+      background: rgba(66, 255, 158, 0.075);
+    }
+
+    .link-row b {
+      color: var(--text);
+      font-weight: 900;
     }
 
     footer {
       border-top: 1px solid var(--line);
-      padding: 2rem 0;
-      color: var(--muted);
+      padding: 22px 0;
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
     }
 
-    .footer-row {
+    .foot {
       display: flex;
       justify-content: space-between;
-      gap: 1rem;
+      gap: 14px;
       flex-wrap: wrap;
     }
 
     .reveal {
       opacity: 0;
-      transform: translateY(18px);
-      transition: opacity .55s ease, transform .55s ease;
+      transform: translateY(12px);
+      transition: opacity 380ms ease, transform 380ms ease;
     }
 
     .reveal.visible {
@@ -690,47 +839,50 @@
 
     .toast {
       position: fixed;
-      right: 1rem;
-      bottom: 1rem;
-      z-index: 80;
-      transform: translateY(140%);
+      right: 14px;
+      bottom: 14px;
+      z-index: 200;
+      border: 1px solid var(--line2);
+      background: rgba(3, 8, 6, 0.92);
+      color: var(--green);
+      padding: 10px 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 900;
+      transform: translateY(80px);
       opacity: 0;
-      transition: .25s ease;
-      border: 1px solid var(--line);
-      background: var(--bg-2);
-      color: var(--text);
-      padding: .9rem 1rem;
-      border-radius: 999px;
+      transition: 180ms ease;
       box-shadow: var(--shadow);
-      font-weight: 850;
     }
 
     .toast.show {
-      opacity: 1;
       transform: translateY(0);
+      opacity: 1;
     }
 
-    @media (max-width: 980px) {
+    @media (max-width: 900px) {
       .hero-grid,
-      .contact-panel,
-      .grid-2 {
+      .contact,
+      .grid.two {
         grid-template-columns: 1fr;
       }
 
-      .grid-3,
-      .stats {
+      .hero {
+        min-height: auto;
+      }
+
+      .grid.three,
+      .hero-meta {
         grid-template-columns: repeat(2, 1fr);
       }
 
-      .hero-panel { min-height: 460px; }
-
-      .architecture {
+      .pipeline {
         grid-template-columns: 1fr;
       }
 
-      .arch-arrow {
+      .arrow {
         transform: rotate(90deg);
-        min-height: 32px;
+        min-height: 28px;
       }
 
       .section-head {
@@ -739,90 +891,93 @@
       }
     }
 
-    @media (max-width: 760px) {
-      .menu-btn { display: inline-flex; }
+    @media (max-width: 700px) {
+      .menu {
+        display: inline-block;
+      }
 
       .nav-links {
         position: fixed;
-        inset: 76px 1rem auto;
+        left: 14px;
+        right: 14px;
+        top: 67px;
         display: grid;
-        gap: .5rem;
+        gap: 6px;
         border: 1px solid var(--line);
-        border-radius: 24px;
-        background: color-mix(in srgb, var(--bg-2) 92%, transparent);
-        backdrop-filter: blur(20px);
-        padding: .8rem;
-        box-shadow: var(--shadow);
-        transform: translateY(-18px);
+        background: rgba(3, 8, 6, 0.96);
+        padding: 10px;
+        transform: translateY(-10px);
         opacity: 0;
         pointer-events: none;
-        transition: .22s ease;
+        transition: 160ms ease;
       }
 
       .nav-links.open {
-        opacity: 1;
         transform: translateY(0);
+        opacity: 1;
         pointer-events: auto;
       }
 
       .nav-links a {
         border-color: var(--line);
-        background: var(--surface);
-      }
-
-      .hero {
-        padding-top: 3.5rem;
-      }
-
-      .hero-panel {
-        min-height: 530px;
-      }
-
-      .terminal-body {
-        font-size: .82rem;
-      }
-
-      .stats,
-      .grid-3 {
-        grid-template-columns: 1fr;
-      }
-
-      .timeline-item {
-        grid-template-columns: 1fr;
+        background: rgba(66, 255, 158, 0.035);
       }
 
       .brand small {
         display: none;
+      }
+
+      section {
+        padding: 48px 0;
+      }
+
+      .hero {
+        padding-top: 48px;
+      }
+
+      .terminal-body {
+        min-height: 390px;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .grid.three,
+      .hero-meta {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: clamp(38px, 17vw, 64px);
       }
     }
   </style>
 </head>
 
 <body>
-  <a class="skip-link" href="#main">Skip to content</a>
+  <canvas class="matrix" id="matrix" aria-hidden="true"></canvas>
+  <a class="skip-link" href="#main">skip_to_content</a>
 
-  <header>
-    <nav class="container nav" aria-label="Primary navigation">
+  <header class="topbar">
+    <nav class="container nav" aria-label="Primary">
       <a class="brand" href="#top" aria-label="ArgusEngine home">
-        <span class="brand-mark" aria-hidden="true">AE</span>
+        <span class="brand-mark">Æ</span>
         <span>
           ArgusEngine
-          <small>code-named NightmareV2</small>
+          <small>NightmareV2 // authorized ops</small>
         </span>
       </a>
 
       <div class="nav-links" id="navLinks">
-        <a href="#project">Project</a>
-        <a href="#architecture">Architecture</a>
-        <a href="#career">Career</a>
-        <a href="#writing">Writing</a>
-        <a href="#contact">Contact</a>
+        <a href="#tool">tool</a>
+        <a href="#pipeline">pipeline</a>
+        <a href="#operator">operator</a>
+        <a href="#notes">notes</a>
+        <a href="#contact">contact</a>
       </div>
 
-      <div class="nav-actions">
-        <button class="icon-btn" id="themeToggle" type="button" aria-label="Toggle color theme">☾</button>
-        <button class="menu-btn" id="menuToggle" type="button" aria-expanded="false" aria-controls="navLinks">Menu</button>
-      </div>
+      <button class="mini-btn menu" id="menuBtn" type="button" aria-expanded="false" aria-controls="navLinks">
+        menu
+      </button>
     </nav>
   </header>
 
@@ -830,545 +985,549 @@
     <section class="hero container" id="top">
       <div class="hero-grid">
         <div class="reveal visible">
-          <span class="eyebrow"><span class="pulse"></span> .NET modernization × authorized reconnaissance × AI workflows</span>
-          <h1>Building reliable systems from the edge of complexity.</h1>
+          <span class="tag">bug bounty recon // ethical hacking only</span>
+
+          <h1>
+            <span class="glitch" data-text="Argus">Argus</span><br />
+            Engine
+          </h1>
+
           <p class="lead">
-            ArgusEngine is Derek Perez’s evolving .NET platform for scoped reconnaissance orchestration,
-            reliability-first operations, and event-driven worker pipelines. It doubles as a working example
-            of the engineering principles Derek brings to legacy modernization: stabilize, observe, automate,
-            and ship in safe slices.
+            <strong>ArgusEngine</strong>, currently code-named <strong>NightmareV2</strong>, is a
+            reconnaissance and scanning platform for authorized security research. It is built around the boring
+            things that make hacker tools actually useful: scope boundaries, queue discipline, dedupe, worker
+            isolation, repeatable tests, and operator visibility.
           </p>
 
           <div class="hero-actions">
-            <a class="btn primary" href="https://github.com/derekdperez/NightmareV2/" target="_blank" rel="noopener">View GitHub Repo</a>
-            <a class="btn" href="#writing">Read the Build Log</a>
-            <a class="btn" href="https://derekdperez.github.io/portfolio-site/" target="_blank" rel="noopener">Portfolio</a>
+            <a class="btn" href="https://github.com/derekdperez/NightmareV2/" target="_blank" rel="noopener">
+              open_repo
+            </a>
+            <a class="btn secondary" href="#pipeline">
+              inspect_pipeline
+            </a>
+            <a class="btn danger" href="#operator">
+              who_built_this
+            </a>
           </div>
 
-          <div class="stats" aria-label="Highlights">
-            <div class="stat">
-              <b>20+</b>
-              <span>years enterprise software</span>
-            </div>
-            <div class="stat">
+          <div class="hero-meta" aria-label="Project facts">
+            <div class="meta">
               <b>.NET 10</b>
-              <span>modern platform baseline</span>
+              <span>recon pipeline</span>
             </div>
-            <div class="stat">
-              <b>Event</b>
-              <span>driven worker architecture</span>
+            <div class="meta">
+              <b>Blazor</b>
+              <span>command center</span>
             </div>
-            <div class="stat">
-              <b>AI</b>
-              <span>augmented delivery workflows</span>
+            <div class="meta">
+              <b>RabbitMQ</b>
+              <span>durable messages</span>
+            </div>
+            <div class="meta">
+              <b>Redis</b>
+              <span>dedupe layer</span>
             </div>
           </div>
         </div>
 
-        <aside class="hero-panel reveal" aria-label="ArgusEngine system snapshot">
-          <div class="terminal">
-            <div class="terminal-top">
-              <span class="dot red"></span>
-              <span class="dot yellow"></span>
-              <span class="dot green"></span>
-              <span style="margin-left:.5rem;color:var(--muted);font-weight:800;">argusengine://command-center</span>
+        <aside class="terminal reveal" aria-label="ArgusEngine terminal preview">
+          <div class="terminal-head">
+            <div class="lights" aria-hidden="true">
+              <span class="light red"></span>
+              <span class="light yellow"></span>
+              <span class="light green"></span>
             </div>
-            <div class="terminal-body">
-              <div class="terminal-line">
-                <strong>mission</strong>
-                <span>authorized target intake, scoped recon, durable operations</span>
-              </div>
-              <div class="terminal-line">
-                <strong>ui</strong>
-                <span>Blazor Command Center + Minimal API modules</span>
-              </div>
-              <div class="terminal-line">
-                <strong>workers</strong>
-                <span>enumeration, spidering, port-scan orchestration, tech identification</span>
-              </div>
-              <div class="terminal-line">
-                <strong>state</strong>
-                <span>EF Core/Postgres persistence, Redis dedupe, durable queues</span>
-              </div>
-              <div class="terminal-line">
-                <strong>delivery</strong>
-                <span>MassTransit/RabbitMQ messaging, outbox/inbox idempotency</span>
-              </div>
+            <span>argus://nightmarev2/session</span>
+          </div>
 
-              <div style="margin-top:1.2rem;">
-                <span>Reliability baseline</span>
-                <div class="meter"><span style="--w: 92%"></span></div>
-              </div>
-              <div style="margin-top:1rem;">
-                <span>Testing expansion</span>
-                <div class="meter"><span style="--w: 78%"></span></div>
-              </div>
-              <div style="margin-top:1rem;">
-                <span>Production hardening</span>
-                <div class="meter"><span style="--w: 68%"></span></div>
-              </div>
+          <div class="terminal-body">
+<pre class="ascii">
+       _                     _____             _
+  /\  | |                   |  ___|           (_)
+ /  \ | |_ __ __ _ _   _ ___| |__ _ __   __ _ _ _ __   ___
+/ /\ \| | '__/ _` | | | / __|  __| '_ \ / _` | | '_ \ / _ \
+/ ____ \ | | | (_| | |_| \__ \ |__| | | | (_| | | | | |  __/
+/_/    \_\_|  \__, |\__,_|___\____/_| |_|\__, |_|_| |_|\___|
+               __/ |                       __/ |
+              |___/                       |___/
+</pre>
+            <div id="terminalLog" class="terminal-log" aria-live="polite"></div>
+            <span class="prompt cursor">operator@argus:~$</span>
+
+            <div class="notice">
+              [ethics] Run only against systems you own or have explicit permission to test.
+              Scope is not decoration. Scope is the line.
             </div>
           </div>
         </aside>
       </div>
     </section>
 
-    <section class="container" id="project">
+    <section class="container" id="tool">
       <div class="section-head reveal">
         <div>
-          <span class="eyebrow">Project page</span>
-          <h2>ArgusEngine is the public face. NightmareV2 is the forge.</h2>
+          <span class="tag">what it is</span>
+          <h2>Not a dashboard. A recon engine with teeth.</h2>
         </div>
-        <p>
-          The project is designed like a serious operations platform instead of a loose set of scripts:
-          admission control, canonicalization, scope rules, queues, worker isolation, persistence,
-          observability, and testable orchestration boundaries.
+        <p class="section-copy">
+          ArgusEngine is shaped like an operations platform for bug bounty and authorized reconnaissance:
+          controlled intake, normalized targets, event-driven workers, durable queues, and audit-friendly
+          state transitions.
         </p>
       </div>
 
-      <div class="grid-3">
+      <div class="grid three">
         <article class="card reveal">
-          <div class="kicker">Operator workflow</div>
-          <h3>Command Center for controlled execution</h3>
+          <span class="eyebrow">01 // scoped intake</span>
+          <h3>Targets enter through a gate, not a free-for-all.</h3>
           <p>
-            A Blazor and Minimal API interface gives the system an operator-facing surface for target intake,
-            status views, diagnostics, and high-value workflows.
+            The Command Center flow is designed around target creation, normalization, bulk import handling,
+            and scope-aware orchestration before work hits the queue.
           </p>
-          <div class="pill-row">
-            <span class="pill">Blazor</span>
-            <span class="pill">Minimal APIs</span>
-            <span class="pill">Health checks</span>
+          <div class="chips">
+            <span class="chip">scope</span>
+            <span class="chip">normalize</span>
+            <span class="chip">dedupe</span>
           </div>
         </article>
 
         <article class="card reveal">
-          <div class="kicker">Safety boundary</div>
-          <h3>Gatekeeper-first admission flow</h3>
+          <span class="eyebrow">02 // worker mesh</span>
+          <h3>Small workers. Clear jobs. Less chaos.</h3>
           <p>
-            The architecture emphasizes target normalization, dedupe, scope evaluation, and controlled fan-out
-            before work is released into queues.
+            Enumeration, spidering, HTTP classification, technology identification, and port-scan orchestration
+            live behind worker boundaries instead of being tangled together.
           </p>
-          <div class="pill-row">
-            <span class="pill">Canonicalization</span>
-            <span class="pill">Scope rules</span>
-            <span class="pill">Dedupe</span>
+          <div class="chips">
+            <span class="chip">enum</span>
+            <span class="chip">spider</span>
+            <span class="chip">classify</span>
           </div>
         </article>
 
         <article class="card reveal">
-          <div class="kicker">Reliability</div>
-          <h3>Durable workers, idempotency, and rollback signals</h3>
+          <span class="eyebrow">03 // reliability</span>
+          <h3>The platform remembers what happened.</h3>
           <p>
-            Production-readiness work includes reliability baselines, error budgets, rollback trigger signals,
-            async bus journaling, and outbox/inbox idempotency foundations.
+            Durable messages, queue transitions, outbox/inbox idempotency, and reliability baseline endpoints
+            keep the system observable when scans get noisy.
           </p>
-          <div class="pill-row">
-            <span class="pill">Outbox</span>
-            <span class="pill">Inbox</span>
-            <span class="pill">SLOs</span>
+          <div class="chips">
+            <span class="chip">outbox</span>
+            <span class="chip">inbox</span>
+            <span class="chip">slo</span>
           </div>
         </article>
       </div>
     </section>
 
-    <section class="container" id="architecture">
+    <section class="container" id="pipeline">
       <div class="section-head reveal">
         <div>
-          <span class="eyebrow">Architecture</span>
-          <h2>Built around queues, boundaries, and observable state.</h2>
+          <span class="tag">pipeline</span>
+          <h2>Scope in. Signals out.</h2>
         </div>
-        <p>
-          The core shape is intentionally familiar to enterprise .NET systems: clear modules,
-          deterministic business rules, isolated workers, and infrastructure kept behind interfaces
-          so testing stays fast and meaningful.
+        <p class="section-copy">
+          The platform favors boring, testable primitives: canonicalization, scope rules, Redis dedupe,
+          EF Core/Postgres persistence, MassTransit/RabbitMQ messaging, and deterministic tests.
         </p>
       </div>
 
-      <div class="architecture reveal" aria-label="ArgusEngine architecture flow">
-        <div class="arch-node">
-          <div class="kicker">01 / Intake</div>
-          <h3>Targets enter through Command Center</h3>
-          <p>Normalize input, split bulk submissions, validate target roots, and create operator-visible work.</p>
-        </div>
-        <div class="arch-arrow" aria-hidden="true">→</div>
-        <div class="arch-node">
-          <div class="kicker">02 / Admission</div>
-          <h3>Gatekeeper protects the pipeline</h3>
-          <p>Evaluate scope, reserve dedupe keys, release failures, and enqueue only approved work.</p>
-        </div>
-        <div class="arch-arrow" aria-hidden="true">→</div>
-        <div class="arch-node">
-          <div class="kicker">03 / Execution</div>
-          <h3>Workers process durable queues</h3>
-          <p>Enumeration, spidering, technology detection, URL classification, and queue state transitions.</p>
-        </div>
-      </div>
-
-      <div class="grid-2" style="margin-top:1rem;">
-        <article class="card reveal">
-          <div class="kicker">Testing philosophy</div>
-          <h3>Fast deterministic tests before heavyweight infrastructure tests</h3>
+      <div class="pipeline reveal">
+        <article class="card">
+          <span class="eyebrow">intake</span>
+          <h3>Command Center</h3>
           <p>
-            The current test strategy favors unit and in-process integration-style tests using fakes/mocks
-            where useful, keeping the core logic independent from live DNS, Docker, Postgres, Redis,
-            RabbitMQ, or external binaries in the default test loop.
+            Operator submits authorized targets. Bulk lines are split. Roots are normalized. Invalid or
+            out-of-scope input gets rejected before it becomes damage.
           </p>
         </article>
 
-        <article class="card reveal">
-          <div class="kicker">Tech stack</div>
-          <h3>C# at the center, web technologies around the edges</h3>
-          <p>
-            The repository’s language mix is led by C#, with HTML, JavaScript, Shell, CSS, PowerShell,
-            and Python supporting the application, UI, deployment, and maintenance workflows.
-          </p>
-          <div class="pill-row">
-            <span class="pill">C#</span>
-            <span class="pill">HTML/CSS/JS</span>
-            <span class="pill">Shell</span>
-            <span class="pill">PowerShell</span>
-            <span class="pill">Python</span>
-          </div>
-        </article>
-      </div>
-    </section>
+        <div class="arrow" aria-hidden="true">-&gt;</div>
 
-    <section class="container" id="career">
-      <div class="section-head reveal">
-        <div>
-          <span class="eyebrow">Career story</span>
-          <h2>Senior .NET engineering for systems that cannot afford drama.</h2>
-        </div>
-        <p>
-          Derek specializes in modernizing legacy Microsoft-stack applications, stabilizing fragile production
-          systems, improving SQL performance, refactoring architecture, and designing AI-assisted workflows
-          that increase delivery speed without sacrificing quality.
-        </p>
-      </div>
-
-      <div class="grid-3">
-        <article class="card reveal">
-          <div class="kicker">Modernization</div>
-          <h3>From legacy .NET Framework to maintainable platforms</h3>
+        <article class="card">
+          <span class="eyebrow">gatekeeper</span>
+          <h3>Admission flow</h3>
           <p>
-            Incremental migrations, production-safe slices, and architecture improvements that preserve uptime
-            while reducing long-term maintenance pain.
+            Dedupe reservation, scope evaluation, target canonicalization, fan-out, and failure release happen
+            before the workers start burning cycles.
           </p>
         </article>
 
-        <article class="card reveal">
-          <div class="kicker">Performance</div>
-          <h3>SQL and application bottlenecks made visible</h3>
-          <p>
-            Query tuning, data-access cleanup, diagnostics, and practical observability work that helps teams
-            move from guessing to knowing.
-          </p>
-        </article>
+        <div class="arrow" aria-hidden="true">-&gt;</div>
 
-        <article class="card reveal">
-          <div class="kicker">AI delivery</div>
-          <h3>Automation where it compounds</h3>
+        <article class="card">
+          <span class="eyebrow">workers</span>
+          <h3>Recon execution</h3>
           <p>
-            AI-augmented workflows for scaffolding, refactoring, test generation, documentation, and delivery
-            acceleration—guided by senior engineering judgment.
+            Subdomain enum, spidering, technology identification, HTTP queue state transitions, and high-value
+            signal extraction feed the asset graph.
           </p>
         </article>
       </div>
 
-      <div class="quote-card card reveal" style="margin-top:1rem;">
-        <blockquote>
-          “Stabilize the system, observe the truth, automate the repeatable work, then modernize in slices.”
-        </blockquote>
-        <p style="margin-bottom:0;">
-          That philosophy connects Derek’s consulting work with ArgusEngine’s design: practical modernization,
-          production safety, and automation that earns trust.
-        </p>
-      </div>
+      <div class="grid two" style="margin-top:10px;">
+        <div class="codebox reveal">
+<strong>$ ./scripts/test.sh unit</strong>
+<br />NightmareV2.Application.Tests
+<br />NightmareV2.Infrastructure.Tests
+<br />NightmareV2.Workers.Spider.Tests
+<br />NightmareV2.CommandCenter.Tests
+<br />
+<br /><span class="cyan">fast loop:</span> deterministic fakes, no live DNS, no broker, no database
+        </div>
 
-      <div class="timeline" style="margin-top:1rem;">
-        <div class="timeline-item card reveal">
-          <div class="timeline-date">Legacy estate</div>
-          <div>
-            <h3>Stabilize critical workflows first</h3>
-            <p>Reduce operational risk before rewriting the center of the system.</p>
-          </div>
-        </div>
-        <div class="timeline-item card reveal">
-          <div class="timeline-date">Modern platform</div>
-          <div>
-            <h3>Move toward ASP.NET Core, services, and better boundaries</h3>
-            <p>Use incremental migrations and modular design to regain delivery speed.</p>
-          </div>
-        </div>
-        <div class="timeline-item card reveal">
-          <div class="timeline-date">AI workflow</div>
-          <div>
-            <h3>Multiply output with disciplined automation</h3>
-            <p>Apply AI where feedback loops, tests, and review practices keep quality high.</p>
-          </div>
+        <div class="codebox reveal">
+<strong>$ ./scripts/test.sh smoke</strong>
+<br />GET /health
+<br />GET /health/ready
+<br />GET /api/ops/reliability-slo
+<br />GET /api/http-request-queue/metrics
+<br />
+<br /><span class="yellow">ops loop:</span> verify the stack before trusting the hunt
         </div>
       </div>
     </section>
 
-    <section class="container" id="writing">
+    <section class="container" id="operator">
       <div class="section-head reveal">
         <div>
-          <span class="eyebrow">Blog-style notes</span>
-          <h2>Build logs, modernization notes, and engineering essays.</h2>
+          <span class="tag">operator</span>
+          <h2>Built by a .NET dev who likes sharp tools.</h2>
         </div>
-        <p>
-          These article cards are static content starters you can expand over time. The filter and search
-          controls work entirely in-browser with no backend.
+        <p class="section-copy">
+          Derek Perez is a senior .NET engineer focused on legacy modernization, production stability,
+          SQL performance, architecture cleanup, and AI-augmented engineering workflows.
         </p>
       </div>
 
-      <div class="blog-tools reveal">
-        <label class="search" aria-label="Search articles">
-          <span aria-hidden="true">⌕</span>
-          <input id="postSearch" type="search" placeholder="Search articles..." autocomplete="off" />
+      <div class="grid three">
+        <article class="card reveal">
+          <span class="eyebrow">.NET modernization</span>
+          <h3>Old systems, safer exits.</h3>
+          <p>
+            Incremental migrations, service boundaries, ASP.NET Core upgrades, and production-safe delivery
+            for Microsoft-stack systems that have been carrying too much weight for too long.
+          </p>
+        </article>
+
+        <article class="card reveal">
+          <span class="eyebrow">performance</span>
+          <h3>Make the bottleneck confess.</h3>
+          <p>
+            SQL tuning, data-access cleanup, telemetry, and failure-path analysis. The goal is to turn vague
+            production pain into evidence and fixes.
+          </p>
+        </article>
+
+        <article class="card reveal">
+          <span class="eyebrow">AI workflow</span>
+          <h3>Automation with adult supervision.</h3>
+          <p>
+            AI-assisted scaffolding, testing, refactoring, and documentation — grounded in review, architecture,
+            and the discipline to throw away generated junk.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="container" id="notes">
+      <div class="section-head reveal">
+        <div>
+          <span class="tag">field notes</span>
+          <h2>Build log // essays // signal traces.</h2>
+        </div>
+        <p class="section-copy">
+          Static blog cards for GitHub Pages. Search and filtering run locally in the browser.
+        </p>
+      </div>
+
+      <div class="blog-controls reveal">
+        <label class="search">
+          <span aria-hidden="true">grep</span>
+          <input id="searchInput" type="search" placeholder="filter notes..." autocomplete="off" />
         </label>
 
-        <div class="filters" aria-label="Article filters">
-          <button class="filter active" type="button" data-filter="all">All</button>
-          <button class="filter" type="button" data-filter="argusengine">ArgusEngine</button>
-          <button class="filter" type="button" data-filter="dotnet">.NET</button>
-          <button class="filter" type="button" data-filter="ai">AI</button>
-          <button class="filter" type="button" data-filter="modernization">Modernization</button>
+        <div class="filters" aria-label="Note filters">
+          <button class="filter active" type="button" data-filter="all">all</button>
+          <button class="filter" type="button" data-filter="recon">recon</button>
+          <button class="filter" type="button" data-filter="dotnet">.net</button>
+          <button class="filter" type="button" data-filter="ops">ops</button>
+          <button class="filter" type="button" data-filter="ai">ai</button>
         </div>
       </div>
 
-      <div class="grid-3" id="postGrid">
-        <article class="card post reveal" data-tags="argusengine dotnet modernization">
-          <time datetime="2026-05-01">May 1, 2026</time>
-          <h3>Why ArgusEngine exists</h3>
+      <div class="grid three" id="postGrid">
+        <article class="card post reveal" data-tags="recon dotnet ops">
+          <time datetime="2026-05-01">2026-05-01 // build log</time>
+          <h3>Why recon tools need admission control</h3>
           <p>
-            Reconnaissance tooling often starts as scripts. ArgusEngine explores what happens when the same
-            domain is treated like an enterprise operations system: admission, queues, workers, reliability,
-            and testing from the beginning.
+            A scanner without scope discipline is just liability with a progress bar. Gatekeeper-style intake
+            makes authorization a first-class system concern.
           </p>
-          <div class="pill-row">
-            <span class="pill">ArgusEngine</span>
-            <span class="pill">Architecture</span>
+          <div class="chips">
+            <span class="chip">recon</span>
+            <span class="chip">scope</span>
           </div>
-          <a class="btn" href="#project">Read context</a>
         </article>
 
-        <article class="card post reveal" data-tags="argusengine dotnet">
-          <time datetime="2026-05-01">May 1, 2026</time>
-          <h3>Gatekeeper-first pipeline design</h3>
+        <article class="card post reveal" data-tags="recon ops">
+          <time datetime="2026-05-01">2026-05-01 // ops</time>
+          <h3>Queues beat hero scripts</h3>
           <p>
-            A durable pipeline is only as safe as the boundary that feeds it. Scope evaluation, canonicalization,
-            dedupe reservation, and controlled fan-out make worker automation easier to trust.
+            Scripts are fast to start and easy to lose control of. Queues give scans memory, backpressure,
+            retry behavior, and a way to explain what happened later.
           </p>
-          <div class="pill-row">
-            <span class="pill">Gatekeeper</span>
-            <span class="pill">Queues</span>
+          <div class="chips">
+            <span class="chip">queues</span>
+            <span class="chip">workers</span>
           </div>
-          <a class="btn" href="#architecture">View architecture</a>
         </article>
 
-        <article class="card post reveal" data-tags="dotnet modernization">
-          <time datetime="2026-05-01">May 1, 2026</time>
-          <h3>Modernization without the rewrite trap</h3>
+        <article class="card post reveal" data-tags="dotnet ops">
+          <time datetime="2026-05-01">2026-05-01 // .net</time>
+          <h3>.NET is not boring. Bad demos are boring.</h3>
           <p>
-            The safest path out of legacy pain is usually not a heroic rewrite. It is observability,
-            strangler-style migration, better boundaries, and carefully chosen slices that keep the business running.
+            C#, Minimal APIs, EF Core, background workers, and message buses are a strong foundation for serious
+            security tooling when the architecture is clean.
           </p>
-          <div class="pill-row">
-            <span class="pill">.NET</span>
-            <span class="pill">Legacy systems</span>
+          <div class="chips">
+            <span class="chip">csharp</span>
+            <span class="chip">minimal api</span>
           </div>
-          <a class="btn" href="#career">Career notes</a>
         </article>
 
-        <article class="card post reveal" data-tags="ai modernization dotnet">
-          <time datetime="2026-05-01">May 1, 2026</time>
-          <h3>AI-augmented engineering needs guardrails</h3>
+        <article class="card post reveal" data-tags="ai dotnet">
+          <time datetime="2026-05-01">2026-05-01 // ai</time>
+          <h3>AI in the loop, not at the wheel</h3>
           <p>
-            AI can multiply output, but senior engineering discipline still decides what matters:
-            tests, architecture, naming, review, telemetry, and the courage to delete bad code quickly.
+            AI is excellent for scaffolding, tests, refactors, and documentation. It still needs architecture,
+            threat modeling, and a human who knows when the answer smells wrong.
           </p>
-          <div class="pill-row">
-            <span class="pill">AI</span>
-            <span class="pill">Delivery</span>
+          <div class="chips">
+            <span class="chip">ai</span>
+            <span class="chip">review</span>
           </div>
-          <a class="btn" href="#contact">Talk shop</a>
         </article>
 
-        <article class="card post reveal" data-tags="argusengine dotnet">
-          <time datetime="2026-05-01">May 1, 2026</time>
-          <h3>Reliability as a feature, not a phase</h3>
+        <article class="card post reveal" data-tags="ops recon">
+          <time datetime="2026-05-01">2026-05-01 // reliability</time>
+          <h3>Idempotency is a security feature</h3>
           <p>
-            SLOs, rollback signals, async journaling, queue state machines, and idempotent event flow are not
-            “later” concerns. They are what make automation safe enough to use.
+            Duplicate events, partial failures, and retries happen. Outbox and inbox patterns make the system
+            less dramatic when the environment gets hostile.
           </p>
-          <div class="pill-row">
-            <span class="pill">Reliability</span>
-            <span class="pill">Operations</span>
+          <div class="chips">
+            <span class="chip">idempotent</span>
+            <span class="chip">durable</span>
           </div>
-          <a class="btn" href="#project">Project notes</a>
         </article>
 
-        <article class="card post reveal" data-tags="modernization dotnet">
-          <time datetime="2026-05-01">May 1, 2026</time>
-          <h3>What fragile systems are trying to tell you</h3>
+        <article class="card post reveal" data-tags="dotnet ops">
+          <time datetime="2026-05-01">2026-05-01 // consulting</time>
+          <h3>Legacy systems leak signals too</h3>
           <p>
-            Slow releases, production anxiety, and mystery outages are signals. Modernization starts by listening
-            to those signals and turning them into a roadmap the team can actually execute.
+            Slow releases, mystery outages, fragile SQL, and manual deploy rituals are all findings. Treat them
+            like evidence, then modernize surgically.
           </p>
-          <div class="pill-row">
-            <span class="pill">Consulting</span>
-            <span class="pill">Roadmaps</span>
+          <div class="chips">
+            <span class="chip">legacy</span>
+            <span class="chip">modernize</span>
           </div>
-          <a class="btn" href="#career">Explore services</a>
         </article>
       </div>
     </section>
 
     <section class="container" id="contact">
-      <div class="contact-panel">
-        <div class="card reveal">
-          <span class="eyebrow">Contact</span>
-          <h2 style="margin-top:1rem;">Need a system stabilized, modernized, or accelerated?</h2>
-          <p>
-            Derek is based in Florence, Massachusetts and available for remote consulting focused on
-            .NET modernization, architecture, performance, and AI-augmented engineering workflows.
+      <div class="contact">
+        <article class="card reveal">
+          <span class="tag">contact</span>
+          <h2>Need a system hardened, modernized, or turned into a proper tool?</h2>
+          <p class="lead" style="font-size:14px;">
+            Reach out for .NET modernization, architecture cleanup, production stability, SQL performance,
+            AI-assisted delivery workflows, or ArgusEngine/NightmareV2 collaboration.
           </p>
-          <div class="card-actions">
-            <a class="btn primary" href="mailto:derekdperez.dev@gmail.com">Start a conversation</a>
-            <button class="btn" id="copyEmail" type="button">Copy email</button>
-          </div>
-        </div>
 
-        <div class="card reveal">
-          <div class="kicker">Connect</div>
-          <div class="contact-list">
-            <a class="contact-item" href="mailto:derekdperez.dev@gmail.com">
-              <strong>Email</strong>
+          <div class="hero-actions">
+            <a class="btn" href="mailto:derekdperez.dev@gmail.com">send_email</a>
+            <button class="btn secondary" id="copyEmail" type="button">copy_email</button>
+          </div>
+        </article>
+
+        <aside class="card reveal">
+          <span class="eyebrow">links</span>
+          <div class="links">
+            <a class="link-row" href="mailto:derekdperez.dev@gmail.com">
+              <b>email</b>
               <span>derekdperez.dev@gmail.com</span>
             </a>
-            <a class="contact-item" href="https://github.com/derekdperez" target="_blank" rel="noopener">
-              <strong>GitHub</strong>
-              <span>@derekdperez</span>
-            </a>
-            <a class="contact-item" href="https://derekdperez.github.io/portfolio-site/" target="_blank" rel="noopener">
-              <strong>Portfolio</strong>
-              <span>derekdperez.github.io</span>
-            </a>
-            <a class="contact-item" href="https://github.com/derekdperez/NightmareV2/" target="_blank" rel="noopener">
-              <strong>Repository</strong>
+            <a class="link-row" href="https://github.com/derekdperez/NightmareV2/" target="_blank" rel="noopener">
+              <b>repo</b>
               <span>NightmareV2</span>
             </a>
+            <a class="link-row" href="https://github.com/derekdperez" target="_blank" rel="noopener">
+              <b>github</b>
+              <span>@derekdperez</span>
+            </a>
+            <a class="link-row" href="https://derekdperez.github.io/portfolio-site/" target="_blank" rel="noopener">
+              <b>portfolio</b>
+              <span>derekdperez.github.io</span>
+            </a>
           </div>
-        </div>
+        </aside>
       </div>
     </section>
   </main>
 
   <footer>
-    <div class="container footer-row">
-      <span>© <span id="year"></span> Derek Perez. ArgusEngine / NightmareV2.</span>
-      <span>Static single-file site. Built for GitHub Pages.</span>
+    <div class="container foot">
+      <span>© <span id="year"></span> Derek Perez // ArgusEngine</span>
+      <span>authorized research only // static github pages build</span>
     </div>
   </footer>
 
-  <div class="toast" id="toast" role="status" aria-live="polite">Copied email ✔</div>
+  <div class="toast" id="toast" role="status" aria-live="polite">copied</div>
 
   <script>
     (function () {
       "use strict";
 
-      const html = document.documentElement;
-      const themeToggle = document.getElementById("themeToggle");
-      const menuToggle = document.getElementById("menuToggle");
+      const email = "derekdperez.dev@gmail.com";
       const navLinks = document.getElementById("navLinks");
+      const menuBtn = document.getElementById("menuBtn");
       const navAnchors = Array.from(document.querySelectorAll(".nav-links a"));
-      const revealEls = Array.from(document.querySelectorAll(".reveal"));
-      const year = document.getElementById("year");
-      const postSearch = document.getElementById("postSearch");
+      const revealItems = Array.from(document.querySelectorAll(".reveal"));
+      const searchInput = document.getElementById("searchInput");
       const filterButtons = Array.from(document.querySelectorAll(".filter"));
       const posts = Array.from(document.querySelectorAll(".post"));
+      const terminalLog = document.getElementById("terminalLog");
       const copyEmail = document.getElementById("copyEmail");
       const toast = document.getElementById("toast");
+      const year = document.getElementById("year");
+      const matrix = document.getElementById("matrix");
+      const matrixContext = matrix.getContext("2d");
 
-      const email = "derekdperez.dev@gmail.com";
+      const terminalLines = [
+        "[init] loading scoped target registry",
+        "[gatekeeper] canonicalizer: ready",
+        "[gatekeeper] scope evaluator: ready",
+        "[queue] rabbitmq transport: linked",
+        "[dedupe] redis reservation layer: online",
+        "[workers] enum | spider | tech-id | http-classifier",
+        "[safety] unauthorized target rejection: enabled",
+        "[status] operator visibility: command center"
+      ];
 
-      function setTheme(theme) {
-        html.setAttribute("data-theme", theme);
-        localStorage.setItem("argus-theme", theme);
-        themeToggle.textContent = theme === "dark" ? "☾" : "☀";
-        themeToggle.setAttribute("aria-label", theme === "dark" ? "Switch to light theme" : "Switch to dark theme");
-      }
-
-      function initTheme() {
-        const saved = localStorage.getItem("argus-theme");
-        const preferred = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-        setTheme(saved || preferred);
+      function setYear() {
+        year.textContent = String(new Date().getFullYear());
       }
 
       function toggleMenu(forceClosed) {
-        const shouldOpen = typeof forceClosed === "boolean" ? !forceClosed : !navLinks.classList.contains("open");
+        const shouldOpen = typeof forceClosed === "boolean"
+          ? !forceClosed
+          : !navLinks.classList.contains("open");
+
         navLinks.classList.toggle("open", shouldOpen);
-        menuToggle.setAttribute("aria-expanded", String(shouldOpen));
+        menuBtn.setAttribute("aria-expanded", String(shouldOpen));
       }
 
-      function showToast(message) {
-        toast.textContent = message;
-        toast.classList.add("show");
-        window.clearTimeout(showToast.timer);
-        showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 2200);
-      }
+      function setActiveNav() {
+        const y = window.scrollY + 90;
+        let active = navAnchors[0];
 
-      function filterPosts() {
-        const activeFilter = document.querySelector(".filter.active").dataset.filter;
-        const query = postSearch.value.trim().toLowerCase();
-
-        posts.forEach((post) => {
-          const tags = post.dataset.tags;
-          const text = post.textContent.toLowerCase();
-          const matchesFilter = activeFilter === "all" || tags.includes(activeFilter);
-          const matchesQuery = query.length === 0 || text.includes(query);
-          post.style.display = matchesFilter && matchesQuery ? "" : "none";
-        });
-      }
-
-      function updateActiveNav() {
-        const offset = window.scrollY + 130;
-        const sections = navAnchors
-          .map((anchor) => {
-            const target = document.querySelector(anchor.getAttribute("href"));
-            return target ? { anchor, target } : null;
-          })
-          .filter(Boolean);
-
-        let current = sections[0];
-
-        sections.forEach((item) => {
-          if (item.target.offsetTop <= offset) {
-            current = item;
+        navAnchors.forEach((anchor) => {
+          const section = document.querySelector(anchor.getAttribute("href"));
+          if (section && section.offsetTop <= y) {
+            active = anchor;
           }
         });
 
         navAnchors.forEach((anchor) => anchor.classList.remove("active"));
-        if (current) current.anchor.classList.add("active");
+        if (active) {
+          active.classList.add("active");
+        }
       }
 
-      function copyText(text) {
+      function revealOnScroll() {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("visible");
+              observer.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.13 });
+
+        revealItems.forEach((item) => observer.observe(item));
+      }
+
+      function typeTerminal() {
+        let lineIndex = 0;
+        let charIndex = 0;
+        let output = "";
+
+        function tick() {
+          if (lineIndex >= terminalLines.length) {
+            return;
+          }
+
+          const line = terminalLines[lineIndex];
+
+          if (charIndex === 0) {
+            output += "<span class=\"prompt\">operator@argus:~$</span> ";
+          }
+
+          output += line.charAt(charIndex);
+          terminalLog.innerHTML = output;
+
+          charIndex += 1;
+
+          if (charIndex >= line.length) {
+            output += "\n";
+            lineIndex += 1;
+            charIndex = 0;
+            window.setTimeout(tick, 210);
+            return;
+          }
+
+          window.setTimeout(tick, 14 + Math.random() * 24);
+        }
+
+        tick();
+      }
+
+      function filterPosts() {
+        const activeFilter = document.querySelector(".filter.active").dataset.filter;
+        const query = searchInput.value.trim().toLowerCase();
+
+        posts.forEach((post) => {
+          const tags = post.dataset.tags.toLowerCase();
+          const text = post.textContent.toLowerCase();
+          const matchesFilter = activeFilter === "all" || tags.includes(activeFilter);
+          const matchesQuery = query.length === 0 || text.includes(query);
+
+          post.style.display = matchesFilter && matchesQuery ? "" : "none";
+        });
+      }
+
+      function copyToClipboard(text) {
         if (navigator.clipboard && window.isSecureContext) {
           return navigator.clipboard.writeText(text);
         }
 
         const textarea = document.createElement("textarea");
         textarea.value = text;
+        textarea.setAttribute("readonly", "");
         textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
+        textarea.style.left = "-9999px";
         document.body.appendChild(textarea);
-        textarea.focus();
         textarea.select();
 
         return new Promise((resolve, reject) => {
           try {
-            document.execCommand("copy") ? resolve() : reject(new Error("Copy command failed"));
+            const copied = document.execCommand("copy");
+            copied ? resolve() : reject(new Error("copy failed"));
           } catch (error) {
             reject(error);
           } finally {
@@ -1377,19 +1536,81 @@
         });
       }
 
-      initTheme();
-      year.textContent = new Date().getFullYear();
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add("show");
 
-      themeToggle.addEventListener("click", () => {
-        const next = html.getAttribute("data-theme") === "dark" ? "light" : "dark";
-        setTheme(next);
-      });
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => {
+          toast.classList.remove("show");
+        }, 1800);
+      }
 
-      menuToggle.addEventListener("click", () => toggleMenu());
+      function resizeMatrix() {
+        const ratio = window.devicePixelRatio || 1;
+        matrix.width = Math.floor(window.innerWidth * ratio);
+        matrix.height = Math.floor(window.innerHeight * ratio);
+        matrix.style.width = window.innerWidth + "px";
+        matrix.style.height = window.innerHeight + "px";
+        matrixContext.setTransform(ratio, 0, 0, ratio, 0, 0);
+      }
+
+      function runMatrix() {
+        const chars = "01<>/{}[]$#@ARGUSNIGHTMAREV2";
+        const fontSize = 14;
+        let columns = Math.ceil(window.innerWidth / fontSize);
+        let drops = Array.from({ length: columns }, () => Math.floor(Math.random() * window.innerHeight));
+
+        function resetDrops() {
+          columns = Math.ceil(window.innerWidth / fontSize);
+          drops = Array.from({ length: columns }, () => Math.floor(Math.random() * window.innerHeight));
+        }
+
+        function draw() {
+          matrixContext.fillStyle = "rgba(3, 6, 5, 0.08)";
+          matrixContext.fillRect(0, 0, window.innerWidth, window.innerHeight);
+          matrixContext.fillStyle = "rgba(66, 255, 158, 0.45)";
+          matrixContext.font = fontSize + "px ui-monospace, monospace";
+
+          for (let i = 0; i < drops.length; i += 1) {
+            const char = chars[Math.floor(Math.random() * chars.length)];
+            const x = i * fontSize;
+            const y = drops[i] * fontSize;
+
+            matrixContext.fillText(char, x, y);
+
+            if (y > window.innerHeight && Math.random() > 0.976) {
+              drops[i] = 0;
+            }
+
+            drops[i] += 1;
+          }
+
+          window.setTimeout(() => window.requestAnimationFrame(draw), 48);
+        }
+
+        window.addEventListener("resize", () => {
+          resizeMatrix();
+          resetDrops();
+        });
+
+        resizeMatrix();
+        draw();
+      }
+
+      setYear();
+      revealOnScroll();
+      typeTerminal();
+      runMatrix();
+      setActiveNav();
+
+      menuBtn.addEventListener("click", () => toggleMenu());
 
       navAnchors.forEach((anchor) => {
         anchor.addEventListener("click", () => toggleMenu(true));
       });
+
+      window.addEventListener("scroll", setActiveNav, { passive: true });
 
       filterButtons.forEach((button) => {
         button.addEventListener("click", () => {
@@ -1399,29 +1620,13 @@
         });
       });
 
-      postSearch.addEventListener("input", filterPosts);
+      searchInput.addEventListener("input", filterPosts);
 
       copyEmail.addEventListener("click", () => {
-        copyText(email)
-          .then(() => showToast("Copied email ✔"))
-          .catch(() => showToast("Email: " + email));
+        copyToClipboard(email)
+          .then(() => showToast("email copied"))
+          .catch(() => showToast(email));
       });
-
-      const revealObserver = new IntersectionObserver((entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("visible");
-            revealObserver.unobserve(entry.target);
-          }
-        });
-      }, { threshold: 0.14 });
-
-      revealEls.forEach((el) => revealObserver.observe(el));
-
-      window.addEventListener("scroll", updateActiveNav, { passive: true });
-      window.addEventListener("resize", updateActiveNav);
-      updateActiveNav();
-      filterPosts();
     })();
   </script>
 </body>

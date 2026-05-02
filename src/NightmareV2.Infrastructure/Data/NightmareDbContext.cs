@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using NightmareV2.Domain.Entities;
+using NightmareV2.Application.Sagas;
 
 namespace NightmareV2.Infrastructure.Data;
 
@@ -22,6 +23,7 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
     public DbSet<WorkerScaleTarget> WorkerScaleTargets => Set<WorkerScaleTarget>();
     public DbSet<WorkerScalingSetting> WorkerScalingSettings => Set<WorkerScalingSetting>();
     public DbSet<Ec2WorkerMachine> Ec2WorkerMachines => Set<Ec2WorkerMachine>();
+    public DbSet<TargetScanState> TargetScanStates => Set<TargetScanState>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -31,6 +33,17 @@ public sealed class NightmareDbContext(DbContextOptions<NightmareDbContext> opti
             e.HasKey(x => x.Id);
             e.Property(x => x.RootDomain).HasMaxLength(253).IsRequired();
             e.HasIndex(x => x.RootDomain).IsUnique();
+        });
+
+        modelBuilder.Entity<TargetScanState>(e =>
+        {
+            e.ToTable("target_scan_states");
+            e.HasKey(x => x.CorrelationId);
+            e.Property(x => x.CorrelationId).HasColumnName("correlation_id");
+            e.Property(x => x.CurrentState).HasColumnName("current_state").HasMaxLength(64).IsRequired();
+            e.Property(x => x.TargetDomain).HasColumnName("target_domain").HasMaxLength(253).IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at_utc");
         });
 
         modelBuilder.Entity<StoredAsset>(e =>

@@ -22,6 +22,8 @@ else if (allowInsecureSpiderSsl)
     Console.WriteLine("Spider: Spider:Http:AllowInsecureSsl=true — TLS server certificate validation is disabled for HTTP fetches.");
 }
 
+builder.Services.AddTransient<NightmareV2.Application.Http.WorkerHttpClientHandler>();
+
 builder.Services.AddHttpClient("spider")
     .ConfigurePrimaryHttpMessageHandler(() =>
     {
@@ -37,6 +39,7 @@ builder.Services.AddHttpClient("spider")
 
         return handler;
     })
+    .AddHttpMessageHandler<NightmareV2.Application.Http.WorkerHttpClientHandler>()
     .AddPolicyHandler(HttpRetryPolicies.SpiderRetryPolicy());
 
 builder.Services.AddNightmareInfrastructure(builder.Configuration);

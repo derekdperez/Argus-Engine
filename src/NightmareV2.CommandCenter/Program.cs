@@ -73,6 +73,12 @@ builder.Services.AddNightmareRabbitMq(
         consumers.AddConsumer<CriticalHighValueFindingAlertUiEventConsumer>();
         consumers.AddConsumer<PortScanRequestedUiEventConsumer>();
         consumers.AddConsumer<SubdomainEnumerationRequestedUiEventConsumer>();
+        consumers.AddSagaStateMachine<NightmareV2.Application.Sagas.TargetScanStateMachine, NightmareV2.Application.Sagas.TargetScanState>()
+            .EntityFrameworkRepository(r =>
+            {
+                r.ConcurrencyMode = MassTransit.ConcurrencyMode.Pessimistic;
+                r.ExistingDbContext<NightmareDbContext>();
+            });
     });
 builder.Services.AddOptions<NightmareRuntimeOptions>()
     .Bind(builder.Configuration.GetSection("Nightmare"))

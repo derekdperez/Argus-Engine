@@ -18,6 +18,8 @@ using NightmareV2.Infrastructure.Workers;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
 using StackExchange.Redis;
+using NightmareV2.Infrastructure.Caching;
+using NightmareV2.Infrastructure.Persistence;
 
 namespace NightmareV2.Infrastructure;
 
@@ -38,6 +40,8 @@ public static class DependencyInjection
         fileStoreConn = ApplyDefaultMaxPoolSize(fileStoreConn, configuration.GetValue<int?>("Nightmare:FileStore:MaxPoolSize") ?? 4);
 
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConn));
+        services.AddSingleton<DistributedScanLock>();
+        services.AddTransient(sp => new BulkAssetImporter(pgConn));
 
         void ConfigureNpgsql(DbContextOptionsBuilder options) => options.UseNpgsql(pgConn);
 

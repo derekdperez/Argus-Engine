@@ -8,7 +8,8 @@ using NightmareV2.Workers.HighValue.Consumers;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddHttpClient();
+builder.Services.AddTransient<NightmareV2.Application.Http.WorkerHttpClientHandler>();
+builder.Services.AddHttpClient().AddHttpMessageHandler<NightmareV2.Application.Http.WorkerHttpClientHandler>();
 builder.Services.AddNightmareInfrastructure(builder.Configuration);
 
 var patternPath = Path.Combine(AppContext.BaseDirectory, "Resources", "RegexPatterns", "high_value_targets.txt");

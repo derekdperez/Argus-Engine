@@ -39,20 +39,25 @@
 
 <section class="panel">
     <h2>Bulk import</h2>
-    <p class="muted">Plain text file: one root domain per line. Blank lines are ignored. Duplicates in the file or already in the database are skipped.</p>
-    <form method="post" action="/api/targets/bulk" enctype="multipart/form-data">
-        <div class="row">
-            <label>
-                Max depth
-                <input type="number" name="globalMaxDepth" min="1" value="@(Form.GlobalMaxDepth > 0 ? Form.GlobalMaxDepth : 12)" />
-            </label>
-            <label>
-                Target file
-                <input type="file" name="file" accept=".txt,text/plain" required />
-            </label>
-            <button type="submit">Import file</button>
+    <p class="muted">Plain text file: one root domain per line. Uploads are sent in 20 batches so targets appear while the import is still running.</p>
+    <div class="row">
+        <label>
+            Max depth
+            <InputNumber @bind-Value="_bulkImportMaxDepth" />
+        </label>
+        <label>
+            Target file
+            <InputFile OnChange="BulkImportAsync" accept=".txt,text/plain" disabled="@_bulkImportBusy" />
+        </label>
+    </div>
+    @if (_bulkImportBusy || _bulkImportChunksCompleted > 0)
+    {
+        <div class="bulk-import-progress" role="status" aria-live="polite">
+            <progress max="@BulkImportChunkCount" value="@_bulkImportChunksCompleted"></progress>
+            <span>@_bulkImportChunksCompleted / @BulkImportChunkCount chunks processed</span>
+            <span class="muted">@_bulkImportProgressText</span>
         </div>
-    </form>
+    }
     @if (!string.IsNullOrEmpty(_bulkStatus))
     {
         <p role="status">@_bulkStatus</p>
@@ -160,6 +165,7 @@ else
 @code {
     private const string AddTargetFormName = "add-target";
     private const string EditTargetFormName = "edit-target";
+    private const int BulkImportChunkCount = 20;
 
     [SupplyParameterFromForm(FormName = AddTargetFormName)]
     private TargetForm? _form { get; set; }
@@ -172,8 +178,12 @@ else
     private bool _initialLoadStarted;
     private bool _loading = true;
     private bool _createBusy;
+    private bool _bulkImportBusy;
     private bool _bulkDepthBusy;
     private int _bulkMaxDepth = 12;
+    private int _bulkImportMaxDepth = 12;
+    private int _bulkImportChunksCompleted;
+    private string _bulkImportProgressText = "";
     private TargetEditForm? _editing;
     private DateTimeOffset? _lastLoadedAtUtc;
 
@@ -403,40 +413,85 @@ else
     private async Task BulkImportAsync(InputFileChangeEventArgs e)
     {
         _bulkStatus = null;
+        _bulkImportProgressText = "";
+        _bulkImportChunksCompleted = 0;
         var file = e.File;
         if (file is null)
             return;
+
+        if (_bulkImportBusy)
+            return;
+
+        _bulkImportBusy = true;
+        var totalCreated = 0;
+        var totalSkippedExisting = 0;
+        var totalSkippedInvalid = 0;
+        var totalSkippedDuplicate = 0;
+
         try
         {
             await using var stream = file.OpenReadStream(maxAllowedSize: 5_000_000);
             using var reader = new StreamReader(stream);
             var text = await reader.ReadToEndAsync();
             var lines = TargetRootNormalization.SplitLines(text).ToList();
-            var response = await Http.PostAsJsonAsync("/api/targets/bulk", new BulkImportRequest(lines, Form.GlobalMaxDepth));
-            if (response.StatusCode == HttpStatusCode.BadRequest)
+
+            var chunks = SplitIntoChunks(lines, BulkImportChunkCount);
+            for (var i = 0; i < chunks.Count; i++)
             {
-                _bulkStatus = await response.Content.ReadAsStringAsync();
-                return;
+                _bulkImportProgressText = $"Uploading chunk {i + 1} of {BulkImportChunkCount}...";
+                await InvokeAsync(StateHasChanged);
+
+                var response = await Http.PostAsJsonAsync(
+                    "/api/targets/bulk",
+                    new BulkImportRequest(chunks[i], _bulkImportMaxDepth > 0 ? _bulkImportMaxDepth : 12));
+                if (response.StatusCode == HttpStatusCode.BadRequest)
+                {
+                    _bulkStatus = await response.Content.ReadAsStringAsync();
+                    return;
+                }
+
+                response.EnsureSuccessStatusCode();
+                var result = await response.Content.ReadFromJsonAsync<BulkImportResult>();
+                if (result is not null)
+                {
+                    totalCreated += result.Created;
+                    totalSkippedExisting += result.SkippedAlreadyExist;
+                    totalSkippedInvalid += result.SkippedEmptyOrInvalid;
+                    totalSkippedDuplicate += result.SkippedDuplicateInBatch;
+                }
+
+                _bulkImportChunksCompleted = i + 1;
+                _bulkImportProgressText = $"Chunk {i + 1} imported. Created {totalCreated:N0} targets so far.";
+                await ReloadAsync();
+                await InvokeAsync(StateHasChanged);
             }
 
-            response.EnsureSuccessStatusCode();
-            var result = await response.Content.ReadFromJsonAsync<BulkImportResult>();
-            if (result is not null)
-            {
-                _bulkStatus =
-                    $"Created {result.Created}, skipped {result.SkippedAlreadyExist} already in DB, {result.SkippedDuplicateInBatch} duplicate lines in file, {result.SkippedEmptyOrInvalid} empty or invalid lines.";
-            }
-            else
-            {
-                _bulkStatus = "Import finished.";
-            }
-
-            await ReloadAsync();
+            _bulkStatus =
+                $"Import finished. Created {totalCreated}, skipped {totalSkippedExisting} already in DB, {totalSkippedDuplicate} duplicate lines in file, {totalSkippedInvalid} empty or invalid lines.";
+            _bulkImportProgressText = "Import complete.";
         }
         catch (Exception ex)
         {
             _bulkStatus = ex.Message;
         }
+        finally
+        {
+            _bulkImportBusy = false;
+        }
+    }
+
+    private static List<IReadOnlyList<string>> SplitIntoChunks(IReadOnlyList<string> lines, int chunkCount)
+    {
+        var chunks = new List<IReadOnlyList<string>>(chunkCount);
+        var total = lines.Count;
+        for (var i = 0; i < chunkCount; i++)
+        {
+            var start = (int)Math.Floor((double)total * i / chunkCount);
+            var end = (int)Math.Floor((double)total * (i + 1) / chunkCount);
+            chunks.Add(lines.Skip(start).Take(end - start).ToArray());
+        }
+
+        return chunks;
     }
 
     private static async Task<string> ReadResponseMessageAsync(HttpResponseMessage response, string fallback)

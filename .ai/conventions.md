@@ -18,7 +18,7 @@
   - Let `dotnet publish` produce Blazor framework assets; do not hand-copy or download `_framework/blazor.web.js` in deploy scripts.
   - Use `@Assets[...]` for script and stylesheet references in `Components/App.razor`.
 - CommandCenter interactive pages:
-  - For heavy Blazor Server pages such as `/ops`, render a lightweight shell during prerender and start API-backed detail loading from `OnAfterRenderAsync`.
+  - For data-heavy Blazor Server pages, render a lightweight shell during prerender and start API-backed detail loading from `OnAfterRenderAsync`.
   - Keep section-level loading flags visible and repaint between major data slices so large grids do not block first response.
 - Worker HTTP clients:
   - When a worker consumes `IHttpClientFactory.CreateClient()` without a name, configure the default named client with `AddHttpClient(string.Empty)` before chaining builder-only extensions such as `AddHttpMessageHandler`.

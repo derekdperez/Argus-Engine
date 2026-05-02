@@ -41,6 +41,14 @@
             <button type="button" class="btn ghost" @onclick="ClearFilters">Clear filters</button>
         </div>
 
+        @if (_lastLoadedAtUtc is null)
+        {
+            <section class="panel">
+                <p class="muted">Loading high value findings...</p>
+            </section>
+        }
+        else
+        {
         <RadzenDataGrid TItem="HighValueFindingRowDto"
                         Data="@FilteredFindings"
                         Count="@FilteredFindings.Count()"
@@ -88,14 +96,16 @@
                 </RadzenDataGridColumn>
             </Columns>
         </RadzenDataGrid>
+        }
     </section>
 </div>
 
 @code {
     private readonly CancellationTokenSource _pollCts = new();
     private readonly List<HighValueFindingRowDto> _rows = [];
+    private bool _initialLoadStarted;
     private bool _criticalOnly;
-    private bool _loading;
+    private bool _loading = true;
     private DateTimeOffset? _lastLoadedAtUtc;
     private string _search = "";
     private string _severityFilter = "";
@@ -122,12 +132,29 @@
             || Matches(r.WorkerName, _search)
             || Matches(r.MatchedText, _search)));
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
         Realtime.DomainEventReceived += OnRealtimeEvent;
+        return Task.CompletedTask;
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialLoadStarted)
+        {
+            _initialLoadStarted = true;
+            _ = InvokeAsync(LoadInitialAsync);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadInitialAsync()
+    {
         await ReloadAsync().ConfigureAwait(false);
         await StartRealtimeAsync().ConfigureAwait(false);
         _ = PollAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task StartRealtimeAsync()

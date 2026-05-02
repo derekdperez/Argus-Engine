@@ -2,6 +2,12 @@
 
 ## 2026-05-02
 
+- Extended fast first-paint behavior to the remaining CommandCenter pages:
+  - Deferred initial API-backed loading on `/asset-graph`, `/high-value-findings`, and `/technologies` until after first render and held back heavy grid/tree markup behind lightweight loading shells.
+  - Added a publish/hot-swap guard that fails CommandCenter publishing when `wwwroot/_framework/blazor.web.js` is missing or contains a `404: Not Found` payload.
+  - Why: keep the web app responsive on first request and prevent another deploy that serves a missing Blazor framework script.
+  - Validation: `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` and `dotnet publish src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release -o .tmp/publish-command-center-fast-pages /p:UseAppHost=false` succeeded. Published-app probes returned `200` for `/ops`, `/targets`, `/status`, `/admin`, `/high-value-findings`, `/technologies`, `/asset-graph`, and `/_framework/blazor.web.js`; the script response was `200 text/javascript`.
+
 - Fixed HighValue worker Docker publish failure:
   - Changed default `HttpClient` registration in `NightmareV2.Workers.HighValue` to use `AddHttpClient(string.Empty)` before adding `WorkerHttpClientHandler`.
   - Why: the worker calls `IHttpClientFactory.CreateClient()` and the parameterless `AddHttpClient()` overload does not return an `IHttpClientBuilder` for chaining `AddHttpMessageHandler`.

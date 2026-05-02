@@ -1,4 +1,5 @@
 @page "/asset-graph"
+@rendermode InteractiveServer
 @using NightmareV2.Application.Assets
 @using NightmareV2.Application.TechnologyIdentification
 @using NightmareV2.CommandCenter.Models
@@ -58,7 +59,13 @@
         <div class="alert">@_error</div>
     }
 
-    @if (_visibleTree.Count > 0)
+    @if (_loading && !_initialLoadCompleted)
+    {
+        <div class="card">
+            <p class="muted">Loading asset graph...</p>
+        </div>
+    }
+    else if (_visibleTree.Count > 0)
     {
         <div class="card graph-card">
             <h2>Target tree</h2>
@@ -81,7 +88,9 @@
 </section>
 
 @code {
-    private bool _loading;
+    private bool _initialLoadStarted;
+    private bool _initialLoadCompleted;
+    private bool _loading = true;
     private string? _error;
     private string _selectedTargetIdText = "";
     private string _selectedTechnologyTagSlug = "";
@@ -92,7 +101,22 @@
     private Dictionary<Guid, IReadOnlyList<AssetTagDto>> _assetTags = [];
     private AssetGraphMetrics? _metrics;
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialLoadStarted)
+        {
+            _initialLoadStarted = true;
+            _ = InvokeAsync(LoadAndRefreshAsync);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadAndRefreshAsync()
+    {
+        await LoadAsync();
+        await InvokeAsync(StateHasChanged);
+    }
 
     private async Task LoadAsync()
     {
@@ -114,6 +138,7 @@
         finally
         {
             _loading = false;
+            _initialLoadCompleted = true;
         }
     }
 

@@ -894,7 +894,7 @@ nightmare_publish_service_for_hot_swap() {
     -e DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
     -e NUGET_PACKAGES=/workspace/.nuget/packages \
     mcr.microsoft.com/dotnet/sdk:10.0 \
-    sh -lc "dotnet restore '$csproj' && dotnet publish '$csproj' -c Release -o '$out_rel' --no-restore /p:UseAppHost=false"
+    sh -lc "dotnet restore '$csproj' && dotnet publish '$csproj' -c Release -o '$out_rel' --no-restore /p:UseAppHost=false && if [ '$service' = 'command-center' ]; then test -s '$out_rel/wwwroot/_framework/blazor.web.js' && ! grep -q '^404: Not Found' '$out_rel/wwwroot/_framework/blazor.web.js'; fi"
 }
 
 nightmare_hot_swap_services() {

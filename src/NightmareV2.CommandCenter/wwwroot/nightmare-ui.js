@@ -97,6 +97,10 @@ window.nightmareUi.importTargetFileInChunks = async (input, dotNetRef, globalMax
         created: totalCreated,
         skippedAlreadyExist: totalSkippedAlreadyExist,
         skippedEmptyOrInvalid: totalSkippedEmptyOrInvalid,
-        skippedDuplicateInBatch: totalSkippedDuplicateInBatch
+        skippedDuplicateInBatch: totalSkippedDuplicateInBatch,
+        Created: totalCreated,
+        SkippedAlreadyExist: totalSkippedAlreadyExist,
+        SkippedEmptyOrInvalid: totalSkippedEmptyOrInvalid,
+        SkippedDuplicateInBatch: totalSkippedDuplicateInBatch
     };
 };

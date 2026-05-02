@@ -2,6 +2,12 @@
 
 ## 2026-05-02
 
+- Added browser-side chunked target bulk import:
+  - The Targets page now uses browser JavaScript to read the selected file, split it into 20 chunks, and post each chunk to `/api/targets/bulk`.
+  - The UI shows chunk progress, updates cumulative import counts after every server response, and reloads target data as chunks are inserted.
+  - Why: make bulk target uploads feel responsive and expose imported targets before the full file has completed processing.
+  - Validation: `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded; `git diff --check` passed with Git CRLF warnings only.
+
 - Extended fast first-paint behavior to the remaining CommandCenter pages:
   - Deferred initial API-backed loading on `/asset-graph`, `/high-value-findings`, and `/technologies` until after first render and held back heavy grid/tree markup behind lightweight loading shells.
   - Added a publish/hot-swap guard that fails CommandCenter publishing when `wwwroot/_framework/blazor.web.js` is missing or contains a `404: Not Found` payload.

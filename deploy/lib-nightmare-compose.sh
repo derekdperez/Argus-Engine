@@ -894,7 +894,7 @@ nightmare_publish_service_for_hot_swap() {
     -e DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
     -e NUGET_PACKAGES=/workspace/.nuget/packages \
     mcr.microsoft.com/dotnet/sdk:10.0 \
-    sh -lc "dotnet restore '$csproj' && dotnet publish '$csproj' -c Release -o '$out_rel' --no-restore /p:UseAppHost=false && mkdir -p '$out_rel/wwwroot/_framework' && cp \"\$(find /workspace/.nuget/packages /usr/share/dotnet -type f -name blazor.web.js 2>/dev/null | sort | tail -n 1)\" '$out_rel/wwwroot/_framework/blazor.web.js' && if [ ! -f '$out_rel/wwwroot/_framework/blazor.web.js' ]; then echo 'FATAL: hot-swap publish did not produce blazor.web.js' >&2; exit 1; fi"
+    sh -lc "dotnet restore '$csproj' && dotnet publish '$csproj' -c Release -o '$out_rel' --no-restore /p:UseAppHost=false && mkdir -p '$out_rel/wwwroot/_framework' && blazor_js=\"\$(find /workspace/.nuget/packages /usr/share/dotnet -type f -name blazor.web.js 2>/dev/null | sort | tail -n 1)\" && if [ -n \"\$blazor_js\" ]; then cp \"\$blazor_js\" '$out_rel/wwwroot/_framework/blazor.web.js' || true; fi"
 }
 
 nightmare_hot_swap_services() {

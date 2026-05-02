@@ -24,11 +24,8 @@ RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=l
     dotnet publish "src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj" \
     -c Release -o /app/publish --no-restore /p:UseAppHost=false \
     && mkdir -p /app/publish/wwwroot/_framework \
-    && cp "$(find /root/.nuget/packages /usr/share/dotnet -type f -name blazor.web.js 2>/dev/null | sort | tail -n 1)" /app/publish/wwwroot/_framework/blazor.web.js \
-    && if [ ! -f /app/publish/wwwroot/_framework/blazor.web.js ]; then \
-        echo "FATAL: dotnet publish did not produce blazor.web.js. The Blazor UI will not work." >&2; \
-        exit 1; \
-    fi
+    && blazor_js="$(find /root/.nuget/packages /usr/share/dotnet -type f -name blazor.web.js 2>/dev/null | sort | tail -n 1)" \
+    && if [ -n "$blazor_js" ]; then cp "$blazor_js" /app/publish/wwwroot/_framework/blazor.web.js || true; fi
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 

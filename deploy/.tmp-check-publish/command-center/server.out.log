@@ -1,0 +1,26 @@
+warn: Startup[1]
+      Startup database EnsureCreated skipped (Nightmare:SkipStartupDatabase or NIGHTMARE_SKIP_STARTUP_DATABASE=1). APIs that need Postgres will still fail until a database is reachable.
+info: MassTransit[0]
+      Configured endpoint target-created-ui-event, Consumer: NightmareV2.CommandCenter.Realtime.TargetCreatedUiEventConsumer
+info: MassTransit[0]
+      Configured endpoint asset-discovered-ui-event, Consumer: NightmareV2.CommandCenter.Realtime.AssetDiscoveredUiEventConsumer
+info: MassTransit[0]
+      Configured endpoint scannable-content-available-ui-event, Consumer: NightmareV2.CommandCenter.Realtime.ScannableContentAvailableUiEventConsumer
+info: MassTransit[0]
+      Configured endpoint critical-high-value-finding-alert-ui-event, Consumer: NightmareV2.CommandCenter.Realtime.CriticalHighValueFindingAlertUiEventConsumer
+info: MassTransit[0]
+      Configured endpoint port-scan-requested-ui-event, Consumer: NightmareV2.CommandCenter.Realtime.PortScanRequestedUiEventConsumer
+info: MassTransit[0]
+      Configured endpoint subdomain-enumeration-requested-ui-event, Consumer: NightmareV2.CommandCenter.Realtime.SubdomainEnumerationRequestedUiEventConsumer
+info: MassTransit[0]
+      Configured endpoint target-scan-state, Saga: NightmareV2.Application.Sagas.TargetScanState, State Machine: NightmareV2.Application.Sagas.TargetScanStateMachine
+info: NightmareV2.Infrastructure.Messaging.OutboxDispatcherWorker[1]
+      Outbox dispatcher DESKTOP-D76PFS8:13300:6adcf0d84b5c4e31b6dcda29c7d0296a starting.
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5099
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Users\User\Desktop\repo\NightmareV2\deploy\.tmp-check-publish\command-center

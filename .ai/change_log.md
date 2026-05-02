@@ -6,7 +6,7 @@
   - Removed deploy-time manual copy/download of `_framework/blazor.web.js` from the Docker image build and hot-swap publish path.
   - Updated `App.razor` to resolve `_framework/blazor.web.js` through `@Assets[...]`.
   - Why: failed fallback downloads can publish `404: Not Found` as JavaScript, causing `Unexpected token ':'` in the browser console.
-  - Validation: pending.
+  - Validation: `dotnet publish src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release -o deploy/.tmp-check-publish/command-center /p:UseAppHost=false` succeeded; production-mode local probe of `/_framework/blazor.web.js` returned `200 text/javascript` with a JavaScript payload; `bash -n fix_blazor.sh` and `bash -n deploy/lib-nightmare-compose.sh` succeeded; `git diff --check` passed.
 
 - Cleaned Command Center publish warnings:
   - Resolved the remaining technology scanner and worker activity count type warnings so Command Center release build/publish completes with zero warnings.

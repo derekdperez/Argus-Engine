@@ -2,6 +2,12 @@
 
 ## 2026-05-01
 
+- Made the Ops page first response lightweight:
+  - Moved `/ops` initial data loading out of `OnInitializedAsync` and into a post-render `LoadInitialWorkspaceAsync` path.
+  - Added initial loading-state defaults, incremental repaint points between data slices, and a lightweight shell that avoids rendering Radzen grids until data starts arriving.
+  - Why: the server should return the basic page structure immediately instead of waiting on targets/assets/queue/workers API calls or sending heavy empty grid markup.
+  - Validation: `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded; production-mode local `/ops` probe with startup DB skipped returned `200` with the loading shell, no grid markup, and a ~9.7 KB response.
+
 - Fixed CommandCenter `blazor.web.js` parse failure:
   - Removed deploy-time manual copy/download of `_framework/blazor.web.js` from the Docker image build and hot-swap publish path.
   - Updated `App.razor` to resolve `_framework/blazor.web.js` through `@Assets[...]`.

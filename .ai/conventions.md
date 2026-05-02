@@ -17,6 +17,9 @@
 - CommandCenter static assets:
   - Let `dotnet publish` produce Blazor framework assets; do not hand-copy or download `_framework/blazor.web.js` in deploy scripts.
   - Use `@Assets[...]` for script and stylesheet references in `Components/App.razor`.
+- CommandCenter interactive pages:
+  - For heavy Blazor Server pages such as `/ops`, render a lightweight shell during prerender and start API-backed detail loading from `OnAfterRenderAsync`.
+  - Keep section-level loading flags visible and repaint between major data slices so large grids do not block first response.
 - Enumeration conventions:
   - Queue enumeration via `SubdomainEnumerationRequested`; do not invoke provider binaries directly from `TargetCreated` consumers.
   - Implement each enumeration tool as its own `ISubdomainEnumerationProvider` and execute only the requested provider per message.

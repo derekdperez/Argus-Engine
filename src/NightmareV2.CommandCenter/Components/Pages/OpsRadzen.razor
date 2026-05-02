@@ -91,7 +91,38 @@
         <div class="alert">@_statusMessage</div>
     }
 
-
+    @if (!HasLoadedAnyWorkspaceData)
+    {
+        <section class="panel ops-tool-actions">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Loading workspace</p>
+                    <h2>Preparing operations data</h2>
+                </div>
+                <span class="muted">Initial load</span>
+            </div>
+            <div class="stat-grid compact-stats" aria-label="Operations loading state">
+                <div class="stat-card">
+                    <div class="stat-label">Targets</div>
+                    <div class="stat-value small">Loading...</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Asset inventory</div>
+                    <div class="stat-value small">Loading...</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">HTTP queue</div>
+                    <div class="stat-value small">Loading...</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Workers</div>
+                    <div class="stat-value small">Loading...</div>
+                </div>
+            </div>
+        </section>
+    }
+    else
+    {
     <section class="panel ops-tool-actions">
         <div class="section-heading">
             <div>
@@ -808,6 +839,7 @@
 
         </section>
     </section>
+    }
 </div>
 
 @code {
@@ -818,6 +850,7 @@
     private CancellationTokenSource? _liveReloadCts;
     private readonly HashSet<string> _dirtyScopes = new(StringComparer.Ordinal);
     private DateTimeOffset? _firstDirtyAtUtc;
+    private bool _initialLoadStarted;
 
     private readonly List<TargetSummary> _targets = [];
     private readonly List<AssetGridRowDto> _assets = [];
@@ -963,7 +996,7 @@
     private int _ec2ScalePortScan;
     private int _ec2ScaleHighValue;
     private int _ec2ScaleTechId;
-    private bool _ec2WorkerBusy;
+    private bool _ec2WorkerBusy = true;
 
     private string _maintenanceApiKey = "";
     private string _phraseClearTargets = "";
@@ -977,11 +1010,11 @@
     private string _maintenanceMessage = "";
     private bool _maintenanceBusy;
 
-    private bool _loadingAll;
-    private bool _targetsLoading;
-    private bool _assetsLoading;
-    private bool _queueLoading;
-    private bool _snapshotLoading;
+    private bool _loadingAll = true;
+    private bool _targetsLoading = true;
+    private bool _assetsLoading = true;
+    private bool _queueLoading = true;
+    private bool _snapshotLoading = true;
     private bool _targetCreateBusy;
     private bool _targetDepthBusy;
     private bool _toolRestartBusy;
@@ -1123,6 +1156,12 @@
     private static string Ec2WorkerCountsSummary(Ec2WorkerCountsDto counts) =>
         $"spider {counts.Spider.ToString(CultureInfo.InvariantCulture)}, enum {counts.Enum.ToString(CultureInfo.InvariantCulture)}, port {counts.PortScan.ToString(CultureInfo.InvariantCulture)}, high {counts.HighValue.ToString(CultureInfo.InvariantCulture)}, tech {counts.TechnologyIdentification.ToString(CultureInfo.InvariantCulture)}";
 
+    private bool HasLoadedAnyWorkspaceData =>
+        _targetsLoadedAtUtc is not null
+        || _assetsLoadedAtUtc is not null
+        || _queueLoadedAtUtc is not null
+        || _snapshotLoadedAtUtc is not null;
+
     private static bool Ec2WorkerMachineIsActive(string? state) =>
         !string.Equals(state, "terminated", StringComparison.OrdinalIgnoreCase)
         && !string.Equals(state, "terminating", StringComparison.OrdinalIgnoreCase)
@@ -1136,13 +1175,45 @@
                 ? "badge badge-gray"
                 : "badge badge-red";
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
         Realtime.DomainEventReceived += OnRealtimeEvent;
         Realtime.ConnectionStateChanged += OnRealtimeConnectionChanged;
 
-        await ReloadAllAsync();
-        await StartRealtimeAsync();
+        return Task.CompletedTask;
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialLoadStarted)
+        {
+            _initialLoadStarted = true;
+            _ = InvokeAsync(LoadInitialWorkspaceAsync);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadInitialWorkspaceAsync()
+    {
+        try
+        {
+            await ReloadAllAsync();
+            if (!_pollCts.IsCancellationRequested)
+                await StartRealtimeAsync();
+        }
+        catch (OperationCanceledException) when (_pollCts.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Could not load operations workspace: {ex.Message}";
+        }
+        finally
+        {
+            if (!_pollCts.IsCancellationRequested)
+                await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task StartRealtimeAsync()
@@ -1244,16 +1315,24 @@
         try
         {
             await ReloadTargetsAsync();
+            await NotifyLoadProgressAsync();
             await ReloadTargetScopedAsync();
+            await NotifyLoadProgressAsync();
             await ReloadHttpQueueSettingsAsync();
+            await NotifyLoadProgressAsync();
             await ReloadVolatileAsync();
+            await NotifyLoadProgressAsync();
             await ReloadMaintenanceStatusAsync();
+            await NotifyLoadProgressAsync();
         }
         finally
         {
             _loadingAll = false;
         }
     }
+
+    private Task NotifyLoadProgressAsync() =>
+        _pollCts.IsCancellationRequested ? Task.CompletedTask : InvokeAsync(StateHasChanged);
 
     private async Task ReloadVolatileAsync()
     {

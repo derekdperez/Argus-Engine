@@ -1,35 +1,36 @@
 <!doctype html>
-<html lang="en" data-theme="night">
+<html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta
-    name="description"
-    content="ArgusEngine, code-named NightmareV2, is Derek Perez's ethical hacking and bug bounty reconnaissance platform built with .NET."
-  />
-  <meta name="theme-color" content="#050607" />
-  <title>ArgusEngine // NightmareV2</title>
+  <meta name="description"
+    content="Argus Engine is a modular bug bounty reconnaissance and scanning framework for authorized security research." />
+  <meta name="theme-color" content="#05070c" />
+  <title>Argus Engine — Automated Recon for Bug Bounty Hunters</title>
 
   <style>
     :root {
-      --bg: #050607;
-      --bg2: #080d0b;
-      --panel: rgba(8, 16, 13, 0.82);
-      --panel2: rgba(13, 26, 21, 0.72);
-      --text: #d8ffe9;
-      --muted: #7aa88f;
-      --dim: #456555;
-      --line: rgba(77, 255, 158, 0.18);
-      --line2: rgba(77, 255, 158, 0.34);
-      --green: #42ff9e;
-      --cyan: #34e7ff;
-      --red: #ff456f;
-      --yellow: #e7ff6a;
-      --purple: #a66bff;
-      --shadow: 0 0 32px rgba(66, 255, 158, 0.08);
+      --bg: #05070c;
+      --bg-2: #080d14;
+      --bg-3: #0d1420;
+      --panel: rgba(13, 20, 32, 0.78);
+      --panel-2: rgba(7, 12, 19, 0.88);
+      --text: #e7f7ff;
+      --muted: #91a8b8;
+      --dim: #607685;
+      --line: rgba(114, 242, 255, 0.16);
+      --line-strong: rgba(114, 242, 255, 0.34);
+      --green: #4dff9d;
+      --cyan: #72f2ff;
+      --purple: #9d7cff;
+      --amber: #ffd166;
+      --red: #ff5470;
+      --shadow: 0 24px 90px rgba(0, 0, 0, 0.45);
+      --glow: 0 0 36px rgba(114, 242, 255, 0.12);
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      --max: 1120px;
+      --max: 1160px;
     }
 
     * {
@@ -47,10 +48,10 @@
       color: var(--text);
       font-family: var(--sans);
       background:
-        radial-gradient(circle at 18% 18%, rgba(66, 255, 158, 0.11), transparent 24rem),
-        radial-gradient(circle at 82% 8%, rgba(52, 231, 255, 0.08), transparent 22rem),
-        radial-gradient(circle at 70% 86%, rgba(166, 107, 255, 0.07), transparent 26rem),
-        linear-gradient(180deg, #030403 0%, #07100c 44%, #030403 100%);
+        radial-gradient(circle at 15% 10%, rgba(77, 255, 157, 0.12), transparent 28rem),
+        radial-gradient(circle at 82% 4%, rgba(114, 242, 255, 0.12), transparent 24rem),
+        radial-gradient(circle at 72% 72%, rgba(157, 124, 255, 0.12), transparent 28rem),
+        linear-gradient(180deg, #05070c 0%, #08101a 46%, #03050a 100%);
       overflow-x: hidden;
     }
 
@@ -61,31 +62,30 @@
       z-index: -3;
       pointer-events: none;
       background-image:
-        linear-gradient(rgba(66, 255, 158, 0.035) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(66, 255, 158, 0.035) 1px, transparent 1px);
-      background-size: 28px 28px;
-      mask-image: linear-gradient(to bottom, #000, transparent 85%);
+        linear-gradient(rgba(114, 242, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(114, 242, 255, 0.035) 1px, transparent 1px);
+      background-size: 38px 38px;
+      mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.6) 48%, transparent 90%);
     }
 
     body::after {
       content: "";
       position: fixed;
       inset: 0;
-      z-index: 999;
+      z-index: -2;
       pointer-events: none;
-      opacity: 0.13;
-      background: repeating-linear-gradient(
-        to bottom,
-        transparent 0,
-        transparent 2px,
-        rgba(66, 255, 158, 0.18) 3px,
-        transparent 4px
-      );
+      opacity: 0.32;
+      background:
+        linear-gradient(115deg, transparent 0%, rgba(114, 242, 255, 0.04) 48%, transparent 52%),
+        repeating-linear-gradient(to bottom,
+          transparent 0,
+          transparent 3px,
+          rgba(255, 255, 255, 0.025) 4px);
       mix-blend-mode: screen;
     }
 
     ::selection {
-      color: #031008;
+      color: #03110b;
       background: var(--green);
     }
 
@@ -99,29 +99,21 @@
       font: inherit;
     }
 
-    .matrix {
-      position: fixed;
-      inset: 0;
-      z-index: -2;
-      opacity: 0.22;
-      pointer-events: none;
-    }
-
     .container {
       width: min(calc(100% - 28px), var(--max));
-      margin: 0 auto;
+      margin-inline: auto;
     }
 
     .skip-link {
       position: fixed;
-      top: -100px;
+      top: -90px;
       left: 14px;
       z-index: 1000;
-      background: var(--green);
-      color: #031008;
-      border: 1px solid #aaffd1;
       padding: 9px 12px;
+      background: var(--green);
+      color: #03110b;
       font-family: var(--mono);
+      font-weight: 800;
       font-size: 13px;
     }
 
@@ -132,104 +124,113 @@
     .topbar {
       position: sticky;
       top: 0;
-      z-index: 50;
+      z-index: 100;
       border-bottom: 1px solid var(--line);
-      background: rgba(3, 6, 5, 0.86);
-      backdrop-filter: blur(16px);
+      background: rgba(5, 7, 12, 0.86);
+      backdrop-filter: blur(18px);
     }
 
     .nav {
-      min-height: 58px;
+      min-height: 62px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 14px;
+      gap: 18px;
     }
 
     .brand {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
+      gap: 11px;
+      min-width: fit-content;
+    }
+
+    .mark {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      background:
+        radial-gradient(circle, rgba(77, 255, 157, 0.18), transparent 58%),
+        rgba(114, 242, 255, 0.05);
+      box-shadow: inset 0 0 22px rgba(114, 242, 255, 0.08), 0 0 26px rgba(114, 242, 255, 0.08);
+      clip-path: polygon(50% 0%, 90% 15%, 100% 50%, 90% 85%, 50% 100%, 10% 85%, 0% 50%, 10% 15%);
+    }
+
+    .mark::before {
+      content: "";
+      width: 16px;
+      height: 16px;
+      border: 1px solid var(--cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 16px rgba(114, 242, 255, 0.3);
+    }
+
+    .mark::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 16px var(--green);
+    }
+
+    .brand-text {
+      display: grid;
+      gap: 1px;
       font-family: var(--mono);
-      letter-spacing: -0.04em;
+      line-height: 1;
+    }
+
+    .brand-text strong {
+      color: var(--text);
       font-size: 14px;
-      font-weight: 800;
-      color: var(--green);
+      letter-spacing: -0.04em;
       text-transform: uppercase;
     }
 
-    .brand-mark {
-      position: relative;
-      display: grid;
-      place-items: center;
-      width: 34px;
-      height: 34px;
-      border: 1px solid var(--line2);
-      background: rgba(66, 255, 158, 0.07);
-      box-shadow: inset 0 0 20px rgba(66, 255, 158, 0.1), 0 0 24px rgba(66, 255, 158, 0.08);
-    }
-
-    .brand-mark::before,
-    .brand-mark::after {
-      content: "";
-      position: absolute;
-      width: 7px;
-      height: 7px;
-      border-color: var(--green);
-      border-style: solid;
-    }
-
-    .brand-mark::before {
-      left: -1px;
-      top: -1px;
-      border-width: 1px 0 0 1px;
-    }
-
-    .brand-mark::after {
-      right: -1px;
-      bottom: -1px;
-      border-width: 0 1px 1px 0;
-    }
-
-    .brand small {
-      display: block;
-      margin-top: 1px;
-      color: var(--muted);
+    .brand-text span {
+      color: var(--dim);
       font-size: 10px;
-      letter-spacing: 0.08em;
-      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
     }
 
     .nav-links {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
       gap: 4px;
     }
 
     .nav-links a,
-    .mini-btn {
+    .menu-btn {
       border: 1px solid transparent;
-      padding: 7px 9px;
-      color: var(--muted);
       background: transparent;
+      color: var(--muted);
+      padding: 8px 9px;
       font-family: var(--mono);
-      font-size: 12px;
-      font-weight: 700;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
       cursor: pointer;
-      transition: 140ms ease;
+      transition: 150ms ease;
     }
 
     .nav-links a:hover,
     .nav-links a.active,
-    .mini-btn:hover {
-      color: var(--green);
+    .menu-btn:hover {
+      color: var(--cyan);
       border-color: var(--line);
-      background: rgba(66, 255, 158, 0.06);
-      box-shadow: 0 0 18px rgba(66, 255, 158, 0.08);
+      background: rgba(114, 242, 255, 0.055);
+      box-shadow: var(--glow);
     }
 
-    .menu {
+    .menu-btn {
       display: none;
     }
 
@@ -238,41 +239,41 @@
     }
 
     section {
-      padding: 66px 0;
-      scroll-margin-top: 74px;
+      padding: 70px 0;
+      scroll-margin-top: 82px;
     }
 
     .hero {
-      min-height: calc(100vh - 58px);
+      min-height: calc(100vh - 62px);
       display: grid;
       align-items: center;
-      padding: 72px 0;
+      padding: 68px 0 78px;
     }
 
     .hero-grid {
       display: grid;
-      grid-template-columns: 1.02fr 0.98fr;
-      gap: 24px;
+      grid-template-columns: 0.96fr 1.04fr;
+      gap: 28px;
       align-items: center;
     }
 
-    .tag {
+    .label {
       display: inline-flex;
       align-items: center;
       gap: 8px;
       width: fit-content;
       border: 1px solid var(--line);
-      background: rgba(66, 255, 158, 0.055);
+      background: rgba(114, 242, 255, 0.055);
       color: var(--muted);
       padding: 7px 9px;
       font-family: var(--mono);
-      font-size: 12px;
-      font-weight: 800;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.09em;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
     }
 
-    .tag::before {
+    .label::before {
       content: "";
       width: 7px;
       height: 7px;
@@ -288,233 +289,271 @@
     }
 
     h1 {
-      margin: 18px 0 0;
-      max-width: 12ch;
+      margin: 16px 0 0;
+      max-width: 11ch;
       font-family: var(--mono);
-      font-size: clamp(40px, 8vw, 88px);
-      line-height: 0.92;
-      letter-spacing: -0.085em;
+      font-size: clamp(48px, 9vw, 102px);
+      line-height: 0.88;
+      letter-spacing: -0.09em;
       text-transform: uppercase;
     }
 
     h2 {
-      margin: 9px 0 0;
+      margin: 10px 0 0;
       max-width: 14ch;
       font-family: var(--mono);
-      font-size: clamp(27px, 5vw, 54px);
+      font-size: clamp(30px, 5vw, 58px);
       line-height: 0.95;
-      letter-spacing: -0.07em;
+      letter-spacing: -0.075em;
       text-transform: uppercase;
     }
 
     h3 {
-      margin-bottom: 10px;
+      margin-bottom: 9px;
       color: var(--text);
       font-family: var(--mono);
       font-size: 17px;
-      line-height: 1.2;
-      letter-spacing: -0.035em;
+      line-height: 1.22;
+      letter-spacing: -0.04em;
     }
 
-    .glitch {
+    .hero-title {
       position: relative;
-      display: inline-block;
       color: var(--text);
       text-shadow:
-        0 0 22px rgba(66, 255, 158, 0.22),
-        2px 0 rgba(255, 69, 111, 0.45),
-        -2px 0 rgba(52, 231, 255, 0.35);
+        0 0 28px rgba(114, 242, 255, 0.12),
+        2px 0 rgba(255, 84, 112, 0.35),
+        -2px 0 rgba(77, 255, 157, 0.24);
     }
 
-    .glitch::before,
-    .glitch::after {
-      content: attr(data-text);
+    .hero-title::after {
+      content: "Argus Engine";
       position: absolute;
-      inset: 0;
+      left: 2px;
+      top: 1px;
+      width: 100%;
+      color: rgba(114, 242, 255, 0.28);
+      clip-path: inset(0 0 64% 0);
       pointer-events: none;
-      opacity: 0.6;
+      animation: glitch 3.4s steps(2, end) infinite;
     }
 
-    .glitch::before {
-      color: var(--cyan);
-      transform: translate(1px, 0);
-      clip-path: inset(0 0 58% 0);
-      animation: glitchA 2.6s infinite steps(2, end);
+    @keyframes glitch {
+
+      0%,
+      86%,
+      100% {
+        transform: translate(0, 0);
+        opacity: 0.18;
+      }
+
+      87% {
+        transform: translate(5px, -2px);
+        opacity: 0.55;
+      }
+
+      89% {
+        transform: translate(-3px, 2px);
+        opacity: 0.3;
+      }
+
+      91% {
+        transform: translate(0, 0);
+        opacity: 0.18;
+      }
     }
 
-    .glitch::after {
-      color: var(--red);
-      transform: translate(-1px, 0);
-      clip-path: inset(62% 0 0 0);
-      animation: glitchB 3.2s infinite steps(2, end);
-    }
-
-    @keyframes glitchA {
-      0%, 86%, 100% { transform: translate(1px, 0); }
-      87% { transform: translate(6px, -2px); }
-      88% { transform: translate(-4px, 2px); }
-      90% { transform: translate(1px, 0); }
-    }
-
-    @keyframes glitchB {
-      0%, 78%, 100% { transform: translate(-1px, 0); }
-      79% { transform: translate(-6px, 1px); }
-      80% { transform: translate(4px, -1px); }
-      82% { transform: translate(-1px, 0); }
-    }
-
-    .lead {
-      max-width: 62ch;
+    .subtitle {
+      max-width: 63ch;
       margin: 18px 0 0;
       color: var(--muted);
-      font-size: 15px;
+      font-size: 15.5px;
       line-height: 1.72;
     }
 
-    .lead strong {
+    .subtitle strong {
       color: var(--green);
       font-weight: 800;
     }
 
-    .hero-actions {
+    .actions {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
-      margin-top: 24px;
+      margin-top: 23px;
     }
 
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-height: 39px;
-      border: 1px solid var(--line2);
-      background: rgba(66, 255, 158, 0.065);
-      color: var(--green);
+      min-height: 40px;
+      border: 1px solid var(--line-strong);
+      background: rgba(114, 242, 255, 0.07);
+      color: var(--cyan);
       padding: 9px 12px;
       font-family: var(--mono);
       font-size: 12px;
       font-weight: 900;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
-      box-shadow: inset 0 0 20px rgba(66, 255, 158, 0.04);
       cursor: pointer;
       transition: 150ms ease;
     }
 
     .btn:hover {
       transform: translateY(-1px);
-      background: rgba(66, 255, 158, 0.12);
-      box-shadow: var(--shadow), inset 0 0 24px rgba(66, 255, 158, 0.06);
+      background: rgba(114, 242, 255, 0.12);
+      box-shadow: var(--glow);
+    }
+
+    .btn.primary {
+      color: #03110b;
+      border-color: rgba(77, 255, 157, 0.7);
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+      box-shadow: 0 0 34px rgba(77, 255, 157, 0.16);
     }
 
     .btn.danger {
-      border-color: rgba(255, 69, 111, 0.38);
-      color: #ff7d99;
-      background: rgba(255, 69, 111, 0.055);
+      color: #ffc0cc;
+      border-color: rgba(255, 84, 112, 0.38);
+      background: rgba(255, 84, 112, 0.07);
     }
 
-    .btn.secondary {
-      color: var(--cyan);
-      border-color: rgba(52, 231, 255, 0.32);
-      background: rgba(52, 231, 255, 0.055);
-    }
-
-    .hero-meta {
+    .hero-stats {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 8px;
-      max-width: 680px;
       margin-top: 24px;
     }
 
-    .meta {
+    .stat {
       border: 1px solid var(--line);
-      background: rgba(3, 8, 6, 0.6);
-      padding: 10px;
-      min-height: 72px;
+      background:
+        linear-gradient(180deg, rgba(114, 242, 255, 0.055), rgba(255, 255, 255, 0.012)),
+        rgba(7, 12, 19, 0.78);
+      padding: 11px;
+      min-height: 74px;
     }
 
-    .meta b {
+    .stat b {
       display: block;
-      color: var(--green);
+      color: var(--text);
       font-family: var(--mono);
-      font-size: 18px;
+      font-size: 19px;
+      line-height: 1;
       letter-spacing: -0.06em;
     }
 
-    .meta span {
+    .stat span {
       display: block;
-      margin-top: 5px;
-      color: var(--muted);
+      margin-top: 7px;
+      color: var(--dim);
       font-family: var(--mono);
-      font-size: 11px;
+      font-size: 10px;
+      font-weight: 800;
       line-height: 1.35;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
     }
 
     .terminal {
       position: relative;
-      border: 1px solid var(--line2);
+      border: 1px solid var(--line-strong);
       background:
-        linear-gradient(180deg, rgba(66, 255, 158, 0.07), transparent 32%),
-        rgba(1, 5, 3, 0.86);
-      box-shadow: 0 0 0 1px rgba(66, 255, 158, 0.04), 0 24px 80px rgba(0, 0, 0, 0.48);
+        radial-gradient(circle at 70% 0%, rgba(114, 242, 255, 0.09), transparent 22rem),
+        linear-gradient(180deg, rgba(13, 20, 32, 0.94), rgba(2, 5, 9, 0.94));
+      box-shadow: var(--shadow), var(--glow);
       overflow: hidden;
     }
 
-    .terminal::before {
+    .terminal::before,
+    .terminal::after {
       content: "";
       position: absolute;
-      inset: 0;
       pointer-events: none;
+    }
+
+    .terminal::before {
+      inset: 0;
+      opacity: 0.13;
       background:
-        linear-gradient(90deg, rgba(255, 69, 111, 0.12), transparent 12%, transparent 88%, rgba(52, 231, 255, 0.11)),
-        radial-gradient(circle at 50% 0%, rgba(66, 255, 158, 0.11), transparent 18rem);
-      opacity: 0.72;
+        repeating-linear-gradient(to bottom,
+          transparent 0,
+          transparent 3px,
+          rgba(114, 242, 255, 0.18) 4px);
+      mix-blend-mode: screen;
+    }
+
+    .terminal::after {
+      top: -120px;
+      right: -80px;
+      width: 250px;
+      height: 250px;
+      border: 1px solid rgba(77, 255, 157, 0.16);
+      border-radius: 50%;
+      box-shadow:
+        0 0 0 32px rgba(77, 255, 157, 0.018),
+        0 0 0 64px rgba(114, 242, 255, 0.012);
     }
 
     .terminal-head {
       position: relative;
       z-index: 1;
       display: flex;
-      align-items: center;
       justify-content: space-between;
+      align-items: center;
       gap: 12px;
       border-bottom: 1px solid var(--line);
-      padding: 9px 10px;
-      color: var(--muted);
+      padding: 10px 12px;
+      color: var(--dim);
       font-family: var(--mono);
       font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
     }
 
     .lights {
       display: flex;
-      gap: 5px;
       align-items: center;
+      gap: 6px;
     }
 
     .light {
       width: 8px;
       height: 8px;
-      border-radius: 50%;
+      border-radius: 999px;
       background: var(--dim);
     }
 
-    .light.red { background: var(--red); }
-    .light.yellow { background: var(--yellow); }
-    .light.green { background: var(--green); }
+    .light.red {
+      background: var(--red);
+    }
+
+    .light.amber {
+      background: var(--amber);
+    }
+
+    .light.green {
+      background: var(--green);
+    }
 
     .terminal-body {
       position: relative;
       z-index: 1;
-      min-height: 430px;
-      padding: 14px;
+      padding: 16px;
+      min-height: 415px;
+      overflow-x: auto;
       color: var(--muted);
       font-family: var(--mono);
       font-size: 12px;
-      line-height: 1.65;
+      line-height: 1.7;
+    }
+
+    .terminal-body pre {
+      margin: 0;
+      white-space: pre;
     }
 
     .prompt {
@@ -525,65 +564,61 @@
       color: var(--cyan);
     }
 
+    .green {
+      color: var(--green);
+    }
+
+    .amber {
+      color: var(--amber);
+    }
+
     .red {
       color: var(--red);
     }
 
-    .yellow {
-      color: var(--yellow);
-    }
-
-    .ascii {
-      color: rgba(66, 255, 158, 0.8);
-      white-space: pre;
-      overflow-x: auto;
-      margin: 0 0 12px;
-      font-size: 11px;
-      line-height: 1.1;
-    }
-
-    .terminal-log {
-      min-height: 225px;
+    .cmd {
+      margin-bottom: 12px;
+      color: var(--text);
       white-space: pre-wrap;
     }
 
-    .cursor::after {
-      content: "█";
-      display: inline-block;
-      margin-left: 2px;
-      color: var(--green);
-      animation: blink 1s steps(1, end) infinite;
+    .terminal-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 14px;
     }
 
-    @keyframes blink {
-      50% { opacity: 0; }
+    .mini-panel {
+      border: 1px solid var(--line);
+      background: rgba(114, 242, 255, 0.035);
+      padding: 9px;
     }
 
-    .notice {
-      margin-top: 12px;
-      border: 1px solid rgba(231, 255, 106, 0.25);
-      background: rgba(231, 255, 106, 0.055);
-      color: #eaff9d;
-      padding: 10px;
-      font-family: var(--mono);
-      font-size: 11px;
-      line-height: 1.55;
+    .mini-panel b {
+      display: block;
+      color: var(--cyan);
+      margin-bottom: 4px;
+    }
+
+    .mini-panel span {
+      color: var(--dim);
     }
 
     .section-head {
       display: flex;
       justify-content: space-between;
-      gap: 22px;
       align-items: end;
+      gap: 24px;
       margin-bottom: 18px;
     }
 
     .section-copy {
-      max-width: 58ch;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.7;
+      max-width: 61ch;
       margin-bottom: 0;
+      color: var(--muted);
+      font-size: 14.5px;
+      line-height: 1.72;
     }
 
     .grid {
@@ -603,47 +638,50 @@
       position: relative;
       border: 1px solid var(--line);
       background:
-        linear-gradient(180deg, rgba(66, 255, 158, 0.055), rgba(66, 255, 158, 0.018)),
-        rgba(3, 8, 6, 0.76);
-      padding: 15px;
+        linear-gradient(180deg, rgba(114, 242, 255, 0.055), rgba(255, 255, 255, 0.012)),
+        rgba(7, 12, 19, 0.78);
+      padding: 16px;
       min-height: 100%;
       overflow: hidden;
+      transition: 150ms ease;
     }
 
-    .card::before {
-      content: "";
-      position: absolute;
-      left: -1px;
-      top: -1px;
-      width: 22px;
-      height: 22px;
-      border-top: 1px solid var(--green);
-      border-left: 1px solid var(--green);
-      opacity: 0.48;
-    }
-
+    .card::before,
     .card::after {
       content: "";
       position: absolute;
-      right: -1px;
-      bottom: -1px;
       width: 22px;
       height: 22px;
+      pointer-events: none;
+    }
+
+    .card::before {
+      left: -1px;
+      top: -1px;
+      border-top: 1px solid var(--cyan);
+      border-left: 1px solid var(--cyan);
+      opacity: 0.45;
+    }
+
+    .card::after {
+      right: -1px;
+      bottom: -1px;
       border-right: 1px solid var(--green);
       border-bottom: 1px solid var(--green);
-      opacity: 0.26;
+      opacity: 0.34;
     }
 
     .card:hover {
-      border-color: var(--line2);
-      box-shadow: var(--shadow);
+      transform: translateY(-2px);
+      border-color: var(--line-strong);
+      box-shadow: var(--glow);
     }
 
     .card p {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.68;
       margin-bottom: 0;
+      color: var(--muted);
+      font-size: 13.5px;
+      line-height: 1.7;
     }
 
     .eyebrow {
@@ -653,7 +691,7 @@
       font-family: var(--mono);
       font-size: 11px;
       font-weight: 900;
-      letter-spacing: 0.09em;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
     }
 
@@ -666,170 +704,228 @@
 
     .chip {
       border: 1px solid var(--line);
-      background: rgba(66, 255, 158, 0.045);
+      background: rgba(77, 255, 157, 0.045);
       color: var(--muted);
       padding: 5px 7px;
       font-family: var(--mono);
       font-size: 10px;
-      font-weight: 800;
+      font-weight: 900;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
     }
 
-    .pipeline {
+    .notice {
+      border: 1px solid rgba(255, 209, 102, 0.3);
+      background:
+        radial-gradient(circle at 0% 0%, rgba(255, 209, 102, 0.13), transparent 22rem),
+        rgba(255, 209, 102, 0.045);
+      padding: 18px;
+    }
+
+    .notice strong {
+      color: var(--amber);
+    }
+
+    .notice p {
+      color: #d9cfa8;
+    }
+
+    .workflow {
       display: grid;
-      grid-template-columns: 1fr 34px 1fr 34px 1fr;
+      grid-template-columns: repeat(6, 1fr);
       gap: 8px;
       align-items: stretch;
     }
 
-    .arrow {
-      display: grid;
-      place-items: center;
-      color: var(--green);
-      font-family: var(--mono);
-      font-size: 20px;
-      opacity: 0.72;
+    .step {
+      position: relative;
+      border: 1px solid var(--line);
+      background: rgba(7, 12, 19, 0.8);
+      padding: 13px;
+      min-height: 142px;
     }
 
-    .codebox {
+    .step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -8px;
+      width: 8px;
+      height: 1px;
+      background: var(--line-strong);
+    }
+
+    .icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 13px;
       border: 1px solid var(--line);
-      background: rgba(0, 0, 0, 0.36);
-      padding: 13px;
+      color: var(--green);
+      font-family: var(--mono);
+      font-weight: 900;
+      background: rgba(77, 255, 157, 0.045);
+    }
+
+    .step b {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      letter-spacing: -0.03em;
+      text-transform: uppercase;
+    }
+
+    .step span {
+      color: var(--muted);
+      font-size: 12.5px;
+      line-height: 1.55;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .codeblock {
+      position: relative;
+      border: 1px solid var(--line-strong);
+      background: rgba(2, 5, 9, 0.9);
+      padding: 15px;
       overflow-x: auto;
       color: var(--muted);
       font-family: var(--mono);
-      font-size: 12px;
-      line-height: 1.65;
+      font-size: 12.5px;
+      line-height: 1.7;
+      box-shadow: var(--glow);
     }
 
-    .codebox strong {
-      color: var(--green);
-      font-weight: 800;
+    .codeblock pre {
+      margin: 0;
+      min-width: 560px;
     }
 
-    .blog-controls {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-bottom: 10px;
-    }
-
-    .search {
-      flex: 1 1 260px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .copy {
+      position: absolute;
+      top: 9px;
+      right: 9px;
       border: 1px solid var(--line);
-      background: rgba(3, 8, 6, 0.72);
-      min-height: 38px;
-      padding: 0 10px;
-      color: var(--muted);
+      background: rgba(114, 242, 255, 0.07);
+      color: var(--cyan);
+      padding: 5px 7px;
       font-family: var(--mono);
-      font-size: 12px;
-    }
-
-    .search input {
-      width: 100%;
-      border: 0;
-      outline: 0;
-      background: transparent;
-      color: var(--text);
-      font-family: var(--mono);
-      font-size: 12px;
-    }
-
-    .filters {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-
-    .filter {
-      border: 1px solid var(--line);
-      background: rgba(66, 255, 158, 0.035);
-      color: var(--muted);
-      padding: 8px 9px;
-      font-family: var(--mono);
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 900;
       text-transform: uppercase;
       cursor: pointer;
     }
 
-    .filter.active,
-    .filter:hover {
-      color: var(--green);
-      border-color: var(--line2);
-      background: rgba(66, 255, 158, 0.085);
+    .copy:hover {
+      border-color: var(--line-strong);
+      background: rgba(114, 242, 255, 0.12);
     }
 
-    .post time {
-      display: block;
-      margin-bottom: 9px;
-      color: var(--dim);
-      font-family: var(--mono);
-      font-size: 11px;
-      text-transform: uppercase;
-    }
-
-    .contact {
-      display: grid;
-      grid-template-columns: 1fr 0.82fr;
-      gap: 10px;
-      align-items: stretch;
-    }
-
-    .links {
+    .docs-list {
       display: grid;
       gap: 8px;
     }
 
-    .link-row {
+    .doc-link {
       display: flex;
       justify-content: space-between;
-      gap: 10px;
+      gap: 12px;
       border: 1px solid var(--line);
-      background: rgba(66, 255, 158, 0.035);
-      padding: 10px;
+      background: rgba(114, 242, 255, 0.035);
+      padding: 11px;
       color: var(--muted);
       font-family: var(--mono);
       font-size: 12px;
-      transition: 140ms ease;
+      transition: 150ms ease;
     }
 
-    .link-row:hover {
-      color: var(--green);
-      border-color: var(--line2);
-      background: rgba(66, 255, 158, 0.075);
+    .doc-link:hover {
+      color: var(--cyan);
+      border-color: var(--line-strong);
+      background: rgba(114, 242, 255, 0.075);
     }
 
-    .link-row b {
+    .doc-link b {
       color: var(--text);
-      font-weight: 900;
-    }
-
-    footer {
-      border-top: 1px solid var(--line);
-      padding: 22px 0;
-      color: var(--dim);
-      font-family: var(--mono);
-      font-size: 11px;
       text-transform: uppercase;
     }
 
-    .foot {
+    .terminal-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .terminal-row {
       display: flex;
       justify-content: space-between;
-      gap: 14px;
+      gap: 12px;
+      border-bottom: 1px dashed var(--line);
+      padding-bottom: 8px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    .terminal-row b {
+      color: var(--green);
+      white-space: nowrap;
+    }
+
+    .banner {
+      border: 1px solid rgba(255, 84, 112, 0.36);
+      background:
+        linear-gradient(135deg, rgba(255, 84, 112, 0.13), rgba(114, 242, 255, 0.035)),
+        rgba(7, 12, 19, 0.88);
+      padding: 18px;
+      box-shadow: 0 0 34px rgba(255, 84, 112, 0.06);
+    }
+
+    .banner h3 {
+      color: #ffc0cc;
+    }
+
+    .footer {
+      border-top: 1px solid var(--line);
+      padding: 24px 0;
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .footer-grid {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
       flex-wrap: wrap;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .footer-links a:hover {
+      color: var(--cyan);
     }
 
     .reveal {
       opacity: 0;
-      transform: translateY(12px);
-      transition: opacity 380ms ease, transform 380ms ease;
+      transform: translateY(14px);
+      transition: opacity 420ms ease, transform 420ms ease;
     }
 
     .reveal.visible {
@@ -841,18 +937,19 @@
       position: fixed;
       right: 14px;
       bottom: 14px;
-      z-index: 200;
-      border: 1px solid var(--line2);
-      background: rgba(3, 8, 6, 0.92);
-      color: var(--green);
+      z-index: 500;
+      transform: translateY(80px);
+      opacity: 0;
+      border: 1px solid var(--line-strong);
+      background: rgba(5, 7, 12, 0.94);
+      color: var(--cyan);
       padding: 10px 12px;
       font-family: var(--mono);
       font-size: 12px;
       font-weight: 900;
-      transform: translateY(80px);
-      opacity: 0;
+      text-transform: uppercase;
+      box-shadow: var(--glow);
       transition: 180ms ease;
-      box-shadow: var(--shadow);
     }
 
     .toast.show {
@@ -860,53 +957,48 @@
       opacity: 1;
     }
 
-    @media (max-width: 900px) {
+    @media (max-width: 980px) {
+
       .hero-grid,
-      .contact,
+      .split,
       .grid.two {
         grid-template-columns: 1fr;
+      }
+
+      .grid.three {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .workflow {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .step:not(:last-child)::after {
+        display: none;
       }
 
       .hero {
         min-height: auto;
       }
-
-      .grid.three,
-      .hero-meta {
-        grid-template-columns: repeat(2, 1fr);
-      }
-
-      .pipeline {
-        grid-template-columns: 1fr;
-      }
-
-      .arrow {
-        transform: rotate(90deg);
-        min-height: 28px;
-      }
-
-      .section-head {
-        align-items: start;
-        flex-direction: column;
-      }
     }
 
-    @media (max-width: 700px) {
-      .menu {
-        display: inline-block;
+    @media (max-width: 760px) {
+      .menu-btn {
+        display: inline-flex;
       }
 
       .nav-links {
         position: fixed;
+        top: 72px;
         left: 14px;
         right: 14px;
-        top: 67px;
         display: grid;
         gap: 6px;
         border: 1px solid var(--line);
-        background: rgba(3, 8, 6, 0.96);
+        background: rgba(5, 7, 12, 0.96);
         padding: 10px;
-        transform: translateY(-10px);
+        box-shadow: var(--shadow);
+        transform: translateY(-12px);
         opacity: 0;
         pointer-events: none;
         transition: 160ms ease;
@@ -920,62 +1012,63 @@
 
       .nav-links a {
         border-color: var(--line);
-        background: rgba(66, 255, 158, 0.035);
+        background: rgba(114, 242, 255, 0.035);
       }
 
-      .brand small {
+      .brand-text span {
         display: none;
       }
 
       section {
-        padding: 48px 0;
+        padding: 54px 0;
       }
 
       .hero {
-        padding-top: 48px;
+        padding-top: 50px;
       }
 
-      .terminal-body {
-        min-height: 390px;
+      .section-head {
+        align-items: start;
+        flex-direction: column;
       }
-    }
 
-    @media (max-width: 520px) {
+      .hero-stats,
       .grid.three,
-      .hero-meta {
+      .workflow,
+      .terminal-grid {
         grid-template-columns: 1fr;
       }
 
       h1 {
-        font-size: clamp(38px, 17vw, 64px);
+        font-size: clamp(44px, 17vw, 72px);
       }
     }
   </style>
 </head>
 
 <body>
-  <canvas class="matrix" id="matrix" aria-hidden="true"></canvas>
   <a class="skip-link" href="#main">skip_to_content</a>
 
   <header class="topbar">
-    <nav class="container nav" aria-label="Primary">
-      <a class="brand" href="#top" aria-label="ArgusEngine home">
-        <span class="brand-mark">Æ</span>
-        <span>
-          ArgusEngine
-          <small>NightmareV2 // authorized ops</small>
+    <nav class="container nav" aria-label="Primary navigation">
+      <a class="brand" href="#top" aria-label="Argus Engine home">
+        <span class="mark" aria-hidden="true"></span>
+        <span class="brand-text">
+          <strong>Argus Engine</strong>
+          <span>automated recon framework</span>
         </span>
       </a>
 
       <div class="nav-links" id="navLinks">
-        <a href="#tool">tool</a>
-        <a href="#pipeline">pipeline</a>
-        <a href="#operator">operator</a>
-        <a href="#notes">notes</a>
-        <a href="#contact">contact</a>
+        <a href="#overview">overview</a>
+        <a href="#features">features</a>
+        <a href="#workflow">workflow</a>
+        <a href="#quickstart">quickstart</a>
+        <a href="#ethics">ethics</a>
+        <a href="#github">github</a>
       </div>
 
-      <button class="mini-btn menu" id="menuBtn" type="button" aria-expanded="false" aria-controls="navLinks">
+      <button class="menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="navLinks">
         menu
       </button>
     </nav>
@@ -985,405 +1078,511 @@
     <section class="hero container" id="top">
       <div class="hero-grid">
         <div class="reveal visible">
-          <span class="tag">bug bounty recon // ethical hacking only</span>
+          <span class="label">bug bounty recon // authorized targets only</span>
 
-          <h1>
-            <span class="glitch" data-text="Argus">Argus</span><br />
-            Engine
-          </h1>
+          <h1 class="hero-title">Argus Engine</h1>
 
-          <p class="lead">
-            <strong>ArgusEngine</strong>, currently code-named <strong>NightmareV2</strong>, is a
-            reconnaissance and scanning platform for authorized security research. It is built around the boring
-            things that make hacker tools actually useful: scope boundaries, queue discipline, dedupe, worker
-            isolation, repeatable tests, and operator visibility.
+          <p class="subtitle">
+            Automated reconnaissance and bug bounty scanning with eyes everywhere.
+            <strong>Argus Engine</strong> helps security researchers map attack surfaces,
+            identify interesting assets, and streamline repetitive discovery workflows.
           </p>
 
-          <div class="hero-actions">
-            <a class="btn" href="https://github.com/derekdperez/NightmareV2/" target="_blank" rel="noopener">
-              open_repo
+          <div class="actions">
+            <a class="btn primary" href="https://github.com/derekdperez/argus-engine" target="_blank" rel="noopener">
+              view_on_github
             </a>
-            <a class="btn secondary" href="#pipeline">
-              inspect_pipeline
+            <a class="btn" href="#quickstart">
+              get_started
             </a>
-            <a class="btn danger" href="#operator">
-              who_built_this
+            <a class="btn danger" href="#private-notice">
+              read_the_warning
             </a>
           </div>
 
-          <div class="hero-meta" aria-label="Project facts">
-            <div class="meta">
-              <b>.NET 10</b>
-              <span>recon pipeline</span>
+          <div class="hero-stats" aria-label="Project highlights">
+            <div class="stat">
+              <b>Recon</b>
+              <span>attack surface mapping</span>
             </div>
-            <div class="meta">
-              <b>Blazor</b>
-              <span>command center</span>
+            <div class="stat">
+              <b>Modules</b>
+              <span>enable only what you need</span>
             </div>
-            <div class="meta">
-              <b>RabbitMQ</b>
-              <span>durable messages</span>
+            <div class="stat">
+              <b>Triage</b>
+              <span>researcher-guided review</span>
             </div>
-            <div class="meta">
-              <b>Redis</b>
-              <span>dedupe layer</span>
+            <div class="stat">
+              <b>Shell</b>
+              <span>terminal-first workflow</span>
             </div>
           </div>
         </div>
 
-        <aside class="terminal reveal" aria-label="ArgusEngine terminal preview">
+        <aside class="terminal reveal" aria-label="Fictional Argus Engine scan output">
           <div class="terminal-head">
             <div class="lights" aria-hidden="true">
               <span class="light red"></span>
-              <span class="light yellow"></span>
+              <span class="light amber"></span>
               <span class="light green"></span>
             </div>
-            <span>argus://nightmarev2/session</span>
+            <span>argus-engine :: scan session</span>
           </div>
 
           <div class="terminal-body">
-<pre class="ascii">
-       _                     _____             _
-  /\  | |                   |  ___|           (_)
- /  \ | |_ __ __ _ _   _ ___| |__ _ __   __ _ _ _ __   ___
-/ /\ \| | '__/ _` | | | / __|  __| '_ \ / _` | | '_ \ / _ \
-/ ____ \ | | | (_| | |_| \__ \ |__| | | | (_| | | | | |  __/
-/_/    \_\_|  \__, |\__,_|___\____/_| |_|\__, |_|_| |_|\___|
-               __/ |                       __/ |
-              |___/                       |___/
-</pre>
-            <div id="terminalLog" class="terminal-log" aria-live="polite"></div>
-            <span class="prompt cursor">operator@argus:~$</span>
+            <div class="cmd">
+              <span class="prompt">$</span>
+              argus-engine scan --target example.com --modules recon,web,vuln
+            </div>
 
-            <div class="notice">
-              [ethics] Run only against systems you own or have explicit permission to test.
-              Scope is not decoration. Scope is the line.
+            <pre id="scanOutput"></pre>
+
+            <div class="terminal-grid">
+              <div class="mini-panel">
+                <b>scope</b>
+                <span>program rules loaded</span>
+              </div>
+              <div class="mini-panel">
+                <b>mode</b>
+                <span>researcher review required</span>
+              </div>
+              <div class="mini-panel">
+                <b>output</b>
+                <span>findings queued, not exploited</span>
+              </div>
+              <div class="mini-panel">
+                <b>ethics</b>
+                <span>authorization enforced by operator</span>
+              </div>
             </div>
           </div>
         </aside>
       </div>
     </section>
 
-    <section class="container" id="tool">
+    <section class="container" id="private-notice">
+      <div class="notice reveal">
+        <span class="eyebrow">personal release notice</span>
+        <h3>This repo is public for convenience. It is not an invitation to point scanners at the internet.</h3>
+        <p>
+          Argus Engine is published on GitHub because that is the easiest place for me to track, version,
+          and move my own tooling. I am not packaging this as a turnkey product, support contract, or
+          shortcut for random drive-by scanning. If you want an unfair recon advantage, build your own tools,
+          understand your scope, and own the consequences of what you run.
+        </p>
+        <div class="chips">
+          <span class="chip">private workflow</span>
+          <span class="chip">not a toy</span>
+          <span class="chip">do not spray targets</span>
+          <span class="chip">authorization required</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="container" id="overview">
       <div class="section-head reveal">
         <div>
-          <span class="tag">what it is</span>
-          <h2>Not a dashboard. A recon engine with teeth.</h2>
+          <span class="label">what it does</span>
+          <h2>Recon automation without pretending the human is optional.</h2>
         </div>
+
         <p class="section-copy">
-          ArgusEngine is shaped like an operations platform for bug bounty and authorized reconnaissance:
-          controlled intake, normalized targets, event-driven workers, durable queues, and audit-friendly
-          state transitions.
+          Argus Engine is a bug bounty scanning and reconnaissance framework designed to help researchers
+          automate repetitive discovery tasks, organize findings, and accelerate security testing.
+        </p>
+      </div>
+
+      <div class="grid two">
+        <article class="card reveal">
+          <span class="eyebrow">attack surface visibility</span>
+          <h3>See the exposed shape of a target before wasting time.</h3>
+          <p>
+            Discover subdomains, live hosts, exposed services, interesting endpoints, and technology signals
+            that deserve deeper researcher review.
+          </p>
+        </article>
+
+        <article class="card reveal">
+          <span class="eyebrow">researcher-guided scanning</span>
+          <h3>The framework handles repetition. You handle judgment.</h3>
+          <p>
+            Argus Engine does not replace the researcher. It amplifies them by handling repeatable discovery
+            and organizing output so humans can focus on context, creativity, validation, impact, and reporting.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="container" id="features">
+      <div class="section-head reveal">
+        <div>
+          <span class="label">core features</span>
+          <h2>Built for hunters who live in the shell.</h2>
+        </div>
+
+        <p class="section-copy">
+          Fast, tactical, modular scanning for bug bounty hunters, red teamers, security researchers,
+          and automation-focused pentesters.
         </p>
       </div>
 
       <div class="grid three">
         <article class="card reveal">
-          <span class="eyebrow">01 // scoped intake</span>
-          <h3>Targets enter through a gate, not a free-for-all.</h3>
+          <span class="eyebrow">01 // recon automation</span>
+          <h3>Discover assets worth looking at.</h3>
           <p>
-            The Command Center flow is designed around target creation, normalization, bulk import handling,
-            and scope-aware orchestration before work hits the queue.
+            Find subdomains, live hosts, exposed services, and endpoints that can feed deeper testing.
           </p>
           <div class="chips">
-            <span class="chip">scope</span>
-            <span class="chip">normalize</span>
-            <span class="chip">dedupe</span>
+            <span class="chip">subdomains</span>
+            <span class="chip">live hosts</span>
+            <span class="chip">services</span>
           </div>
         </article>
 
         <article class="card reveal">
-          <span class="eyebrow">02 // worker mesh</span>
-          <h3>Small workers. Clear jobs. Less chaos.</h3>
+          <span class="eyebrow">02 // modular scanner design</span>
+          <h3>Enable only what the engagement needs.</h3>
           <p>
-            Enumeration, spidering, HTTP classification, technology identification, and port-scan orchestration
-            live behind worker boundaries instead of being tangled together.
+            Toggle scanning modules based on program rules, target type, time budget, and signal quality.
           </p>
           <div class="chips">
-            <span class="chip">enum</span>
-            <span class="chip">spider</span>
-            <span class="chip">classify</span>
+            <span class="chip">modules</span>
+            <span class="chip">profiles</span>
+            <span class="chip">control</span>
           </div>
         </article>
 
         <article class="card reveal">
-          <span class="eyebrow">03 // reliability</span>
-          <h3>The platform remembers what happened.</h3>
+          <span class="eyebrow">03 // bug bounty workflow</span>
+          <h3>Designed around repeatable recon and triage.</h3>
           <p>
-            Durable messages, queue transitions, outbox/inbox idempotency, and reliability baseline endpoints
-            keep the system observable when scans get noisy.
+            Organize target data, track interesting assets, and keep the workflow moving from discovery to review.
           </p>
           <div class="chips">
-            <span class="chip">outbox</span>
-            <span class="chip">inbox</span>
-            <span class="chip">slo</span>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section class="container" id="pipeline">
-      <div class="section-head reveal">
-        <div>
-          <span class="tag">pipeline</span>
-          <h2>Scope in. Signals out.</h2>
-        </div>
-        <p class="section-copy">
-          The platform favors boring, testable primitives: canonicalization, scope rules, Redis dedupe,
-          EF Core/Postgres persistence, MassTransit/RabbitMQ messaging, and deterministic tests.
-        </p>
-      </div>
-
-      <div class="pipeline reveal">
-        <article class="card">
-          <span class="eyebrow">intake</span>
-          <h3>Command Center</h3>
-          <p>
-            Operator submits authorized targets. Bulk lines are split. Roots are normalized. Invalid or
-            out-of-scope input gets rejected before it becomes damage.
-          </p>
-        </article>
-
-        <div class="arrow" aria-hidden="true">-&gt;</div>
-
-        <article class="card">
-          <span class="eyebrow">gatekeeper</span>
-          <h3>Admission flow</h3>
-          <p>
-            Dedupe reservation, scope evaluation, target canonicalization, fan-out, and failure release happen
-            before the workers start burning cycles.
-          </p>
-        </article>
-
-        <div class="arrow" aria-hidden="true">-&gt;</div>
-
-        <article class="card">
-          <span class="eyebrow">workers</span>
-          <h3>Recon execution</h3>
-          <p>
-            Subdomain enum, spidering, technology identification, HTTP queue state transitions, and high-value
-            signal extraction feed the asset graph.
-          </p>
-        </article>
-      </div>
-
-      <div class="grid two" style="margin-top:10px;">
-        <div class="codebox reveal">
-<strong>$ ./scripts/test.sh unit</strong>
-<br />NightmareV2.Application.Tests
-<br />NightmareV2.Infrastructure.Tests
-<br />NightmareV2.Workers.Spider.Tests
-<br />NightmareV2.CommandCenter.Tests
-<br />
-<br /><span class="cyan">fast loop:</span> deterministic fakes, no live DNS, no broker, no database
-        </div>
-
-        <div class="codebox reveal">
-<strong>$ ./scripts/test.sh smoke</strong>
-<br />GET /health
-<br />GET /health/ready
-<br />GET /api/ops/reliability-slo
-<br />GET /api/http-request-queue/metrics
-<br />
-<br /><span class="yellow">ops loop:</span> verify the stack before trusting the hunt
-        </div>
-      </div>
-    </section>
-
-    <section class="container" id="operator">
-      <div class="section-head reveal">
-        <div>
-          <span class="tag">operator</span>
-          <h2>Built by a .NET dev who likes sharp tools.</h2>
-        </div>
-        <p class="section-copy">
-          Derek Perez is a senior .NET engineer focused on legacy modernization, production stability,
-          SQL performance, architecture cleanup, and AI-augmented engineering workflows.
-        </p>
-      </div>
-
-      <div class="grid three">
-        <article class="card reveal">
-          <span class="eyebrow">.NET modernization</span>
-          <h3>Old systems, safer exits.</h3>
-          <p>
-            Incremental migrations, service boundaries, ASP.NET Core upgrades, and production-safe delivery
-            for Microsoft-stack systems that have been carrying too much weight for too long.
-          </p>
-        </article>
-
-        <article class="card reveal">
-          <span class="eyebrow">performance</span>
-          <h3>Make the bottleneck confess.</h3>
-          <p>
-            SQL tuning, data-access cleanup, telemetry, and failure-path analysis. The goal is to turn vague
-            production pain into evidence and fixes.
-          </p>
-        </article>
-
-        <article class="card reveal">
-          <span class="eyebrow">AI workflow</span>
-          <h3>Automation with adult supervision.</h3>
-          <p>
-            AI-assisted scaffolding, testing, refactoring, and documentation — grounded in review, architecture,
-            and the discipline to throw away generated junk.
-          </p>
-        </article>
-      </div>
-    </section>
-
-    <section class="container" id="notes">
-      <div class="section-head reveal">
-        <div>
-          <span class="tag">field notes</span>
-          <h2>Build log // essays // signal traces.</h2>
-        </div>
-        <p class="section-copy">
-          Static blog cards for GitHub Pages. Search and filtering run locally in the browser.
-        </p>
-      </div>
-
-      <div class="blog-controls reveal">
-        <label class="search">
-          <span aria-hidden="true">grep</span>
-          <input id="searchInput" type="search" placeholder="filter notes..." autocomplete="off" />
-        </label>
-
-        <div class="filters" aria-label="Note filters">
-          <button class="filter active" type="button" data-filter="all">all</button>
-          <button class="filter" type="button" data-filter="recon">recon</button>
-          <button class="filter" type="button" data-filter="dotnet">.net</button>
-          <button class="filter" type="button" data-filter="ops">ops</button>
-          <button class="filter" type="button" data-filter="ai">ai</button>
-        </div>
-      </div>
-
-      <div class="grid three" id="postGrid">
-        <article class="card post reveal" data-tags="recon dotnet ops">
-          <time datetime="2026-05-01">2026-05-01 // build log</time>
-          <h3>Why recon tools need admission control</h3>
-          <p>
-            A scanner without scope discipline is just liability with a progress bar. Gatekeeper-style intake
-            makes authorization a first-class system concern.
-          </p>
-          <div class="chips">
-            <span class="chip">recon</span>
-            <span class="chip">scope</span>
-          </div>
-        </article>
-
-        <article class="card post reveal" data-tags="recon ops">
-          <time datetime="2026-05-01">2026-05-01 // ops</time>
-          <h3>Queues beat hero scripts</h3>
-          <p>
-            Scripts are fast to start and easy to lose control of. Queues give scans memory, backpressure,
-            retry behavior, and a way to explain what happened later.
-          </p>
-          <div class="chips">
-            <span class="chip">queues</span>
-            <span class="chip">workers</span>
-          </div>
-        </article>
-
-        <article class="card post reveal" data-tags="dotnet ops">
-          <time datetime="2026-05-01">2026-05-01 // .net</time>
-          <h3>.NET is not boring. Bad demos are boring.</h3>
-          <p>
-            C#, Minimal APIs, EF Core, background workers, and message buses are a strong foundation for serious
-            security tooling when the architecture is clean.
-          </p>
-          <div class="chips">
-            <span class="chip">csharp</span>
-            <span class="chip">minimal api</span>
-          </div>
-        </article>
-
-        <article class="card post reveal" data-tags="ai dotnet">
-          <time datetime="2026-05-01">2026-05-01 // ai</time>
-          <h3>AI in the loop, not at the wheel</h3>
-          <p>
-            AI is excellent for scaffolding, tests, refactors, and documentation. It still needs architecture,
-            threat modeling, and a human who knows when the answer smells wrong.
-          </p>
-          <div class="chips">
-            <span class="chip">ai</span>
+            <span class="chip">triage</span>
+            <span class="chip">targets</span>
             <span class="chip">review</span>
           </div>
         </article>
 
-        <article class="card post reveal" data-tags="ops recon">
-          <time datetime="2026-05-01">2026-05-01 // reliability</time>
-          <h3>Idempotency is a security feature</h3>
+        <article class="card reveal">
+          <span class="eyebrow">04 // terminal-first experience</span>
+          <h3>No glossy toy interface required.</h3>
           <p>
-            Duplicate events, partial failures, and retries happen. Outbox and inbox patterns make the system
-            less dramatic when the environment gets hostile.
+            Built for researchers who prefer commands, config files, logs, pipelines, and fast feedback loops.
           </p>
           <div class="chips">
-            <span class="chip">idempotent</span>
-            <span class="chip">durable</span>
+            <span class="chip">cli</span>
+            <span class="chip">logs</span>
+            <span class="chip">shell</span>
           </div>
         </article>
 
-        <article class="card post reveal" data-tags="dotnet ops">
-          <time datetime="2026-05-01">2026-05-01 // consulting</time>
-          <h3>Legacy systems leak signals too</h3>
+        <article class="card reveal">
+          <span class="eyebrow">05 // configurable pipelines</span>
+          <h3>Chain discovery, fingerprinting, and analysis.</h3>
           <p>
-            Slow releases, mystery outages, fragile SQL, and manual deploy rituals are all findings. Treat them
-            like evidence, then modernize surgically.
+            Compose scanning steps into repeatable workflows that can be adapted per target and per program.
           </p>
           <div class="chips">
-            <span class="chip">legacy</span>
-            <span class="chip">modernize</span>
+            <span class="chip">pipeline</span>
+            <span class="chip">fingerprint</span>
+            <span class="chip">analysis</span>
+          </div>
+        </article>
+
+        <article class="card reveal">
+          <span class="eyebrow">06 // actionable output</span>
+          <h3>Prioritize what deserves human attention.</h3>
+          <p>
+            The goal is not endless noise. The goal is a sharper queue of leads worth validating.
+          </p>
+          <div class="chips">
+            <span class="chip">signals</span>
+            <span class="chip">findings</span>
+            <span class="chip">prioritize</span>
           </div>
         </article>
       </div>
     </section>
 
-    <section class="container" id="contact">
-      <div class="contact">
+    <section class="container" id="workflow">
+      <div class="section-head reveal">
+        <div>
+          <span class="label">architecture</span>
+          <h2>Targets enter. Signals come out.</h2>
+        </div>
+
+        <p class="section-copy">
+          A clean cyber-operations pipeline for moving from known scope to useful findings without hiding
+          the need for human validation.
+        </p>
+      </div>
+
+      <div class="workflow reveal">
+        <div class="step">
+          <div class="icon">01</div>
+          <b>Targets</b>
+          <span>Authorized domains, assets, ranges, or lab environments are queued for analysis.</span>
+        </div>
+
+        <div class="step">
+          <div class="icon">02</div>
+          <b>Recon</b>
+          <span>Initial discovery maps the visible attack surface and creates the asset baseline.</span>
+        </div>
+
+        <div class="step">
+          <div class="icon">03</div>
+          <b>Enumeration</b>
+          <span>Subdomains, hosts, services, paths, and metadata are expanded and normalized.</span>
+        </div>
+
+        <div class="step">
+          <div class="icon">04</div>
+          <b>Fingerprinting</b>
+          <span>Technology and behavior signals are captured to guide deeper testing.</span>
+        </div>
+
+        <div class="step">
+          <div class="icon">05</div>
+          <b>Analysis</b>
+          <span>Potentially interesting conditions are grouped, scored, and queued.</span>
+        </div>
+
+        <div class="step">
+          <div class="icon">06</div>
+          <b>Findings</b>
+          <span>Humans validate, reproduce, assess impact, and write the report.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="container" id="why">
+      <div class="split">
         <article class="card reveal">
-          <span class="tag">contact</span>
-          <h2>Need a system hardened, modernized, or turned into a proper tool?</h2>
-          <p class="lead" style="font-size:14px;">
-            Reach out for .NET modernization, architecture cleanup, production stability, SQL performance,
-            AI-assisted delivery workflows, or ArgusEngine/NightmareV2 collaboration.
+          <span class="label">why argus engine</span>
+          <h2>Less repetition. More signal.</h2>
+          <p class="subtitle" style="font-size:14.5px;">
+            Bug bounty hunters spend huge amounts of time repeating recon tasks. Argus Engine exists to reduce
+            manual repetition, improve consistency across targets, and help researchers focus on validation,
+            impact, and reporting.
           </p>
 
-          <div class="hero-actions">
-            <a class="btn" href="mailto:derekdperez.dev@gmail.com">send_email</a>
-            <button class="btn secondary" id="copyEmail" type="button">copy_email</button>
+          <div class="terminal-list">
+            <div class="terminal-row">
+              <b>problem</b>
+              <span>manual recon burns time</span>
+            </div>
+            <div class="terminal-row">
+              <b>approach</b>
+              <span>automate repeatable discovery</span>
+            </div>
+            <div class="terminal-row">
+              <b>result</b>
+              <span>more human attention on high-value leads</span>
+            </div>
           </div>
         </article>
 
-        <aside class="card reveal">
-          <span class="eyebrow">links</span>
-          <div class="links">
-            <a class="link-row" href="mailto:derekdperez.dev@gmail.com">
-              <b>email</b>
-              <span>derekdperez.dev@gmail.com</span>
+        <article class="terminal reveal">
+          <div class="terminal-head">
+            <span>watchtower.notes</span>
+            <span class="green">online</span>
+          </div>
+
+          <div class="terminal-body" style="min-height: auto;">
+            <pre>
+<span class="prompt">argus:</span> observe the surface
+<span class="prompt">argus:</span> reduce scanner noise
+<span class="prompt">argus:</span> queue suspicious signals
+<span class="prompt">argus:</span> require human validation
+<span class="prompt">argus:</span> report only what you can prove
+
+<span class="amber">note:</span> originally developed under the codename
+      NightmareV2, now branded publicly as Argus Engine.
+</pre>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="container" id="ethics">
+      <div class="banner reveal">
+        <span class="eyebrow">responsible use</span>
+        <h3>Use Argus Engine only on systems you own or are authorized to test.</h3>
+        <p>
+          Argus Engine is intended for authorized security research, bug bounty programs, internal security
+          testing, and lab environments. It is not permission to scan random infrastructure, ignore program
+          rules, bypass rate limits, or turn noise into someone else’s incident.
+        </p>
+        <div class="chips">
+          <span class="chip">authorized research</span>
+          <span class="chip">bug bounty programs</span>
+          <span class="chip">internal testing</span>
+          <span class="chip">lab environments</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="container" id="quickstart">
+      <div class="section-head reveal">
+        <div>
+          <span class="label">quickstart</span>
+          <h2>Install commands are placeholders for now.</h2>
+        </div>
+
+        <p class="section-copy">
+          Swap these commands with the finalized install flow once the repo structure and release process are locked.
+        </p>
+      </div>
+
+      <div class="split">
+        <div class="codeblock reveal">
+          <button class="copy" type="button" data-copy="quickstartCode">copy</button>
+          <pre id="quickstartCode"><span class="green"># clone the repository</span>
+git clone https://github.com/derekdperez/argus-engine.git
+cd argus-engine
+
+<span class="green"># install dependencies</span>
+# TODO: replace with finalized install commands
+
+<span class="green"># configure authorized targets</span>
+# TODO: add scope config path / environment variables
+
+<span class="green"># run your first scan</span>
+argus-engine scan --target example.com --modules recon,web,vuln</pre>
+        </div>
+
+        <article class="card reveal">
+          <span class="eyebrow">before you run anything</span>
+          <h3>Scope first. Tool second.</h3>
+          <p>
+            Configure targets, program rules, rate limits, output storage, and module selection before launching
+            any scan. Argus Engine should support a disciplined workflow, not replace one.
+          </p>
+
+          <div class="chips">
+            <span class="chip">scope file</span>
+            <span class="chip">rate limits</span>
+            <span class="chip">module profile</span>
+            <span class="chip">review queue</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="container" id="docs">
+      <div class="section-head reveal">
+        <div>
+          <span class="label">documentation map</span>
+          <h2>Suggested pages for the repo.</h2>
+        </div>
+
+        <p class="section-copy">
+          These links are structured as sections for the single-page site. Later, they can become standalone
+          GitHub Pages routes.
+        </p>
+      </div>
+
+      <div class="grid two">
+        <div class="docs-list reveal">
+          <a class="doc-link" href="#overview">
+            <b>/docs</b>
+            <span>project overview</span>
+          </a>
+          <a class="doc-link" href="#quickstart">
+            <b>/quickstart</b>
+            <span>installation and first scan</span>
+          </a>
+          <a class="doc-link" href="#features">
+            <b>/modules</b>
+            <span>scanner modules and capabilities</span>
+          </a>
+        </div>
+
+        <div class="docs-list reveal">
+          <a class="doc-link" href="#github">
+            <b>/contributing</b>
+            <span>module ideas, issues, and roadmap</span>
+          </a>
+          <a class="doc-link" href="#ethics">
+            <b>/ethics</b>
+            <span>responsible use policy</span>
+          </a>
+          <a class="doc-link" href="https://github.com/derekdperez/argus-engine/releases" target="_blank"
+            rel="noopener">
+            <b>/releases</b>
+            <span>version history</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="container" id="github">
+      <div class="split">
+        <article class="card reveal">
+          <span class="label">github</span>
+          <h2>Read it. Star it. Learn from it. Don’t abuse it.</h2>
+          <p class="subtitle" style="font-size:14.5px;">
+            Argus Engine is built like a serious security project: modular, tactical, and designed around
+            researcher-guided scanning. If you contribute, contribute responsibly: better docs, cleaner modules,
+            safer defaults, sharper detection logic, and less noise.
+          </p>
+
+          <div class="actions">
+            <a class="btn primary" href="https://github.com/derekdperez/argus-engine" target="_blank" rel="noopener">
+              open_repository
             </a>
-            <a class="link-row" href="https://github.com/derekdperez/NightmareV2/" target="_blank" rel="noopener">
-              <b>repo</b>
-              <span>NightmareV2</span>
+            <a class="btn" href="https://github.com/derekdperez/argus-engine/issues" target="_blank" rel="noopener">
+              file_issue
             </a>
-            <a class="link-row" href="https://github.com/derekdperez" target="_blank" rel="noopener">
-              <b>github</b>
-              <span>@derekdperez</span>
+            <a class="btn" href="https://github.com/derekdperez/argus-engine/releases" target="_blank" rel="noopener">
+              releases
             </a>
-            <a class="link-row" href="https://derekdperez.github.io/portfolio-site/" target="_blank" rel="noopener">
-              <b>portfolio</b>
-              <span>derekdperez.github.io</span>
-            </a>
+          </div>
+        </article>
+
+        <aside class="terminal reveal">
+          <div class="terminal-head">
+            <span>repo.status</span>
+            <span class="cyan">argus-engine</span>
+          </div>
+
+          <div class="terminal-body" style="min-height: auto;">
+            <pre>
+<span class="prompt">$</span> gh repo view derekdperez/argus-engine
+
+name:        Argus Engine
+purpose:     automated recon + bug bounty workflow acceleration
+audience:    security researchers, bug bounty hunters, red teams
+warning:     authorization required
+support:     no promises, no magic, no guaranteed bugs
+
+<span class="red">do_not:</span> run this against systems without permission
+<span class="green">do:</span> build skill, validate findings, write better reports
+</pre>
           </div>
         </aside>
       </div>
     </section>
   </main>
 
-  <footer>
-    <div class="container foot">
-      <span>© <span id="year"></span> Derek Perez // ArgusEngine</span>
-      <span>authorized research only // static github pages build</span>
+  <footer class="footer">
+    <div class="container footer-grid">
+      <span>© <span id="year"></span> Derek Perez // Argus Engine</span>
+
+      <div class="footer-links">
+        <a href="https://github.com/derekdperez/argus-engine" target="_blank" rel="noopener">GitHub</a>
+        <a href="#docs">Documentation</a>
+        <a href="https://github.com/derekdperez/argus-engine/issues" target="_blank" rel="noopener">Issues</a>
+        <a href="https://github.com/derekdperez/argus-engine/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://github.com/derekdperez/argus-engine/blob/main/LICENSE" target="_blank"
+          rel="noopener">License</a>
+        <a href="#ethics">Responsible Use</a>
+      </div>
     </div>
   </footer>
 
@@ -1393,30 +1592,23 @@
     (function () {
       "use strict";
 
-      const email = "derekdperez.dev@gmail.com";
       const navLinks = document.getElementById("navLinks");
       const menuBtn = document.getElementById("menuBtn");
       const navAnchors = Array.from(document.querySelectorAll(".nav-links a"));
       const revealItems = Array.from(document.querySelectorAll(".reveal"));
-      const searchInput = document.getElementById("searchInput");
-      const filterButtons = Array.from(document.querySelectorAll(".filter"));
-      const posts = Array.from(document.querySelectorAll(".post"));
-      const terminalLog = document.getElementById("terminalLog");
-      const copyEmail = document.getElementById("copyEmail");
+      const scanOutput = document.getElementById("scanOutput");
       const toast = document.getElementById("toast");
       const year = document.getElementById("year");
-      const matrix = document.getElementById("matrix");
-      const matrixContext = matrix.getContext("2d");
+      const copyButtons = Array.from(document.querySelectorAll("[data-copy]"));
 
-      const terminalLines = [
-        "[init] loading scoped target registry",
-        "[gatekeeper] canonicalizer: ready",
-        "[gatekeeper] scope evaluator: ready",
-        "[queue] rabbitmq transport: linked",
-        "[dedupe] redis reservation layer: online",
-        "[workers] enum | spider | tech-id | http-classifier",
-        "[safety] unauthorized target rejection: enabled",
-        "[status] operator visibility: command center"
+      const outputLines = [
+        "[+] Scope profile loaded: example.com",
+        "[+] Subdomains discovered: 128",
+        "[+] Live hosts detected: 42",
+        "[+] Technologies fingerprinted: 19",
+        "[+] Interesting endpoints grouped: 76",
+        "[+] Potential findings queued for review",
+        "[i] No exploitation performed. Human validation required."
       ];
 
       function setYear() {
@@ -1433,20 +1625,18 @@
       }
 
       function setActiveNav() {
-        const y = window.scrollY + 90;
+        const offset = window.scrollY + 96;
         let active = navAnchors[0];
 
         navAnchors.forEach((anchor) => {
           const section = document.querySelector(anchor.getAttribute("href"));
-          if (section && section.offsetTop <= y) {
+          if (section && section.offsetTop <= offset) {
             active = anchor;
           }
         });
 
         navAnchors.forEach((anchor) => anchor.classList.remove("active"));
-        if (active) {
-          active.classList.add("active");
-        }
+        if (active) active.classList.add("active");
       }
 
       function revealOnScroll() {
@@ -1457,58 +1647,48 @@
               observer.unobserve(entry.target);
             }
           });
-        }, { threshold: 0.13 });
+        }, { threshold: 0.12 });
 
         revealItems.forEach((item) => observer.observe(item));
       }
 
-      function typeTerminal() {
+      function typeScanOutput() {
         let lineIndex = 0;
         let charIndex = 0;
-        let output = "";
+        let text = "";
+
+        function paintLine(line) {
+          return line
+            .replace("[+]", "<span class=\"green\">[+]</span>")
+            .replace("[i]", "<span class=\"cyan\">[i]</span>");
+        }
 
         function tick() {
-          if (lineIndex >= terminalLines.length) {
-            return;
-          }
+          if (lineIndex >= outputLines.length) return;
 
-          const line = terminalLines[lineIndex];
-
-          if (charIndex === 0) {
-            output += "<span class=\"prompt\">operator@argus:~$</span> ";
-          }
-
-          output += line.charAt(charIndex);
-          terminalLog.innerHTML = output;
+          const line = outputLines[lineIndex];
+          text += line.charAt(charIndex);
+          scanOutput.innerHTML = paintLine(text);
 
           charIndex += 1;
 
           if (charIndex >= line.length) {
-            output += "\n";
+            text += "\n";
             lineIndex += 1;
             charIndex = 0;
-            window.setTimeout(tick, 210);
+            window.setTimeout(tick, 190);
             return;
           }
 
-          window.setTimeout(tick, 14 + Math.random() * 24);
+          window.setTimeout(tick, 12 + Math.random() * 18);
         }
 
         tick();
       }
 
-      function filterPosts() {
-        const activeFilter = document.querySelector(".filter.active").dataset.filter;
-        const query = searchInput.value.trim().toLowerCase();
-
-        posts.forEach((post) => {
-          const tags = post.dataset.tags.toLowerCase();
-          const text = post.textContent.toLowerCase();
-          const matchesFilter = activeFilter === "all" || tags.includes(activeFilter);
-          const matchesQuery = query.length === 0 || text.includes(query);
-
-          post.style.display = matchesFilter && matchesQuery ? "" : "none";
-        });
+      function extractTextFromCodeElement(id) {
+        const element = document.getElementById(id);
+        return element ? element.innerText.trim() : "";
       }
 
       function copyToClipboard(text) {
@@ -1546,63 +1726,10 @@
         }, 1800);
       }
 
-      function resizeMatrix() {
-        const ratio = window.devicePixelRatio || 1;
-        matrix.width = Math.floor(window.innerWidth * ratio);
-        matrix.height = Math.floor(window.innerHeight * ratio);
-        matrix.style.width = window.innerWidth + "px";
-        matrix.style.height = window.innerHeight + "px";
-        matrixContext.setTransform(ratio, 0, 0, ratio, 0, 0);
-      }
-
-      function runMatrix() {
-        const chars = "01<>/{}[]$#@ARGUSNIGHTMAREV2";
-        const fontSize = 14;
-        let columns = Math.ceil(window.innerWidth / fontSize);
-        let drops = Array.from({ length: columns }, () => Math.floor(Math.random() * window.innerHeight));
-
-        function resetDrops() {
-          columns = Math.ceil(window.innerWidth / fontSize);
-          drops = Array.from({ length: columns }, () => Math.floor(Math.random() * window.innerHeight));
-        }
-
-        function draw() {
-          matrixContext.fillStyle = "rgba(3, 6, 5, 0.08)";
-          matrixContext.fillRect(0, 0, window.innerWidth, window.innerHeight);
-          matrixContext.fillStyle = "rgba(66, 255, 158, 0.45)";
-          matrixContext.font = fontSize + "px ui-monospace, monospace";
-
-          for (let i = 0; i < drops.length; i += 1) {
-            const char = chars[Math.floor(Math.random() * chars.length)];
-            const x = i * fontSize;
-            const y = drops[i] * fontSize;
-
-            matrixContext.fillText(char, x, y);
-
-            if (y > window.innerHeight && Math.random() > 0.976) {
-              drops[i] = 0;
-            }
-
-            drops[i] += 1;
-          }
-
-          window.setTimeout(() => window.requestAnimationFrame(draw), 48);
-        }
-
-        window.addEventListener("resize", () => {
-          resizeMatrix();
-          resetDrops();
-        });
-
-        resizeMatrix();
-        draw();
-      }
-
       setYear();
       revealOnScroll();
-      typeTerminal();
-      runMatrix();
       setActiveNav();
+      typeScanOutput();
 
       menuBtn.addEventListener("click", () => toggleMenu());
 
@@ -1612,22 +1739,18 @@
 
       window.addEventListener("scroll", setActiveNav, { passive: true });
 
-      filterButtons.forEach((button) => {
+      copyButtons.forEach((button) => {
         button.addEventListener("click", () => {
-          filterButtons.forEach((btn) => btn.classList.remove("active"));
-          button.classList.add("active");
-          filterPosts();
+          const targetId = button.dataset.copy;
+          const text = extractTextFromCodeElement(targetId);
+
+          copyToClipboard(text)
+            .then(() => showToast("copied_to_clipboard"))
+            .catch(() => showToast("copy_failed"));
         });
-      });
-
-      searchInput.addEventListener("input", filterPosts);
-
-      copyEmail.addEventListener("click", () => {
-        copyToClipboard(email)
-          .then(() => showToast("email copied"))
-          .catch(() => showToast(email));
       });
     })();
   </script>
 </body>
+
 </html>

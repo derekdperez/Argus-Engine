@@ -35,6 +35,7 @@ public static class CommandCenterServiceRegistration
         services.AddArgusRabbitMq(configuration, _ => { });
         services.AddSignalR();
         services.AddScoped<ArgusEngine.CommandCenter.Realtime.DiscoveryRealtimeClient>();
+        services.AddScoped<ArgusEngine.CommandCenter.Services.Targets.RootSpiderSeedService>();
         services.AddCommandCenterApplicationServices();
 
         return services;

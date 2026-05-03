@@ -30,7 +30,7 @@ ARG COMPONENT_VERSION=2.6.1
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj" \
-      -c Release -o /app/publish --no-restore /p:UseAppHost=false \
+      -c Release -o /app/publish /p:UseAppHost=false \
       /p:Version="${COMPONENT_VERSION}" \
       /p:AssemblyVersion="2.6.1.0" \
       /p:FileVersion="2.6.1.0" \

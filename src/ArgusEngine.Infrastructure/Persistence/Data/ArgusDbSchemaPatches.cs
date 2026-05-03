@@ -292,6 +292,20 @@ public static class ArgusDbSchemaPatches
                     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'asset_relationships' AND column_name = 'PropertiesJson') THEN
                         ALTER TABLE asset_relationships RENAME COLUMN "PropertiesJson" TO properties_json;
                     END IF;
+
+                    -- Bus Journal normalization
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bus_journal' AND column_name = 'OccurredAtUtc') THEN
+                        ALTER TABLE bus_journal RENAME COLUMN "OccurredAtUtc" TO occurred_at_utc;
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bus_journal' AND column_name = 'MessageType') THEN
+                        ALTER TABLE bus_journal RENAME COLUMN "MessageType" TO message_type;
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bus_journal' AND column_name = 'Producer') THEN
+                        ALTER TABLE bus_journal RENAME COLUMN "Producer" TO producer;
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bus_journal' AND column_name = 'PayloadJson') THEN
+                        ALTER TABLE bus_journal RENAME COLUMN "PayloadJson" TO payload_json;
+                    END IF;
                 END
                 $patch$;
                 """,

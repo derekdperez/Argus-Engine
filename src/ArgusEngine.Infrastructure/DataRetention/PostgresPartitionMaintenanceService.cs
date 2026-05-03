@@ -25,7 +25,7 @@ public sealed class PostgresPartitionMaintenanceService(
                     FROM pg_partitioned_table pt
                     JOIN pg_class c ON c.oid = pt.partrelid
                     WHERE c.relname = 'bus_journal'
-                )
+                ) AS "Value"
                 """)
             .SingleAsync(ct)
             .ConfigureAwait(false);

@@ -56,10 +56,10 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(512);
             e.Property(x => x.LastSeenAtUtc).HasColumnName("last_seen_at_utc");
             e.Property(x => x.Confidence).HasColumnName("confidence").HasPrecision(5, 4);
-            e.Property(x => x.DiscoveredBy).HasMaxLength(128).IsRequired();
-            e.Property(x => x.DiscoveryContext).HasMaxLength(512).IsRequired().HasColumnName("discovery_context");
+            e.Property(x => x.DiscoveredBy).HasColumnName("discovered_by").HasMaxLength(128).IsRequired();
+            e.Property(x => x.DiscoveryContext).HasColumnName("discovery_context").HasMaxLength(512).IsRequired();
             e.Property(x => x.LifecycleStatus).HasMaxLength(32).IsRequired();
-            e.Property(x => x.TypeDetailsJson);
+            e.Property(x => x.TypeDetailsJson).HasColumnName("type_details_json");
             e.Property(x => x.FinalUrl).HasColumnName("final_url").HasMaxLength(4096);
             e.Property(x => x.RedirectCount).HasColumnName("redirect_count");
             e.Property(x => x.RedirectChainJson).HasColumnName("redirect_chain_json").HasColumnType("jsonb");
@@ -144,9 +144,9 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.Property(x => x.RelationshipType).HasColumnName("relationship_type").HasConversion<short>().HasColumnType("smallint");
             e.Property(x => x.IsPrimary).HasColumnName("is_primary");
             e.Property(x => x.Confidence).HasColumnName("confidence").HasPrecision(5, 4);
-            e.Property(x => x.DiscoveredBy).HasMaxLength(128).IsRequired();
-            e.Property(x => x.DiscoveryContext).HasMaxLength(512).IsRequired().HasColumnName("discovery_context");
-            e.Property(x => x.PropertiesJson).HasColumnType("jsonb");
+            e.Property(x => x.DiscoveredBy).HasColumnName("discovered_by").HasMaxLength(128).IsRequired();
+            e.Property(x => x.DiscoveryContext).HasColumnName("discovery_context").HasMaxLength(512).IsRequired();
+            e.Property(x => x.PropertiesJson).HasColumnName("properties_json").HasColumnType("jsonb");
             e.Property(x => x.FirstSeenAtUtc).HasColumnName("first_seen_at_utc");
             e.Property(x => x.LastSeenAtUtc).HasColumnName("last_seen_at_utc");
             e.HasIndex(x => new { x.TargetId, x.ParentAssetId, x.ChildAssetId, x.RelationshipType }).IsUnique();

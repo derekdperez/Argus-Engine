@@ -15,6 +15,7 @@ public static class ArgusDbSchemaPatches
             .ConfigureAwait(false);
 
         await NormalizeStoredAssetIdColumnAsync(db, cancellationToken).ConfigureAwait(false);
+        await NormalizeColumnCasingAsync(db, cancellationToken).ConfigureAwait(false);
 
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -59,6 +60,10 @@ public static class ArgusDbSchemaPatches
                 ALTER TABLE stored_assets ADD COLUMN IF NOT EXISTS final_url character varying(4096) NULL;
                 ALTER TABLE stored_assets ADD COLUMN IF NOT EXISTS redirect_count integer NOT NULL DEFAULT 0;
                 ALTER TABLE stored_assets ADD COLUMN IF NOT EXISTS redirect_chain_json jsonb NULL;
+                ALTER TABLE stored_assets ADD COLUMN IF NOT EXISTS confidence numeric(5,4) NOT NULL DEFAULT 1.0;
+                ALTER TABLE stored_assets ADD COLUMN IF NOT EXISTS discovered_by character varying(128) NOT NULL DEFAULT 'legacy';
+                ALTER TABLE stored_assets ADD COLUMN IF NOT EXISTS discovery_context character varying(512) NOT NULL DEFAULT '';
+                ALTER TABLE stored_assets ADD COLUMN IF NOT EXISTS type_details_json text NULL;
                 """,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -80,6 +85,14 @@ public static class ArgusDbSchemaPatches
                     last_seen_at_utc timestamp with time zone NOT NULL,
                     CONSTRAINT ck_asset_relationship_no_self CHECK (parent_asset_id <> child_asset_id)
                 );
+
+                ALTER TABLE asset_relationships ADD COLUMN IF NOT EXISTS is_primary boolean NOT NULL DEFAULT false;
+                ALTER TABLE asset_relationships ADD COLUMN IF NOT EXISTS confidence numeric(5,4) NOT NULL DEFAULT 1.0;
+                ALTER TABLE asset_relationships ADD COLUMN IF NOT EXISTS discovered_by character varying(128) NOT NULL DEFAULT 'legacy';
+                ALTER TABLE asset_relationships ADD COLUMN IF NOT EXISTS discovery_context character varying(512) NOT NULL DEFAULT '';
+                ALTER TABLE asset_relationships ADD COLUMN IF NOT EXISTS properties_json jsonb NULL;
+                ALTER TABLE asset_relationships ADD COLUMN IF NOT EXISTS first_seen_at_utc timestamp with time zone NOT NULL DEFAULT now();
+                ALTER TABLE asset_relationships ADD COLUMN IF NOT EXISTS last_seen_at_utc timestamp with time zone NOT NULL DEFAULT now();
 
                 CREATE UNIQUE INDEX IF NOT EXISTS ux_asset_relationship_unique
                     ON asset_relationships (target_id, parent_asset_id, child_asset_id, relationship_type);
@@ -258,6 +271,34 @@ public static class ArgusDbSchemaPatches
             .ConfigureAwait(false);
     }
 
+    private static async Task NormalizeColumnCasingAsync(ArgusDbContext db, CancellationToken cancellationToken)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                DO $patch$
+                BEGIN
+                    -- Stored Assets normalization
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'stored_assets' AND column_name = 'DiscoveredBy') THEN
+                        ALTER TABLE stored_assets RENAME COLUMN "DiscoveredBy" TO discovered_by;
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'stored_assets' AND column_name = 'TypeDetailsJson') THEN
+                        ALTER TABLE stored_assets RENAME COLUMN "TypeDetailsJson" TO type_details_json;
+                    END IF;
+
+                    -- Asset Relationships normalization
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'asset_relationships' AND column_name = 'DiscoveredBy') THEN
+                        ALTER TABLE asset_relationships RENAME COLUMN "DiscoveredBy" TO discovered_by;
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'asset_relationships' AND column_name = 'PropertiesJson') THEN
+                        ALTER TABLE asset_relationships RENAME COLUMN "PropertiesJson" TO properties_json;
+                    END IF;
+                END
+                $patch$;
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private static async Task BackfillAssetCategoriesAndRootsAsync(ArgusDbContext db, CancellationToken cancellationToken)
     {
         await db.Database.ExecuteSqlRawAsync(
@@ -284,11 +325,11 @@ public static class ArgusDbSchemaPatches
                     "CanonicalKey",
                     "RawValue",
                     "Depth",
-                    "DiscoveredBy",
+                    discovered_by,
                     discovery_context,
                     "DiscoveredAtUtc",
                     "LifecycleStatus",
-                    "TypeDetailsJson",
+                    type_details_json,
                     asset_category,
                     display_name,
                     last_seen_at_utc,

@@ -11,7 +11,7 @@ public class WafBlockedException : HttpRequestException
 
 public class WorkerHttpClientHandler : DelegatingHandler
 {
-    private int _consecutiveBlocks = 0;
+    private int _consecutiveBlocks;
     private const int MaxAllowedBlocks = 5;
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

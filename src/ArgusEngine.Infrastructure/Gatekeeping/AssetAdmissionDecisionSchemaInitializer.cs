@@ -59,7 +59,9 @@ public sealed class AssetAdmissionDecisionSchemaInitializer(
         }
         catch (Exception ex)
         {
+#pragma warning disable CA1848
             logger.LogWarning(ex, "Unable to ensure asset admission decision schema.");
+#pragma warning restore CA1848
         }
     }
 

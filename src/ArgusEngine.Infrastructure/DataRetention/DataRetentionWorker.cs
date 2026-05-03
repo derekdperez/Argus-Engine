@@ -14,6 +14,8 @@ public sealed class DataRetentionWorker(
     DataRetentionRunState state,
     ILogger<DataRetentionWorker> logger) : BackgroundService
 {
+    private static readonly Action<ILogger, Exception?> LogRunFailed =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(1, nameof(ExecuteAsync)), "Data retention run failed.");
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -33,7 +35,7 @@ public sealed class DataRetentionWorker(
                 }
                 catch (Exception ex)
                 {
-                    logger.LogWarning(ex, "Data retention run failed.");
+                    LogRunFailed(logger, ex);
                 }
             }
 

@@ -3,75 +3,89 @@ using Microsoft.Extensions.Options;
 using MassTransit;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Application.Workers;
+using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 
 namespace ArgusEngine.Workers.Enum.Consumers;
 
 public sealed class TargetCreatedConsumer(
-    ILogger<TargetCreatedConsumer> logger,
     IWorkerToggleReader toggles,
-    IInboxDeduplicator inbox,
     IEventOutbox outbox,
-    IOptions<SubdomainEnumerationOptions> options) : IConsumer<TargetCreated>
+    IOptions<SubdomainEnumerationOptions> options,
+    ILogger<TargetCreatedConsumer> logger) : IConsumer<TargetCreated>
 {
+    private static readonly Action<ILogger, string, Guid, Exception?> LogTriggeringProvider =
+        LoggerMessage.Define<string, Guid>(
+            LogLevel.Information,
+            new EventId(1, nameof(LogTriggeringProvider)),
+            "TargetCreated: triggering {Provider} enumeration for target {TargetId}");
+
+    private static readonly Action<ILogger, Guid, Exception?> LogNoProviders =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Information,
+            new EventId(2, nameof(LogNoProviders)),
+            "TargetCreated: no enumeration providers enabled for target {TargetId}");
+
+    private static readonly Action<ILogger, Guid, Exception?> LogEnumerationDisabled =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Information,
+            new EventId(3, nameof(LogEnumerationDisabled)),
+            "TargetCreated: enumeration worker disabled; skipping target {TargetId}");
+
     public async Task Consume(ConsumeContext<TargetCreated> context)
     {
-        if (!await inbox.TryBeginProcessingAsync(context.Message, nameof(TargetCreatedConsumer), context.CancellationToken).ConfigureAwait(false))
-            return;
-
         if (!await toggles.IsWorkerEnabledAsync(WorkerKeys.Enumeration, context.CancellationToken).ConfigureAwait(false))
         {
-            logger.LogDebug("Enumeration disabled; skipping target {TargetId}", context.Message.TargetId);
+            LogEnumerationDisabled(logger, context.Message.TargetId, null);
             return;
         }
 
+        var m = context.Message;
         var cfg = options.Value;
-        var message = context.Message;
-        logger.LogInformation(
-            "TargetCreated consumed. TargetId={TargetId}, RootDomain={RootDomain}",
-            message.TargetId,
-            message.RootDomain);
-
-        if (!cfg.Enabled || !cfg.QueueProvidersOnTargetCreated)
-        {
-            logger.LogInformation(
-                "Subdomain enumeration queueing disabled. TargetId={TargetId}, RootDomain={RootDomain}",
-                message.TargetId,
-                message.RootDomain);
+        if (!cfg.Enabled)
             return;
-        }
 
-        var enabledProviders = SubdomainEnumerationProviderSelection.ResolveEnabledProviders(cfg);
-        var queuedProviders = new List<string>(capacity: enabledProviders.Count);
+        var correlation = m.CorrelationId == Guid.Empty ? NewId.NextGuid() : m.CorrelationId;
+        var causation = m.EventId == Guid.Empty ? correlation : m.EventId;
+        var triggeredCount = 0;
 
-        var correlation = message.CorrelationId == Guid.Empty ? NewId.NextGuid() : message.CorrelationId;
-        var causation = message.EventId == Guid.Empty ? correlation : message.EventId;
-        foreach (var provider in enabledProviders)
+        if (cfg.Subfinder.Enabled)
         {
-            var requested = new SubdomainEnumerationRequested(
-                message.TargetId,
-                message.RootDomain,
-                provider,
-                RequestedBy: "target-created-consumer",
-                RequestedAt: DateTimeOffset.UtcNow,
-                CorrelationId: correlation,
-                EventId: NewId.NextGuid(),
-                CausationId: causation,
-                Producer: "worker-enum");
-
-            await outbox.EnqueueAsync(requested, context.CancellationToken).ConfigureAwait(false);
-            queuedProviders.Add(provider);
-            logger.LogInformation(
-                "Queued subdomain enumeration job. Provider={Provider}, TargetId={TargetId}, RootDomain={RootDomain}",
-                provider,
-                message.TargetId,
-                message.RootDomain);
+            LogTriggeringProvider(logger, "subfinder", m.TargetId, null);
+            await outbox.EnqueueAsync(
+                new SubdomainEnumerationRequested(
+                    m.TargetId,
+                    m.RootDomain,
+                    "subfinder",
+                    DateTimeOffset.UtcNow,
+                    correlation,
+                    EventId: NewId.NextGuid(),
+                    CausationId: causation,
+                    Producer: "worker-enum"),
+                context.CancellationToken).ConfigureAwait(false);
+            triggeredCount++;
         }
 
-        logger.LogInformation(
-            "Queued {Count} subdomain enumeration jobs for {RootDomain}: {Providers}",
-            queuedProviders.Count,
-            message.RootDomain,
-            string.Join(",", queuedProviders));
+        if (cfg.Amass.Enabled)
+        {
+            LogTriggeringProvider(logger, "amass", m.TargetId, null);
+            await outbox.EnqueueAsync(
+                new SubdomainEnumerationRequested(
+                    m.TargetId,
+                    m.RootDomain,
+                    "amass",
+                    DateTimeOffset.UtcNow,
+                    correlation,
+                    EventId: NewId.NextGuid(),
+                    CausationId: causation,
+                    Producer: "worker-enum"),
+                context.CancellationToken).ConfigureAwait(false);
+            triggeredCount++;
+        }
+
+        if (triggeredCount == 0)
+        {
+            LogNoProviders(logger, m.TargetId, null);
+        }
     }
 }

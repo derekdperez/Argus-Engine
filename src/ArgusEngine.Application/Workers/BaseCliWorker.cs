@@ -4,11 +4,11 @@ namespace ArgusEngine.Application.Workers;
 
 public abstract class BaseCliWorker
 {
-    protected async Task<CommandResult> RunCliToolAsync(
+    protected static async Task<CommandResult> RunCliToolAsync(
         string executable,
         string[] arguments,
-        CancellationToken contextToken,
-        TimeSpan hardTimeout)
+        TimeSpan hardTimeout,
+        CancellationToken contextToken)
     {
         using var timeoutCts = new CancellationTokenSource(hardTimeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(contextToken, timeoutCts.Token);

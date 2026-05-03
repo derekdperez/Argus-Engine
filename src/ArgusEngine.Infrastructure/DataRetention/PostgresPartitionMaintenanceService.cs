@@ -8,6 +8,11 @@ public sealed class PostgresPartitionMaintenanceService(
     IDbContextFactory<ArgusDbContext> dbFactory,
     ILogger<PostgresPartitionMaintenanceService> logger) : IPartitionMaintenanceService
 {
+    private static readonly Action<ILogger, Exception?> LogNotPartitioned =
+        LoggerMessage.Define(LogLevel.Information, new EventId(1, nameof(EnsurePartitionsAsync)), "bus_journal is not partitioned; skipping partition maintenance.");
+
+    private static readonly Action<ILogger, string, Exception?> LogPartitionEnsured =
+        LoggerMessage.Define<string>(LogLevel.Information, new EventId(2, nameof(EnsurePartitionsAsync)), "Ensured bus_journal partition {PartitionName}.");
     public async Task EnsurePartitionsAsync(CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
@@ -27,7 +32,7 @@ public sealed class PostgresPartitionMaintenanceService(
 
         if (!isPartitioned)
         {
-            logger.LogInformation("bus_journal is not partitioned; skipping partition maintenance.");
+            LogNotPartitioned(logger, null);
             return;
         }
 
@@ -53,7 +58,7 @@ public sealed class PostgresPartitionMaintenanceService(
                 """,
                 ct).ConfigureAwait(false);
 
-            logger.LogInformation("Ensured bus_journal partition {PartitionName}.", name);
+            LogPartitionEnsured(logger, name, null);
         }
     }
 }

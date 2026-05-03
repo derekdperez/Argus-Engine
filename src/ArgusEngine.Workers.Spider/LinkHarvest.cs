@@ -20,7 +20,7 @@ internal static class LinkHarvest
         RegexOptions.Compiled | RegexOptions.IgnoreCase,
         TimeSpan.FromSeconds(2));
 
-    public static IEnumerable<string> Extract(string text, string contentType, Uri baseUri)
+    public static HashSet<string> Extract(string text, string contentType, Uri baseUri)
     {
         var ct = contentType.ToLowerInvariant();
         if (ct.Contains("html", StringComparison.Ordinal) || LooksLikeHtml(text))
@@ -38,7 +38,7 @@ internal static class LinkHarvest
     private static bool LooksLikeHtml(string text) =>
         text.Contains('<', StringComparison.Ordinal) && text.Contains('>', StringComparison.Ordinal);
 
-    private static IEnumerable<string> ExtractFromHtml(string html, Uri baseUri)
+    private static HashSet<string> ExtractFromHtml(string html, Uri baseUri)
     {
         var parser = new HtmlParser();
         var doc = parser.ParseDocument(html);
@@ -92,7 +92,7 @@ internal static class LinkHarvest
         return set;
     }
 
-    private static IEnumerable<string> ExtractFromMarkdown(string markdown, Uri baseUri)
+    private static HashSet<string> ExtractFromMarkdown(string markdown, Uri baseUri)
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var doc = Markdown.Parse(markdown);
@@ -117,7 +117,7 @@ internal static class LinkHarvest
         return set;
     }
 
-    private static IEnumerable<string> ExtractFromScript(string script, Uri baseUri)
+    private static HashSet<string> ExtractFromScript(string script, Uri baseUri)
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var m in UrlInText.Matches(script).Cast<Match>())
@@ -135,7 +135,7 @@ internal static class LinkHarvest
         return set;
     }
 
-    private static IEnumerable<string> ExtractFromPlain(string text, Uri baseUri)
+    private static HashSet<string> ExtractFromPlain(string text, Uri baseUri)
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var m in UrlInText.Matches(text).Cast<Match>())

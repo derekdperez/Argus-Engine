@@ -45,6 +45,18 @@ public sealed class GatekeeperOrchestrator(
             new EventId(1004, nameof(OutOfScope)),
             "Out of scope: {Key}");
 
+    private static readonly Action<ILogger, string, Exception?> CanonicalizationFailed =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(1005, nameof(CanonicalizationFailed)),
+            "Canonicalization failed for raw asset {Raw}.");
+
+    private static readonly Action<ILogger, string, string, Guid, string, Exception?> WriteDecisionFailed =
+        LoggerMessage.Define<string, string, Guid, string>(
+            LogLevel.Warning,
+            new EventId(1006, nameof(WriteDecisionFailed)),
+            "Unable to write asset admission decision {Decision}/{ReasonCode} for target {TargetId} raw {RawValue}.");
+
     public async Task ProcessAsync(AssetDiscovered message, CancellationToken cancellationToken = default)
     {
         if (message.AdmissionStage != AssetAdmissionStage.Raw)
@@ -99,7 +111,7 @@ public sealed class GatekeeperOrchestrator(
                     ex.Message),
                 cancellationToken).ConfigureAwait(false);
 
-            logger.LogWarning(ex, "Canonicalization failed for raw asset {Raw}.", message.RawValue);
+            LogCanonicalizationFailed(logger, message.RawValue, ex);
             return;
         }
 
@@ -254,13 +266,13 @@ public sealed class GatekeeperOrchestrator(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(
-                ex,
-                "Unable to write asset admission decision {Decision}/{ReasonCode} for target {TargetId} raw {RawValue}.",
+            LogWriteDecisionFailed(
+                logger,
                 decision.Decision,
                 decision.ReasonCode,
                 decision.TargetId,
-                decision.RawValue);
+                decision.RawValue,
+                ex);
         }
     }
 
@@ -301,6 +313,12 @@ public sealed class GatekeeperOrchestrator(
 
     private static void LogOutOfScope(ILogger logger, string key) =>
         OutOfScope(logger, key, null);
+
+    private static void LogCanonicalizationFailed(ILogger logger, string raw, Exception ex) =>
+        CanonicalizationFailed(logger, raw, ex);
+
+    private static void LogWriteDecisionFailed(ILogger logger, string kind, string reason, Guid targetId, string raw, Exception ex) =>
+        WriteDecisionFailed(logger, kind, reason, targetId, raw, ex);
 
     private Task PublishIndexedAsync(
         AssetDiscovered message,

@@ -58,7 +58,9 @@ public sealed class HttpRequestQueueArtifactSchemaInitializer(
         }
         catch (Exception ex)
         {
+#pragma warning disable CA1848
             logger.LogWarning(ex, "Unable to ensure HTTP request artifact queue schema.");
+#pragma warning restore CA1848
         }
     }
 

@@ -1,68 +1,50 @@
+using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using ArgusEngine.Infrastructure;
 using ArgusEngine.Infrastructure.Configuration;
+using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
-using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Workers.Spider;
 
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-spider");
 
-builder.Services.AddOptions<SpiderHttpOptions>()
-    .Bind(builder.Configuration.GetSection("Spider:Http"))
-    .ValidateOnStart();
+builder.Services.AddSingleton<AdaptiveConcurrencyController>();
+builder.Services.AddHostedService<HttpRequestQueueWorker>();
 
-var configuredAllowInsecureSpiderSsl = builder.Configuration.GetValue("Spider:Http:AllowInsecureSsl", false);
-var allowInsecureSpiderSsl = configuredAllowInsecureSpiderSsl && builder.Environment.IsDevelopment();
-
-if (configuredAllowInsecureSpiderSsl && !builder.Environment.IsDevelopment())
-{
-    Console.WriteLine("""
-        Spider: Spider:Http:AllowInsecureSsl=true was ignored because TLS bypass is allowed only in Development.
-        Set DOTNET_ENVIRONMENT=Development for local scanners or set Spider:Http:AllowInsecureSsl=false for deployed environments.
-        """);
-}
-else if (allowInsecureSpiderSsl)
-{
-    Console.WriteLine("Spider: Spider:Http:AllowInsecureSsl=true — TLS server certificate validation is disabled for HTTP fetches.");
-}
+builder.Services.AddArgusInfrastructure(builder.Configuration);
+builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });
 
 builder.Services.AddHttpClient("spider")
-    .ConfigurePrimaryHttpMessageHandler(() =>
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
-        var handler = new SocketsHttpHandler
-        {
-            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-            AllowAutoRedirect = false,
-        };
-
-        if (allowInsecureSpiderSsl)
-            handler.SslOptions.RemoteCertificateValidationCallback = static (_, _, _, _) => true;
-
-        return handler;
+        AllowAutoRedirect = true,
+        MaxAutomaticRedirections = 10,
+        AutomaticDecompression = DecompressionMethods.All,
+        CheckCertificateRevocationList = false,
+#pragma warning disable CA5359 // Insecure SSL is intentional for wide-range reconnaissance
+        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+#pragma warning restore CA5359
     })
     .AddPolicyHandler(HttpRetryPolicies.SpiderRetryPolicy());
 
-builder.Services.AddArgusInfrastructure(builder.Configuration);
-builder.Services.AddSingleton<AdaptiveConcurrencyController>();
-builder.Services.AddHostedService<HttpRequestQueueWorker>();
-builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });
-
 var host = builder.Build();
 
+#pragma warning disable CA1848
 var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+
 if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
 {
     await ArgusDbBootstrap.InitializeAsync(
             host.Services,
             host.Services.GetRequiredService<IConfiguration>(),
             startupLog,
-            includeFileStore: false,
+            includeFileStore: true,
             host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping)
         .ConfigureAwait(false);
 }
@@ -70,6 +52,7 @@ else
 {
     startupLog.LogInformation("Skipping startup database bootstrap for spider worker.");
 }
+#pragma warning restore CA1848
 
 await host.RunAsync().ConfigureAwait(false);
 

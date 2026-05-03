@@ -32,6 +32,30 @@ public sealed class HighValueRegexConsumer(
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
+    private static readonly Action<ILogger, Guid, Exception?> LogSnapshotError =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Debug,
+            new EventId(1, nameof(LogSnapshotError)),
+            "HighValueRegex: could not deserialize UrlFetchSnapshot for asset {AssetId}");
+
+    private static readonly Action<ILogger, int, Guid, long, Exception?> LogMatchSummary =
+        LoggerMessage.Define<int, Guid, long>(
+            LogLevel.Information,
+            new EventId(2, nameof(LogMatchSummary)),
+            "HighValueRegex matched {HitCount} patterns for asset {AssetId} in {ElapsedMs} ms");
+
+    private static readonly Action<ILogger, int, string, Exception?> LogWebhookError =
+        LoggerMessage.Define<int, string>(
+            LogLevel.Warning,
+            new EventId(3, nameof(LogWebhookError)),
+            "Critical webhook returned {Status} for {Url}");
+
+    private static readonly Action<ILogger, string, Exception?> LogWebhookException =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(4, nameof(LogWebhookException)),
+            "Critical webhook POST failed for {Url}");
+
     public async Task Consume(ConsumeContext<ScannableContentAvailable> context)
     {
         var ct = context.CancellationToken;
@@ -63,7 +87,7 @@ public sealed class HighValueRegexConsumer(
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "HighValueRegex: could not deserialize UrlFetchSnapshot for asset {AssetId}", message.AssetId);
+            LogSnapshotError(logger, message.AssetId, ex);
             return;
         }
 
@@ -71,46 +95,44 @@ public sealed class HighValueRegexConsumer(
             return;
 
         snapshot = await HydrateResponseBodyAsync(snapshot, ct).ConfigureAwait(false);
-        if (string.IsNullOrEmpty(snapshot.ResponseBody))
-            return;
 
         var stopwatch = Stopwatch.StartNew();
-        var hits = matcher.Match(snapshot.ResponseBody);
+        var hits = matcher.ScanUrlHttpExchange(message.SourceUrl, snapshot).ToList();
 
         if (hits.Count == 0)
             return;
 
         foreach (var hit in hits)
         {
-            var findingId = await findingWriter.WriteAsync(
+            var severity = hit.ImportanceScore >= 90 ? "Critical" : hit.ImportanceScore >= 50 ? "Medium" : "Low";
+
+            var findingId = await findingWriter.InsertFindingAsync(
                     new HighValueFindingInput(
                         message.TargetId,
                         message.AssetId,
+                        "Regex",
+                        severity,
                         hit.PatternName,
-                        hit.MatchedSnippet,
-                        hit.Confidence,
                         hit.Scope,
+                        hit.MatchedSnippet,
                         message.SourceUrl,
-                        DateTimeOffset.UtcNow),
+                        WorkerKeys.HighValueRegex,
+                        hit.ImportanceScore),
                     ct)
                 .ConfigureAwait(false);
 
-            if (hit.Confidence >= 0.9)
+            if (hit.ImportanceScore >= 90)
             {
                 await RaiseCriticalAsync(findingId, message, hit.PatternName, ct).ConfigureAwait(false);
             }
 
-            if (hit.Confidence >= 0.5)
+            if (hit.ImportanceScore >= 50)
             {
                 await EmitSignalAssetAsync(message, hit, ct).ConfigureAwait(false);
             }
         }
 
-        logger.LogInformation(
-            "HighValueRegex matched {HitCount} patterns for asset {AssetId} in {ElapsedMs} ms",
-            hits.Count,
-            message.AssetId,
-            stopwatch.ElapsedMilliseconds);
+        LogMatchSummary(logger, hits.Count, message.AssetId, stopwatch.ElapsedMilliseconds, null);
     }
 
     private async Task<UrlFetchSnapshot> HydrateResponseBodyAsync(UrlFetchSnapshot snap, CancellationToken ct)
@@ -229,11 +251,11 @@ public sealed class HighValueRegexConsumer(
 
             using var resp = await client.PostAsJsonAsync(webhookUrl, payload, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
-                logger.LogWarning("Critical webhook returned {Status} for {Url}", (int)resp.StatusCode, webhookUrl);
+                LogWebhookError(logger, (int)resp.StatusCode, webhookUrl, null);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Critical webhook POST failed for {Url}", webhookUrl);
+            LogWebhookException(logger, webhookUrl, ex);
         }
     }
 }

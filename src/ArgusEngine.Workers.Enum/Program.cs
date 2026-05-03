@@ -26,7 +26,7 @@ builder.Services.AddArgusRabbitMq(
 
 var host = builder.Build();
 
-var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+var startupLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
 var options = host.Services.GetRequiredService<IOptions<SubdomainEnumerationOptions>>().Value;
 
 var subfinderFound = IsToolAvailable(options.Subfinder.BinaryPath);
@@ -36,26 +36,21 @@ var resolvedWordlistPath = Path.IsPathRooted(options.Amass.WordlistPath)
     : Path.Combine(AppContext.BaseDirectory, options.Amass.WordlistPath);
 var wordlistFound = File.Exists(resolvedWordlistPath);
 
-startupLog.LogInformation(
-    "Enumeration tooling probe: subfinder binary found={SubfinderFound}, amass binary found={AmassFound}, wordlist found={WordlistFound}, wordlist path={WordlistPath}",
-    subfinderFound,
-    amassFound,
-    wordlistFound,
-    resolvedWordlistPath);
+StartupLog.LogToolProbe(startupLogger, subfinderFound, amassFound, wordlistFound, resolvedWordlistPath, null);
 
 if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
 {
     await ArgusDbBootstrap.InitializeAsync(
             host.Services,
             host.Services.GetRequiredService<IConfiguration>(),
-            startupLog,
+            startupLogger,
             includeFileStore: false,
             host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping)
         .ConfigureAwait(false);
 }
 else
 {
-    startupLog.LogInformation("Skipping startup database bootstrap for enum worker.");
+    StartupLog.LogSkippingBootstrap(startupLogger, null);
 }
 
 await host.RunAsync().ConfigureAwait(false);
@@ -91,4 +86,25 @@ static bool IsToolAvailable(string binaryPath)
     }
 
     return false;
+}
+
+static class StartupLog
+{
+    private static readonly Action<ILogger, bool, bool, bool, string, Exception?> ToolProbe =
+        LoggerMessage.Define<bool, bool, bool, string>(
+            LogLevel.Information,
+            new EventId(1, nameof(LogToolProbe)),
+            "Enumeration tooling probe: subfinder binary found={SubfinderFound}, amass binary found={AmassFound}, wordlist found={WordlistFound}, wordlist path={WordlistPath}");
+
+    private static readonly Action<ILogger, Exception?> SkippingBootstrap =
+        LoggerMessage.Define(
+            LogLevel.Information,
+            new EventId(2, nameof(LogSkippingBootstrap)),
+            "Skipping startup database bootstrap for enum worker.");
+
+    public static void LogToolProbe(ILogger logger, bool subfinder, bool amass, bool wordlist, string wordlistPath, Exception? ex) =>
+        ToolProbe(logger, subfinder, amass, wordlist, wordlistPath, ex);
+
+    public static void LogSkippingBootstrap(ILogger logger, Exception? ex) =>
+        SkippingBootstrap(logger, ex);
 }

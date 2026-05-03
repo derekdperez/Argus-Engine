@@ -1,3 +1,7 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using ArgusEngine.Infrastructure;
 using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Data;
@@ -9,14 +13,22 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-portscan");
 builder.Services.AddArgusInfrastructure(builder.Configuration);
-builder.Services.AddNightmareRabbitMq(builder.Configuration, x => x.AddConsumer<PortScanRequestedConsumer>());
+
+builder.Services.AddArgusRabbitMq(
+    builder.Configuration,
+    x =>
+    {
+        x.AddConsumer<PortScanRequestedConsumer>();
+    });
 
 var host = builder.Build();
 
+#pragma warning disable CA1848
 var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+
 if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
 {
-    await StartupDatabaseBootstrap.InitializeAsync(
+    await ArgusDbBootstrap.InitializeAsync(
             host.Services,
             host.Services.GetRequiredService<IConfiguration>(),
             startupLog,
@@ -28,6 +40,7 @@ else
 {
     startupLog.LogInformation("Skipping startup database bootstrap for port scan worker.");
 }
+#pragma warning restore CA1848
 
 await host.RunAsync().ConfigureAwait(false);
 

@@ -7,7 +7,6 @@ using MassTransit;
 using ArgusEngine.Application.Assets;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Application.FileStore;
-using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Application.TechnologyIdentification;
 using ArgusEngine.Application.Workers;
 using ArgusEngine.Contracts;
@@ -30,6 +29,24 @@ public sealed class TechnologyIdentificationConsumer(
     ILogger<TechnologyIdentificationConsumer> logger) : IConsumer<ScannableContentAvailable>
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+
+    private static readonly Action<ILogger, Guid, Exception?> LogSnapshotError =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Debug,
+            new EventId(1, nameof(LogSnapshotError)),
+            "TechnologyIdentification: could not deserialize UrlFetchSnapshot for asset {AssetId}");
+
+    private static readonly Action<ILogger, Guid, long, int, int, int, Exception?> LogScanSummary =
+        LoggerMessage.Define<Guid, long, int, int, int>(
+            LogLevel.Information,
+            new EventId(2, nameof(LogScanSummary)),
+            "TechnologyIdentification scanned asset {AssetId} in {ElapsedMs} ms: matches={MatchCount}, technologies={TechnologyCount}, tagsAttached={TagsAttached}");
+
+    private static readonly Action<ILogger, Guid, Exception?> LogScanFailed =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Warning,
+            new EventId(3, nameof(LogScanFailed)),
+            "TechnologyIdentification scan failed for asset {AssetId}");
 
     public async Task Consume(ConsumeContext<ScannableContentAvailable> context)
     {
@@ -62,7 +79,7 @@ public sealed class TechnologyIdentificationConsumer(
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "TechnologyIdentification: could not deserialize UrlFetchSnapshot for asset {AssetId}", message.AssetId);
+            LogSnapshotError(logger, message.AssetId, ex);
             return;
         }
 
@@ -101,17 +118,18 @@ public sealed class TechnologyIdentificationConsumer(
                     ct)
                 .ConfigureAwait(false);
 
-            logger.LogInformation(
-                "TechnologyIdentification scanned asset {AssetId} in {ElapsedMs} ms: matches={MatchCount}, technologies={TechnologyCount}, tagsAttached={TagsAttached}",
+            LogScanSummary(
+                logger,
                 message.AssetId,
                 stopwatch.ElapsedMilliseconds,
                 results.Count,
                 persisted.TechnologyCount,
-                persisted.TagsAttached);
+                persisted.TagsAttached,
+                null);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "TechnologyIdentification scan failed for asset {AssetId}", message.AssetId);
+            LogScanFailed(logger, message.AssetId, ex);
         }
     }
 
@@ -135,7 +153,7 @@ public sealed class TechnologyIdentificationConsumer(
         return snapshot with { ResponseBody = body };
     }
 
-    private static IReadOnlyList<string> BuildScriptUrls(
+    private static string[] BuildScriptUrls(
         string sourceUrl,
         string? finalUrl,
         string? contentType,

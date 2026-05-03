@@ -8,6 +8,8 @@ public sealed class PostgresPartitionMaintenanceHostedService(
     IServiceProvider services,
     ILogger<PostgresPartitionMaintenanceHostedService> logger) : BackgroundService
 {
+    private static readonly Action<ILogger, Exception?> LogMaintenanceFailed =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(1, nameof(EnsureOnceAsync)), "Partition maintenance failed.");
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await EnsureOnceAsync(stoppingToken).ConfigureAwait(false);
@@ -33,7 +35,7 @@ public sealed class PostgresPartitionMaintenanceHostedService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Partition maintenance failed.");
+            LogMaintenanceFailed(logger, ex);
         }
     }
 }

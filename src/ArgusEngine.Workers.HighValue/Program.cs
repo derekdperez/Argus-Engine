@@ -1,5 +1,10 @@
-using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using ArgusEngine.Application.HighValue;
+using ArgusEngine.Application.Http;
 using ArgusEngine.Infrastructure;
 using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Data;
@@ -11,12 +16,11 @@ using ArgusEngine.Workers.HighValue.Consumers;
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-highvalue");
-
-builder.Services.AddTransient<WorkerCorrelationHandler>();
-builder.Services.AddHttpClient(string.Empty)
-    .AddHttpMessageHandler<WorkerCorrelationHandler>();
-
 builder.Services.AddArgusInfrastructure(builder.Configuration);
+
+builder.Services.AddTransient<WorkerHttpClientHandler>();
+builder.Services.AddHttpClient(string.Empty)
+    .AddHttpMessageHandler<WorkerHttpClientHandler>();
 
 var patternPath = Path.Combine(AppContext.BaseDirectory, "Resources", "RegexPatterns", "high_value_targets.txt");
 var definitions = HighValuePatternCatalog.LoadFromFile(patternPath);
@@ -25,7 +29,7 @@ builder.Services.AddSingleton(new HighValueRegexMatcher(definitions));
 var wordlistDir = Path.Combine(AppContext.BaseDirectory, "Resources", "Wordlists", "high_value");
 builder.Services.AddSingleton(new HighValueWordlistBootstrap(HighValueWordlistCatalog.LoadFromDirectory(wordlistDir)));
 
-builder.Services.AddNightmareRabbitMq(
+builder.Services.AddArgusRabbitMq(
     builder.Configuration,
     x =>
     {
@@ -35,10 +39,12 @@ builder.Services.AddNightmareRabbitMq(
 
 var host = builder.Build();
 
+#pragma warning disable CA1848
 var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+
 if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
 {
-    await StartupDatabaseBootstrap.InitializeAsync(
+    await ArgusDbBootstrap.InitializeAsync(
             host.Services,
             host.Services.GetRequiredService<IConfiguration>(),
             startupLog,
@@ -50,6 +56,7 @@ else
 {
     startupLog.LogInformation("Skipping startup database bootstrap for high-value worker.");
 }
+#pragma warning restore CA1848
 
 await host.RunAsync().ConfigureAwait(false);
 

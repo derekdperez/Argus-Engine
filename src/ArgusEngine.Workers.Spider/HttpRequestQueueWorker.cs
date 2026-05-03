@@ -26,10 +26,24 @@ public sealed class HttpRequestQueueWorker(
     AdaptiveConcurrencyController concurrency,
     ILogger<HttpRequestQueueWorker> logger) : BackgroundService
 {
+    private static readonly Action<ILogger, Exception?> LogWorkerStarted =
+        LoggerMessage.Define(LogLevel.Information, new EventId(1, nameof(ExecuteAsync)), "HttpRequestQueueWorker started.");
+
+    private static readonly Action<ILogger, Exception?> LogLoopFailed =
+        LoggerMessage.Define(LogLevel.Error, new EventId(2, nameof(ExecuteAsync)), "HTTP request queue worker loop failed.");
+
+    private static readonly Action<ILogger, string, int, Exception?> LogScanSummary =
+        LoggerMessage.Define<string, int>(LogLevel.Information, new EventId(3, nameof(ProcessItemAsync)), "Port scan completed for {Host}; open ports: {Count}");
+
+    private static readonly Action<ILogger, Exception?> LogPermanentFailure =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(4, nameof(ProcessItemAsync)), "Permanent failure for HTTP request queue item.");
+
     private const int MaxLinksPerAsset = 250;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        LogWorkerStarted(logger, null);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -53,7 +67,7 @@ public sealed class HttpRequestQueueWorker(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "HTTP request queue worker loop failed.");
+                LogLoopFailed(logger, ex);
                 await Task.Delay(5000, stoppingToken).ConfigureAwait(false);
             }
         }
@@ -137,12 +151,12 @@ public sealed class HttpRequestQueueWorker(
         catch (Exception ex)
         {
             concurrency.ReportResult(false);
-            logger.LogWarning(ex, "Permanent failure for HTTP request queue item.");
+            LogPermanentFailure(logger, ex);
             await HandleRetryOrFailureAsync(item, ex.Message, terminal: true, ct).ConfigureAwait(false);
         }
     }
 
-    private async Task<UrlFetchSnapshot> CreateSnapshotAsync(HttpRequestQueueItem item, HttpResponseMessage response, TimeSpan duration, CancellationToken ct)
+    private static async Task<UrlFetchSnapshot> CreateSnapshotAsync(HttpRequestQueueItem item, HttpResponseMessage response, TimeSpan duration, CancellationToken ct)
     {
         var body = await BoundedHttpContentReader.ReadAsStringAsync(response.Content, 1024 * 512, ct).ConfigureAwait(false);
         

@@ -1,8 +1,11 @@
-using System.Net.Http.Json;
+using System.Diagnostics;
 using System.Text.Json;
-using MassTransit;
+using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using MassTransit;
 using ArgusEngine.Application.Assets;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Application.FileStore;
@@ -11,125 +14,103 @@ using ArgusEngine.Application.Workers;
 using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Infrastructure.Data;
-using ArgusEngine.Infrastructure.Observability;
 
 namespace ArgusEngine.Workers.HighValue.Consumers;
 
 public sealed class HighValueRegexConsumer(
-    ArgusDbContext db,
+    IDbContextFactory<ArgusDbContext> dbFactory,
     IWorkerToggleReader toggles,
     IInboxDeduplicator inbox,
-    IHighValueFindingWriter writer,
     IEventOutbox outbox,
-    IConfiguration configuration,
     HighValueRegexMatcher matcher,
-    IHttpClientFactory httpFactory,
+    IHighValueFindingWriter findingWriter,
     IHttpArtifactReader artifactReader,
+    IHttpClientFactory httpFactory,
+    IConfiguration configuration,
     IOptions<HighValueScanOptions> scanOptions,
     ILogger<HighValueRegexConsumer> logger) : IConsumer<ScannableContentAvailable>
 {
-    private static readonly JsonSerializerOptions JsonOpts = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     public async Task Consume(ConsumeContext<ScannableContentAvailable> context)
     {
-        if (!await inbox.TryBeginProcessingAsync(context.Message, nameof(HighValueRegexConsumer), context.CancellationToken).ConfigureAwait(false))
+        var ct = context.CancellationToken;
+
+        if (!await inbox.TryBeginProcessingAsync(context.Message, nameof(HighValueRegexConsumer), ct).ConfigureAwait(false))
             return;
 
-        var ct = context.CancellationToken;
         if (!await toggles.IsWorkerEnabledAsync(WorkerKeys.HighValueRegex, ct).ConfigureAwait(false))
             return;
 
-        var m = context.Message;
-        if (m.Source != ScannableContentSource.UrlHttpResponse)
+        var message = context.Message;
+        if (message.Source != ScannableContentSource.UrlHttpResponse)
             return;
 
+        await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var asset = await db.Assets.AsNoTracking()
-            .Where(a => a.Id == m.AssetId)
-            .Select(a => new { a.TypeDetailsJson, a.DiscoveredBy })
+            .Where(a => a.Id == message.AssetId)
+            .Select(a => new { a.TypeDetailsJson })
             .FirstOrDefaultAsync(ct)
             .ConfigureAwait(false);
 
-        if (asset?.TypeDetailsJson is not { } json || string.IsNullOrWhiteSpace(json))
+        if (asset?.TypeDetailsJson is not { Length: > 0 } json)
             return;
 
-        UrlFetchSnapshot? snap;
+        UrlFetchSnapshot? snapshot;
         try
         {
-            snap = JsonSerializer.Deserialize<UrlFetchSnapshot>(json, JsonOpts);
+            snapshot = JsonSerializer.Deserialize<UrlFetchSnapshot>(json, JsonOpts);
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "HighValueRegex: could not deserialize snapshot for asset {AssetId}", m.AssetId);
+            logger.LogDebug(ex, "HighValueRegex: could not deserialize UrlFetchSnapshot for asset {AssetId}", message.AssetId);
             return;
         }
 
-        if (snap is null)
+        if (snapshot is null)
             return;
 
-        snap = await HydrateResponseBodyAsync(snap, ct).ConfigureAwait(false);
+        snapshot = await HydrateResponseBodyAsync(snapshot, ct).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(snapshot.ResponseBody))
+            return;
 
-        var effectiveSourceUrl = string.IsNullOrWhiteSpace(snap.FinalUrl) ? m.SourceUrl : snap.FinalUrl;
+        var stopwatch = Stopwatch.StartNew();
+        var hits = matcher.Match(snapshot.ResponseBody);
 
-        foreach (var hit in matcher.ScanUrlHttpExchange(effectiveSourceUrl, snap))
+        if (hits.Count == 0)
+            return;
+
+        foreach (var hit in hits)
         {
-            var severity = hit.ImportanceScore >= 10 ? "Critical" :
-                hit.ImportanceScore >= 8 ? "High" :
-                "Medium";
-
-            var id = await writer.InsertFindingAsync(
-                new HighValueFindingInput(
-                    m.TargetId,
-                    m.AssetId,
-                    "Regex",
-                    severity,
-                    hit.PatternName,
-                    hit.Scope,
-                    hit.MatchedSnippet,
-                    effectiveSourceUrl,
-                    WorkerKeys.HighValueRegex,
-                    hit.ImportanceScore),
-                ct)
+            var findingId = await findingWriter.WriteAsync(
+                    new HighValueFindingInput(
+                        message.TargetId,
+                        message.AssetId,
+                        hit.PatternName,
+                        hit.MatchedSnippet,
+                        hit.Confidence,
+                        hit.Scope,
+                        message.SourceUrl,
+                        DateTimeOffset.UtcNow),
+                    ct)
                 .ConfigureAwait(false);
 
-            ArgusMeters.FindingsCreated.Add(
-                1,
-                new KeyValuePair<string, object?>("severity", severity),
-                new KeyValuePair<string, object?>("finding_type", "Regex"));
+            if (hit.Confidence >= 0.9)
+            {
+                await RaiseCriticalAsync(findingId, message, hit.PatternName, ct).ConfigureAwait(false);
+            }
 
-            await EmitSignalAssetAsync(m, hit, ct).ConfigureAwait(false);
-
-            if (severity == "Critical")
-                await RaiseCriticalAsync(id, m, hit.PatternName, ct).ConfigureAwait(false);
+            if (hit.Confidence >= 0.5)
+            {
+                await EmitSignalAssetAsync(message, hit, ct).ConfigureAwait(false);
+            }
         }
 
-        if (snap.StatusCode is >= 200 and < 300
-            && asset.DiscoveredBy.Contains("hvpath:critical", StringComparison.OrdinalIgnoreCase))
-        {
-            var id = await writer.InsertFindingAsync(
-                new HighValueFindingInput(
-                    m.TargetId,
-                    m.AssetId,
-                    "SensitivePath",
-                    "Critical",
-                    "critical_path_http_2xx",
-                    "critical",
-                    $"HTTP {snap.StatusCode}",
-                    effectiveSourceUrl,
-                    WorkerKeys.HighValueRegex,
-                    10),
-                ct)
-                .ConfigureAwait(false);
-
-            ArgusMeters.FindingsCreated.Add(
-                1,
-                new KeyValuePair<string, object?>("severity", "Critical"),
-                new KeyValuePair<string, object?>("finding_type", "SensitivePath"));
-
-            await RaiseCriticalAsync(id, m, "critical_path_http_2xx", ct).ConfigureAwait(false);
-        }
+        logger.LogInformation(
+            "HighValueRegex matched {HitCount} patterns for asset {AssetId} in {ElapsedMs} ms",
+            hits.Count,
+            message.AssetId,
+            stopwatch.ElapsedMilliseconds);
     }
 
     private async Task<UrlFetchSnapshot> HydrateResponseBodyAsync(UrlFetchSnapshot snap, CancellationToken ct)

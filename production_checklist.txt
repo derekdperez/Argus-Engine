@@ -9,5 +9,5 @@
 [x] Startup options validation (`ValidateOnStart`) added for critical runtime config
 [ ] Replace startup schema patching with EF Core migrations + deployment migration job
 [ ] Migrate RabbitMQ transport to MassTransit SQS/SNS with phased dual-run cutover
-[ ] Move diagnostics/maintenance endpoints to auth policy + rate limits + audit logs
-[ ] Add integration/chaos/performance test suite for outbox, duplicate delivery, and failure injection
+[x] Move diagnostics/maintenance endpoints to auth policy + rate limits + audit logs
+[x] Add integration/chaos/performance test suite for outbox, duplicate delivery, and failure injection

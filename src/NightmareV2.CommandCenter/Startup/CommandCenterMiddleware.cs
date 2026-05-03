@@ -1,3 +1,5 @@
+using NightmareV2.CommandCenter.Security;
+
 namespace NightmareV2.CommandCenter.Startup;
 
 public static class CommandCenterMiddleware
@@ -9,13 +11,18 @@ public static class CommandCenterMiddleware
         if (!app.Environment.IsDevelopment())
         {
             app.UseExceptionHandler("/Error", createScopeForErrors: true);
+
             if (!listenPlainHttp)
                 app.UseHsts();
         }
 
         app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+
         if (!listenPlainHttp)
             app.UseHttpsRedirection();
+
+        app.UseSensitiveEndpointProtection();
+
         app.UseStaticFiles();
         app.UseAntiforgery();
 

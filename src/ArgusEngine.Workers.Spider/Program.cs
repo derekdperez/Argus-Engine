@@ -1,7 +1,9 @@
-using System.Net.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using ArgusEngine.Infrastructure;
 using ArgusEngine.Infrastructure.Configuration;
-using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
 using ArgusEngine.Workers.Spider;
@@ -29,7 +31,6 @@ else if (allowInsecureSpiderSsl)
     Console.WriteLine("Spider: Spider:Http:AllowInsecureSsl=true — TLS server certificate validation is disabled for HTTP fetches.");
 }
 
-builder.Services.AddTransient<SpiderCorrelationHandler>();
 builder.Services.AddHttpClient("spider")
     .ConfigurePrimaryHttpMessageHandler(() =>
     {
@@ -44,19 +45,19 @@ builder.Services.AddHttpClient("spider")
 
         return handler;
     })
-    .AddHttpMessageHandler<SpiderCorrelationHandler>()
     .AddPolicyHandler(HttpRetryPolicies.SpiderRetryPolicy());
 
 builder.Services.AddArgusInfrastructure(builder.Configuration);
+builder.Services.AddSingleton<AdaptiveConcurrencyController>();
 builder.Services.AddHostedService<HttpRequestQueueWorker>();
-builder.Services.AddNightmareRabbitMq(builder.Configuration, _ => { });
+builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });
 
 var host = builder.Build();
 
 var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
 if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
 {
-    await StartupDatabaseBootstrap.InitializeAsync(
+    await ArgusDbBootstrap.InitializeAsync(
             host.Services,
             host.Services.GetRequiredService<IConfiguration>(),
             startupLog,

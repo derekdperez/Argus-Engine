@@ -6,4 +6,10 @@
     <ProjectReference Include="..\ArgusEngine.Contracts\ArgusEngine.Contracts.csproj" />
     <ProjectReference Include="..\ArgusEngine.Domain\ArgusEngine.Domain.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CliWrap" Version="3.9.0" />
+    <PackageReference Include="MassTransit" Version="8.5.4" />
+    <PackageReference Include="MassTransit.Abstractions" Version="8.5.4" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
 </Project>

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.Domain.Entities;
@@ -23,10 +24,13 @@ public static class AssetEndpoints
 
                     if (targetId.HasValue)
                         query = query.Where(a => a.TargetId == targetId.Value);
+                    
+                    // Simple string comparison for the demo/placeholder restoration
                     if (!string.IsNullOrWhiteSpace(kind))
-                        query = query.Where(a => a.Kind == kind);
+                        query = query.Where(a => a.Kind.ToString() == kind);
+                    
                     if (!string.IsNullOrWhiteSpace(status))
-                        query = query.Where(a => a.LifecycleStatus == status);
+                        query = query.Where(a => a.LifecycleStatus.ToString() == status);
 
                     var rows = await query
                         .OrderByDescending(a => a.DiscoveredAtUtc)
@@ -34,8 +38,8 @@ public static class AssetEndpoints
                         .Select(a => new AssetGridRowDto(
                             a.Id,
                             a.TargetId,
-                            a.Kind,
-                            a.Category,
+                            a.Kind.ToString(),
+                            a.Category.ToString(),
                             a.CanonicalKey,
                             a.RawValue,
                             a.DisplayName,
@@ -45,7 +49,7 @@ public static class AssetEndpoints
                             a.DiscoveredAtUtc,
                             a.LastSeenAtUtc,
                             a.Confidence,
-                            a.LifecycleStatus,
+                            a.LifecycleStatus.ToString(),
                             a.TypeDetailsJson,
                             a.FinalUrl,
                             a.RedirectCount,

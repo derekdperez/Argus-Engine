@@ -156,22 +156,37 @@ nightmare_verify_command_center_blazor_static_assets() {
   fi
 
   if ! nightmare_docker exec "$cid" sh -lc 'test -s /app/wwwroot/_framework/blazor.web.js'; then
-    echo "ERROR: command-center container is missing /app/wwwroot/_framework/blazor.web.js." >&2
-    echo "This usually means the running container is stale or a hot deploy copied an incomplete publish output." >&2
-    echo "Fix with: ./deploy/deploy.sh -fresh" >&2
-    nightmare_docker exec "$cid" sh -lc 'echo "Contents of /app/wwwroot:"; ls -la /app/wwwroot 2>/dev/null || true; echo "Contents of /app/wwwroot/_framework:"; ls -la /app/wwwroot/_framework 2>/dev/null || true' >&2 || true
-    exit 1
+    echo "command-center is missing /app/wwwroot/_framework/blazor.web.js; attempting automatic recovery..." >&2
+    if ! nightmare_recover_command_center_blazor_script "$cid"; then
+      echo "ERROR: automatic recovery failed for /app/wwwroot/_framework/blazor.web.js." >&2
+      nightmare_docker exec "$cid" sh -lc 'echo "Contents of /app/wwwroot:"; ls -la /app/wwwroot 2>/dev/null || true; echo "Contents of /app/wwwroot/_framework:"; ls -la /app/wwwroot/_framework 2>/dev/null || true' >&2 || true
+      exit 1
+    fi
+    cid="$(compose ps -q command-center | tail -n 1 || true)"
+    if [[ -z "$cid" ]] || ! nightmare_docker exec "$cid" sh -lc 'test -s /app/wwwroot/_framework/blazor.web.js'; then
+      echo "ERROR: command-center still does not have /app/wwwroot/_framework/blazor.web.js after recovery." >&2
+      exit 1
+    fi
   fi
 
   local tmp
   tmp="$(mktemp)"
   if ! curl -fsS --max-time 20 "http://127.0.0.1:8080/_framework/blazor.web.js" -o "$tmp"; then
+    echo "command-center failed to serve /_framework/blazor.web.js; attempting automatic recovery..." >&2
+    if ! nightmare_recover_command_center_blazor_script "$cid"; then
+      rm -f "$tmp"
+      echo "ERROR: automatic recovery failed and /_framework/blazor.web.js still returns non-200." >&2
+      compose logs --tail=150 command-center >&2 || true
+      exit 1
+    fi
+    cid="$(compose ps -q command-center | tail -n 1 || true)"
     rm -f "$tmp"
-    echo "ERROR: http://127.0.0.1:8080/_framework/blazor.web.js did not return HTTP 200 from the host." >&2
-    echo "The file exists inside the container, but the app is not serving it correctly." >&2
-    echo "Check Program.cs static asset ordering and command-center logs." >&2
-    compose logs --tail=150 command-center >&2 || true
-    exit 1
+    if ! curl -fsS --max-time 20 "http://127.0.0.1:8080/_framework/blazor.web.js" -o "$tmp"; then
+      rm -f "$tmp"
+      echo "ERROR: /_framework/blazor.web.js still does not return HTTP 200 after recovery." >&2
+      compose logs --tail=150 command-center >&2 || true
+      exit 1
+    fi
   fi
 
   if [[ ! -s "$tmp" ]]; then
@@ -190,6 +205,48 @@ nightmare_verify_command_center_blazor_static_assets() {
 
   rm -f "$tmp"
   echo "Blazor static asset verification passed: /_framework/blazor.web.js is present and served."
+}
+
+nightmare_recover_command_center_blazor_script() {
+  local cid="$1"
+
+  echo "Recovery step 1/2: try runtime copy from ASP.NET shared framework..." >&2
+  if nightmare_docker exec "$cid" sh -lc '
+    set -eu
+    mkdir -p /app/wwwroot/_framework
+    src=""
+    for p in /usr/share/dotnet/shared/Microsoft.AspNetCore.App/*/blazor.web.js \
+             /usr/share/dotnet/shared/Microsoft.AspNetCore.App/*/wwwroot/_framework/blazor.web.js; do
+      if [ -s "$p" ]; then
+        src="$p"
+        break
+      fi
+    done
+    if [ -n "$src" ]; then
+      cp "$src" /app/wwwroot/_framework/blazor.web.js
+      test -s /app/wwwroot/_framework/blazor.web.js
+      exit 0
+    fi
+    exit 1
+  '; then
+    return 0
+  fi
+
+  echo "Recovery step 2/2: publish command-center and hot-copy fresh output..." >&2
+  if ! nightmare_publish_service_for_hot_swap "command-center"; then
+    echo "Command-center hot publish failed during recovery." >&2
+    return 1
+  fi
+
+  local out_abs="$ROOT/deploy/.hot-publish/command-center"
+  if [[ ! -s "$out_abs/wwwroot/_framework/blazor.web.js" ]]; then
+    echo "Hot publish output is missing blazor.web.js; cannot recover safely." >&2
+    return 1
+  fi
+
+  nightmare_hot_copy_publish_output_to_container "command-center" "$cid" "$out_abs"
+  compose restart command-center
+  return 0
 }
 
 if [[ "$NIGHTMARE_ECS_WORKERS" == "1" && -f "$DEPLOY_DIR/aws/.env" ]]; then

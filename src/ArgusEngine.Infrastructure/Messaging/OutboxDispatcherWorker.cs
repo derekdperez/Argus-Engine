@@ -36,6 +36,12 @@ public sealed class OutboxDispatcherWorker(
             new EventId(3, nameof(LogOutboxMessageDeadLettered)),
             "Outbox message {OutboxId} moved to dead-letter after {Attempts} attempts. Error: {Error}");
 
+    private static readonly Action<ILogger, Guid, string, string, Exception?> LogOutboxMessageStaleLease =
+        LoggerMessage.Define<Guid, string, string>(
+            LogLevel.Warning,
+            new EventId(4, nameof(LogOutboxMessageStaleLease)),
+            "Outbox message {OutboxId} was not marked {TargetState} because worker {WorkerId} no longer owns the active lease.");
+
     private readonly string _workerId = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -47,6 +53,7 @@ public sealed class OutboxDispatcherWorker(
             try
             {
                 var leased = await TryLeaseNextAsync(stoppingToken).ConfigureAwait(false);
+
                 if (leased is null)
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(400), stoppingToken).ConfigureAwait(false);
@@ -75,7 +82,9 @@ public sealed class OutboxDispatcherWorker(
 
         var conn = db.Database.GetDbConnection();
         if (conn.State != System.Data.ConnectionState.Open)
+        {
             await conn.OpenAsync(ct).ConfigureAwait(false);
+        }
 
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
@@ -83,8 +92,8 @@ public sealed class OutboxDispatcherWorker(
                 SELECT o.*
                 FROM outbox_messages o
                 WHERE (
-                        (o.state IN ('Pending', 'Failed') AND o.next_attempt_at_utc <= @now)
-                     OR (o.state = 'InFlight' AND o.locked_until_utc < @now)
+                    (o.state IN ('Pending', 'Failed') AND o.next_attempt_at_utc <= @now)
+                    OR (o.state = 'InFlight' AND o.locked_until_utc < @now)
                 )
                 AND o.state <> 'DeadLetter'
                 ORDER BY o.next_attempt_at_utc ASC, o.created_at_utc ASC
@@ -108,7 +117,9 @@ public sealed class OutboxDispatcherWorker(
 
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
             return null;
+        }
 
         return MapOutboxMessage(reader);
     }
@@ -116,8 +127,8 @@ public sealed class OutboxDispatcherWorker(
     private async Task DispatchAsync(OutboxMessage message, CancellationToken ct)
     {
         using var activity = ArgusTracing.Source.StartActivity("outbox.dispatch", ActivityKind.Producer);
-
         var shortType = ShortMessageType(message.MessageType);
+
         activity?.SetTag("argus.outbox_id", message.Id);
         activity?.SetTag("argus.message_type", shortType);
         activity?.SetTag("argus.attempt_count", message.AttemptCount);
@@ -128,15 +139,22 @@ public sealed class OutboxDispatcherWorker(
         {
             if (!TryDeserialize(message, out var payload, out var messageClrType))
             {
-                const string error = "Unable to deserialize message payload/type.";
+                const string error = "Unable to resolve or deserialize message key/payload.";
                 activity?.SetStatus(ActivityStatusCode.Error, error);
                 activity?.SetTag("argus.outbox_state", OutboxMessageState.DeadLetter);
+
                 await MarkDeadLetterAsync(message, error, ct).ConfigureAwait(false);
                 return;
             }
 
             await publish.Publish(payload!, messageClrType!, ct).ConfigureAwait(false);
-            await MarkSucceededAsync(message.Id, ct).ConfigureAwait(false);
+            var markedSucceeded = await MarkSucceededAsync(message, ct).ConfigureAwait(false);
+
+            if (!markedSucceeded)
+            {
+                activity?.SetTag("argus.outbox_state", "StaleLease");
+                return;
+            }
 
             ArgusMeters.OutboxDispatched.Add(
                 1,
@@ -149,17 +167,22 @@ public sealed class OutboxDispatcherWorker(
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.SetTag("exception.type", ex.GetType().FullName);
             activity?.SetTag("exception.message", ex.Message);
+
             await MarkRetryOrDeadLetterAsync(message, ex.Message, ct).ConfigureAwait(false);
         }
     }
 
-    private async Task MarkSucceededAsync(Guid id, CancellationToken ct)
+    private async Task<bool> MarkSucceededAsync(OutboxMessage message, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
-
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
-        await db.OutboxMessages
-            .Where(x => x.Id == id)
+
+        var updated = await db.OutboxMessages
+            .Where(x =>
+                x.Id == message.Id &&
+                x.LockedBy == _workerId &&
+                x.State == OutboxMessageState.InFlight &&
+                x.LockedUntilUtc >= now)
             .ExecuteUpdateAsync(
                 s => s
                     .SetProperty(x => x.State, OutboxMessageState.Succeeded)
@@ -170,6 +193,14 @@ public sealed class OutboxDispatcherWorker(
                     .SetProperty(x => x.LastError, (string?)null),
                 ct)
             .ConfigureAwait(false);
+
+        if (updated == 0)
+        {
+            LogOutboxMessageStaleLease(logger, message.Id, OutboxMessageState.Succeeded, _workerId, null);
+            return false;
+        }
+
+        return true;
     }
 
     private async Task MarkRetryOrDeadLetterAsync(OutboxMessage message, string error, CancellationToken ct)
@@ -184,8 +215,12 @@ public sealed class OutboxDispatcherWorker(
         var delay = TimeSpan.FromSeconds(Math.Min(300, Math.Pow(2, Math.Max(0, message.AttemptCount)) * 2));
 
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
-        await db.OutboxMessages
-            .Where(x => x.Id == message.Id)
+        var updated = await db.OutboxMessages
+            .Where(x =>
+                x.Id == message.Id &&
+                x.LockedBy == _workerId &&
+                x.State == OutboxMessageState.InFlight &&
+                x.LockedUntilUtc >= now)
             .ExecuteUpdateAsync(
                 s => s
                     .SetProperty(x => x.State, OutboxMessageState.Failed)
@@ -196,6 +231,11 @@ public sealed class OutboxDispatcherWorker(
                     .SetProperty(x => x.LastError, Truncate(error, 2048)),
                 ct)
             .ConfigureAwait(false);
+
+        if (updated == 0)
+        {
+            LogOutboxMessageStaleLease(logger, message.Id, OutboxMessageState.Failed, _workerId, null);
+        }
     }
 
     private async Task MarkDeadLetterAsync(OutboxMessage message, string error, CancellationToken ct)
@@ -204,8 +244,12 @@ public sealed class OutboxDispatcherWorker(
         var shortType = ShortMessageType(message.MessageType);
 
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
-        await db.OutboxMessages
-            .Where(x => x.Id == message.Id)
+        var updated = await db.OutboxMessages
+            .Where(x =>
+                x.Id == message.Id &&
+                x.LockedBy == _workerId &&
+                x.State == OutboxMessageState.InFlight &&
+                x.LockedUntilUtc >= now)
             .ExecuteUpdateAsync(
                 s => s
                     .SetProperty(x => x.State, OutboxMessageState.DeadLetter)
@@ -215,6 +259,12 @@ public sealed class OutboxDispatcherWorker(
                     .SetProperty(x => x.LastError, Truncate(error, 2048)),
                 ct)
             .ConfigureAwait(false);
+
+        if (updated == 0)
+        {
+            LogOutboxMessageStaleLease(logger, message.Id, OutboxMessageState.DeadLetter, _workerId, null);
+            return;
+        }
 
         ArgusMeters.OutboxDeadLettered.Add(
             1,
@@ -228,9 +278,10 @@ public sealed class OutboxDispatcherWorker(
         payload = null;
         messageType = null;
 
-        messageType = Type.GetType(message.MessageType, throwOnError: false, ignoreCase: false);
-        if (messageType is null)
+        if (!OutboxMessageTypeRegistry.TryResolve(message.MessageType, out messageType))
+        {
             return false;
+        }
 
         payload = JsonSerializer.Deserialize(message.PayloadJson, messageType);
         return payload is not null;
@@ -240,8 +291,9 @@ public sealed class OutboxDispatcherWorker(
     {
         var comma = messageType.IndexOf(',');
         var typeName = comma >= 0 ? messageType[..comma] : messageType;
-        var dot = typeName.LastIndexOf('.');
-        return dot >= 0 ? typeName[(dot + 1)..] : typeName;
+        var separator = typeName.LastIndexOfAny(new[] { '.', '/' });
+
+        return separator >= 0 ? typeName[(separator + 1)..] : typeName;
     }
 
     private static OutboxMessage MapOutboxMessage(DbDataReader reader) => new()

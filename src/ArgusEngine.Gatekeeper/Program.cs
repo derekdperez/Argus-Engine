@@ -22,16 +22,19 @@ builder.Services.AddNightmareRabbitMq(
     });
 
 var host = builder.Build();
-
 var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
+var configuration = host.Services.GetRequiredService<IConfiguration>();
+var environment = host.Services.GetRequiredService<IHostEnvironment>();
+var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
+
+if (!ShouldSkipStartupDatabase(configuration))
 {
-    await StartupDatabaseBootstrap.InitializeAsync(
-            host.Services,
-            host.Services.GetRequiredService<IConfiguration>(),
-            startupLog,
-            includeFileStore: false,
-            host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping)
+    await InitializeGatekeeperDatabaseAsync(
+        host.Services,
+        configuration,
+        environment,
+        startupLog,
+        lifetime.ApplicationStopping)
         .ConfigureAwait(false);
 }
 else
@@ -40,6 +43,67 @@ else
 }
 
 await host.RunAsync().ConfigureAwait(false);
+
+static async Task InitializeGatekeeperDatabaseAsync(
+    IServiceProvider services,
+    IConfiguration configuration,
+    IHostEnvironment environment,
+    ILogger startupLog,
+    CancellationToken stoppingToken)
+{
+    var continueOnFailure = configuration.GetArgusValue(
+        "ContinueOnStartupDatabaseFailure",
+        environment.IsDevelopment());
+
+    var retryDelays = new[]
+    {
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(10),
+        TimeSpan.FromSeconds(15),
+    };
+
+    for (var attempt = 1; attempt <= retryDelays.Length + 1; attempt++)
+    {
+        try
+        {
+            await StartupDatabaseBootstrap.InitializeAsync(
+                services,
+                configuration,
+                startupLog,
+                includeFileStore: false,
+                stoppingToken)
+                .ConfigureAwait(false);
+
+            startupLog.LogInformation("Gatekeeper startup database bootstrap completed.");
+            return;
+        }
+        catch (Exception ex) when (attempt <= retryDelays.Length && !stoppingToken.IsCancellationRequested)
+        {
+            startupLog.LogWarning(
+                ex,
+                "Gatekeeper startup database bootstrap failed on attempt {Attempt}; retrying.",
+                attempt);
+
+            await Task.Delay(retryDelays[attempt - 1], stoppingToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+        {
+            startupLog.LogCritical(
+                ex,
+                "Gatekeeper startup database bootstrap failed. ContinueOnStartupDatabaseFailure={ContinueOnStartupDatabaseFailure}.",
+                continueOnFailure);
+
+            if (!continueOnFailure)
+            {
+                throw;
+            }
+
+            return;
+        }
+    }
+}
 
 static bool ShouldSkipStartupDatabase(IConfiguration configuration) =>
     configuration.GetArgusValue("SkipStartupDatabase", false)

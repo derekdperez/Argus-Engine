@@ -15,7 +15,9 @@ public static class StartupDatabaseInitializer
             return;
         }
 
-        var continueOnFailure = app.Configuration.GetArgusValue("ContinueOnStartupDatabaseFailure", true);
+        var continueOnFailure = app.Configuration.GetArgusValue(
+            "ContinueOnStartupDatabaseFailure",
+            app.Environment.IsDevelopment());
 
         var retryDelays = new[]
         {
@@ -31,11 +33,11 @@ public static class StartupDatabaseInitializer
             try
             {
                 await StartupDatabaseBootstrap.InitializeAsync(
-                        app.Services,
-                        app.Configuration,
-                        startupLog,
-                        includeFileStore: true,
-                        app.Lifetime.ApplicationStopping)
+                    app.Services,
+                    app.Configuration,
+                    startupLog,
+                    includeFileStore: true,
+                    app.Lifetime.ApplicationStopping)
                     .ConfigureAwait(false);
 
                 StartupLogMessages.StartupDatabaseInitializationCompleted(startupLog);
@@ -48,8 +50,15 @@ public static class StartupDatabaseInitializer
             }
             catch (Exception ex) when (!app.Lifetime.ApplicationStopping.IsCancellationRequested)
             {
+                startupLog.LogCritical(
+                    ex,
+                    "Command Center startup database initialization failed for the application and file-store databases. ContinueOnStartupDatabaseFailure={ContinueOnStartupDatabaseFailure}.",
+                    continueOnFailure);
+
                 if (!continueOnFailure)
+                {
                     throw;
+                }
 
                 StartupLogMessages.StartupDatabaseInitializationFailed(startupLog, ex);
                 return;
@@ -68,6 +77,6 @@ public static class StartupDatabaseInitializer
             ?? Environment.GetEnvironmentVariable("NIGHTMARE_SKIP_STARTUP_DATABASE");
 
         return string.Equals(configuredSkip, "true", StringComparison.OrdinalIgnoreCase)
-               || string.Equals(configuredSkip, "1", StringComparison.OrdinalIgnoreCase);
+            || string.Equals(configuredSkip, "1", StringComparison.OrdinalIgnoreCase);
     }
 }

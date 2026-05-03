@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using ArgusEngine.CommandCenter.Security;
 using ArgusEngine.Infrastructure.Configuration;
 
@@ -14,13 +15,20 @@ public static class CommandCenterMiddleware
             app.UseExceptionHandler("/Error", createScopeForErrors: true);
 
             if (!listenPlainHttp)
+            {
                 app.UseHsts();
+            }
         }
 
         app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
         if (!listenPlainHttp)
+        {
             app.UseHttpsRedirection();
+        }
+
+        app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+        app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 
         app.UseSensitiveEndpointProtection();
         app.UseStaticFiles();

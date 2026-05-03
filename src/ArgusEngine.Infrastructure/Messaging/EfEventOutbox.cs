@@ -8,33 +8,38 @@ namespace ArgusEngine.Infrastructure.Messaging;
 
 public sealed class EfEventOutbox(ArgusDbContext db) : IEventOutbox
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = false,
+    };
 
     public async Task EnqueueAsync<TEvent>(TEvent message, CancellationToken cancellationToken = default)
         where TEvent : class, IEventEnvelope
     {
-        var resolvedEventId = message.EventId == Guid.Empty ? Guid.NewGuid() : message.EventId;
-        var resolvedCorrelation = message.CorrelationId == Guid.Empty ? Guid.NewGuid() : message.CorrelationId;
-        var resolvedCausation = message.CausationId == Guid.Empty ? resolvedCorrelation : message.CausationId;
-        var resolvedOccurredAt = message.OccurredAtUtc == default ? DateTimeOffset.UtcNow : message.OccurredAtUtc;
+        var messageType = message.GetType();
 
-        db.OutboxMessages.Add(
-            new OutboxMessage
-            {
-                Id = Guid.NewGuid(),
-                MessageType = message.GetType().AssemblyQualifiedName ?? message.GetType().FullName ?? message.GetType().Name,
-                PayloadJson = JsonSerializer.Serialize(message, message.GetType(), JsonOptions),
-                EventId = resolvedEventId,
-                CorrelationId = resolvedCorrelation,
-                CausationId = resolvedCausation,
-                OccurredAtUtc = resolvedOccurredAt,
-                Producer = string.IsNullOrWhiteSpace(message.Producer) ? "argus-engine" : message.Producer,
-                State = OutboxMessageState.Pending,
-                AttemptCount = 0,
-                CreatedAtUtc = DateTimeOffset.UtcNow,
-                UpdatedAtUtc = DateTimeOffset.UtcNow,
-                NextAttemptAtUtc = DateTimeOffset.UtcNow,
-            });
+        var resolvedEventId = message.EventId == Guid.Empty ? Guid.NewGuid() : message.EventId;
+        var resolvedCorrelationId = message.CorrelationId == Guid.Empty ? Guid.NewGuid() : message.CorrelationId;
+        var resolvedCausationId = message.CausationId == Guid.Empty ? resolvedCorrelationId : message.CausationId;
+        var occurredAt = message.OccurredAtUtc == default ? DateTimeOffset.UtcNow : message.OccurredAtUtc;
+        var producer = string.IsNullOrWhiteSpace(message.Producer) ? "argus-engine" : message.Producer;
+
+        db.OutboxMessages.Add(new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            MessageType = OutboxMessageTypeRegistry.GetMessageKey(messageType),
+            PayloadJson = JsonSerializer.Serialize(message, messageType, JsonOptions),
+            EventId = resolvedEventId,
+            CorrelationId = resolvedCorrelationId,
+            CausationId = resolvedCausationId,
+            OccurredAtUtc = occurredAt,
+            Producer = producer,
+            State = OutboxMessageState.Pending,
+            AttemptCount = 0,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+            NextAttemptAtUtc = DateTimeOffset.UtcNow,
+        });
 
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }

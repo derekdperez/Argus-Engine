@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
-
   <PropertyGroup>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <Version>2.6.1</Version>
@@ -13,18 +12,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.EC2" Version="4.0.21" />
-    <PackageReference Include="AWSSDK.ECS" Version="4.0.20.1" />
-    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.7.13" />
-    <PackageReference Include="MassTransit.EntityFrameworkCore" Version="8.5.4" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.QuickGrid" Version="10.0.0" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.0" />
-    <PackageReference Include="Npgsql" Version="10.0.0" />
-    <PackageReference Include="Radzen.Blazor" Version="10.3.2" />
+    <PackageReference Include="AWSSDK.EC2" />
+    <PackageReference Include="AWSSDK.ECS" />
+    <PackageReference Include="AWSSDK.SimpleSystemsManagement" />
+    <PackageReference Include="MassTransit.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.QuickGrid" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Radzen.Blazor" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="..\Resources\Wordlists\high_value\*.txt" Link="Resources\Wordlists\high_value\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-
 </Project>

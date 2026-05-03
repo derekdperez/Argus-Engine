@@ -1,0 +1,2 @@
+Application should - 
+Deploy as efficiently and quickly as possible after code changes. Only deploy the necessary components 

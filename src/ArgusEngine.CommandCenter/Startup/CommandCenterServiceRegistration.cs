@@ -31,6 +31,7 @@ public static class CommandCenterServiceRegistration
         });
 
         services.AddArgusInfrastructure(configuration);
+        services.AddArgusRabbitMq(configuration, _ => { });
         services.AddSignalR();
         services.AddCommandCenterApplicationServices();
 

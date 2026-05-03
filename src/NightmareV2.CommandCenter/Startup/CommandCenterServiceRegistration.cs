@@ -72,14 +72,10 @@ public static class CommandCenterServiceRegistration
 
     private static IServiceCollection AddCommandCenterApplicationServices(this IServiceCollection services)
     {
-        services.AddScoped<TargetManagementService>();
-        services.AddScoped<TargetSummaryQueryService>();
         services.AddScoped<RootSpiderSeedService>();
         services.AddScoped<HttpQueueArtifactBackfillService>();
 
         services.AddSingleton<WorkerScaleDefinitionProvider>();
-        services.AddScoped<WorkerScalingSettingsService>();
-        services.AddScoped<WorkerSwitchService>();
 
         services.AddScoped<AwsRegionResolver>();
         services.AddScoped<EcsWorkerServiceManager>();

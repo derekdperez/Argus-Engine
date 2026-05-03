@@ -11,7 +11,7 @@ public static class StartupDatabaseInitializer
 
         if (ShouldSkipStartupDatabase(app.Configuration))
         {
-            StartupLogMessages.StartupDatabaseSkipped(startupLog);
+            startupLog.LogInformation("Skipping startup database bootstrap for command-center.");
             return;
         }
 
@@ -32,7 +32,7 @@ public static class StartupDatabaseInitializer
         {
             try
             {
-                await StartupDatabaseBootstrap.InitializeAsync(
+                await ArgusDbBootstrap.InitializeAsync(
                     app.Services,
                     app.Configuration,
                     startupLog,
@@ -40,12 +40,12 @@ public static class StartupDatabaseInitializer
                     app.Lifetime.ApplicationStopping)
                     .ConfigureAwait(false);
 
-                StartupLogMessages.StartupDatabaseInitializationCompleted(startupLog);
+                startupLog.LogInformation("Command-center startup database bootstrap completed.");
                 return;
             }
             catch (Exception ex) when (attempt <= retryDelays.Length && !app.Lifetime.ApplicationStopping.IsCancellationRequested)
             {
-                StartupLogMessages.StartupDatabaseInitializationRetry(startupLog, ex, attempt);
+                startupLog.LogWarning(ex, "Retrying command-center startup database bootstrap. Attempt {Attempt}.", attempt);
                 await Task.Delay(retryDelays[attempt - 1], app.Lifetime.ApplicationStopping).ConfigureAwait(false);
             }
             catch (Exception ex) when (!app.Lifetime.ApplicationStopping.IsCancellationRequested)
@@ -60,7 +60,7 @@ public static class StartupDatabaseInitializer
                     throw;
                 }
 
-                StartupLogMessages.StartupDatabaseInitializationFailed(startupLog, ex);
+                startupLog.LogError(ex, "Command-center startup database bootstrap failed, continuing startup.");
                 return;
             }
         }

@@ -74,22 +74,35 @@ nightmare_sha256_file_list() {
   shift
   (
     cd "$root"
-    for path in "$@"; do
-      [[ -e "$path" ]] || continue
-      if [[ -d "$path" ]]; then
-        find "$path" -type f \
-          ! -path '*/bin/*' \
-          ! -path '*/obj/*' \
-          ! -path '*/out/*' \
-          ! -path '*/publish/*' \
-          ! -path '*/TestResults/*' \
-          ! -path '*/.nuget/*' \
-          ! -path '*/.hot-publish/*' \
-          -print
-      else
-        printf '%s\n' "$path"
-      fi
-    done | LC_ALL=C sort | {
+    local paths=("$@")
+    if [[ -d ".git" ]]; then
+      # Use git ls-files for directories to respect .gitignore.
+      # For individual files, we just list them if they exist (even if ignored).
+      for p in "${paths[@]}"; do
+        if [[ -d "$p" ]]; then
+          git ls-files --cached --others --exclude-standard -- "$p"
+        elif [[ -e "$p" ]]; then
+          printf '%s\n' "$p"
+        fi
+      done
+    else
+      for path in "${paths[@]}"; do
+        [[ -e "$path" ]] || continue
+        if [[ -d "$path" ]]; then
+          find "$path" -type f \
+            ! -path '*/bin/*' \
+            ! -path '*/obj/*' \
+            ! -path '*/out/*' \
+            ! -path '*/publish/*' \
+            ! -path '*/TestResults/*' \
+            ! -path '*/.nuget/*' \
+            ! -path '*/.hot-publish/*' \
+            -print
+        else
+          printf '%s\n' "$path"
+        fi
+      done
+    fi | LC_ALL=C sort -u | {
       if command -v sha256sum >/dev/null 2>&1; then
         if xargs --help 2>/dev/null | grep -q -- '-d'; then
           xargs -r -d '\n' sha256sum

@@ -4,8 +4,8 @@ namespace NightmareV2.Infrastructure.Tests;
 
 public sealed class DeploymentVersioningTests
 {
-    private const string ExpectedVersion = "2.2.0";
-    private const string ExpectedFileVersion = "2.2.0.0";
+    private const string ExpectedVersion = "2.3.0";
+    private const string ExpectedFileVersion = "2.3.0.0";
 
     [Fact]
     public void CentralBuildTargetsForceTheDeploymentVersionForAllProjects()

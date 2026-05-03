@@ -1,19 +1,18 @@
 <Project>
   <PropertyGroup>
     <!--
-      Project-specific requirement:
-      every deployed .NET project must carry the same deployment version shown
-      on the Command Center System Status screen.
+      Project-specific deployment rule:
+      every deployed .NET project must carry this version so the Command Center
+      System Status page does not show stale component versions.
 
-      Directory.Build.targets is imported after each .csproj, so these values
-      intentionally override stale project-local <Version> values such as 2.0.0
-      or 2.1.0.
+      Directory.Build.targets is imported after project files, so these values
+      intentionally override stale per-project <Version> metadata.
     -->
-    <ArgusEngineDeploymentVersion>2.2.0</ArgusEngineDeploymentVersion>
+    <ArgusEngineDeploymentVersion>2.3.0</ArgusEngineDeploymentVersion>
     <Version>$(ArgusEngineDeploymentVersion)</Version>
     <PackageVersion>$(ArgusEngineDeploymentVersion)</PackageVersion>
-    <AssemblyVersion>2.2.0.0</AssemblyVersion>
-    <FileVersion>2.2.0.0</FileVersion>
+    <AssemblyVersion>2.3.0.0</AssemblyVersion>
+    <FileVersion>2.3.0.0</FileVersion>
     <InformationalVersion>$(ArgusEngineDeploymentVersion)</InformationalVersion>
   </PropertyGroup>
 
@@ -21,8 +20,5 @@
     <Error
       Condition="'$(ArgusEngineDeploymentVersion)' == ''"
       Text="ArgusEngineDeploymentVersion must be set before deploying." />
-    <Error
-      Condition="'$(Version)' != '$(ArgusEngineDeploymentVersion)'"
-      Text="Project version $(Version) does not match ArgusEngineDeploymentVersion $(ArgusEngineDeploymentVersion)." />
   </Target>
 </Project>

@@ -1,0 +1,237 @@
+@page "/asset-admission"
+@rendermode InteractiveServer
+@using System.Net.Http.Json
+@inject HttpClient Http
+
+<PageTitle>Asset Admission · Argus Engine</PageTitle>
+
+<section class="dashboard-page">
+    <div class="page-hero">
+        <div>
+            <p class="eyebrow">Gatekeeper audit</p>
+            <h1>Asset Admission</h1>
+            <p class="muted">
+                Explain why assets were accepted, deduplicated, rejected as out of scope,
+                depth-limited, skipped, or blocked by worker toggles.
+            </p>
+        </div>
+        <div class="hero-actions">
+            <button class="btn primary" @onclick="ReloadAsync" disabled="@_loading">
+                @(_loading ? "Refreshing..." : "Refresh")
+            </button>
+            <button class="btn" @onclick="ClearFilters" disabled="@_loading">Clear filters</button>
+        </div>
+    </div>
+
+    <div class="metric-grid">
+        @foreach (var card in SummaryCards)
+        {
+            <article class="metric-card">
+                <span>@card.Label</span>
+                <strong>@card.Count.ToString("N0")</strong>
+            </article>
+        }
+    </div>
+
+    <div class="filter-card">
+        <label>
+            Target ID
+            <input @bind="_targetId" placeholder="guid" />
+        </label>
+        <label>
+            Decision
+            <select @bind="_decision">
+                <option value="">All</option>
+                @foreach (var d in Decisions)
+                {
+                    <option value="@d">@d</option>
+                }
+            </select>
+        </label>
+        <label>
+            Reason code
+            <input @bind="_reasonCode" placeholder="scope_rejected" />
+        </label>
+        <label>
+            Asset kind
+            <input @bind="_assetKind" placeholder="Url, Subdomain..." />
+        </label>
+        <label>
+            Raw/canonical search
+            <input @bind="_search" placeholder="example.com" />
+        </label>
+        <button class="btn primary" @onclick="ReloadAsync" disabled="@_loading">Apply</button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="alert">@_error</div>
+    }
+    else if (_loading && _rows.Count == 0)
+    {
+        <p class="muted">Loading admission decisions...</p>
+    }
+    else
+    {
+        <div class="table-card">
+            <div class="table-caption">
+                <strong>@_rows.Count.ToString("N0") decisions</strong>
+                <span>@(_lastLoadedAtUtc is null ? "Not loaded" : $"Last refresh {_lastLoadedAtUtc:yyyy-MM-dd HH:mm:ss} UTC")</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Decision</th>
+                        <th>Reason</th>
+                        <th>Kind</th>
+                        <th>Raw value</th>
+                        <th>Canonical key</th>
+                        <th>Depth</th>
+                        <th>Source</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            <td>@row.OccurredAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td><span class="pill @DecisionCss(row.Decision)">@row.Decision</span></td>
+                            <td>
+                                <code>@row.ReasonCode</code>
+                                @if (!string.IsNullOrWhiteSpace(row.ReasonDetail))
+                                {
+                                    <small>@row.ReasonDetail</small>
+                                }
+                            </td>
+                            <td>@row.AssetKind</td>
+                            <td class="wrap">@row.RawValue</td>
+                            <td class="wrap"><code>@row.CanonicalKey</code></td>
+                            <td>@row.Depth / @row.GlobalMaxDepth</td>
+                            <td>@row.DiscoveredBy</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private readonly List<AssetAdmissionDecisionDto> _rows = [];
+    private bool _loading = true;
+    private string? _error;
+    private DateTimeOffset? _lastLoadedAtUtc;
+
+    private string _targetId = "";
+    private string _decision = "";
+    private string _reasonCode = "";
+    private string _assetKind = "";
+    private string _search = "";
+
+    private static readonly string[] Decisions =
+    [
+        "Accepted",
+        "Duplicate",
+        "OutOfScope",
+        "DepthExceeded",
+        "Invalid",
+        "WorkerDisabled",
+        "PersistenceSkipped",
+        "Failed"
+    ];
+
+    private IEnumerable<(string Label, int Count)> SummaryCards =>
+        Decisions.Select(d => (d, _rows.Count(r => string.Equals(r.Decision, d, StringComparison.OrdinalIgnoreCase))));
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var query = BuildQuery();
+            var rows = await Http.GetFromJsonAsync<List<AssetAdmissionDecisionDto>>($"/api/asset-admission-decisions{query}");
+            _rows.Clear();
+
+            if (rows is not null)
+                _rows.AddRange(rows);
+
+            _lastLoadedAtUtc = DateTimeOffset.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            _rows.Clear();
+            _error = $"Could not load admission decisions: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private string BuildQuery()
+    {
+        var parts = new List<string> { "take=1000" };
+
+        Add(parts, "targetId", _targetId);
+        Add(parts, "decision", _decision);
+        Add(parts, "reasonCode", _reasonCode);
+        Add(parts, "assetKind", _assetKind);
+
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            Add(parts, "rawContains", _search);
+            Add(parts, "canonicalKey", _search);
+        }
+
+        return "?" + string.Join("&", parts);
+    }
+
+    private static void Add(List<string> parts, string name, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            parts.Add($"{name}={Uri.EscapeDataString(value.Trim())}");
+    }
+
+    private void ClearFilters()
+    {
+        _targetId = "";
+        _decision = "";
+        _reasonCode = "";
+        _assetKind = "";
+        _search = "";
+    }
+
+    private static string DecisionCss(string decision) => decision switch
+    {
+        "Accepted" => "ok",
+        "Duplicate" => "neutral",
+        "OutOfScope" or "DepthExceeded" => "warn",
+        "Invalid" or "Failed" => "danger",
+        "WorkerDisabled" or "PersistenceSkipped" => "muted",
+        _ => "neutral"
+    };
+
+    private sealed record AssetAdmissionDecisionDto(
+        Guid Id,
+        Guid TargetId,
+        Guid? AssetId,
+        string RawValue,
+        string? CanonicalKey,
+        string AssetKind,
+        string Decision,
+        string ReasonCode,
+        string? ReasonDetail,
+        string DiscoveredBy,
+        string? DiscoveryContext,
+        int Depth,
+        int GlobalMaxDepth,
+        Guid CorrelationId,
+        Guid? CausationId,
+        Guid? EventId,
+        DateTimeOffset OccurredAtUtc);
+}

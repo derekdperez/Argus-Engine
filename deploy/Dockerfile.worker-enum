@@ -24,7 +24,7 @@ RUN --mount=type=cache,id=nightmare-go-build,target=/root/.cache/go-build \
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 ARG PROJECT_DIR
-ARG COMPONENT_VERSION=2.2.0
+ARG COMPONENT_VERSION=2.3.0
 
 WORKDIR /src
 
@@ -48,15 +48,15 @@ RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=l
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
       -c Release -o /app/publish --no-restore /p:UseAppHost=false \
       /p:Version="${COMPONENT_VERSION}" \
-      /p:AssemblyVersion="2.2.0.0" \
-      /p:FileVersion="2.2.0.0" \
+      /p:AssemblyVersion="2.3.0.0" \
+      /p:FileVersion="2.3.0.0" \
       /p:InformationalVersion="${COMPONENT_VERSION}"
 
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
 
 ARG APP_DLL
 ARG BUILD_SOURCE_STAMP=unknown
-ARG COMPONENT_VERSION=2.2.0
+ARG COMPONENT_VERSION=2.3.0
 
 ENV SubdomainEnumeration__Subfinder__BinaryPath=/usr/local/bin/subfinder
 ENV SubdomainEnumeration__Amass__BinaryPath=/usr/local/bin/amass

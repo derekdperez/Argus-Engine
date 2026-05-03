@@ -8,7 +8,7 @@
 
 name: argus-engine
 
-x-component-version: &component-version ${ARGUS_ENGINE_VERSION:-2.2.0}
+x-component-version: &component-version ${ARGUS_ENGINE_VERSION:-2.3.0}
 
 x-dotnet-build-args: &dotnet-build-args
   BUILD_SOURCE_STAMP: ${BUILD_SOURCE_STAMP:-unknown}
@@ -104,7 +104,7 @@ services:
       start_period: 30s
 
   command-center:
-    image: argus-engine/command-center:${ARGUS_ENGINE_VERSION:-2.2.0}
+    image: argus-engine/command-center:${ARGUS_ENGINE_VERSION:-2.3.0}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.web
@@ -153,7 +153,7 @@ services:
         condition: service_healthy
 
   gatekeeper:
-    image: argus-engine/gatekeeper:${ARGUS_ENGINE_VERSION:-2.2.0}
+    image: argus-engine/gatekeeper:${ARGUS_ENGINE_VERSION:-2.3.0}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -174,7 +174,7 @@ services:
         condition: service_healthy
 
   worker-spider:
-    image: argus-engine/worker-spider:${ARGUS_ENGINE_VERSION:-2.2.0}
+    image: argus-engine/worker-spider:${ARGUS_ENGINE_VERSION:-2.3.0}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -198,7 +198,7 @@ services:
       replicas: 10
 
   worker-enum:
-    image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.2.0}
+    image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.3.0}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker-enum
@@ -234,7 +234,7 @@ services:
       replicas: 10
 
   worker-portscan:
-    image: argus-engine/worker-portscan:${ARGUS_ENGINE_VERSION:-2.2.0}
+    image: argus-engine/worker-portscan:${ARGUS_ENGINE_VERSION:-2.3.0}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -255,7 +255,7 @@ services:
         condition: service_healthy
 
   worker-highvalue:
-    image: argus-engine/worker-highvalue:${ARGUS_ENGINE_VERSION:-2.2.0}
+    image: argus-engine/worker-highvalue:${ARGUS_ENGINE_VERSION:-2.3.0}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -276,7 +276,7 @@ services:
         condition: service_healthy
 
   worker-techid:
-    image: argus-engine/worker-techid:${ARGUS_ENGINE_VERSION:-2.2.0}
+    image: argus-engine/worker-techid:${ARGUS_ENGINE_VERSION:-2.3.0}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker

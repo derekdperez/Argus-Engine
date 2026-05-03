@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Diagnostics;
 using System.Text.Json;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure.Data;
+using NightmareV2.Infrastructure.Observability;
 
 namespace NightmareV2.Infrastructure.Messaging;
 
@@ -15,21 +17,25 @@ public sealed class OutboxDispatcherWorker(
     ILogger<OutboxDispatcherWorker> logger) : BackgroundService
 {
     private const int MaxAttemptsBeforeDeadLetter = 10;
+
     private static readonly Action<ILogger, string, Exception?> LogOutboxDispatcherStarting =
         LoggerMessage.Define<string>(
             LogLevel.Information,
             new EventId(1, nameof(LogOutboxDispatcherStarting)),
             "Outbox dispatcher {WorkerId} starting.");
+
     private static readonly Action<ILogger, Exception?> LogOutboxDispatcherLoopFault =
         LoggerMessage.Define(
             LogLevel.Warning,
             new EventId(2, nameof(LogOutboxDispatcherLoopFault)),
             "Outbox dispatcher loop fault.");
+
     private static readonly Action<ILogger, Guid, int, string, Exception?> LogOutboxMessageDeadLettered =
         LoggerMessage.Define<Guid, int, string>(
             LogLevel.Error,
             new EventId(3, nameof(LogOutboxMessageDeadLettered)),
             "Outbox message {OutboxId} moved to dead-letter after {Attempts} attempts. Error: {Error}");
+
     private readonly string _workerId = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -73,29 +79,28 @@ public sealed class OutboxDispatcherWorker(
 
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-                          WITH candidate AS (
-                              SELECT o.*
-                              FROM outbox_messages o
-                              WHERE
-                                  (
-                                      (o.state IN ('Pending', 'Failed') AND o.next_attempt_at_utc <= @now)
-                                      OR (o.state = 'InFlight' AND o.locked_until_utc < @now)
-                                  )
-                                  AND o.state <> 'DeadLetter'
-                              ORDER BY o.next_attempt_at_utc ASC, o.created_at_utc ASC
-                              FOR UPDATE SKIP LOCKED
-                              LIMIT 1
-                          )
-                          UPDATE outbox_messages o
-                          SET state = 'InFlight',
-                              locked_by = @worker_id,
-                              locked_until_utc = @lock_until,
-                              updated_at_utc = @now,
-                              attempt_count = o.attempt_count + 1
-                          FROM candidate
-                          WHERE o.id = candidate.id
-                          RETURNING o.*;
-                          """;
+            WITH candidate AS (
+                SELECT o.*
+                FROM outbox_messages o
+                WHERE (
+                        (o.state IN ('Pending', 'Failed') AND o.next_attempt_at_utc <= @now)
+                     OR (o.state = 'InFlight' AND o.locked_until_utc < @now)
+                )
+                AND o.state <> 'DeadLetter'
+                ORDER BY o.next_attempt_at_utc ASC, o.created_at_utc ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+            )
+            UPDATE outbox_messages o
+            SET state = 'InFlight',
+                locked_by = @worker_id,
+                locked_until_utc = @lock_until,
+                updated_at_utc = @now,
+                attempt_count = o.attempt_count + 1
+            FROM candidate
+            WHERE o.id = candidate.id
+            RETURNING o.*;
+            """;
 
         AddParameter(cmd, "now", now);
         AddParameter(cmd, "lock_until", lockUntil);
@@ -110,19 +115,40 @@ public sealed class OutboxDispatcherWorker(
 
     private async Task DispatchAsync(OutboxMessage message, CancellationToken ct)
     {
+        using var activity = ArgusTracing.Source.StartActivity("outbox.dispatch", ActivityKind.Producer);
+
+        var shortType = ShortMessageType(message.MessageType);
+        activity?.SetTag("argus.outbox_id", message.Id);
+        activity?.SetTag("argus.message_type", shortType);
+        activity?.SetTag("argus.attempt_count", message.AttemptCount);
+        activity?.SetTag("argus.correlation_id", message.CorrelationId);
+        activity?.SetTag("argus.worker_id", _workerId);
+
         try
         {
             if (!TryDeserialize(message, out var payload, out var messageClrType))
             {
-                await MarkDeadLetterAsync(message, "Unable to deserialize message payload/type.", ct).ConfigureAwait(false);
+                const string error = "Unable to deserialize message payload/type.";
+                activity?.SetStatus(ActivityStatusCode.Error, error);
+                activity?.SetTag("argus.outbox_state", OutboxMessageState.DeadLetter);
+                await MarkDeadLetterAsync(message, error, ct).ConfigureAwait(false);
                 return;
             }
 
             await publish.Publish(payload!, messageClrType!, ct).ConfigureAwait(false);
             await MarkSucceededAsync(message.Id, ct).ConfigureAwait(false);
+
+            ArgusMeters.OutboxDispatched.Add(
+                1,
+                new KeyValuePair<string, object?>("message_type", shortType));
+
+            activity?.SetTag("argus.outbox_state", OutboxMessageState.Succeeded);
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetTag("exception.type", ex.GetType().FullName);
+            activity?.SetTag("exception.message", ex.Message);
             await MarkRetryOrDeadLetterAsync(message, ex.Message, ct).ConfigureAwait(false);
         }
     }
@@ -130,6 +156,7 @@ public sealed class OutboxDispatcherWorker(
     private async Task MarkSucceededAsync(Guid id, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
+
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
         await db.OutboxMessages
             .Where(x => x.Id == id)
@@ -155,6 +182,7 @@ public sealed class OutboxDispatcherWorker(
 
         var now = DateTimeOffset.UtcNow;
         var delay = TimeSpan.FromSeconds(Math.Min(300, Math.Pow(2, Math.Max(0, message.AttemptCount)) * 2));
+
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
         await db.OutboxMessages
             .Where(x => x.Id == message.Id)
@@ -173,6 +201,8 @@ public sealed class OutboxDispatcherWorker(
     private async Task MarkDeadLetterAsync(OutboxMessage message, string error, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
+        var shortType = ShortMessageType(message.MessageType);
+
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
         await db.OutboxMessages
             .Where(x => x.Id == message.Id)
@@ -185,6 +215,10 @@ public sealed class OutboxDispatcherWorker(
                     .SetProperty(x => x.LastError, Truncate(error, 2048)),
                 ct)
             .ConfigureAwait(false);
+
+        ArgusMeters.OutboxDeadLettered.Add(
+            1,
+            new KeyValuePair<string, object?>("message_type", shortType));
 
         LogOutboxMessageDeadLettered(logger, message.Id, message.AttemptCount, error, null);
     }
@@ -202,27 +236,34 @@ public sealed class OutboxDispatcherWorker(
         return payload is not null;
     }
 
-    private static OutboxMessage MapOutboxMessage(DbDataReader reader) =>
-        new()
-        {
-            Id = reader.GetGuid(reader.GetOrdinal("id")),
-            MessageType = reader.GetString(reader.GetOrdinal("message_type")),
-            PayloadJson = reader.GetString(reader.GetOrdinal("payload_json")),
-            EventId = reader.GetGuid(reader.GetOrdinal("event_id")),
-            CorrelationId = reader.GetGuid(reader.GetOrdinal("correlation_id")),
-            CausationId = reader.GetGuid(reader.GetOrdinal("causation_id")),
-            OccurredAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("occurred_at_utc")),
-            Producer = reader.GetString(reader.GetOrdinal("producer")),
-            State = reader.GetString(reader.GetOrdinal("state")),
-            AttemptCount = reader.GetInt32(reader.GetOrdinal("attempt_count")),
-            CreatedAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at_utc")),
-            UpdatedAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at_utc")),
-            NextAttemptAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("next_attempt_at_utc")),
-            LastError = ReadNullableString(reader, "last_error"),
-            LockedBy = ReadNullableString(reader, "locked_by"),
-            LockedUntilUtc = ReadNullableDateTimeOffset(reader, "locked_until_utc"),
-            DispatchedAtUtc = ReadNullableDateTimeOffset(reader, "dispatched_at_utc"),
-        };
+    internal static string ShortMessageType(string messageType)
+    {
+        var comma = messageType.IndexOf(',');
+        var typeName = comma >= 0 ? messageType[..comma] : messageType;
+        var dot = typeName.LastIndexOf('.');
+        return dot >= 0 ? typeName[(dot + 1)..] : typeName;
+    }
+
+    private static OutboxMessage MapOutboxMessage(DbDataReader reader) => new()
+    {
+        Id = reader.GetGuid(reader.GetOrdinal("id")),
+        MessageType = reader.GetString(reader.GetOrdinal("message_type")),
+        PayloadJson = reader.GetString(reader.GetOrdinal("payload_json")),
+        EventId = reader.GetGuid(reader.GetOrdinal("event_id")),
+        CorrelationId = reader.GetGuid(reader.GetOrdinal("correlation_id")),
+        CausationId = reader.GetGuid(reader.GetOrdinal("causation_id")),
+        OccurredAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("occurred_at_utc")),
+        Producer = reader.GetString(reader.GetOrdinal("producer")),
+        State = reader.GetString(reader.GetOrdinal("state")),
+        AttemptCount = reader.GetInt32(reader.GetOrdinal("attempt_count")),
+        CreatedAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at_utc")),
+        UpdatedAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at_utc")),
+        NextAttemptAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("next_attempt_at_utc")),
+        LastError = ReadNullableString(reader, "last_error"),
+        LockedBy = ReadNullableString(reader, "locked_by"),
+        LockedUntilUtc = ReadNullableDateTimeOffset(reader, "locked_until_utc"),
+        DispatchedAtUtc = ReadNullableDateTimeOffset(reader, "dispatched_at_utc"),
+    };
 
     private static string? ReadNullableString(DbDataReader reader, string name)
     {

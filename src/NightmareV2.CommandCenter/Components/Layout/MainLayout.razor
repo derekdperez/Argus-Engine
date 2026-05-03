@@ -1,31 +1,32 @@
 @inherits LayoutComponentBase
 
-<header class="app-header">
-    <a class="brand" href="/ops" aria-label="Open Operations">
-        <span class="brand-mark">N2</span>
-        <span>
-            <strong>Nightmare</strong>
-            <small>Command Center</small>
-        </span>
-    </a>
-    <nav class="app-nav" aria-label="Primary">
-        <NavLink class="nav-button" href="/ops" Match="NavLinkMatch.All">Operations</NavLink>
-        <NavLink class="nav-button" href="/targets">Targets</NavLink>
-        <NavLink class="nav-button" href="/status">System Status</NavLink>
-        <NavLink class="nav-button" href="/admin">Admin</NavLink>
-        <NavLink class="nav-button" href="/high-value-findings">High Value</NavLink>
-        <NavLink class="nav-button" href="/technologies">Technologies</NavLink>
-    </nav>
-</header>
+<PageTitle>Argus Engine Command Center</PageTitle>
 
-<main class="app-main">
-    @Body
-</main>
+<div class="shell">
+    <aside class="sidebar">
+        <a class="brand" href="">
+            <span class="brand-mark">AE</span>
+            <span>Argus Engine</span>
+        </a>
 
-<RadzenComponents @rendermode="InteractiveServer" />
+        <nav>
+            <a href="/">Operations</a>
+            <a href="/targets">Targets</a>
+            <a href="/asset-admission">Asset Admission</a>
+            <a href="/high-value-findings">High Value</a>
+            <a href="/technologies">Technologies</a>
+            <a href="/asset-graph">Asset Graph</a>
+            <a href="/status">System Status</a>
+            <a href="/admin">Admin</a>
+        </nav>
+    </aside>
 
-<div id="blazor-error-ui" data-nosnippet>
+    <main class="content">
+        @Body
+    </main>
+</div>
+
+<div id="blazor-error-ui">
     An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    <a href="" class="reload">Reload</a>
 </div>

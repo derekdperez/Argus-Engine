@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,17 +13,21 @@ public class WafBlockedException : HttpRequestException
 public class WorkerHttpClientHandler : DelegatingHandler
 {
     private int _consecutiveBlocks;
+
     private const int MaxAllowedBlocks = 5;
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        var response = await base.SendAsync(request, cancellationToken);
+        var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
-        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden ||
-            response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        if (response.StatusCode == HttpStatusCode.Forbidden ||
+            response.StatusCode == HttpStatusCode.TooManyRequests)
         {
             if (Interlocked.Increment(ref _consecutiveBlocks) >= MaxAllowedBlocks)
+            {
+                response.Dispose();
                 throw new WafBlockedException("Circuit breaker tripped. WAF or Rate-limiting has blocked this worker.");
+            }
         }
         else if (response.IsSuccessStatusCode)
         {

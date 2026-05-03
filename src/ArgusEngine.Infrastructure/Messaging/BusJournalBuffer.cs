@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Threading.Channels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -14,13 +15,17 @@ public sealed class BusJournalBuffer(
     ILogger<BusJournalBuffer> logger) : BackgroundService
 {
     private const string JournalEnabledKey = "Argus:BusJournal:Enabled";
+
     private const string JournalBatchSizeKey = "Argus:BusJournal:BatchSize";
+
     private const string JournalFlushIntervalKey = "Argus:BusJournal:FlushIntervalMs";
-    private static readonly Action<ILogger, Exception?> LogBusJournalChannelFull =
-        LoggerMessage.Define(
+
+    private static readonly Action<ILogger, long, Exception?> LogBusJournalChannelFull =
+        LoggerMessage.Define<long>(
             LogLevel.Warning,
             new EventId(1, nameof(LogBusJournalChannelFull)),
-            "Bus journal channel is full; oldest entries are being dropped.");
+            "Bus journal channel is full; new entries are being dropped. Total dropped entries: {DroppedEntries}.");
+
     private static readonly Action<ILogger, Exception?> LogBusJournalBatchFlushFailed =
         LoggerMessage.Define(
             LogLevel.Warning,
@@ -30,19 +35,26 @@ public sealed class BusJournalBuffer(
     private readonly Channel<BusJournalEntry> _channel = Channel.CreateBounded<BusJournalEntry>(
         new BoundedChannelOptions(5000)
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
             SingleWriter = false,
         });
+
     private readonly bool _enabled = ReadBool(configuration, JournalEnabledKey, true);
+
     private readonly int _batchSize = Math.Clamp(ReadInt(configuration, JournalBatchSizeKey, 100), 10, 500);
+
     private readonly TimeSpan _flushInterval = TimeSpan.FromMilliseconds(
         Math.Clamp(ReadInt(configuration, JournalFlushIntervalKey, 250), 50, 2000));
+
+    private long _droppedJournalEntries;
 
     public void TryEnqueue(string direction, string messageType, string payloadJson, string? consumerType)
     {
         if (!_enabled)
+        {
             return;
+        }
 
         var entry = new BusJournalEntry
         {
@@ -55,21 +67,32 @@ public sealed class BusJournalBuffer(
         };
 
         if (!_channel.Writer.TryWrite(entry))
-            LogBusJournalChannelFull(logger, null);
+        {
+            var dropped = Interlocked.Increment(ref _droppedJournalEntries);
+            if (dropped == 1 || dropped % 1_000 == 0)
+            {
+                LogBusJournalChannelFull(logger, dropped, null);
+            }
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_enabled)
+        {
             return;
+        }
 
         var batch = new List<BusJournalEntry>(_batchSize);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 while (batch.Count < _batchSize && _channel.Reader.TryRead(out var entry))
+                {
                     batch.Add(entry);
+                }
 
                 if (batch.Count == 0)
                 {
@@ -91,17 +114,24 @@ public sealed class BusJournalBuffer(
         }
 
         if (batch.Count > 0)
+        {
             await FlushBatchAsync(batch, CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     private async Task FlushBatchAsync(List<BusJournalEntry> batch, CancellationToken ct)
     {
         if (batch.Count == 0)
+        {
             return;
+        }
 
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+
         db.BusJournal.AddRange(batch);
+
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
         batch.Clear();
     }
 
@@ -111,12 +141,14 @@ public sealed class BusJournalBuffer(
     private static bool ReadBool(IConfiguration configuration, string key, bool fallback)
     {
         var raw = configuration[key];
+
         return bool.TryParse(raw, out var parsed) ? parsed : fallback;
     }
 
     private static int ReadInt(IConfiguration configuration, string key, int fallback)
     {
         var raw = configuration[key];
+
         return int.TryParse(raw, out var parsed) ? parsed : fallback;
     }
 }

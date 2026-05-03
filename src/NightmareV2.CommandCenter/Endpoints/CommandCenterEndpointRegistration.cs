@@ -25,6 +25,7 @@ public static class CommandCenterEndpointRegistration
         app.MapToolRestartEndpoints();
         app.MapAssetAdmissionDecisionEndpoints();
         app.MapDataRetentionAdminEndpoints();
+        app.MapHttpArtifactBackfillEndpoints();
 
         app.MapHub<DiscoveryHub>("/hubs/discovery");
 

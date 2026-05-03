@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-
 using NightmareV2.Application.DataRetention;
 using NightmareV2.Infrastructure.Data;
 using NightmareV2.Infrastructure.Observability;
@@ -44,75 +43,157 @@ public sealed class DataRetentionWorker(
 
     public async Task<DataRetentionRunResult> RunOnceAsync(DataRetentionOptions opt, CancellationToken ct)
     {
+        await EnsureArchiveTablesAsync(ct).ConfigureAwait(false);
+
         var result = new DataRetentionRunResult
         {
-            SucceededOutboxDeleted = await DeleteBatchesAsync(
-                "outbox_messages",
-                "id",
-                "state = 'Succeeded' AND updated_at_utc < {0}",
-                DateTimeOffset.UtcNow.AddDays(-opt.SucceededOutboxRetentionDays),
+            SucceededOutboxDeleted = await ArchiveThenDeleteBatchesAsync(
+                tableName: "outbox_messages",
+                archiveTableName: "archived_outbox_messages",
+                idColumn: "id",
+                whereSql: "state = 'Succeeded' AND updated_at_utc < {0}",
+                cutoff: DateTimeOffset.UtcNow.AddDays(-opt.SucceededOutboxRetentionDays),
                 opt,
-                "outbox_messages",
+                metricTableName: "outbox_messages",
                 ct).ConfigureAwait(false),
 
-            FailedOutboxDeleted = await DeleteBatchesAsync(
-                "outbox_messages",
-                "id",
-                "state = 'Failed' AND updated_at_utc < {0}",
-                DateTimeOffset.UtcNow.AddDays(-opt.FailedOutboxRetentionDays),
+            FailedOutboxDeleted = await ArchiveThenDeleteBatchesAsync(
+                tableName: "outbox_messages",
+                archiveTableName: "archived_outbox_messages",
+                idColumn: "id",
+                whereSql: "state = 'Failed' AND updated_at_utc < {0}",
+                cutoff: DateTimeOffset.UtcNow.AddDays(-opt.FailedOutboxRetentionDays),
                 opt,
-                "outbox_messages",
+                metricTableName: "outbox_messages",
                 ct).ConfigureAwait(false),
 
-            DeadLetterOutboxDeleted = await DeleteBatchesAsync(
-                "outbox_messages",
-                "id",
-                "state = 'DeadLetter' AND updated_at_utc < {0}",
-                DateTimeOffset.UtcNow.AddDays(-opt.DeadLetterOutboxRetentionDays),
+            DeadLetterOutboxDeleted = await ArchiveThenDeleteBatchesAsync(
+                tableName: "outbox_messages",
+                archiveTableName: "archived_outbox_messages",
+                idColumn: "id",
+                whereSql: "state = 'DeadLetter' AND updated_at_utc < {0}",
+                cutoff: DateTimeOffset.UtcNow.AddDays(-opt.DeadLetterOutboxRetentionDays),
                 opt,
-                "outbox_messages",
+                metricTableName: "outbox_messages",
                 ct).ConfigureAwait(false),
 
             InboxDeleted = await DeleteBatchesAsync(
-                "inbox_messages",
-                "id",
-                "updated_at_utc < {0}",
-                DateTimeOffset.UtcNow.AddDays(-opt.InboxRetentionDays),
+                tableName: "inbox_messages",
+                idColumn: "id",
+                whereSql: "processed_at_utc < {0}",
+                cutoff: DateTimeOffset.UtcNow.AddDays(-opt.InboxRetentionDays),
                 opt,
-                "inbox_messages",
+                metricTableName: "inbox_messages",
                 ct).ConfigureAwait(false),
 
-            BusJournalDeleted = await DeleteBatchesAsync(
-                "bus_journal",
-                "id",
-                "occurred_at_utc < {0}",
-                DateTimeOffset.UtcNow.AddDays(-opt.BusJournalRetentionDays),
+            BusJournalDeleted = await ArchiveThenDeleteBatchesAsync(
+                tableName: "bus_journal",
+                archiveTableName: "archived_bus_journal",
+                idColumn: "id",
+                whereSql: "occurred_at_utc < {0}",
+                cutoff: DateTimeOffset.UtcNow.AddDays(-opt.BusJournalRetentionDays),
                 opt,
-                "bus_journal",
+                metricTableName: "bus_journal",
                 ct).ConfigureAwait(false),
 
-            HttpQueueDeleted = await DeleteBatchesAsync(
-                "http_request_queue",
-                "id",
-                "state IN ('Succeeded', 'Failed') AND completed_at_utc IS NOT NULL AND completed_at_utc < {0}",
-                DateTimeOffset.UtcNow.AddDays(-opt.CompletedHttpQueueRetentionDays),
+            HttpQueueDeleted = await ArchiveThenDeleteBatchesAsync(
+                tableName: "http_request_queue",
+                archiveTableName: "archived_http_request_queue",
+                idColumn: "id",
+                whereSql: "state IN ('Succeeded', 'Failed') AND completed_at_utc IS NOT NULL AND completed_at_utc < {0}",
+                cutoff: DateTimeOffset.UtcNow.AddDays(-opt.CompletedHttpQueueRetentionDays),
                 opt,
-                "http_request_queue",
+                metricTableName: "http_request_queue",
                 ct).ConfigureAwait(false),
 
             CloudUsageDeleted = await DeleteBatchesAsync(
-                "cloud_resource_usage_samples",
-                "id",
-                "sampled_at_utc < {0}",
-                DateTimeOffset.UtcNow.AddDays(-opt.CloudUsageRetentionDays),
+                tableName: "cloud_resource_usage_samples",
+                idColumn: "id",
+                whereSql: "sampled_at_utc < {0}",
+                cutoff: DateTimeOffset.UtcNow.AddDays(-opt.CloudUsageRetentionDays),
                 opt,
-                "cloud_resource_usage_samples",
+                metricTableName: "cloud_resource_usage_samples",
                 ct).ConfigureAwait(false),
 
             CompletedAtUtc = DateTimeOffset.UtcNow
         };
 
         return result;
+    }
+
+    private async Task EnsureArchiveTablesAsync(CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS archived_outbox_messages (
+                archived_at_utc timestamptz NOT NULL,
+                archive_reason varchar(64) NOT NULL,
+                row_json jsonb NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS archived_bus_journal (
+                archived_at_utc timestamptz NOT NULL,
+                archive_reason varchar(64) NOT NULL,
+                row_json jsonb NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS archived_http_request_queue (
+                archived_at_utc timestamptz NOT NULL,
+                archive_reason varchar(64) NOT NULL,
+                row_json jsonb NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_archived_outbox_messages_archived_at
+                ON archived_outbox_messages (archived_at_utc);
+
+            CREATE INDEX IF NOT EXISTS ix_archived_bus_journal_archived_at
+                ON archived_bus_journal (archived_at_utc);
+
+            CREATE INDEX IF NOT EXISTS ix_archived_http_request_queue_archived_at
+                ON archived_http_request_queue (archived_at_utc);
+            """,
+            ct).ConfigureAwait(false);
+    }
+
+    private async Task<int> ArchiveThenDeleteBatchesAsync(
+        string tableName,
+        string archiveTableName,
+        string idColumn,
+        string whereSql,
+        DateTimeOffset cutoff,
+        DataRetentionOptions opt,
+        string metricTableName,
+        CancellationToken ct)
+    {
+        var total = 0;
+
+        for (var i = 0; i < opt.MaxBatchesPerRun; i++)
+        {
+            var archived = await ArchiveBatchAsync(tableName, archiveTableName, idColumn, whereSql, cutoff, opt.BatchSize, ct)
+                .ConfigureAwait(false);
+
+            if (archived == 0)
+                break;
+
+            var deleted = await DeleteBatchAsync(tableName, idColumn, whereSql, cutoff, opt.BatchSize, ct)
+                .ConfigureAwait(false);
+
+            total += deleted;
+
+            ArgusMeters.DataRetentionArchivedRows.Add(
+                archived,
+                new KeyValuePair<string, object?>("table", metricTableName));
+
+            ArgusMeters.DataRetentionDeletedRows.Add(
+                deleted,
+                new KeyValuePair<string, object?>("table", metricTableName));
+
+            if (opt.DelayBetweenBatchesMs > 0)
+                await Task.Delay(opt.DelayBetweenBatchesMs, ct).ConfigureAwait(false);
+        }
+
+        return total;
     }
 
     private async Task<int> DeleteBatchesAsync(
@@ -147,6 +228,33 @@ public sealed class DataRetentionWorker(
         return total;
     }
 
+    private async Task<int> ArchiveBatchAsync(
+        string tableName,
+        string archiveTableName,
+        string idColumn,
+        string whereSql,
+        DateTimeOffset cutoff,
+        int batchSize,
+        CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var sql =
+            $"""
+            WITH candidate AS (
+                SELECT *
+                FROM {tableName}
+                WHERE {whereSql}
+                ORDER BY {idColumn}
+                LIMIT {batchSize}
+            )
+            INSERT INTO {archiveTableName} (archived_at_utc, archive_reason, row_json)
+            SELECT now(), 'retention', to_jsonb(candidate)
+            FROM candidate;
+            """;
+
+        return await db.Database.ExecuteSqlRawAsync(sql, new object[] { cutoff }, ct).ConfigureAwait(false);
+    }
+
     private async Task<int> DeleteBatchAsync(
         string tableName,
         string idColumn,
@@ -156,8 +264,8 @@ public sealed class DataRetentionWorker(
         CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
-
-        var sql = $"""
+        var sql =
+            $"""
             DELETE FROM {tableName}
             WHERE {idColumn} IN (
                 SELECT {idColumn}

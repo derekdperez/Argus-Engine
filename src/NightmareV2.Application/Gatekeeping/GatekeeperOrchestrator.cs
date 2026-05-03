@@ -1,14 +1,15 @@
 using MassTransit;
-using NightmareV2.Application.Events;
 using Microsoft.Extensions.Logging;
+using NightmareV2.Application.Events;
 using NightmareV2.Application.Workers;
 using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
+using NightmareV2.Domain.Entities;
 
 namespace NightmareV2.Application.Gatekeeping;
 
 /// <summary>
-/// Asset Gatekeeper: Raw admissions are normalized, deduped, persisted, then re-published as Indexed for workers.
+/// Asset Gatekeeper: Raw admissions are normalized, deduped, persisted, audited, then re-published as Indexed for workers.
 /// </summary>
 public sealed class GatekeeperOrchestrator(
     IAssetCanonicalizer canonicalizer,
@@ -17,6 +18,7 @@ public sealed class GatekeeperOrchestrator(
     IAssetPersistence persistence,
     IEventOutbox outbox,
     IWorkerToggleReader workerToggles,
+    IAssetAdmissionDecisionWriter decisions,
     ILogger<GatekeeperOrchestrator> logger)
 {
     private static readonly Action<ILogger, string, Exception?> GatekeeperDisabled =
@@ -50,22 +52,73 @@ public sealed class GatekeeperOrchestrator(
 
         if (!await workerToggles.IsWorkerEnabledAsync(WorkerKeys.Gatekeeper, cancellationToken).ConfigureAwait(false))
         {
+            await TryWriteDecisionAsync(
+                Decision(
+                    message,
+                    null,
+                    null,
+                    AssetAdmissionDecisionKind.WorkerDisabled,
+                    AssetAdmissionReasonCode.GatekeeperDisabled,
+                    "Gatekeeper worker toggle is disabled."),
+                cancellationToken).ConfigureAwait(false);
+
             LogGatekeeperDisabled(logger, message.RawValue);
             return;
         }
 
         if (message.Depth > message.GlobalMaxDepth)
         {
+            await TryWriteDecisionAsync(
+                Decision(
+                    message,
+                    null,
+                    null,
+                    AssetAdmissionDecisionKind.DepthExceeded,
+                    AssetAdmissionReasonCode.MaxDepthExceeded,
+                    $"Depth {message.Depth} exceeded max depth {message.GlobalMaxDepth}."),
+                cancellationToken).ConfigureAwait(false);
+
             LogDroppingDepthExceeded(logger, message.RawValue, message.Depth, message.GlobalMaxDepth);
             return;
         }
 
-        var canonical = canonicalizer.Canonicalize(message);
+        CanonicalAsset canonical;
+        try
+        {
+            canonical = canonicalizer.Canonicalize(message);
+        }
+        catch (Exception ex)
+        {
+            await TryWriteDecisionAsync(
+                Decision(
+                    message,
+                    null,
+                    null,
+                    AssetAdmissionDecisionKind.Invalid,
+                    AssetAdmissionReasonCode.CanonicalizationFailed,
+                    ex.Message),
+                cancellationToken).ConfigureAwait(false);
+
+            logger.LogWarning(ex, "Canonicalization failed for raw asset {Raw}.", message.RawValue);
+            return;
+        }
+
         var hasRelationshipContext = message.ParentAssetId is { } parentAssetId && parentAssetId != Guid.Empty;
         var reserved = await deduplicator.TryReserveAsync(message.TargetId, canonical.CanonicalKey, cancellationToken)
             .ConfigureAwait(false);
+
         if (!reserved && !hasRelationshipContext)
         {
+            await TryWriteDecisionAsync(
+                Decision(
+                    message,
+                    null,
+                    canonical.CanonicalKey,
+                    AssetAdmissionDecisionKind.Duplicate,
+                    AssetAdmissionReasonCode.DuplicateCanonicalKey,
+                    "Canonical key already reserved or persisted."),
+                cancellationToken).ConfigureAwait(false);
+
             LogDedupeHit(logger, canonical.CanonicalKey);
             return;
         }
@@ -74,27 +127,80 @@ public sealed class GatekeeperOrchestrator(
         {
             if (!scope.IsInScope(message, canonical))
             {
+                await TryWriteDecisionAsync(
+                    Decision(
+                        message,
+                        null,
+                        canonical.CanonicalKey,
+                        AssetAdmissionDecisionKind.OutOfScope,
+                        AssetAdmissionReasonCode.ScopeRejected,
+                        "Scope evaluator rejected this asset."),
+                    cancellationToken).ConfigureAwait(false);
+
                 LogOutOfScope(logger, canonical.CanonicalKey);
+
                 if (reserved)
-                    await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false);
+                    await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken)
+                        .ConfigureAwait(false);
+
                 return;
             }
 
-            var (assetId, inserted) = await persistence.PersistNewAssetAsync(message, canonical, cancellationToken).ConfigureAwait(false);
+            var (assetId, inserted) = await persistence.PersistNewAssetAsync(message, canonical, cancellationToken)
+                .ConfigureAwait(false);
+
             if (assetId == Guid.Empty)
             {
+                await TryWriteDecisionAsync(
+                    Decision(
+                        message,
+                        null,
+                        canonical.CanonicalKey,
+                        AssetAdmissionDecisionKind.PersistenceSkipped,
+                        AssetAdmissionReasonCode.PersistenceReturnedEmptyAssetId,
+                        "Persistence returned empty asset id."),
+                    cancellationToken).ConfigureAwait(false);
+
                 if (reserved)
-                    await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false);
+                    await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken)
+                        .ConfigureAwait(false);
+
                 return;
             }
 
             if (!inserted)
             {
+                await TryWriteDecisionAsync(
+                    Decision(
+                        message,
+                        assetId,
+                        canonical.CanonicalKey,
+                        AssetAdmissionDecisionKind.Duplicate,
+                        hasRelationshipContext
+                            ? AssetAdmissionReasonCode.DuplicateWithRelationshipOnly
+                            : AssetAdmissionReasonCode.DuplicateCanonicalKey,
+                        hasRelationshipContext
+                            ? "Existing asset updated only with relationship context; duplicate Indexed event suppressed."
+                            : "Existing asset found during persistence; duplicate Indexed event suppressed."),
+                    cancellationToken).ConfigureAwait(false);
+
                 // Existing assets may still receive new graph edges. Do not publish duplicate Indexed events.
                 if (reserved)
-                    await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false);
+                    await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken)
+                        .ConfigureAwait(false);
+
                 return;
             }
+
+            await TryWriteDecisionAsync(
+                Decision(
+                    message,
+                    assetId,
+                    canonical.CanonicalKey,
+                    AssetAdmissionDecisionKind.Accepted,
+                    AssetAdmissionReasonCode.AcceptedNewAsset,
+                    "New asset accepted and indexed."),
+                cancellationToken).ConfigureAwait(false);
 
             await PublishIndexedAsync(message, canonical, assetId, cancellationToken).ConfigureAwait(false);
 
@@ -102,29 +208,86 @@ public sealed class GatekeeperOrchestrator(
                 && await workerToggles.IsWorkerEnabledAsync(WorkerKeys.PortScan, cancellationToken).ConfigureAwait(false))
             {
                 var causation = message.EventId == Guid.Empty ? message.CorrelationId : message.EventId;
+
                 await outbox.EnqueueAsync(
-                        new PortScanRequested(
-                            message.TargetId,
-                            message.TargetRootDomain,
-                            message.GlobalMaxDepth,
-                            message.Depth,
-                            canonical.NormalizedDisplay,
-                            assetId,
-                            message.CorrelationId,
-                            EventId: NewId.NextGuid(),
-                            CausationId: causation,
-                            OccurredAtUtc: DateTimeOffset.UtcNow,
-                            Producer: "gatekeeper"),
-                        cancellationToken)
+                    new PortScanRequested(
+                        message.TargetId,
+                        message.TargetRootDomain,
+                        message.GlobalMaxDepth,
+                        message.Depth,
+                        canonical.NormalizedDisplay,
+                        assetId,
+                        message.CorrelationId,
+                        EventId: NewId.NextGuid(),
+                        CausationId: causation,
+                        OccurredAtUtc: DateTimeOffset.UtcNow,
+                        Producer: "gatekeeper"),
+                    cancellationToken)
                     .ConfigureAwait(false);
             }
         }
-        catch
+        catch (Exception ex)
         {
+            await TryWriteDecisionAsync(
+                Decision(
+                    message,
+                    null,
+                    canonical.CanonicalKey,
+                    AssetAdmissionDecisionKind.Failed,
+                    AssetAdmissionReasonCode.ExceptionDuringAdmission,
+                    ex.Message),
+                cancellationToken).ConfigureAwait(false);
+
             if (reserved)
-                await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken).ConfigureAwait(false);
+                await deduplicator.ReleaseAsync(message.TargetId, canonical.CanonicalKey, cancellationToken)
+                    .ConfigureAwait(false);
+
             throw;
         }
+    }
+
+    private async Task TryWriteDecisionAsync(AssetAdmissionDecisionInput decision, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await decisions.WriteAsync(decision, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "Unable to write asset admission decision {Decision}/{ReasonCode} for target {TargetId} raw {RawValue}.",
+                decision.Decision,
+                decision.ReasonCode,
+                decision.TargetId,
+                decision.RawValue);
+        }
+    }
+
+    private static AssetAdmissionDecisionInput Decision(
+        AssetDiscovered message,
+        Guid? assetId,
+        string? canonicalKey,
+        string decision,
+        string reasonCode,
+        string? reasonDetail)
+    {
+        return new AssetAdmissionDecisionInput(
+            message.TargetId,
+            assetId,
+            message.RawValue,
+            canonicalKey,
+            message.Kind.ToString(),
+            decision,
+            reasonCode,
+            reasonDetail,
+            message.DiscoveredBy,
+            message.DiscoveryContext,
+            message.Depth,
+            message.GlobalMaxDepth,
+            message.CorrelationId,
+            message.CausationId == Guid.Empty ? null : message.CausationId,
+            message.EventId == Guid.Empty ? null : message.EventId);
     }
 
     private static void LogGatekeeperDisabled(ILogger logger, string raw) =>
@@ -148,6 +311,7 @@ public sealed class GatekeeperOrchestrator(
         var rawForWorkers = canonical.NormalizedDisplay;
         if (message.Kind is AssetKind.Subdomain or AssetKind.Domain)
             rawForWorkers = canonical.NormalizedDisplay.Trim().TrimEnd('/');
+
         var causation = message.EventId == Guid.Empty ? message.CorrelationId : message.EventId;
 
         return outbox.EnqueueAsync(

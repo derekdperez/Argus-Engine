@@ -76,10 +76,21 @@ public static class DependencyInjection
         services.AddSingleton<ITargetScopeEvaluator, DnsTargetScopeEvaluator>();
         services.AddScoped<IAssetAdmissionDecisionWriter, EfAssetAdmissionDecisionWriter>();
         services.AddHostedService<AssetAdmissionDecisionSchemaInitializer>();
+        services.AddHostedService<HttpRequestQueueArtifactSchemaInitializer>();
 
         services.AddScoped<IAssetRelationshipValidator, EfAssetRelationshipValidator>();
         services.AddScoped<IAssetGraphService, EfAssetGraphService>();
         services.AddScoped<IAssetPersistence, EfAssetPersistence>();
+                services.AddOptions<HighValueScanOptions>()
+            .Bind(configuration.GetArgusSection("HighValueScan"))
+            .Validate(o => o.MaxResponseBodyScanBytes is >= 1024 and <= 10_000_000)
+            .ValidateOnStart();
+
+        services.AddOptions<TechnologyIdentificationScanOptions>()
+            .Bind(configuration.GetArgusSection("TechnologyIdentificationScan"))
+            .Validate(o => o.MaxResponseBodyScanBytes is >= 1024 and <= 10_000_000)
+            .ValidateOnStart();
+
         services.AddScoped<IHighValueFindingWriter, EfHighValueFindingWriter>();
         services.AddScoped<IAssetTagService, EfAssetTagService>();
         services.AddScoped<IWorkerToggleReader, EfWorkerToggleReader>();

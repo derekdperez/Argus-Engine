@@ -7,12 +7,14 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using NightmareV2.Application.Assets;
 using NightmareV2.Application.Events;
+using NightmareV2.Application.FileStore;
 using NightmareV2.Application.Gatekeeping;
 using NightmareV2.Application.Workers;
 using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure.Data;
+using NightmareV2.Infrastructure.Observability;
 
 namespace NightmareV2.Workers.Spider;
 
@@ -21,12 +23,15 @@ public sealed class HttpRequestQueueWorker(
     IHttpClientFactory httpFactory,
     IServiceScopeFactory scopeFactory,
     IHttpRequestQueueStateMachine stateMachine,
+    IHttpArtifactStore artifactStore,
     ILogger<HttpRequestQueueWorker> logger) : BackgroundService
 {
     private const int MaxLinksPerAsset = 500;
     private const int MaxBodyCaptureChars = 200_000;
     private const int MaxRedirects = 10;
+
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
+
     private readonly string _workerId = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
     private readonly AdaptiveConcurrencyController _adaptiveConcurrency = new();
 
@@ -45,6 +50,7 @@ public sealed class HttpRequestQueueWorker(
                 }
 
                 await ReapExpiredLocksAsync(stoppingToken).ConfigureAwait(false);
+
                 var lease = await TryLeaseNextAsync(stoppingToken).ConfigureAwait(false);
                 if (lease is null)
                 {
@@ -73,7 +79,6 @@ public sealed class HttpRequestQueueWorker(
         }
     }
 
-
     private async Task<bool> IsSpiderEnabledAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
@@ -87,9 +92,7 @@ public sealed class HttpRequestQueueWorker(
         var now = DateTimeOffset.UtcNow;
 
         await db.HttpRequestQueue
-            .Where(q => q.State == HttpRequestQueueState.InFlight
-                && q.LockedUntilUtc < now
-                && q.AttemptCount < q.MaxAttempts)
+            .Where(q => q.State == HttpRequestQueueState.InFlight && q.LockedUntilUtc < now && q.AttemptCount < q.MaxAttempts)
             .ExecuteUpdateAsync(
                 s => s
                     .SetProperty(q => q.State, HttpRequestQueueState.Retry)
@@ -102,9 +105,7 @@ public sealed class HttpRequestQueueWorker(
             .ConfigureAwait(false);
 
         await db.HttpRequestQueue
-            .Where(q => q.State == HttpRequestQueueState.InFlight
-                && q.LockedUntilUtc < now
-                && q.AttemptCount >= q.MaxAttempts)
+            .Where(q => q.State == HttpRequestQueueState.InFlight && q.LockedUntilUtc < now && q.AttemptCount >= q.MaxAttempts)
             .ExecuteUpdateAsync(
                 s => s
                     .SetProperty(q => q.State, HttpRequestQueueState.Failed)
@@ -123,9 +124,11 @@ public sealed class HttpRequestQueueWorker(
         var now = DateTimeOffset.UtcNow;
         var oneMinuteAgo = now.AddMinutes(-1);
         var lockUntil = now.AddMinutes(5);
+
         var settings = await db.HttpRequestQueueSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == 1, ct)
             .ConfigureAwait(false) ?? new HttpRequestQueueSettings();
+
         if (!settings.Enabled)
             return null;
 
@@ -136,76 +139,76 @@ public sealed class HttpRequestQueueWorker(
             await conn.OpenAsync(ct).ConfigureAwait(false);
 
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-                          WITH candidate AS (
-                              SELECT q.*
-                              FROM http_request_queue q
-                              JOIN recon_targets t ON t."Id" = q.target_id
-                              WHERE @settings_enabled = true
-                                AND (
-                                    (q.state IN ('Queued', 'Retry') AND q.next_attempt_at_utc <= @now)
-                                    OR (q.state = 'InFlight' AND q.locked_until_utc < @now)
-                                )
-                                AND q.attempt_count < q.max_attempts
-                                AND (
-                                    SELECT COUNT(*)
-                                    FROM http_request_queue running
-                                    WHERE running.state = 'InFlight'
-                                      AND running.locked_until_utc > @now
-                                ) < LEAST(@max_concurrency, @effective_max_concurrency)
-                                AND (
-                                    SELECT COUNT(*)
-                                    FROM http_request_queue recent_global
-                                    WHERE recent_global.started_at_utc IS NOT NULL
-                                      AND recent_global.started_at_utc >= @one_minute_ago
-                                ) < @global_requests_per_minute
-                                AND (
-                                    SELECT COUNT(*)
-                                    FROM http_request_queue recent_domain
-                                    WHERE recent_domain.domain_key = q.domain_key
-                                      AND recent_domain.started_at_utc IS NOT NULL
-                                      AND recent_domain.started_at_utc >= @one_minute_ago
-                                ) < @per_domain_requests_per_minute
-                              ORDER BY
-                                  q.priority DESC,
-                                  CASE
-                                      WHEN lower(q.domain_key) = lower(t."RootDomain") THEN 0
-                                      WHEN lower(q.domain_key) LIKE '%.' || lower(t."RootDomain") THEN 1
-                                      ELSE 2
-                                  END ASC,
-                                  CASE
-                                      WHEN lower(q.domain_key) = lower(t."RootDomain") THEN 0
-                                      WHEN lower(q.domain_key) LIKE '%.' || lower(t."RootDomain") THEN
-                                          array_length(
-                                              string_to_array(
-                                                  left(lower(q.domain_key), GREATEST(length(q.domain_key) - length(t."RootDomain") - 1, 0)),
-                                                  '.'),
-                                              1)
-                                      ELSE array_length(string_to_array(lower(q.domain_key), '.'), 1)
-                                  END ASC,
-                                  CASE
-                                      WHEN lower(q.domain_key) = lower(t."RootDomain") THEN 0
-                                      WHEN lower(q.domain_key) LIKE '%.' || lower(t."RootDomain") THEN
-                                          length(left(lower(q.domain_key), GREATEST(length(q.domain_key) - length(t."RootDomain") - 1, 0)))
-                                      ELSE length(q.domain_key)
-                                  END ASC,
-                                  q.next_attempt_at_utc ASC,
-                                  q.created_at_utc ASC
-                              FOR UPDATE SKIP LOCKED
-                              LIMIT 1
-                          )
-                          UPDATE http_request_queue q
-                          SET state = 'InFlight',
-                              locked_by = @worker_id,
-                              locked_until_utc = @lock_until,
-                              started_at_utc = @now,
-                              updated_at_utc = @now,
-                              attempt_count = q.attempt_count + 1,
-                              last_error = NULL
-                          FROM candidate
-                          WHERE q.id = candidate.id
-                          RETURNING q.*;
-                          """;
+        cmd.CommandText =
+            """
+            WITH candidate AS (
+                SELECT q.*
+                FROM http_request_queue q
+                JOIN recon_targets t ON t."Id" = q.target_id
+                WHERE @settings_enabled = true
+                  AND (
+                        (q.state IN ('Queued', 'Retry') AND q.next_attempt_at_utc <= @now)
+                     OR (q.state = 'InFlight' AND q.locked_until_utc < @now)
+                  )
+                  AND q.attempt_count < q.max_attempts
+                  AND (
+                        SELECT COUNT(*)
+                        FROM http_request_queue running
+                        WHERE running.state = 'InFlight'
+                          AND running.locked_until_utc > @now
+                  ) < LEAST(@max_concurrency, @effective_max_concurrency)
+                  AND (
+                        SELECT COUNT(*)
+                        FROM http_request_queue recent_global
+                        WHERE recent_global.started_at_utc IS NOT NULL
+                          AND recent_global.started_at_utc >= @one_minute_ago
+                  ) < @global_requests_per_minute
+                  AND (
+                        SELECT COUNT(*)
+                        FROM http_request_queue recent_domain
+                        WHERE recent_domain.domain_key = q.domain_key
+                          AND recent_domain.started_at_utc IS NOT NULL
+                          AND recent_domain.started_at_utc >= @one_minute_ago
+                  ) < @per_domain_requests_per_minute
+                ORDER BY
+                    q.priority DESC,
+                    CASE
+                        WHEN lower(q.domain_key) = lower(t."RootDomain") THEN 0
+                        WHEN lower(q.domain_key) LIKE '%.' || lower(t."RootDomain") THEN 1
+                        ELSE 2
+                    END ASC,
+                    CASE
+                        WHEN lower(q.domain_key) = lower(t."RootDomain") THEN 0
+                        WHEN lower(q.domain_key) LIKE '%.' || lower(t."RootDomain") THEN array_length(
+                            string_to_array(
+                                left(lower(q.domain_key), GREATEST(length(q.domain_key) - length(t."RootDomain") - 1, 0)),
+                                '.'),
+                            1)
+                        ELSE array_length(string_to_array(lower(q.domain_key), '.'), 1)
+                    END ASC,
+                    CASE
+                        WHEN lower(q.domain_key) = lower(t."RootDomain") THEN 0
+                        WHEN lower(q.domain_key) LIKE '%.' || lower(t."RootDomain") THEN length(left(lower(q.domain_key), GREATEST(length(q.domain_key) - length(t."RootDomain") - 1, 0)))
+                        ELSE length(q.domain_key)
+                    END ASC,
+                    q.next_attempt_at_utc ASC,
+                    q.created_at_utc ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+            )
+            UPDATE http_request_queue q
+            SET state = 'InFlight',
+                locked_by = @worker_id,
+                locked_until_utc = @lock_until,
+                started_at_utc = @now,
+                updated_at_utc = @now,
+                attempt_count = q.attempt_count + 1,
+                last_error = NULL
+            FROM candidate
+            WHERE q.id = candidate.id
+            RETURNING q.*;
+            """;
+
         AddParameter(cmd, "now", now);
         AddParameter(cmd, "one_minute_ago", oneMinuteAgo);
         AddParameter(cmd, "worker_id", _workerId);
@@ -231,45 +234,58 @@ public sealed class HttpRequestQueueWorker(
         cmd.Parameters.Add(p);
     }
 
-    private static HttpRequestQueueItem MapQueueItem(DbDataReader reader) =>
-        new()
-        {
-            Id = reader.GetGuid(reader.GetOrdinal("id")),
-            AssetId = reader.GetGuid(reader.GetOrdinal("asset_id")),
-            TargetId = reader.GetGuid(reader.GetOrdinal("target_id")),
-            AssetKind = (AssetKind)reader.GetInt32(reader.GetOrdinal("asset_kind")),
-            Method = reader.GetString(reader.GetOrdinal("method")),
-            RequestUrl = reader.GetString(reader.GetOrdinal("request_url")),
-            DomainKey = reader.GetString(reader.GetOrdinal("domain_key")),
-            State = reader.GetString(reader.GetOrdinal("state")),
-            Priority = reader.GetInt32(reader.GetOrdinal("priority")),
-            AttemptCount = reader.GetInt32(reader.GetOrdinal("attempt_count")),
-            MaxAttempts = reader.GetInt32(reader.GetOrdinal("max_attempts")),
-            CreatedAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at_utc")),
-            UpdatedAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at_utc")),
-            NextAttemptAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("next_attempt_at_utc")),
-            LockedBy = ReadNullableString(reader, "locked_by"),
-            LockedUntilUtc = ReadNullableDateTimeOffset(reader, "locked_until_utc"),
-            StartedAtUtc = ReadNullableDateTimeOffset(reader, "started_at_utc"),
-            CompletedAtUtc = ReadNullableDateTimeOffset(reader, "completed_at_utc"),
-            DurationMs = ReadNullableInt64(reader, "duration_ms"),
-            LastHttpStatus = ReadNullableInt32(reader, "last_http_status"),
-            LastError = ReadNullableString(reader, "last_error"),
-            RequestHeadersJson = ReadNullableString(reader, "request_headers_json"),
-            RequestBody = ReadNullableString(reader, "request_body"),
-            ResponseHeadersJson = ReadNullableString(reader, "response_headers_json"),
-            ResponseBody = ReadNullableString(reader, "response_body"),
-            ResponseContentType = ReadNullableString(reader, "response_content_type"),
-            ResponseContentLength = ReadNullableInt64(reader, "response_content_length"),
-            FinalUrl = ReadNullableString(reader, "final_url"),
-            RedirectCount = ReadNullableInt32(reader, "redirect_count") ?? 0,
-            RedirectChainJson = ReadNullableString(reader, "redirect_chain_json"),
-        };
+    private static HttpRequestQueueItem MapQueueItem(DbDataReader reader) => new()
+    {
+        Id = reader.GetGuid(reader.GetOrdinal("id")),
+        AssetId = reader.GetGuid(reader.GetOrdinal("asset_id")),
+        TargetId = reader.GetGuid(reader.GetOrdinal("target_id")),
+        AssetKind = (AssetKind)reader.GetInt32(reader.GetOrdinal("asset_kind")),
+        Method = reader.GetString(reader.GetOrdinal("method")),
+        RequestUrl = reader.GetString(reader.GetOrdinal("request_url")),
+        DomainKey = reader.GetString(reader.GetOrdinal("domain_key")),
+        State = reader.GetString(reader.GetOrdinal("state")),
+        Priority = reader.GetInt32(reader.GetOrdinal("priority")),
+        AttemptCount = reader.GetInt32(reader.GetOrdinal("attempt_count")),
+        MaxAttempts = reader.GetInt32(reader.GetOrdinal("max_attempts")),
+        CreatedAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at_utc")),
+        UpdatedAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at_utc")),
+        NextAttemptAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("next_attempt_at_utc")),
+        LockedBy = ReadNullableString(reader, "locked_by"),
+        LockedUntilUtc = ReadNullableDateTimeOffset(reader, "locked_until_utc"),
+        StartedAtUtc = ReadNullableDateTimeOffset(reader, "started_at_utc"),
+        CompletedAtUtc = ReadNullableDateTimeOffset(reader, "completed_at_utc"),
+        DurationMs = ReadNullableInt64(reader, "duration_ms"),
+        LastHttpStatus = ReadNullableInt32(reader, "last_http_status"),
+        LastError = ReadNullableString(reader, "last_error"),
+        RequestHeadersJson = ReadNullableString(reader, "request_headers_json"),
+        RequestBody = ReadNullableString(reader, "request_body"),
+        ResponseHeadersJson = ReadNullableString(reader, "response_headers_json"),
+        ResponseBody = ReadNullableString(reader, "response_body"),
+        ResponseContentType = ReadNullableString(reader, "response_content_type"),
+        ResponseContentLength = ReadNullableInt64(reader, "response_content_length"),
+        FinalUrl = ReadNullableString(reader, "final_url"),
+        RedirectCount = ReadNullableInt32(reader, "redirect_count") ?? 0,
+        RedirectChainJson = ReadNullableString(reader, "redirect_chain_json"),
+        RequestHeadersBlobId = ReadNullableGuid(reader, "request_headers_blob_id"),
+        RequestBodyBlobId = ReadNullableGuid(reader, "request_body_blob_id"),
+        ResponseHeadersBlobId = ReadNullableGuid(reader, "response_headers_blob_id"),
+        ResponseBodyBlobId = ReadNullableGuid(reader, "response_body_blob_id"),
+        RedirectChainBlobId = ReadNullableGuid(reader, "redirect_chain_blob_id"),
+        ResponseBodySha256 = ReadNullableString(reader, "response_body_sha256"),
+        ResponseBodyPreview = ReadNullableString(reader, "response_body_preview"),
+        ResponseBodyTruncated = ReadBoolean(reader, "response_body_truncated")
+    };
 
     private static string? ReadNullableString(DbDataReader reader, string name)
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private static Guid? ReadNullableGuid(DbDataReader reader, string name)
+    {
+        var ordinal = reader.GetOrdinal(name);
+        return reader.IsDBNull(ordinal) ? null : reader.GetGuid(ordinal);
     }
 
     private static int? ReadNullableInt32(DbDataReader reader, string name)
@@ -290,16 +306,58 @@ public sealed class HttpRequestQueueWorker(
         return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateTimeOffset>(ordinal);
     }
 
+    private static bool ReadBoolean(DbDataReader reader, string name)
+    {
+        var ordinal = reader.GetOrdinal(name);
+        return !reader.IsDBNull(ordinal) && reader.GetBoolean(ordinal);
+    }
+
     private async Task ProcessLeaseAsync(HttpRequestQueueItem item, CancellationToken ct)
+    {
+        using var activity = ArgusTracing.Source.StartActivity("http_queue.process_item");
+        activity?.SetTag("argus.queue_item_id", item.Id);
+        activity?.SetTag("argus.asset_id", item.AssetId);
+        activity?.SetTag("argus.target_id", item.TargetId);
+        activity?.SetTag("argus.worker", WorkerKeys.Spider);
+        activity?.SetTag("http.url", item.RequestUrl);
+
+        var started = Stopwatch.GetTimestamp();
+
+        ArgusMeters.ActiveWorkerLeases.Add(
+            1,
+            new KeyValuePair<string, object?>("worker", WorkerKeys.Spider));
+
+        try
+        {
+            await ProcessLeaseCoreAsync(item, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
+        finally
+        {
+            ArgusMeters.ActiveWorkerLeases.Add(
+                -1,
+                new KeyValuePair<string, object?>("worker", WorkerKeys.Spider));
+
+            ArgusMeters.WorkerLoopDurationMs.Record(
+                Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                new KeyValuePair<string, object?>("worker", WorkerKeys.Spider));
+        }
+    }
+
+    private async Task ProcessLeaseCoreAsync(HttpRequestQueueItem item, CancellationToken ct)
     {
         HttpRequestQueueSettings settings;
         StoredAsset? asset;
+
         await using (var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false))
         {
             settings = await db.HttpRequestQueueSettings.AsNoTracking()
                 .FirstOrDefaultAsync(s => s.Id == 1, ct)
-                .ConfigureAwait(false)
-                ?? new HttpRequestQueueSettings();
+                .ConfigureAwait(false) ?? new HttpRequestQueueSettings();
 
             asset = await db.Assets.AsNoTracking()
                 .Include(a => a.Target)
@@ -320,6 +378,21 @@ public sealed class HttpRequestQueueWorker(
         try
         {
             var snapshot = await SendAsync(item, timeoutCts.Token).ConfigureAwait(false);
+
+            ArgusMeters.HttpRequestsCompleted.Add(
+                1,
+                new KeyValuePair<string, object?>("status_code", snapshot.StatusCode),
+                new KeyValuePair<string, object?>("worker", WorkerKeys.Spider));
+
+            ArgusMeters.HttpFetchDurationMs.Record(
+                snapshot.DurationMs,
+                new KeyValuePair<string, object?>("status_code", snapshot.StatusCode),
+                new KeyValuePair<string, object?>("worker", WorkerKeys.Spider));
+
+            Activity.Current?.SetTag("http.status_code", snapshot.StatusCode);
+            Activity.Current?.SetTag("argus.final_url", snapshot.FinalUrl);
+            Activity.Current?.SetTag("argus.redirect_count", snapshot.RedirectCount);
+
             if (ShouldQueueRetry((HttpStatusCode)snapshot.StatusCode) && item.AttemptCount < item.MaxAttempts)
             {
                 await SaveRetryResponseAsync(item, snapshot, $"Transient HTTP {snapshot.StatusCode}; retry scheduled.", ct)
@@ -330,13 +403,16 @@ public sealed class HttpRequestQueueWorker(
             var terminalState = ShouldQueueRetry((HttpStatusCode)snapshot.StatusCode)
                 ? HttpRequestQueueState.Failed
                 : HttpRequestQueueState.Succeeded;
-            await SaveResponseAsync(item.Id, snapshot, terminalState, null, terminal: true, ct).ConfigureAwait(false);
+
+            var persistedSnapshot = await SaveResponseAsync(item.Id, snapshot, terminalState, null, terminal: true, ct)
+                .ConfigureAwait(false);
+
             _adaptiveConcurrency.ReportResult(terminalState == HttpRequestQueueState.Succeeded);
 
             using (var scope = scopeFactory.CreateScope())
             {
                 var persistence = scope.ServiceProvider.GetRequiredService<IAssetPersistence>();
-                await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, Guid.Empty, ct).ConfigureAwait(false);
+                await persistence.ConfirmUrlAssetAsync(item.AssetId, persistedSnapshot, Guid.Empty, ct).ConfigureAwait(false);
             }
 
             if (snapshot.StatusCode is >= 200 and < 300 && !UrlFetchClassifier.LooksLikeSoft404(snapshot))
@@ -373,7 +449,7 @@ public sealed class HttpRequestQueueWorker(
         for (;;)
         {
             using var request = new HttpRequestMessage(method, currentUrl);
-            request.Headers.UserAgent.ParseAdd("NightmareV2/1.0");
+            request.Headers.UserAgent.ParseAdd("ArgusEngine/1.0 NightmareV2-Compatible/1.0");
             reqHeaders = HeadersToDict(request.Headers);
 
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
@@ -402,6 +478,7 @@ public sealed class HttpRequestQueueWorker(
 
             var truncatedBody = await BoundedHttpContentReader.ReadAsStringAsync(response.Content, MaxBodyCaptureChars, ct)
                 .ConfigureAwait(false);
+
             var contentType = response.Content.Headers.ContentType?.ToString();
 
             return new UrlFetchSnapshot(
@@ -438,7 +515,7 @@ public sealed class HttpRequestQueueWorker(
         return true;
     }
 
-    private async Task SaveResponseAsync(
+    private async Task<UrlFetchSnapshot> SaveResponseAsync(
         Guid queueItemId,
         UrlFetchSnapshot snapshot,
         string state,
@@ -450,7 +527,8 @@ public sealed class HttpRequestQueueWorker(
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var item = await db.HttpRequestQueue.FirstOrDefaultAsync(q => q.Id == queueItemId, ct).ConfigureAwait(false);
         if (item is null)
-            return;
+            return snapshot;
+
         if (!stateMachine.CanTransition(HttpRequestQueueState.ToKind(item.State), HttpRequestQueueState.ToKind(state)))
         {
             logger.LogWarning(
@@ -458,63 +536,145 @@ public sealed class HttpRequestQueueWorker(
                 item.State,
                 state,
                 queueItemId);
-            return;
+            return snapshot;
         }
+
+        var storedSnapshot = await StoreArtifactsAsync(item, snapshot, ct).ConfigureAwait(false);
 
         item.State = state;
         item.UpdatedAtUtc = now;
         item.CompletedAtUtc = terminal ? now : item.CompletedAtUtc;
         item.LockedBy = null;
         item.LockedUntilUtc = null;
-        item.DurationMs = (long?)snapshot.DurationMs;
-        item.LastHttpStatus = snapshot.StatusCode;
+        item.DurationMs = (long?)storedSnapshot.DurationMs;
+        item.LastHttpStatus = storedSnapshot.StatusCode;
         item.LastError = error;
-        item.RequestHeadersJson = JsonSerializer.Serialize(snapshot.RequestHeaders, JsonOptions);
-        item.RequestBody = SanitizeForPostgresText(snapshot.RequestBody);
-        item.ResponseHeadersJson = JsonSerializer.Serialize(snapshot.ResponseHeaders, JsonOptions);
-        item.ResponseBody = SanitizeForPostgresText(snapshot.ResponseBody);
-        item.ResponseContentType = SanitizeForPostgresText(snapshot.ContentType);
-        item.ResponseContentLength = snapshot.ResponseSizeBytes;
-        item.FinalUrl = SanitizeForPostgresText(snapshot.FinalUrl);
-        item.RedirectCount = Math.Max(0, snapshot.RedirectCount);
-        item.RedirectChainJson = SerializeRedirectChain(snapshot);
+        item.RequestHeadersBlobId = storedSnapshot.RequestHeadersBlobId;
+        item.RequestBodyBlobId = storedSnapshot.RequestBodyBlobId;
+        item.ResponseHeadersBlobId = storedSnapshot.ResponseHeadersBlobId;
+        item.ResponseBodyBlobId = storedSnapshot.ResponseBodyBlobId;
+        item.RedirectChainBlobId = storedSnapshot.RedirectChainBlobId;
+        item.ResponseBodySha256 = storedSnapshot.ResponseBodySha256;
+        item.ResponseBodyPreview = SanitizeForPostgresText(storedSnapshot.ResponseBodyPreview);
+        item.ResponseBodyTruncated = storedSnapshot.ResponseBodyTruncated;
+        item.RequestHeadersJson = null;
+        item.RequestBody = null;
+        item.ResponseHeadersJson = null;
+        item.ResponseBody = null;
+        item.ResponseContentType = SanitizeForPostgresText(storedSnapshot.ContentType);
+        item.ResponseContentLength = storedSnapshot.ResponseSizeBytes;
+        item.FinalUrl = SanitizeForPostgresText(storedSnapshot.FinalUrl);
+        item.RedirectCount = Math.Max(0, storedSnapshot.RedirectCount);
+        item.RedirectChainJson = null;
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return storedSnapshot;
     }
 
     private async Task SaveRetryResponseAsync(HttpRequestQueueItem item, UrlFetchSnapshot snapshot, string error, CancellationToken ct)
     {
         var delay = TimeSpan.FromSeconds(Math.Min(300, Math.Pow(2, Math.Max(0, item.AttemptCount)) * 5));
         var now = DateTimeOffset.UtcNow;
+
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var row = await db.HttpRequestQueue.FirstOrDefaultAsync(q => q.Id == item.Id, ct).ConfigureAwait(false);
         if (row is null)
             return;
+
         if (!stateMachine.CanTransition(HttpRequestQueueState.ToKind(row.State), HttpRequestQueueStateKind.Retry))
         {
             logger.LogWarning("Invalid queue transition {From} -> Retry for item {QueueItemId}.", row.State, item.Id);
             return;
         }
 
+        var storedSnapshot = await StoreArtifactsAsync(row, snapshot, ct).ConfigureAwait(false);
+
         row.State = HttpRequestQueueState.Retry;
         row.UpdatedAtUtc = now;
         row.NextAttemptAtUtc = now + delay;
         row.LockedBy = null;
         row.LockedUntilUtc = null;
-        row.DurationMs = (long?)snapshot.DurationMs;
-        row.LastHttpStatus = snapshot.StatusCode;
+        row.DurationMs = (long?)storedSnapshot.DurationMs;
+        row.LastHttpStatus = storedSnapshot.StatusCode;
         row.LastError = Truncate(error, 2048);
-        row.RequestHeadersJson = JsonSerializer.Serialize(snapshot.RequestHeaders, JsonOptions);
-        row.RequestBody = SanitizeForPostgresText(snapshot.RequestBody);
-        row.ResponseHeadersJson = JsonSerializer.Serialize(snapshot.ResponseHeaders, JsonOptions);
-        row.ResponseBody = SanitizeForPostgresText(snapshot.ResponseBody);
-        row.ResponseContentType = SanitizeForPostgresText(snapshot.ContentType);
-        row.ResponseContentLength = snapshot.ResponseSizeBytes;
-        row.FinalUrl = SanitizeForPostgresText(snapshot.FinalUrl);
-        row.RedirectCount = Math.Max(0, snapshot.RedirectCount);
-        row.RedirectChainJson = SerializeRedirectChain(snapshot);
+        row.RequestHeadersBlobId = storedSnapshot.RequestHeadersBlobId;
+        row.RequestBodyBlobId = storedSnapshot.RequestBodyBlobId;
+        row.ResponseHeadersBlobId = storedSnapshot.ResponseHeadersBlobId;
+        row.ResponseBodyBlobId = storedSnapshot.ResponseBodyBlobId;
+        row.RedirectChainBlobId = storedSnapshot.RedirectChainBlobId;
+        row.ResponseBodySha256 = storedSnapshot.ResponseBodySha256;
+        row.ResponseBodyPreview = SanitizeForPostgresText(storedSnapshot.ResponseBodyPreview);
+        row.ResponseBodyTruncated = storedSnapshot.ResponseBodyTruncated;
+        row.RequestHeadersJson = null;
+        row.RequestBody = null;
+        row.ResponseHeadersJson = null;
+        row.ResponseBody = null;
+        row.ResponseContentType = SanitizeForPostgresText(storedSnapshot.ContentType);
+        row.ResponseContentLength = storedSnapshot.ResponseSizeBytes;
+        row.FinalUrl = SanitizeForPostgresText(storedSnapshot.FinalUrl);
+        row.RedirectCount = Math.Max(0, storedSnapshot.RedirectCount);
+        row.RedirectChainJson = null;
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    private async Task<UrlFetchSnapshot> StoreArtifactsAsync(
+        HttpRequestQueueItem item,
+        UrlFetchSnapshot snapshot,
+        CancellationToken ct)
+    {
+        var requestHeaders = await artifactStore.StoreTextAsync(
+            item.TargetId,
+            item.AssetId,
+            "request_headers",
+            "application/json",
+            JsonSerializer.Serialize(snapshot.RequestHeaders, JsonOptions),
+            ct).ConfigureAwait(false);
+
+        var requestBody = await artifactStore.StoreTextAsync(
+            item.TargetId,
+            item.AssetId,
+            "request_body",
+            "text/plain; charset=utf-8",
+            snapshot.RequestBody,
+            ct).ConfigureAwait(false);
+
+        var responseHeaders = await artifactStore.StoreTextAsync(
+            item.TargetId,
+            item.AssetId,
+            "response_headers",
+            "application/json",
+            JsonSerializer.Serialize(snapshot.ResponseHeaders, JsonOptions),
+            ct).ConfigureAwait(false);
+
+        var responseBody = await artifactStore.StoreTextAsync(
+            item.TargetId,
+            item.AssetId,
+            "response_body",
+            snapshot.ContentType,
+            snapshot.ResponseBody,
+            ct).ConfigureAwait(false);
+
+        var redirectChain = await artifactStore.StoreTextAsync(
+            item.TargetId,
+            item.AssetId,
+            "redirect_chain",
+            "application/json",
+            SerializeRedirectChain(snapshot),
+            ct).ConfigureAwait(false);
+
+        return snapshot with
+        {
+            RequestHeadersBlobId = requestHeaders?.BlobId,
+            RequestBodyBlobId = requestBody?.BlobId,
+            ResponseHeadersBlobId = responseHeaders?.BlobId,
+            ResponseBodyBlobId = responseBody?.BlobId,
+            RedirectChainBlobId = redirectChain?.BlobId,
+            ResponseBodySha256 = responseBody?.Sha256,
+            ResponseBodyPreview = responseBody?.Preview,
+            ResponseBodyTruncated = responseBody?.Truncated ?? false,
+            ResponseBody = null
+        };
     }
 
     private static string? SerializeRedirectChain(UrlFetchSnapshot snapshot) =>
@@ -537,12 +697,14 @@ public sealed class HttpRequestQueueWorker(
                 null,
                 0,
                 new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-                error,
+                null,
                 null,
                 0,
                 "text/plain",
                 DateTimeOffset.UtcNow,
-                item.RequestUrl);
+                item.RequestUrl,
+                ResponseBodyPreview: Truncate(error, Math.Min(error.Length, 4096)));
+
             await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, Guid.Empty, ct).ConfigureAwait(false);
             return;
         }
@@ -585,36 +747,39 @@ public sealed class HttpRequestQueueWorker(
         var body = snapshot.ResponseBody ?? "";
         var contentType = snapshot.ContentType ?? "";
         var baseUrl = snapshot.FinalUrl ?? asset.RawValue;
+
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri))
             return;
 
         var parentPage = baseUri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped);
         var spiderContext = TruncateDiscoveryContext($"Spider: link extracted from fetched page {parentPage}");
         var correlation = NewId.NextGuid();
+
         using var scope = scopeFactory.CreateScope();
         var scopedOutbox = scope.ServiceProvider.GetRequiredService<IEventOutbox>();
 
         foreach (var link in LinkHarvest.Extract(body, contentType, baseUri).Take(MaxLinksPerAsset))
         {
             var kind = LinkHarvest.GuessKindForUrl(link);
+
             await scopedOutbox.EnqueueAsync(
-                    new AssetDiscovered(
-                        asset.TargetId,
-                        asset.Target?.RootDomain ?? "",
-                        asset.Target?.GlobalMaxDepth ?? asset.Depth + 10,
-                        asset.Depth + 1,
-                        kind,
-                        link,
-                        "spider-worker",
-                        DateTimeOffset.UtcNow,
-                        correlation,
-                        AssetAdmissionStage.Raw,
-                        null,
-                        spiderContext,
-                        EventId: NewId.NextGuid(),
-                        CausationId: correlation,
-                        Producer: "worker-spider"),
-                    ct)
+                new AssetDiscovered(
+                    asset.TargetId,
+                    asset.Target?.RootDomain ?? "",
+                    asset.Target?.GlobalMaxDepth ?? asset.Depth + 10,
+                    asset.Depth + 1,
+                    kind,
+                    link,
+                    "spider-worker",
+                    DateTimeOffset.UtcNow,
+                    correlation,
+                    AssetAdmissionStage.Raw,
+                    null,
+                    spiderContext,
+                    EventId: NewId.NextGuid(),
+                    CausationId: correlation,
+                    Producer: "worker-spider"),
+                ct)
                 .ConfigureAwait(false);
         }
     }
@@ -635,6 +800,7 @@ public sealed class HttpRequestQueueWorker(
         var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var h in headers)
             d[h.Key] = string.Join(", ", h.Value);
+
         return d;
     }
 
@@ -642,9 +808,7 @@ public sealed class HttpRequestQueueWorker(
         s.Length <= maxChars ? s : s[..maxChars];
 
     private static string? SanitizeForPostgresText(string? value) =>
-        string.IsNullOrEmpty(value)
-            ? value
-            : value.Replace("\0", string.Empty, StringComparison.Ordinal);
+        string.IsNullOrEmpty(value) ? value : value.Replace("\0", string.Empty, StringComparison.Ordinal);
 
     private static string TruncateDiscoveryContext(string s, int maxChars = 512) =>
         s.Length <= maxChars ? s : s[..(maxChars - 1)] + "…";

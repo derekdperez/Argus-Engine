@@ -1,6 +1,7 @@
 using MassTransit;
 
 using Microsoft.AspNetCore.Components;
+using NightmareV2.CommandCenter.DataMaintenance;
 
 using NightmareV2.Application.Sagas;
 using NightmareV2.CommandCenter.Components.Pages.Operations;
@@ -75,6 +76,7 @@ public static class CommandCenterServiceRegistration
         services.AddScoped<TargetManagementService>();
         services.AddScoped<TargetSummaryQueryService>();
         services.AddScoped<RootSpiderSeedService>();
+        services.AddScoped<HttpQueueArtifactBackfillService>();
 
         services.AddSingleton<WorkerScaleDefinitionProvider>();
         services.AddScoped<WorkerScalingSettingsService>();

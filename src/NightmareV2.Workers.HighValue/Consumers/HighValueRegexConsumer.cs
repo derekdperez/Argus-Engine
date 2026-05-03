@@ -2,14 +2,16 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NightmareV2.Application.Assets;
 using NightmareV2.Application.Events;
+using NightmareV2.Application.FileStore;
 using NightmareV2.Application.HighValue;
 using NightmareV2.Application.Workers;
 using NightmareV2.Contracts;
 using NightmareV2.Contracts.Events;
 using NightmareV2.Infrastructure.Data;
+using NightmareV2.Infrastructure.Observability;
 
 namespace NightmareV2.Workers.HighValue.Consumers;
 
@@ -22,6 +24,8 @@ public sealed class HighValueRegexConsumer(
     IConfiguration configuration,
     HighValueRegexMatcher matcher,
     IHttpClientFactory httpFactory,
+    IHttpArtifactReader artifactReader,
+    IOptions<HighValueScanOptions> scanOptions,
     ILogger<HighValueRegexConsumer> logger) : IConsumer<ScannableContentAvailable>
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -47,6 +51,7 @@ public sealed class HighValueRegexConsumer(
             .Select(a => new { a.TypeDetailsJson, a.DiscoveredBy })
             .FirstOrDefaultAsync(ct)
             .ConfigureAwait(false);
+
         if (asset?.TypeDetailsJson is not { } json || string.IsNullOrWhiteSpace(json))
             return;
 
@@ -64,25 +69,36 @@ public sealed class HighValueRegexConsumer(
         if (snap is null)
             return;
 
+        snap = await HydrateResponseBodyAsync(snap, ct).ConfigureAwait(false);
+
         var effectiveSourceUrl = string.IsNullOrWhiteSpace(snap.FinalUrl) ? m.SourceUrl : snap.FinalUrl;
 
         foreach (var hit in matcher.ScanUrlHttpExchange(effectiveSourceUrl, snap))
         {
-            var severity = hit.ImportanceScore >= 10 ? "Critical" : hit.ImportanceScore >= 8 ? "High" : "Medium";
+            var severity = hit.ImportanceScore >= 10 ? "Critical" :
+                hit.ImportanceScore >= 8 ? "High" :
+                "Medium";
+
             var id = await writer.InsertFindingAsync(
-                    new HighValueFindingInput(
-                        m.TargetId,
-                        m.AssetId,
-                        "Regex",
-                        severity,
-                        hit.PatternName,
-                        hit.Scope,
-                        hit.MatchedSnippet,
-                        effectiveSourceUrl,
-                        WorkerKeys.HighValueRegex,
-                        hit.ImportanceScore),
-                    ct)
+                new HighValueFindingInput(
+                    m.TargetId,
+                    m.AssetId,
+                    "Regex",
+                    severity,
+                    hit.PatternName,
+                    hit.Scope,
+                    hit.MatchedSnippet,
+                    effectiveSourceUrl,
+                    WorkerKeys.HighValueRegex,
+                    hit.ImportanceScore),
+                ct)
                 .ConfigureAwait(false);
+
+            ArgusMeters.FindingsCreated.Add(
+                1,
+                new KeyValuePair<string, object?>("severity", severity),
+                new KeyValuePair<string, object?>("finding_type", "Regex"));
+
             await EmitSignalAssetAsync(m, hit, ct).ConfigureAwait(false);
 
             if (severity == "Critical")
@@ -93,21 +109,47 @@ public sealed class HighValueRegexConsumer(
             && asset.DiscoveredBy.Contains("hvpath:critical", StringComparison.OrdinalIgnoreCase))
         {
             var id = await writer.InsertFindingAsync(
-                    new HighValueFindingInput(
-                        m.TargetId,
-                        m.AssetId,
-                        "SensitivePath",
-                        "Critical",
-                        "critical_path_http_2xx",
-                        "critical",
-                        $"HTTP {snap.StatusCode}",
-                        effectiveSourceUrl,
-                        WorkerKeys.HighValueRegex,
-                        10),
-                    ct)
+                new HighValueFindingInput(
+                    m.TargetId,
+                    m.AssetId,
+                    "SensitivePath",
+                    "Critical",
+                    "critical_path_http_2xx",
+                    "critical",
+                    $"HTTP {snap.StatusCode}",
+                    effectiveSourceUrl,
+                    WorkerKeys.HighValueRegex,
+                    10),
+                ct)
                 .ConfigureAwait(false);
+
+            ArgusMeters.FindingsCreated.Add(
+                1,
+                new KeyValuePair<string, object?>("severity", "Critical"),
+                new KeyValuePair<string, object?>("finding_type", "SensitivePath"));
+
             await RaiseCriticalAsync(id, m, "critical_path_http_2xx", ct).ConfigureAwait(false);
         }
+    }
+
+    private async Task<UrlFetchSnapshot> HydrateResponseBodyAsync(UrlFetchSnapshot snap, CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(snap.ResponseBody))
+            return snap;
+
+        string? body = null;
+        if (snap.ResponseBodyBlobId is { } blobId)
+        {
+            body = await artifactReader.ReadTextAsync(
+                    blobId,
+                    scanOptions.Value.MaxResponseBodyScanBytes,
+                    ct)
+                .ConfigureAwait(false);
+        }
+
+        body ??= snap.ResponseBodyPreview;
+
+        return snap with { ResponseBody = body };
     }
 
     private async Task EmitSignalAssetAsync(
@@ -124,26 +166,26 @@ public sealed class HighValueRegexConsumer(
         };
 
         await outbox.EnqueueAsync(
-                new AssetDiscovered(
-                    message.TargetId,
-                    "",
-                    64,
-                    0,
-                    kind,
-                    rawValue,
-                    WorkerKeys.HighValueRegex,
-                    DateTimeOffset.UtcNow,
-                    message.CorrelationId,
-                    AssetAdmissionStage.Raw,
-                    AssetId: null,
-                    DiscoveryContext: $"High-value regex {hit.PatternName} extracted from {message.SourceUrl}",
-                    ParentAssetId: message.AssetId,
-                    RelationshipType: AssetRelationshipType.ExtractedFrom,
-                    IsPrimaryRelationship: false,
-                    EventId: NewId.NextGuid(),
-                    CausationId: message.EventId == Guid.Empty ? message.CorrelationId : message.EventId,
-                    Producer: "worker-highvalue-regex"),
-                ct)
+            new AssetDiscovered(
+                message.TargetId,
+                "",
+                64,
+                0,
+                kind,
+                rawValue,
+                WorkerKeys.HighValueRegex,
+                DateTimeOffset.UtcNow,
+                message.CorrelationId,
+                AssetAdmissionStage.Raw,
+                AssetId: null,
+                DiscoveryContext: $"High-value regex {hit.PatternName} extracted from {message.SourceUrl}",
+                ParentAssetId: message.AssetId,
+                RelationshipType: AssetRelationshipType.ExtractedFrom,
+                IsPrimaryRelationship: false,
+                EventId: NewId.NextGuid(),
+                CausationId: message.EventId == Guid.Empty ? message.CorrelationId : message.EventId,
+                Producer: "worker-highvalue-regex"),
+            ct)
             .ConfigureAwait(false);
     }
 
@@ -152,6 +194,7 @@ public sealed class HighValueRegexConsumer(
         var text = $"{hit.PatternName} {hit.Scope} {hit.MatchedSnippet}";
         if (text.Contains('@', StringComparison.Ordinal) && text.Contains('.', StringComparison.Ordinal))
             return AssetKind.Email;
+
         if (text.Contains("bucket", StringComparison.OrdinalIgnoreCase)
             || text.Contains("s3", StringComparison.OrdinalIgnoreCase)
             || text.Contains("blob.core.windows.net", StringComparison.OrdinalIgnoreCase)
@@ -170,19 +213,19 @@ public sealed class HighValueRegexConsumer(
         CancellationToken ct)
     {
         await outbox.EnqueueAsync(
-                new CriticalHighValueFindingAlert(
-                    findingId,
-                    m.TargetId,
-                    m.AssetId,
-                    patternName,
-                    m.SourceUrl,
-                    "Critical",
-                    DateTimeOffset.UtcNow,
-                    m.CorrelationId,
-                    EventId: NewId.NextGuid(),
-                    CausationId: m.EventId == Guid.Empty ? m.CorrelationId : m.EventId,
-                    Producer: "worker-highvalue-regex"),
-                ct)
+            new CriticalHighValueFindingAlert(
+                findingId,
+                m.TargetId,
+                m.AssetId,
+                patternName,
+                m.SourceUrl,
+                "Critical",
+                DateTimeOffset.UtcNow,
+                m.CorrelationId,
+                EventId: NewId.NextGuid(),
+                CausationId: m.EventId == Guid.Empty ? m.CorrelationId : m.EventId,
+                Producer: "worker-highvalue-regex"),
+            ct)
             .ConfigureAwait(false);
 
         var webhookUrl = configuration["HighValue:CriticalWebhookUrl"]?.Trim();
@@ -202,6 +245,7 @@ public sealed class HighValueRegexConsumer(
                 severity = "Critical",
                 atUtc = DateTimeOffset.UtcNow,
             };
+
             using var resp = await client.PostAsJsonAsync(webhookUrl, payload, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
                 logger.LogWarning("Critical webhook returned {Status} for {Url}", (int)resp.StatusCode, webhookUrl);

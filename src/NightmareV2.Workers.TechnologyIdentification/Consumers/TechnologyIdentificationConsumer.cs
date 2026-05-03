@@ -2,8 +2,10 @@ using System.Diagnostics;
 using System.Text.Json;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NightmareV2.Application.Assets;
 using NightmareV2.Application.Events;
+using NightmareV2.Application.FileStore;
 using NightmareV2.Application.TechnologyIdentification;
 using NightmareV2.Application.Workers;
 using NightmareV2.Contracts;
@@ -21,6 +23,8 @@ public sealed class TechnologyIdentificationConsumer(
     HtmlSignalExtractor htmlSignals,
     CookieExtractor cookieExtractor,
     IAssetTagService tagService,
+    IHttpArtifactReader artifactReader,
+    IOptions<TechnologyIdentificationScanOptions> scanOptions,
     ILogger<TechnologyIdentificationConsumer> logger) : IConsumer<ScannableContentAvailable>
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -31,6 +35,7 @@ public sealed class TechnologyIdentificationConsumer(
     public async Task Consume(ConsumeContext<ScannableContentAvailable> context)
     {
         var ct = context.CancellationToken;
+
         if (!await inbox.TryBeginProcessingAsync(context.Message, nameof(TechnologyIdentificationConsumer), ct).ConfigureAwait(false))
             return;
 
@@ -46,6 +51,7 @@ public sealed class TechnologyIdentificationConsumer(
             .Select(a => new { a.TypeDetailsJson })
             .FirstOrDefaultAsync(ct)
             .ConfigureAwait(false);
+
         if (asset?.TypeDetailsJson is not { Length: > 0 } json)
             return;
 
@@ -63,11 +69,13 @@ public sealed class TechnologyIdentificationConsumer(
         if (snapshot is null)
             return;
 
+        snapshot = await HydrateResponseBodyAsync(snapshot, ct).ConfigureAwait(false);
+
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var requestHeaders = snapshot.RequestHeaders ?? new Dictionary<string, string>();
-            var responseHeaders = snapshot.ResponseHeaders ?? new Dictionary<string, string>();
+            var requestHeaders = snapshot.RequestHeaders ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var responseHeaders = snapshot.ResponseHeaders ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var signals = htmlSignals.Extract(snapshot.ResponseBody, snapshot.ContentType, snapshot.FinalUrl ?? message.SourceUrl);
             var cookies = cookieExtractor.Extract(requestHeaders, responseHeaders);
             var scriptUrls = BuildScriptUrls(message.SourceUrl, snapshot.FinalUrl, snapshot.ContentType, signals.ScriptUrls);
@@ -107,6 +115,26 @@ public sealed class TechnologyIdentificationConsumer(
         }
     }
 
+    private async Task<UrlFetchSnapshot> HydrateResponseBodyAsync(UrlFetchSnapshot snapshot, CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(snapshot.ResponseBody))
+            return snapshot;
+
+        string? body = null;
+        if (snapshot.ResponseBodyBlobId is { } blobId)
+        {
+            body = await artifactReader.ReadTextAsync(
+                    blobId,
+                    scanOptions.Value.MaxResponseBodyScanBytes,
+                    ct)
+                .ConfigureAwait(false);
+        }
+
+        body ??= snapshot.ResponseBodyPreview;
+
+        return snapshot with { ResponseBody = body };
+    }
+
     private static IReadOnlyList<string> BuildScriptUrls(
         string sourceUrl,
         string? finalUrl,
@@ -114,6 +142,7 @@ public sealed class TechnologyIdentificationConsumer(
         IReadOnlyList<string> extractedScriptUrls)
     {
         var scripts = extractedScriptUrls.ToList();
+
         if (LooksLikeJavaScript(contentType, finalUrl ?? sourceUrl))
         {
             scripts.Add(sourceUrl);
@@ -137,7 +166,6 @@ public sealed class TechnologyIdentificationConsumer(
         }
 
         return Uri.TryCreate(url, UriKind.Absolute, out var uri)
-            && uri.AbsolutePath.EndsWith(".js", StringComparison.OrdinalIgnoreCase);
+               && uri.AbsolutePath.EndsWith(".js", StringComparison.OrdinalIgnoreCase);
     }
-
 }

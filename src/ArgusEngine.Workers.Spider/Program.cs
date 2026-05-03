@@ -6,6 +6,7 @@ using ArgusEngine.Infrastructure;
 using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
+using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Workers.Spider;
 
 var builder = Host.CreateApplicationBuilder(args);

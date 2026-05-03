@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 using MassTransit;
 using ArgusEngine.Application.Assets;
 using ArgusEngine.Application.Gatekeeping;
-using ArgusEngine.Application.Messaging;
+using ArgusEngine.Application.Events;
 using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Domain.Entities;
@@ -147,16 +147,20 @@ public sealed class HttpRequestQueueWorker(
         var body = await BoundedHttpContentReader.ReadAsStringAsync(response.Content, 1024 * 512, ct).ConfigureAwait(false);
         
         return new UrlFetchSnapshot(
-            Url: item.RequestUrl,
-            FinalUrl: response.RequestMessage?.RequestUri?.ToString() ?? item.RequestUrl,
+            RequestMethod: item.Method,
+            RequestHeaders: [],
+            RequestBody: null,
             StatusCode: (int)response.StatusCode,
-            ContentType: response.Content.Headers.ContentType?.ToString(),
-            ContentLength: response.Content.Headers.ContentLength,
-            Duration: duration,
             ResponseHeaders: HeadersToDict(response.Headers),
             ResponseBody: body,
-            RedirectChain: [], // Simplified for this implementation
-            RedirectCount: 0);
+            ResponseSizeBytes: response.Content.Headers.ContentLength,
+            DurationMs: duration.TotalMilliseconds,
+            ContentType: response.Content.Headers.ContentType?.ToString(),
+            CompletedAtUtc: DateTimeOffset.UtcNow,
+            FinalUrl: response.RequestMessage?.RequestUri?.ToString() ?? item.RequestUrl,
+            RedirectCount: 0,
+            RedirectChain: [],
+            ResponseBodyPreview: Truncate(body, 4096));
     }
 
     private async Task MarkSucceededAsync(Guid queueItemId, UrlFetchSnapshot snapshot, CancellationToken ct)
@@ -172,7 +176,7 @@ public sealed class HttpRequestQueueWorker(
                     .SetProperty(q => q.LockedBy, (string?)null)
                     .SetProperty(q => q.LockedUntilUtc, (DateTimeOffset?)null)
                     .SetProperty(q => q.LastHttpStatus, snapshot.StatusCode)
-                    .SetProperty(q => q.DurationMs, (long)snapshot.Duration.TotalMilliseconds)
+                    .SetProperty(q => q.DurationMs, (long)snapshot.DurationMs)
                     .SetProperty(q => q.ResponseBodyPreview, Truncate(snapshot.ResponseBody ?? "", 4096)),
                 ct)
             .ConfigureAwait(false);
@@ -183,17 +187,19 @@ public sealed class HttpRequestQueueWorker(
         if (terminal || item.AttemptCount >= item.MaxAttempts)
         {
             var snapshot = new UrlFetchSnapshot(
-                item.RequestUrl,
-                item.RequestUrl,
-                0,
-                null,
-                null,
-                TimeSpan.Zero,
-                [],
-                null,
-                [],
-                0,
-                item.RequestUrl,
+                RequestMethod: item.Method,
+                RequestHeaders: [],
+                RequestBody: null,
+                StatusCode: 0,
+                ResponseHeaders: [],
+                ResponseBody: null,
+                ResponseSizeBytes: null,
+                DurationMs: 0,
+                ContentType: null,
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                FinalUrl: item.RequestUrl,
+                RedirectCount: 0,
+                RedirectChain: [],
                 ResponseBodyPreview: Truncate(error, Math.Min(error.Length, 4096)));
 
             await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, Guid.Empty, ct).ConfigureAwait(false);

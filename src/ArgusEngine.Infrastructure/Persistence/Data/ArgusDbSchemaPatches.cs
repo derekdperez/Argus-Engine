@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Domain.Entities;
 
-namespace ArgusEngine.Infrastructure.Persistence.Data;
+namespace ArgusEngine.Infrastructure.Data;
 
 /// <summary>
 /// EF <c>EnsureCreated</c> does not add new columns to existing databases; run these patches after it on upgrade.

@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Application.FileStore;
 using ArgusEngine.Domain.Entities;
-using ArgusEngine.Infrastructure.Persistence.Data;
+using ArgusEngine.Infrastructure.Data;
 
 namespace ArgusEngine.Infrastructure.FileStore;
 

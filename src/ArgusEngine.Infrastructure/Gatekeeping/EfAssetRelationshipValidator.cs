@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using ArgusEngine.Application.Assets;
 using ArgusEngine.Contracts;
-using ArgusEngine.Infrastructure.Persistence.Data;
+using ArgusEngine.Infrastructure.Data;
 
 namespace ArgusEngine.Infrastructure.Gatekeeping;
 

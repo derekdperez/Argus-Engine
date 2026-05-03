@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Domain.Entities;
-using ArgusEngine.Infrastructure.Persistence.Data;
+using ArgusEngine.Infrastructure.Data;
 using Npgsql;
 
 namespace ArgusEngine.Infrastructure.Messaging;

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ArgusEngine.Application.DataRetention;
-using ArgusEngine.Infrastructure.Persistence.Data;
+using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Observability;
 
 namespace ArgusEngine.Infrastructure.DataRetention;

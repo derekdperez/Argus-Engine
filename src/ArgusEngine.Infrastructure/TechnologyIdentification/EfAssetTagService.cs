@@ -4,7 +4,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Application.TechnologyIdentification;
 using ArgusEngine.Domain.Entities;
-using ArgusEngine.Infrastructure.Persistence.Data;
+using ArgusEngine.Infrastructure.Data;
 
 namespace ArgusEngine.Infrastructure.TechnologyIdentification;
 

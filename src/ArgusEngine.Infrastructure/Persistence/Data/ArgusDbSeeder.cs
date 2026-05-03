@@ -1,9 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Application.Workers;
 using ArgusEngine.Domain.Entities;
-using ArgusEngine.Infrastructure.Persistence.Data;
 
-namespace ArgusEngine.Infrastructure.Persistence.Data;
+
+namespace ArgusEngine.Infrastructure.Data;
 
 public static class ArgusDbSeeder
 {

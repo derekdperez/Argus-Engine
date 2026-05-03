@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Application.HighValue;
 using ArgusEngine.Domain.Entities;
-using ArgusEngine.Infrastructure.Persistence.Data;
+using ArgusEngine.Infrastructure.Data;
 
 namespace ArgusEngine.Infrastructure.HighValue;
 

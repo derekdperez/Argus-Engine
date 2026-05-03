@@ -1,16 +1,18 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ArgusEngine.Application.Assets;
+using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Domain.Entities;
-using ArgusEngine.Infrastructure.Persistence.Data;
+using ArgusEngine.Infrastructure.Data;
 using Npgsql;
 
 namespace ArgusEngine.Infrastructure.Gatekeeping;
 
 public sealed class EfAssetGraphService(
     ArgusDbContext db,
+    IAssetRelationshipValidator relationshipValidator,
     ILogger<EfAssetGraphService> logger) : IAssetGraphService
 {
     private static readonly Action<ILogger, Guid, Exception?> LogSkipAssetGraphTargetMissing =
@@ -18,11 +20,6 @@ public sealed class EfAssetGraphService(
             LogLevel.Debug,
             new EventId(1, nameof(LogSkipAssetGraphTargetMissing)),
             "Skip asset graph upsert: target {TargetId} not in recon_targets.");
-    private static readonly Action<ILogger, Guid, Guid, Guid, string, Exception?> LogRejectedAssetRelationship =
-        LoggerMessage.Define<Guid, Guid, Guid, string>(
-            LogLevel.Debug,
-            new EventId(2, nameof(LogRejectedAssetRelationship)),
-            "Rejected asset relationship. TargetId={TargetId}, ParentAssetId={ParentAssetId}, ChildAssetId={ChildAssetId}, Reason={Reason}");
 
     public async Task<AssetUpsertResult> UpsertAssetAsync(
         AssetDiscovered message,
@@ -99,15 +96,20 @@ public sealed class EfAssetGraphService(
 
         if (message.ParentAssetId is { } parentId && parentId != Guid.Empty)
         {
-            var relResult = await UpsertRelationshipAsync(
-                    message,
-                    parentId,
-                    child.Id,
-                    message.RelationshipType,
-                    message.IsPrimaryRelationship,
-                    now,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            var relResult = await UpsertRelationshipInsideTransactionAsync(
+                new AssetRelationshipDiscovered
+                {
+                    TargetId = message.TargetId,
+                    ParentAssetId = parentId,
+                    ChildAssetId = child.Id,
+                    RelationshipType = message.RelationshipType,
+                    IsPrimary = message.IsPrimaryRelationship,
+                    Confidence = message.Confidence,
+                    DiscoveredBy = message.DiscoveredBy,
+                    DiscoveryContext = message.DiscoveryContext,
+                    OccurredAtUtc = now,
+                }, cancellationToken).ConfigureAwait(false);
+
             relationshipInserted = relResult.Inserted;
             relationshipUpdated = relResult.Updated;
         }
@@ -116,23 +118,62 @@ public sealed class EfAssetGraphService(
         return new AssetUpsertResult(child.Id, inserted, relationshipInserted, relationshipUpdated);
     }
 
-    private async Task<AssetRelationshipResult> UpsertRelationshipAsync(
-        AssetDiscovered message,
-        Guid parentAssetId,
-        Guid childAssetId,
-        AssetRelationshipType relationshipType,
-        bool isPrimary,
-        DateTimeOffset now,
+    public async Task<AssetRelationshipResult> UpsertRelationshipAsync(
+        AssetRelationshipDiscovered message,
+        CancellationToken cancellationToken = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var result = await UpsertRelationshipInsideTransactionAsync(message, cancellationToken).ConfigureAwait(false);
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return result;
+    }
+
+    private async Task<AssetRelationshipResult> UpsertRelationshipInsideTransactionAsync(
+        AssetRelationshipDiscovered message,
         CancellationToken cancellationToken)
     {
+        if (message.ParentAssetId == message.ChildAssetId)
+            return new AssetRelationshipResult(null, Inserted: false, Updated: false, "self-reference");
+
+        var parent = await db.Assets
+            .FirstOrDefaultAsync(a => a.Id == message.ParentAssetId, cancellationToken)
+            .ConfigureAwait(false);
+        if (parent is null)
+            return new AssetRelationshipResult(null, Inserted: false, Updated: false, "parent-missing");
+
+        var child = await db.Assets
+            .FirstOrDefaultAsync(a => a.Id == message.ChildAssetId, cancellationToken)
+            .ConfigureAwait(false);
+        if (child is null)
+            return new AssetRelationshipResult(null, Inserted: false, Updated: false, "child-missing");
+
+        if (parent.TargetId != message.TargetId || child.TargetId != message.TargetId)
+            return new AssetRelationshipResult(null, Inserted: false, Updated: false, "cross-target");
+
+        if (!relationshipValidator.IsAllowed(parent.Kind, child.Kind, message.RelationshipType))
+            return new AssetRelationshipResult(null, Inserted: false, Updated: false, "rule-denied");
+
         var existing = await db.AssetRelationships
             .FirstOrDefaultAsync(
                 r => r.TargetId == message.TargetId
-                    && r.ParentAssetId == parentAssetId
-                    && r.ChildAssetId == childAssetId
-                    && r.RelationshipType == relationshipType,
+                    && r.ParentAssetId == message.ParentAssetId
+                    && r.ChildAssetId == message.ChildAssetId
+                    && r.RelationshipType == message.RelationshipType,
                 cancellationToken)
             .ConfigureAwait(false);
+
+        var now = message.OccurredAtUtc == default ? DateTimeOffset.UtcNow : message.OccurredAtUtc;
+        var isPrimary = message.IsPrimary && message.RelationshipType == AssetRelationshipType.Contains;
+
+        if (existing is null
+            && await relationshipValidator.WouldCreateCycleAsync(message.TargetId, message.ParentAssetId, message.ChildAssetId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return new AssetRelationshipResult(null, Inserted: false, Updated: false, "cycle");
+        }
+
+        if (isPrimary)
+            await ClearPrimaryContainsRelationshipAsync(message.TargetId, message.ChildAssetId, cancellationToken).ConfigureAwait(false);
 
         if (existing is not null)
         {
@@ -141,27 +182,18 @@ public sealed class EfAssetGraphService(
             existing.DiscoveredBy = Truncate(message.DiscoveredBy, 128);
             existing.DiscoveryContext = Truncate(message.DiscoveryContext ?? "", 512);
             existing.PropertiesJson = NullIfWhiteSpace(message.PropertiesJson);
-            if (isPrimary && !existing.IsPrimary)
-            {
-                if (relationshipType == AssetRelationshipType.Contains)
-                    await ClearPrimaryContainsRelationshipAsync(message.TargetId, childAssetId, cancellationToken).ConfigureAwait(false);
-                existing.IsPrimary = true;
-            }
-
+            existing.IsPrimary = existing.IsPrimary || isPrimary;
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return new AssetRelationshipResult(existing.Id, Inserted: false, Updated: true);
         }
-
-        if (isPrimary && relationshipType == AssetRelationshipType.Contains)
-            await ClearPrimaryContainsRelationshipAsync(message.TargetId, childAssetId, cancellationToken).ConfigureAwait(false);
 
         var relationship = new AssetRelationship
         {
             Id = Guid.NewGuid(),
             TargetId = message.TargetId,
-            ParentAssetId = parentAssetId,
-            ChildAssetId = childAssetId,
-            RelationshipType = relationshipType,
+            ParentAssetId = message.ParentAssetId,
+            ChildAssetId = message.ChildAssetId,
+            RelationshipType = message.RelationshipType,
             IsPrimary = isPrimary,
             Confidence = ClampConfidence(message.Confidence),
             DiscoveredBy = Truncate(message.DiscoveredBy, 128),
@@ -175,30 +207,237 @@ public sealed class EfAssetGraphService(
         try
         {
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return new AssetRelationshipResult(relationship.Id, Inserted: true, Updated: false);
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg
             && pg.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             db.Entry(relationship).State = EntityState.Detached;
-            existing = await db.AssetRelationships
-                .FirstAsync(
-                    r => r.TargetId == message.TargetId
-                        && r.ParentAssetId == parentAssetId
-                        && r.ChildAssetId == childAssetId
-                        && r.RelationshipType == relationshipType,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            existing.LastSeenAtUtc = now;
-            existing.Confidence = ClampConfidence(message.Confidence);
-            existing.DiscoveredBy = Truncate(message.DiscoveredBy, 128);
-            existing.DiscoveryContext = Truncate(message.DiscoveryContext ?? "", 512);
-            existing.PropertiesJson = NullIfWhiteSpace(message.PropertiesJson);
-            existing.IsPrimary = existing.IsPrimary || isPrimary;
-            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return new AssetRelationshipResult(existing.Id, Inserted: false, Updated: true);
+            return await UpsertRelationshipInsideTransactionAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<AssetNodeDto?> GetRootAssetAsync(Guid targetId, CancellationToken cancellationToken = default)
+    {
+        var root = await db.Assets.AsNoTracking()
+            .Where(a => a.TargetId == targetId && a.Kind == AssetKind.Target)
+            .OrderBy(a => a.DiscoveredAtUtc)
+            .Select(a => ToNodeDto(a))
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (root is not null)
+            return root;
+
+        var target = await db.Targets.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == targetId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (target is null)
+            return null;
+
+        var created = await EnsureRootAssetAsync(target, cancellationToken).ConfigureAwait(false);
+        return ToNodeDto(created);
+    }
+
+    public Task<AssetNodeDto?> GetAssetAsync(Guid targetId, Guid assetId, CancellationToken cancellationToken = default) =>
+        db.Assets.AsNoTracking()
+            .Where(a => a.TargetId == targetId && a.Id == assetId)
+            .Select(a => ToNodeDto(a))
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<AssetNodeDto>> GetChildrenAsync(
+        Guid targetId,
+        Guid parentAssetId,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await db.AssetRelationships.AsNoTracking()
+            .Where(r => r.TargetId == targetId && r.ParentAssetId == parentAssetId)
+            .Join(
+                db.Assets.AsNoTracking(),
+                rel => rel.ChildAssetId,
+                asset => asset.Id,
+                (rel, asset) => new { rel, asset })
+            .OrderByDescending(x => x.rel.IsPrimary)
+            .ThenBy(x => x.asset.Kind)
+            .ThenBy(x => x.asset.RawValue)
+            .Select(x => ToNodeDto(x.asset))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return rows;
+    }
+
+    public async Task<IReadOnlyList<AssetNodeDto>> GetParentsAsync(
+        Guid targetId,
+        Guid childAssetId,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await db.AssetRelationships.AsNoTracking()
+            .Where(r => r.TargetId == targetId && r.ChildAssetId == childAssetId)
+            .Join(
+                db.Assets.AsNoTracking(),
+                rel => rel.ParentAssetId,
+                asset => asset.Id,
+                (rel, asset) => new { rel, asset })
+            .OrderByDescending(x => x.rel.IsPrimary)
+            .ThenBy(x => x.asset.Kind)
+            .ThenBy(x => x.asset.RawValue)
+            .Select(x => ToNodeDto(x.asset))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return rows;
+    }
+
+    public async Task<IReadOnlyList<AssetNodeDto>> GetAncestorsAsync(
+        Guid targetId,
+        Guid childAssetId,
+        int maxDepth,
+        CancellationToken cancellationToken = default)
+    {
+        maxDepth = Math.Clamp(maxDepth, 1, 50);
+        var relationships = await db.AssetRelationships.AsNoTracking()
+            .Where(r => r.TargetId == targetId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var ancestorIds = new List<Guid>();
+        var seen = new HashSet<Guid> { childAssetId };
+        var frontier = new List<Guid> { childAssetId };
+
+        for (var depth = 0; depth < maxDepth && frontier.Count > 0; depth++)
+        {
+            var next = relationships
+                .Where(r => frontier.Contains(r.ChildAssetId))
+                .Select(r => r.ParentAssetId)
+                .Where(seen.Add)
+                .ToList();
+
+            ancestorIds.AddRange(next);
+            frontier = next;
         }
 
-        return new AssetRelationshipResult(relationship.Id, Inserted: true, Updated: false);
+        if (ancestorIds.Count == 0)
+            return Array.Empty<AssetNodeDto>();
+
+        var assets = await db.Assets.AsNoTracking()
+            .Where(a => a.TargetId == targetId && ancestorIds.Contains(a.Id))
+            .Select(a => ToNodeDto(a))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var byId = assets.ToDictionary(a => a.Id);
+        return ancestorIds.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+    }
+
+    public async Task<IReadOnlyList<AssetTreeNodeDto>> GetDescendantsAsync(
+        Guid targetId,
+        Guid rootAssetId,
+        int maxDepth,
+        CancellationToken cancellationToken = default)
+    {
+        maxDepth = Math.Clamp(maxDepth, 1, 50);
+
+        var root = await db.Assets.AsNoTracking()
+            .Where(a => a.TargetId == targetId && a.Id == rootAssetId)
+            .Select(a => ToNodeDto(a))
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (root is null)
+            return Array.Empty<AssetTreeNodeDto>();
+
+        var relationships = await db.AssetRelationships.AsNoTracking()
+            .Where(r => r.TargetId == targetId)
+            .OrderByDescending(r => r.IsPrimary)
+            .ThenBy(r => r.RelationshipType)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var reachableIds = new HashSet<Guid> { rootAssetId };
+        var frontier = new List<Guid> { rootAssetId };
+        for (var depth = 0; depth < maxDepth && frontier.Count > 0; depth++)
+        {
+            var next = relationships
+                .Where(r => frontier.Contains(r.ParentAssetId))
+                .Select(r => r.ChildAssetId)
+                .Where(reachableIds.Add)
+                .ToList();
+            frontier = next;
+        }
+
+        var assets = await db.Assets.AsNoTracking()
+            .Where(a => a.TargetId == targetId && reachableIds.Contains(a.Id))
+            .Select(a => ToNodeDto(a))
+            .ToDictionaryAsync(a => a.Id, cancellationToken)
+            .ConfigureAwait(false);
+
+        AssetTreeNodeDto Build(Guid assetId, AssetRelationshipDto? incoming, int depth, HashSet<Guid> path)
+        {
+            if (!assets.TryGetValue(assetId, out var asset))
+                throw new InvalidOperationException($"Asset {assetId} was reachable but not loaded.");
+
+            if (depth >= maxDepth)
+                return new AssetTreeNodeDto(asset, incoming, depth, Array.Empty<AssetTreeNodeDto>());
+
+            path.Add(assetId);
+            var children = relationships
+                .Where(r => r.ParentAssetId == assetId && assets.ContainsKey(r.ChildAssetId) && !path.Contains(r.ChildAssetId))
+                .OrderByDescending(r => r.IsPrimary)
+                .ThenBy(r => assets[r.ChildAssetId].Kind)
+                .ThenBy(r => assets[r.ChildAssetId].RawValue, StringComparer.OrdinalIgnoreCase)
+                .Select(r => Build(r.ChildAssetId, ToRelationshipDto(r), depth + 1, new HashSet<Guid>(path)))
+                .ToList();
+
+            return new AssetTreeNodeDto(asset, incoming, depth, children);
+        }
+
+        return [Build(rootAssetId, null, 0, [])];
+    }
+
+    public async Task<StoredAsset> EnsureRootAssetAsync(ReconTarget target, CancellationToken cancellationToken = default)
+    {
+        var key = "target:" + target.RootDomain.Trim().TrimEnd('.').ToLowerInvariant();
+        var existing = await db.Assets
+            .FirstOrDefaultAsync(a => a.TargetId == target.Id && a.CanonicalKey == key, cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is not null)
+            return existing;
+
+        var now = DateTimeOffset.UtcNow;
+        var root = new StoredAsset
+        {
+            Id = Guid.NewGuid(),
+            TargetId = target.Id,
+            Kind = AssetKind.Target,
+            Category = AssetCategory.ScopeRoot,
+            CanonicalKey = key,
+            RawValue = target.RootDomain,
+            DisplayName = target.RootDomain,
+            Depth = 0,
+            DiscoveredBy = "target-registration",
+            DiscoveryContext = "Root target asset",
+            DiscoveredAtUtc = target.CreatedAtUtc == default ? now : target.CreatedAtUtc,
+            LastSeenAtUtc = now,
+            Confidence = 1.0m,
+            LifecycleStatus = AssetLifecycleStatus.Confirmed,
+        };
+
+        db.Assets.Add(root);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return root;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg
+            && pg.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            db.Entry(root).State = EntityState.Detached;
+            return await db.Assets
+                .FirstAsync(a => a.TargetId == target.Id && a.CanonicalKey == key, cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     private async Task TouchExistingAssetAsync(
@@ -333,6 +572,32 @@ public sealed class EfAssetGraphService(
             AssetKind.Parameter => rawValue.Trim(),
             _ => string.IsNullOrWhiteSpace(normalizedDisplay) ? rawValue.Trim() : normalizedDisplay.Trim(),
         };
+
+    private static AssetNodeDto ToNodeDto(StoredAsset a) =>
+        new(
+            a.Id,
+            a.TargetId,
+            a.Kind,
+            a.Category,
+            a.CanonicalKey,
+            a.RawValue,
+            a.LifecycleStatus,
+            a.DisplayName,
+            a.TypeDetailsJson);
+
+    private static AssetRelationshipDto ToRelationshipDto(AssetRelationship r) =>
+        new(
+            r.Id,
+            r.TargetId,
+            r.ParentAssetId,
+            r.ChildAssetId,
+            r.RelationshipType,
+            r.IsPrimary,
+            r.Confidence,
+            r.DiscoveredBy,
+            r.DiscoveryContext,
+            r.FirstSeenAtUtc,
+            r.LastSeenAtUtc);
 
     private static decimal ClampConfidence(decimal confidence) => Math.Clamp(confidence, 0m, 1m);
 

@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Domain.Entities;
 
-namespace ArgusEngine.Infrastructure.Persistence.Data;
+namespace ArgusEngine.Infrastructure.Data;
 
 public sealed class FileStoreDbContext(DbContextOptions<FileStoreDbContext> options) : DbContext(options)
 {

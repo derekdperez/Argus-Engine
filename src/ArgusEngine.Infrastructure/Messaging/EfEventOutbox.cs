@@ -2,7 +2,7 @@ using System.Text.Json;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Domain.Entities;
-using ArgusEngine.Infrastructure.Persistence.Data;
+using ArgusEngine.Infrastructure.Data;
 
 namespace ArgusEngine.Infrastructure.Messaging;
 

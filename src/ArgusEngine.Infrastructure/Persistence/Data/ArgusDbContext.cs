@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Application.Sagas;
 
-namespace ArgusEngine.Infrastructure.Persistence.Data;
+namespace ArgusEngine.Infrastructure.Data;
 
 public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : DbContext(options)
 {

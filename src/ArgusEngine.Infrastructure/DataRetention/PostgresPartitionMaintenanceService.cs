@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-
-using ArgusEngine.Infrastructure.Data;
+using ArgusEngine.Infrastructure.Persistence.Data;
 
 namespace ArgusEngine.Infrastructure.DataRetention;
 

@@ -1,7 +1,5 @@
 using System.Text;
-
 using Microsoft.Extensions.Options;
-
 using ArgusEngine.Application.FileStore;
 
 namespace ArgusEngine.Infrastructure.FileStore;

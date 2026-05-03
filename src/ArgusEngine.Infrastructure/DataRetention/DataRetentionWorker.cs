@@ -3,7 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ArgusEngine.Application.DataRetention;
-using ArgusEngine.Infrastructure.Data;
+using ArgusEngine.Infrastructure.Persistence.Data;
 using ArgusEngine.Infrastructure.Observability;
 
 namespace ArgusEngine.Infrastructure.DataRetention;
@@ -100,22 +100,11 @@ public sealed class DataRetentionWorker(
                 tableName: "http_request_queue",
                 archiveTableName: "archived_http_request_queue",
                 idColumn: "id",
-                whereSql: "state IN ('Succeeded', 'Failed') AND completed_at_utc IS NOT NULL AND completed_at_utc < {0}",
-                cutoff: DateTimeOffset.UtcNow.AddDays(-opt.CompletedHttpQueueRetentionDays),
+                whereSql: "state IN ('Succeeded', 'Failed') AND completed_at_utc < {0}",
+                cutoff: DateTimeOffset.UtcNow.AddDays(-opt.HttpQueueRetentionDays),
                 opt,
                 metricTableName: "http_request_queue",
                 ct).ConfigureAwait(false),
-
-            CloudUsageDeleted = await DeleteBatchesAsync(
-                tableName: "cloud_resource_usage_samples",
-                idColumn: "id",
-                whereSql: "sampled_at_utc < {0}",
-                cutoff: DateTimeOffset.UtcNow.AddDays(-opt.CloudUsageRetentionDays),
-                opt,
-                metricTableName: "cloud_resource_usage_samples",
-                ct).ConfigureAwait(false),
-
-            CompletedAtUtc = DateTimeOffset.UtcNow
         };
 
         return result;
@@ -124,21 +113,25 @@ public sealed class DataRetentionWorker(
     private async Task EnsureArchiveTablesAsync(CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+
         await db.Database.ExecuteSqlRawAsync(
             """
             CREATE TABLE IF NOT EXISTS archived_outbox_messages (
+                id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
                 archived_at_utc timestamptz NOT NULL,
                 archive_reason varchar(64) NOT NULL,
                 row_json jsonb NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS archived_bus_journal (
+                id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
                 archived_at_utc timestamptz NOT NULL,
                 archive_reason varchar(64) NOT NULL,
                 row_json jsonb NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS archived_http_request_queue (
+                id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
                 archived_at_utc timestamptz NOT NULL,
                 archive_reason varchar(64) NOT NULL,
                 row_json jsonb NOT NULL

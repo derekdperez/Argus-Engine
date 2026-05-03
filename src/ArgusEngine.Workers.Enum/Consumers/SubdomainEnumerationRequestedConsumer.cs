@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MassTransit;
 using ArgusEngine.Application.Events;
-using ArgusEngine.Application.Gatekeeping;
+using ArgusEngine.Application.Assets;
 using ArgusEngine.Application.Workers;
 using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;

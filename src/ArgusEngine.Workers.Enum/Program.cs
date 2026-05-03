@@ -21,7 +21,7 @@ builder.Services.AddArgusRabbitMq(
     x =>
     {
         x.AddConsumer<TargetCreatedConsumer>();
-        x.AddConsumer<SubdomainEnumerationRequestedConsumer, SubdomainEnumerationRequestedConsumerDefinition>();
+        x.AddConsumer<SubdomainEnumerationRequestedConsumer>(typeof(SubdomainEnumerationRequestedConsumerDefinition));
     });
 
 var host = builder.Build();

@@ -23,6 +23,7 @@
 #   NIGHTMARE_SKIP_INSTALL=1   Do not install Docker / curl / git; fail if docker or compose is missing.
 #   NIGHTMARE_DEPLOY_FRESH=1   Same as passing -fresh on the command line.
 #   NIGHTMARE_ECS_REPLACE_WORKERS=1  In --ecs-workers mode, stop existing ECS worker tasks before recreating them.
+#   NIGHTMARE_SKIP_BLAZOR_ASSET_VERIFY=1  Skip post-deploy verification of /_framework/blazor.web.js.
 #   SUBFINDER_PACKAGE=...  Optional go install package for the worker image subfinder binary.
 #   AMASS_PACKAGE=...      Optional go install package for the worker image amass binary.
 #   COMPOSE_BAKE=true|false    Multi-service compose builds may use "bake"; scripts default to false for stability.
@@ -94,6 +95,7 @@ Environment:
   NIGHTMARE_FORCE_RECREATE=1
   NIGHTMARE_ECS_WORKERS=1
   NIGHTMARE_ECS_REPLACE_WORKERS=1
+  NIGHTMARE_SKIP_BLAZOR_ASSET_VERIFY=1
 EOF
       exit 0
       ;;
@@ -115,6 +117,74 @@ fi
 source "$DEPLOY_DIR/lib-nightmare-compose.sh"
 # shellcheck source=deploy/lib-install-deps.sh
 source "$DEPLOY_DIR/lib-install-deps.sh"
+
+nightmare_verify_command_center_blazor_static_assets() {
+  if [[ "${NIGHTMARE_SKIP_BLAZOR_ASSET_VERIFY:-0}" == "1" ]]; then
+    echo "Skipping Blazor static asset verification because NIGHTMARE_SKIP_BLAZOR_ASSET_VERIFY=1."
+    return 0
+  fi
+
+  echo ""
+  echo "Verifying Command Center Blazor static assets..."
+
+  local cid
+  cid="$(compose ps -q command-center | tail -n 1 || true)"
+  if [[ -z "$cid" ]]; then
+    echo "ERROR: command-center container was not found after deployment." >&2
+    echo "Run: docker compose -f deploy/docker-compose.yml ps" >&2
+    exit 1
+  fi
+
+  if ! nightmare_docker inspect "$cid" >/dev/null 2>&1; then
+    echo "ERROR: command-center container id '$cid' is not inspectable." >&2
+    exit 1
+  fi
+
+  local running
+  running="$(nightmare_docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || echo false)"
+  if [[ "$running" != "true" ]]; then
+    echo "ERROR: command-center container is not running." >&2
+    compose ps command-center >&2 || true
+    compose logs --tail=150 command-center >&2 || true
+    exit 1
+  fi
+
+  if ! nightmare_docker exec "$cid" sh -lc 'test -s /app/wwwroot/_framework/blazor.web.js'; then
+    echo "ERROR: command-center container is missing /app/wwwroot/_framework/blazor.web.js." >&2
+    echo "This usually means the running container is stale or a hot deploy copied an incomplete publish output." >&2
+    echo "Fix with: ./deploy/deploy.sh -fresh" >&2
+    nightmare_docker exec "$cid" sh -lc 'echo "Contents of /app/wwwroot:"; ls -la /app/wwwroot 2>/dev/null || true; echo "Contents of /app/wwwroot/_framework:"; ls -la /app/wwwroot/_framework 2>/dev/null || true' >&2 || true
+    exit 1
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+  if ! curl -fsS --max-time 20 "http://127.0.0.1:8080/_framework/blazor.web.js" -o "$tmp"; then
+    rm -f "$tmp"
+    echo "ERROR: http://127.0.0.1:8080/_framework/blazor.web.js did not return HTTP 200 from the host." >&2
+    echo "The file exists inside the container, but the app is not serving it correctly." >&2
+    echo "Check Program.cs static asset ordering and command-center logs." >&2
+    compose logs --tail=150 command-center >&2 || true
+    exit 1
+  fi
+
+  if [[ ! -s "$tmp" ]]; then
+    rm -f "$tmp"
+    echo "ERROR: /_framework/blazor.web.js returned an empty response." >&2
+    exit 1
+  fi
+
+  if grep -qiE '<!DOCTYPE html|<html|404[: ]|Not Found' "$tmp"; then
+    echo "ERROR: /_framework/blazor.web.js returned HTML or 404-like content instead of JavaScript." >&2
+    echo "First 40 lines returned:" >&2
+    head -40 "$tmp" >&2 || true
+    rm -f "$tmp"
+    exit 1
+  fi
+
+  rm -f "$tmp"
+  echo "Blazor static asset verification passed: /_framework/blazor.web.js is present and served."
+}
 
 if [[ "$NIGHTMARE_ECS_WORKERS" == "1" && -f "$DEPLOY_DIR/aws/.env" ]]; then
   # shellcheck source=/dev/null
@@ -152,6 +222,8 @@ else
   echo "Applying stack from: $ROOT"
 fi
 nightmare_compose_full_redeploy
+
+nightmare_verify_command_center_blazor_static_assets
 
 if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
   echo ""
@@ -206,6 +278,7 @@ fi
 echo ""
 echo "Nightmare v2 is running."
 echo "  Command Center:  http://localhost:8080/  (use host public IP on EC2)"
+echo "  Blazor runtime:  http://localhost:8080/_framework/blazor.web.js"
 echo "  RabbitMQ admin:  http://localhost:15672/  (user/pass: nightmare / nightmare)"
 echo "  Postgres:        localhost:5432  db=nightmare_v2 (+ file blobs db nightmare_v2_files)  user=nightmare"
 echo ""
@@ -214,14 +287,15 @@ echo "  docker compose -f deploy/docker-compose.yml run --rm --entrypoint sh wor
 echo ""
 echo "Useful commands (from $ROOT):"
 echo "  ./deploy/deploy.sh --hot                  # source-only hot-swap into running containers"
-echo "  ./deploy/prebuild-cache.sh              # warm image/NuGet/Go caches before debugging"
+echo "  ./deploy/deploy.sh -fresh                 # full image rebuild; use this if Blazor static assets are stale/missing"
+echo "  ./deploy/prebuild-cache.sh                # warm image/NuGet/Go caches before debugging"
 echo "  ./deploy/smoke-test.sh                    # verify health, Blazor static assets, and dependency diagnostics"
 echo "  ./deploy/logs.sh --errors                 # show recent error-like log lines across services"
 echo "  ./deploy/logs.sh --follow worker-spider   # follow one service"
 echo "  docker compose -f deploy/docker-compose.yml down"
 if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
   echo "  deploy/aws/autoscale-ecs-workers.sh        # run from cron/EventBridge for continuous ECS worker scaling"
-  echo "  ./deploy/deploy.sh --ecs-workers        # pull latest GitHub code, replace ECS worker tasks"
+  echo "  ./deploy/deploy.sh --ecs-workers          # pull latest GitHub code, replace ECS worker tasks"
   echo "  CONFIRM_DESTROY_ECS_WORKERS=yes bash deploy/aws/destroy-ecs-services.sh workers"
 fi
 echo "(or docker-compose -f deploy/docker-compose.yml ... if you use V1)"

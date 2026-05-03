@@ -1,13 +1,86 @@
-[x] Reliability baseline APIs implemented (`/api/http-request-queue/metrics`, `/api/ops/reliability-slo`, `/api/ops/reliability-baseline`)
-[x] Error budget + rollback trigger signals implemented (config-driven via `Nightmare:Reliability`)
-[x] Outbox + inbox idempotency foundation implemented for critical event flows
-[x] Buffered async bus journaling pipeline implemented (no per-event direct DB observer writes)
-[x] Spider execution path unified to durable queue worker only (legacy direct consumer removed)
-[x] Adaptive spider concurrency + queue transition state machine checks implemented
-[x] Enumeration + port scan workers use real services behind interfaces (not stubs)
-[x] CommandCenter routing split into endpoint modules by bounded context
-[x] Startup options validation (`ValidateOnStart`) added for critical runtime config
-[ ] Replace startup schema patching with EF Core migrations + deployment migration job
-[ ] Migrate RabbitMQ transport to MassTransit SQS/SNS with phased dual-run cutover
-[x] Move diagnostics/maintenance endpoints to auth policy + rate limits + audit logs
-[x] Add integration/chaos/performance test suite for outbox, duplicate delivery, and failure injection
+# Argus Engine / NightmareV2 Refactor and Hardening Checklist
+
+## 4. Rename NightmareV2 Internals to ArgusEngine
+[ ] 4.1 Add Argus/Nightmare compatibility configuration helpers.
+[ ] 4.1 Update startup DB, diagnostics, maintenance, and runtime config reads to support Argus:* and Nightmare:* keys.
+[ ] 4.2 Rename solution and production project directories/files to ArgusEngine.
+[ ] 4.3 Rename namespaces from NightmareV2.* to ArgusEngine.*.
+[ ] 4.4 Rename branded runtime/data types while preserving database table names.
+[ ] 4.5 Rename Docker compose project, images, labels, and build stamp env vars with backward compatibility.
+[ ] 4.6 Update deploy/local/AWS scripts for Argus naming without renaming existing databases.
+[ ] 4.7 Update public docs and migration notes.
+[ ] 4.x Validate old config keys, new config keys, build, tests, and Docker compose.
+
+## 5. Split CommandCenter/Program.cs
+[x] 5.1 Reduce Program.cs to composition only and keep it under 75 lines.
+[x] 5.2 Extract service registration into Startup/CommandCenterServiceRegistration.cs.
+[x] 5.3 Extract middleware pipeline into Startup/CommandCenterMiddleware.cs.
+[x] 5.4 Extract startup database initialization into Startup/StartupDatabaseInitializer.cs.
+[x] 5.5 Add central endpoint registration.
+[x] 5.5a Move target route group out of temporary CommandCenterInlineEndpoints.
+[x] 5.5b Move HTTP request queue route group out of temporary CommandCenterInlineEndpoints.
+[x] 5.5c Move bus journal route group out of temporary CommandCenterInlineEndpoints.
+[x] 5.5d Move asset, file store, high-value finding, and tool restart route groups out of temporary CommandCenterInlineEndpoints.
+[ ] 5.5 Drain temporary CommandCenterInlineEndpoints into focused endpoint classes.
+[ ] 5.6 Extract target services: TargetManagementService, TargetSummaryQueryService.
+[x] 5.6a Extract RootSpiderSeedService.
+[x] 5.7a Extract worker scale definitions and AWS/ECS helper services.
+[ ] 5.7 Move worker switch/scaling and ECS routes into focused endpoint classes.
+[ ] 5.x Add focused route/service tests for extracted CommandCenter behavior.
+
+## 6. Add Auditable Gatekeeper Decisions
+[ ] 6.1 Add AssetAdmissionDecision domain entity.
+[ ] 6.2 Add decision/reason constants.
+[ ] 6.3 Add DbSet, EF mapping, and schema patch/migration.
+[ ] 6.4 Add IAssetAdmissionDecisionWriter and EF implementation.
+[ ] 6.5 Instrument GatekeeperOrchestrator early returns and accepted paths.
+[ ] 6.6 Add query API.
+[ ] 6.7 Add Command Center Asset Admission UI.
+[ ] 6.x Add gatekeeper decision tests.
+
+## 9. Move HTTP Response Bodies Out of Queue Table
+[ ] 9.1 Add artifact reference columns while keeping legacy columns.
+[ ] 9.2 Add EF mappings and indexes.
+[ ] 9.3 Add HTTP artifact store/reader abstractions.
+[ ] 9.4 Implement EF/blob artifact storage with preview/hash/truncation.
+[ ] 9.5 Add blob metadata to UrlFetchSnapshot.
+[ ] 9.6 Update HttpRequestQueueWorker response persistence.
+[ ] 9.7 Keep TypeDetailsJson small and metadata-focused.
+[ ] 9.8 Update high-value and tech-id workers to read blobs with byte limits.
+[ ] 9.9 Add backfill maintenance job and guarded endpoint.
+[ ] 9.10 Remove old large columns only after verified migration.
+
+## 10. Partition / Archive High-Volume Tables
+[ ] 10.1 Add data retention options.
+[ ] 10.2 Add retention worker and run result DTO.
+[ ] 10.3 Delete/archive in small bounded batches.
+[ ] 10.4 Add archive tables before deleting useful history.
+[ ] 10.5 Add active queue/outbox partial indexes.
+[ ] 10.6 Plan and implement bus_journal monthly partitioning.
+[ ] 10.7 Add partition maintenance service.
+[ ] 10.8 Reassess http_request_queue partitioning only after artifact move and retention.
+[ ] 10.9 Add admin retention/partition APIs.
+[ ] 10.x Add cutoff, batch, archive, and idempotency tests.
+
+## 13. Add First-Class Observability With OpenTelemetry
+[ ] 13.1 Add OpenTelemetry packages to relevant projects.
+[ ] 13.2 Add shared observability service extension.
+[ ] 13.3 Add Argus meters.
+[ ] 13.4 Add tracing source.
+[ ] 13.5 Add cheap observable database gauges.
+[ ] 13.6 Instrument HttpRequestQueueWorker.
+[ ] 13.7 Instrument gatekeeper decisions.
+[ ] 13.8 Instrument outbox dispatch/dead-letter paths.
+[ ] 13.9 Instrument high-value findings.
+[ ] 13.10 Instrument retention.
+[ ] 13.11 Add optional local observability compose stack.
+[ ] 13.12 Add Grafana dashboard JSON.
+[ ] 13.x Validate startup with and without OTLP endpoint.
+
+## Cross-Cutting Validation
+[ ] Run dotnet restore.
+[ ] Run dotnet build.
+[ ] Run dotnet test.
+[ ] Run docker compose build.
+[ ] Run docker compose up.
+[ ] Run deploy smoke test.

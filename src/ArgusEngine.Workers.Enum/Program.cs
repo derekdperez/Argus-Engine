@@ -1,3 +1,7 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using ArgusEngine.Application.Workers;
 using ArgusEngine.Infrastructure;
@@ -12,12 +16,12 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-enum");
 builder.Services.AddArgusInfrastructure(builder.Configuration);
 
-builder.Services.AddNightmareRabbitMq(
+builder.Services.AddArgusRabbitMq(
     builder.Configuration,
     x =>
     {
         x.AddConsumer<TargetCreatedConsumer>();
-        x.AddConsumer<SubdomainEnumerationRequestedConsumer>();
+        x.AddConsumer<SubdomainEnumerationRequestedConsumer, SubdomainEnumerationRequestedConsumerDefinition>();
     });
 
 var host = builder.Build();
@@ -41,7 +45,7 @@ startupLog.LogInformation(
 
 if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
 {
-    await StartupDatabaseBootstrap.InitializeAsync(
+    await ArgusDbBootstrap.InitializeAsync(
             host.Services,
             host.Services.GetRequiredService<IConfiguration>(),
             startupLog,
@@ -63,6 +67,8 @@ static bool ShouldSkipStartupDatabase(IConfiguration configuration) =>
 
 static bool IsToolAvailable(string binaryPath)
 {
+    if (string.IsNullOrWhiteSpace(binaryPath))
+        return false;
     if (Path.IsPathRooted(binaryPath))
         return File.Exists(binaryPath);
 

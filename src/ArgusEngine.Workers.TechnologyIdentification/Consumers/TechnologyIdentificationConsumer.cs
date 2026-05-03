@@ -10,6 +10,7 @@ using ArgusEngine.Application.FileStore;
 using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Application.TechnologyIdentification;
 using ArgusEngine.Application.Workers;
+using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Infrastructure.Data;
 

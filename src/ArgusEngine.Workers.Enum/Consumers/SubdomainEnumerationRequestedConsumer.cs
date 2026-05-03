@@ -54,11 +54,11 @@ public sealed class SubdomainEnumerationRequestedConsumer(
             new EventId(6, nameof(LogProviderFailed)),
             "Subdomain enumeration provider failed. Provider={Provider}, RootDomain={RootDomain}");
 
-    private static readonly Action<ILogger, string, string, int, int, int, int, int, Exception?> LogEnumerationCompleted =
-        LoggerMessage.Define<string, string, int, int, int, int, int>(
+    private static readonly Action<ILogger, string, string, int, int, int, int, Exception?> LogEnumerationCompleted =
+        LoggerMessage.Define<string, string, int, int, int, int>(
             LogLevel.Information,
             new EventId(7, nameof(LogEnumerationCompleted)),
-            "Completed subdomain enumeration. Provider={Provider}, RootDomain={RootDomain}, RawResults={RawCount}, EmittedResults={EmittedCount}, RejectedNormalization={RejectedNormalization}, RejectedOutOfScope={RejectedScope}, DeduplicatedWithinJob={DedupedCount}");
+            "Completed subdomain enumeration. Provider={Provider}, RootDomain={RootDomain}, RawResults={RawCount}, EmittedResults={EmittedCount}, RejectedNormalization={RejectedNormalization}, RejectedOutOfScope={RejectedScope}");
 
     public async Task Consume(ConsumeContext<SubdomainEnumerationRequested> context)
     {
@@ -169,7 +169,6 @@ public sealed class SubdomainEnumerationRequestedConsumer(
             emittedCount,
             rejectedNormalizationCount,
             rejectedScopeCount,
-            rawResults.Count - rejectedNormalizationCount - rejectedScopeCount - emittedCount,
             null);
     }
 }

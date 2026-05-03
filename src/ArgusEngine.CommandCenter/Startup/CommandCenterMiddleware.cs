@@ -31,6 +31,7 @@ public static class CommandCenterMiddleware
         app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 
         // Required for .NET 9+ static web asset endpoint routing, including framework/package assets.
+        app.UseStaticFiles();
         app.MapStaticAssets();
 
         app.UseAntiforgery();

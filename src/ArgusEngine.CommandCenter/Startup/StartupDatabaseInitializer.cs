@@ -70,11 +70,8 @@ public static class StartupDatabaseInitializer
     {
         var configuredSkip =
             configuration["Argus:SkipStartupDatabase"]
-            ?? configuration["Nightmare:SkipStartupDatabase"]
             ?? configuration["ARGUS_SKIP_STARTUP_DATABASE"]
-            ?? configuration["NIGHTMARE_SKIP_STARTUP_DATABASE"]
-            ?? Environment.GetEnvironmentVariable("ARGUS_SKIP_STARTUP_DATABASE")
-            ?? Environment.GetEnvironmentVariable("NIGHTMARE_SKIP_STARTUP_DATABASE");
+            ?? Environment.GetEnvironmentVariable("ARGUS_SKIP_STARTUP_DATABASE");
 
         return string.Equals(configuredSkip, "true", StringComparison.OrdinalIgnoreCase)
             || string.Equals(configuredSkip, "1", StringComparison.OrdinalIgnoreCase);

@@ -20,46 +20,43 @@ x-enum-build-args: &enum-build-args
   AMASS_PACKAGE: ${AMASS_PACKAGE:-github.com/owasp-amass/amass/v5/cmd/amass@v5.1.1}
 
 x-common-env: &common-env
-  ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=nightmare_v2;Username=nightmare;Password=nightmare
-  ConnectionStrings__FileStore: Host=postgres;Port=5432;Database=nightmare_v2_files;Username=nightmare;Password=nightmare
+  ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=argus_engine;Username=argus;Password=argus
+  ConnectionStrings__FileStore: Host=postgres;Port=5432;Database=argus_engine_files;Username=argus;Password=argus
   Argus__Postgres__MaxPoolSize: ${ARGUS_POSTGRES_MAX_POOL_SIZE:-8}
-  Nightmare__Postgres__MaxPoolSize: ${NIGHTMARE_POSTGRES_MAX_POOL_SIZE:-8}
   Argus__FileStore__MaxPoolSize: ${ARGUS_FILESTORE_MAX_POOL_SIZE:-4}
-  Nightmare__FileStore__MaxPoolSize: ${NIGHTMARE_FILESTORE_MAX_POOL_SIZE:-4}
   ConnectionStrings__Redis: redis:6379
   RabbitMq__Host: rabbitmq
-  RabbitMq__Username: nightmare
-  RabbitMq__Password: nightmare
+  RabbitMq__Username: argus
+  RabbitMq__Password: argus
   RabbitMq__VirtualHost: /
   RabbitMq__ManagementUrl: http://rabbitmq:15672
   ARGUS_COMPONENT_VERSION: *component-version
-  NIGHTMARE_COMPONENT_VERSION: *component-version
 
 configs:
   filestore_db_init_sh:
     content: |
       #!/bin/sh
       set -eu
-      if psql -h postgres -U nightmare -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = 'nightmare_v2_files'" 2>/dev/null | grep -q '^[[:space:]]*1[[:space:]]*$'; then
-        echo "nightmare_v2_files already exists; nothing to do."
+      if psql -h postgres -U argus -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = 'argus_engine_files'" 2>/dev/null | grep -q '^[[:space:]]*1[[:space:]]*$'; then
+        echo "argus_engine_files already exists; nothing to do."
         exit 0
       fi
-      psql -h postgres -U nightmare -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE nightmare_v2_files OWNER nightmare;"
+      psql -h postgres -U argus -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE argus_engine_files OWNER argus;"
 
 services:
   postgres:
     image: postgres:16-alpine
     command: ["postgres", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-300}"]
     environment:
-      POSTGRES_USER: nightmare
-      POSTGRES_PASSWORD: nightmare
-      POSTGRES_DB: nightmare_v2
+      POSTGRES_USER: argus
+      POSTGRES_PASSWORD: argus
+      POSTGRES_DB: argus_engine
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nightmare -d nightmare_v2"]
+      test: ["CMD-SHELL", "pg_isready -U argus -d argus_engine"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -71,7 +68,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      PGPASSWORD: nightmare
+      PGPASSWORD: argus
     configs:
       - source: filestore_db_init_sh
         target: /run/filestore-db-init.sh
@@ -91,8 +88,8 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     environment:
-      RABBITMQ_DEFAULT_USER: nightmare
-      RABBITMQ_DEFAULT_PASS: nightmare
+      RABBITMQ_DEFAULT_USER: argus
+      RABBITMQ_DEFAULT_PASS: argus
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -114,11 +111,8 @@ services:
       <<: *common-env
       ASPNETCORE_URLS: http://+:8080
       Argus__ListenPlainHttp: "true"
-      Nightmare__ListenPlainHttp: "true"
       Argus__Diagnostics__Enabled: "true"
-      Nightmare__Diagnostics__Enabled: "true"
       Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-local-dev-diagnostics-key-change-me}
-      Nightmare__Diagnostics__ApiKey: ${NIGHTMARE_DIAGNOSTICS_API_KEY:-local-dev-diagnostics-key-change-me}
       AWS_REGION: ${AWS_REGION:-}
       ECS_CLUSTER: ${ECS_CLUSTER:-argus-engine}
       ECS_SUBNETS: ${ECS_SUBNETS:-}
@@ -127,11 +121,11 @@ services:
       ECS_ASSIGN_PUBLIC_IP: ${ECS_ASSIGN_PUBLIC_IP:-ENABLED}
       ECS_TASK_EXECUTION_ROLE_ARN: ${ECS_TASK_EXECUTION_ROLE_ARN:-}
       ECS_TASK_ROLE_ARN: ${ECS_TASK_ROLE_ARN:-}
-      WORKER_SPIDER_SERVICE: ${WORKER_SPIDER_SERVICE:-nightmare-worker-spider}
-      WORKER_ENUM_SERVICE: ${WORKER_ENUM_SERVICE:-nightmare-worker-enum}
-      WORKER_PORTSCAN_SERVICE: ${WORKER_PORTSCAN_SERVICE:-nightmare-worker-portscan}
-      WORKER_HIGHVALUE_SERVICE: ${WORKER_HIGHVALUE_SERVICE:-nightmare-worker-highvalue}
-      WORKER_TECHID_SERVICE: ${WORKER_TECHID_SERVICE:-nightmare-worker-techid}
+      WORKER_SPIDER_SERVICE: ${WORKER_SPIDER_SERVICE:-argus-worker-spider}
+      WORKER_ENUM_SERVICE: ${WORKER_ENUM_SERVICE:-argus-worker-enum}
+      WORKER_PORTSCAN_SERVICE: ${WORKER_PORTSCAN_SERVICE:-argus-worker-portscan}
+      WORKER_HIGHVALUE_SERVICE: ${WORKER_HIGHVALUE_SERVICE:-argus-worker-highvalue}
+      WORKER_TECHID_SERVICE: ${WORKER_TECHID_SERVICE:-argus-worker-techid}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
@@ -164,7 +158,6 @@ services:
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
-      Nightmare__SkipStartupDatabase: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -185,7 +178,6 @@ services:
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
-      Nightmare__SkipStartupDatabase: "true"
       Spider__Http__AllowInsecureSsl: "false"
     depends_on:
       postgres:
@@ -209,7 +201,6 @@ services:
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
-      Nightmare__SkipStartupDatabase: "true"
       Enumeration__UseSubfinder: "true"
       Enumeration__SubfinderPath: /usr/local/bin/subfinder
       Enumeration__SubfinderAllSources: "true"
@@ -222,7 +213,7 @@ services:
       Enumeration__AmassTimeoutSeconds: "900"
       Enumeration__UseDnsFallback: "true"
       Enumeration__DnsFallbackMaxCandidates: "300"
-      Enumeration__SubdomainWordlistPath: /opt/nightmare/wordlists/subdomains.txt
+      Enumeration__SubdomainWordlistPath: /opt/argus/wordlists/subdomains.txt
     depends_on:
       postgres:
         condition: service_healthy
@@ -245,7 +236,6 @@ services:
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
-      Nightmare__SkipStartupDatabase: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -266,7 +256,6 @@ services:
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
-      Nightmare__SkipStartupDatabase: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -287,7 +276,6 @@ services:
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
-      Nightmare__SkipStartupDatabase: "true"
     depends_on:
       command-center:
         condition: service_healthy

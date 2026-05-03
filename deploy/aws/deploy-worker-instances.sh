@@ -82,7 +82,7 @@ deploy_to_instance() {
   
   # Pull latest code
   echo "  [1/5] Pulling latest code..."
-  $ssh_cmd 'cd /opt/nightmare && git fetch origin && git checkout main && git pull origin main' 2>&1 | grep -v "^warning:" || true
+  $ssh_cmd 'cd /opt/argus && git fetch origin && git checkout main && git pull origin main' 2>&1 | grep -v "^warning:" || true
   
   # Ensure Docker is running
   echo "  [2/5] Ensuring Docker is running..."
@@ -90,15 +90,15 @@ deploy_to_instance() {
   
   # Stop existing workers
   echo "  [3/5] Stopping existing workers..."
-  $ssh_cmd 'cd /opt/nightmare && docker compose -f deploy/docker-compose.yml down worker-spider 2>/dev/null' || true
+  $ssh_cmd 'cd /opt/argus && docker compose -f deploy/docker-compose.yml down worker-spider 2>/dev/null' || true
   
   # Build the worker image
   echo "  [4/5] Building worker image..."
-  $ssh_cmd 'cd /opt/nightmare && COMPOSE_BAKE=false docker compose -f deploy/docker-compose.yml build worker-spider 2>&1' | tail -20
+  $ssh_cmd 'cd /opt/argus && COMPOSE_BAKE=false docker compose -f deploy/docker-compose.yml build worker-spider 2>&1' | tail -20
   
   # Deploy workers with replicas
   echo "  [5/5] Starting $WORKER_COUNT worker containers..."
-  $ssh_cmd "cd /opt/nightmare && docker compose -f deploy/docker-compose.yml up -d worker-spider --scale worker-spider=$WORKER_COUNT" 2>&1
+  $ssh_cmd "cd /opt/argus && docker compose -f deploy/docker-compose.yml up -d worker-spider --scale worker-spider=$WORKER_COUNT" 2>&1
   
   # Verify workers are running
   sleep 3
@@ -139,7 +139,7 @@ echo "1. Wait a few seconds for workers to initialize and connect to RabbitMQ"
 echo "2. Check HTTP request queue metrics:"
 echo "   curl http://\${COMMAND_CENTER_URL}/api/http-request-queue/metrics"
 echo "3. Monitor worker logs:"
-echo "   aws ec2-instance-connect send-command --instance-ids ${INSTANCE_IDS[0]} --document-name 'AWS-RunShellScript' --parameters 'commands=[\"cd /opt/nightmare && docker compose -f deploy/docker-compose.yml logs -f worker-spider\"]'"
+echo "   aws ec2-instance-connect send-command --instance-ids ${INSTANCE_IDS[0]} --document-name 'AWS-RunShellScript' --parameters 'commands=[\"cd /opt/argus && docker compose -f deploy/docker-compose.yml logs -f worker-spider\"]'"
 
 if [[ ${#FAILED_INSTANCES[@]} -gt 0 ]]; then
   exit 1

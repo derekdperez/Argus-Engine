@@ -8,13 +8,8 @@ public static class ArgusConfiguration
     {
         var normalized = NormalizeKey(childSection);
         var argusKey = string.IsNullOrEmpty(normalized) ? "Argus" : $"Argus:{normalized}";
-        var nightmareKey = string.IsNullOrEmpty(normalized) ? "Nightmare" : $"Nightmare:{normalized}";
 
-        var argus = configuration.GetSection(argusKey);
-        if (argus.Exists())
-            return argus;
-
-        return configuration.GetSection(nightmareKey);
+        return configuration.GetSection(argusKey);
     }
 
     public static string? GetArgusValue(this IConfiguration configuration, string key)
@@ -23,11 +18,8 @@ public static class ArgusConfiguration
         var envKey = ToScreamingSnake(normalized);
 
         return configuration[$"Argus:{normalized}"]
-               ?? configuration[$"Nightmare:{normalized}"]
                ?? configuration[$"ARGUS_{envKey}"]
-               ?? configuration[$"NIGHTMARE_{envKey}"]
-               ?? Environment.GetEnvironmentVariable($"ARGUS_{envKey}")
-               ?? Environment.GetEnvironmentVariable($"NIGHTMARE_{envKey}");
+               ?? Environment.GetEnvironmentVariable($"ARGUS_{envKey}");
     }
 
     public static T GetArgusValue<T>(this IConfiguration configuration, string key, T defaultValue)
@@ -37,13 +29,9 @@ public static class ArgusConfiguration
             return defaultValue;
 
         var argusPath = $"Argus:{NormalizeKey(key)}";
-        var nightmarePath = $"Nightmare:{NormalizeKey(key)}";
 
         if (!string.IsNullOrWhiteSpace(configuration[argusPath]))
             return configuration.GetValue(argusPath, defaultValue)!;
-
-        if (!string.IsNullOrWhiteSpace(configuration[nightmarePath]))
-            return configuration.GetValue(nightmarePath, defaultValue)!;
 
         try
         {

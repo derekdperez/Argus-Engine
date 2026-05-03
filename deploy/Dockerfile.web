@@ -14,7 +14,7 @@ COPY src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj src/ArgusEngine.Cont
 COPY src/ArgusEngine.Domain/ArgusEngine.Domain.csproj src/ArgusEngine.Domain/
 COPY src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj src/ArgusEngine.Infrastructure/
 
-RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
+RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj"
 
 # Copy only the project dependency closure used by the web app.
@@ -28,7 +28,7 @@ COPY src/Resources/ src/Resources/
 
 ARG COMPONENT_VERSION=2.6.1
 
-RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
+RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj" \
       -c Release -o /app/publish --no-restore /p:UseAppHost=false \
       /p:Version="${COMPONENT_VERSION}" \
@@ -56,11 +56,9 @@ WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080
 
 # Blazor Server components call this app's own JSON endpoints from inside the container.
-ENV Nightmare__CommandCenterInternalBaseUrl=http://127.0.0.1:8080/
 ENV Argus__CommandCenterInternalBaseUrl=http://127.0.0.1:8080/
 
 # Avoid HTTPS redirect/HSTS when only HTTP is bound.
-ENV Nightmare__ListenPlainHttp=true
 ENV Argus__ListenPlainHttp=true
 
 EXPOSE 8080
@@ -80,6 +78,5 @@ LABEL org.opencontainers.image.version="${COMPONENT_VERSION}"
 
 ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
 ENV ARGUS_COMPONENT_VERSION=${COMPONENT_VERSION}
-ENV NIGHTMARE_COMPONENT_VERSION=${COMPONENT_VERSION}
 
 ENTRYPOINT ["dotnet", "ArgusEngine.CommandCenter.dll"]

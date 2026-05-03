@@ -16,11 +16,11 @@ fi
 
 service_name() {
   case "$1" in
-    worker-spider) echo "${WORKER_SPIDER_SERVICE:-nightmare-worker-spider}" ;;
-    worker-enum) echo "${WORKER_ENUM_SERVICE:-nightmare-worker-enum}" ;;
-    worker-portscan) echo "${WORKER_PORTSCAN_SERVICE:-nightmare-worker-portscan}" ;;
-    worker-highvalue) echo "${WORKER_HIGHVALUE_SERVICE:-nightmare-worker-highvalue}" ;;
-    worker-techid) echo "${WORKER_TECHID_SERVICE:-nightmare-worker-techid}" ;;
+    worker-spider) echo "${WORKER_SPIDER_SERVICE:-argus-worker-spider}" ;;
+    worker-enum) echo "${WORKER_ENUM_SERVICE:-argus-worker-enum}" ;;
+    worker-portscan) echo "${WORKER_PORTSCAN_SERVICE:-argus-worker-portscan}" ;;
+    worker-highvalue) echo "${WORKER_HIGHVALUE_SERVICE:-argus-worker-highvalue}" ;;
+    worker-techid) echo "${WORKER_TECHID_SERVICE:-argus-worker-techid}" ;;
     *) echo "Unknown worker key: $1" >&2; return 1 ;;
   esac
 }
@@ -40,7 +40,7 @@ task_family() {
   local worker="$1"
   local sanitized="${worker//-/_}"
   local var="ECS_TASK_FAMILY_${sanitized^^}"
-  echo "${!var:-nightmare-v2-${worker}}"
+  echo "${!var:-argus-v2-${worker}}"
 }
 
 scale_min() {

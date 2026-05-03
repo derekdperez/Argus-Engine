@@ -11,24 +11,24 @@ case "$scope" in
     : "${CONFIRM_DESTROY_ECS_WORKERS:?Set CONFIRM_DESTROY_ECS_WORKERS=yes to delete worker ECS services}"
     [[ "$CONFIRM_DESTROY_ECS_WORKERS" == "yes" ]] || { echo "Refusing to delete workers without CONFIRM_DESTROY_ECS_WORKERS=yes" >&2; exit 2; }
     services=(
-      "${WORKER_SPIDER_SERVICE:-nightmare-worker-spider}"
-      "${WORKER_ENUM_SERVICE:-nightmare-worker-enum}"
-      "${WORKER_PORTSCAN_SERVICE:-nightmare-worker-portscan}"
-      "${WORKER_HIGHVALUE_SERVICE:-nightmare-worker-highvalue}"
-      "${WORKER_TECHID_SERVICE:-nightmare-worker-techid}"
+      "${WORKER_SPIDER_SERVICE:-argus-worker-spider}"
+      "${WORKER_ENUM_SERVICE:-argus-worker-enum}"
+      "${WORKER_PORTSCAN_SERVICE:-argus-worker-portscan}"
+      "${WORKER_HIGHVALUE_SERVICE:-argus-worker-highvalue}"
+      "${WORKER_TECHID_SERVICE:-argus-worker-techid}"
     )
     ;;
   all)
-    : "${CONFIRM_DESTROY_ECS_ALL:?Set CONFIRM_DESTROY_ECS_ALL=yes to delete all Nightmare ECS services}"
+    : "${CONFIRM_DESTROY_ECS_ALL:?Set CONFIRM_DESTROY_ECS_ALL=yes to delete all argus ECS services}"
     [[ "$CONFIRM_DESTROY_ECS_ALL" == "yes" ]] || { echo "Refusing to delete all services without CONFIRM_DESTROY_ECS_ALL=yes" >&2; exit 2; }
     services=(
-      "${COMMAND_CENTER_SERVICE:-nightmare-command-center}"
-      "${GATEKEEPER_SERVICE:-nightmare-gatekeeper}"
-      "${WORKER_SPIDER_SERVICE:-nightmare-worker-spider}"
-      "${WORKER_ENUM_SERVICE:-nightmare-worker-enum}"
-      "${WORKER_PORTSCAN_SERVICE:-nightmare-worker-portscan}"
-      "${WORKER_HIGHVALUE_SERVICE:-nightmare-worker-highvalue}"
-      "${WORKER_TECHID_SERVICE:-nightmare-worker-techid}"
+      "${COMMAND_CENTER_SERVICE:-argus-command-center}"
+      "${GATEKEEPER_SERVICE:-argus-gatekeeper}"
+      "${WORKER_SPIDER_SERVICE:-argus-worker-spider}"
+      "${WORKER_ENUM_SERVICE:-argus-worker-enum}"
+      "${WORKER_PORTSCAN_SERVICE:-argus-worker-portscan}"
+      "${WORKER_HIGHVALUE_SERVICE:-argus-worker-highvalue}"
+      "${WORKER_TECHID_SERVICE:-argus-worker-techid}"
     )
     ;;
   *)

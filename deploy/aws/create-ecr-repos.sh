@@ -2,7 +2,7 @@
 set -euo pipefail
 
 : "${AWS_REGION:?Set AWS_REGION}"
-: "${ECR_PREFIX:=nightmare-v2}"
+: "${ECR_PREFIX:=argus-v2}"
 
 services=(
   command-center

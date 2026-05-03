@@ -10,11 +10,11 @@ repo_root="$(cd -- "${script_dir}/../.." && pwd)"
 sampled_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
 services=(
-  "${WORKER_SPIDER_SERVICE:-nightmare-worker-spider}"
-  "${WORKER_ENUM_SERVICE:-nightmare-worker-enum}"
-  "${WORKER_PORTSCAN_SERVICE:-nightmare-worker-portscan}"
-  "${WORKER_HIGHVALUE_SERVICE:-nightmare-worker-highvalue}"
-  "${WORKER_TECHID_SERVICE:-nightmare-worker-techid}"
+  "${WORKER_SPIDER_SERVICE:-argus-worker-spider}"
+  "${WORKER_ENUM_SERVICE:-argus-worker-enum}"
+  "${WORKER_PORTSCAN_SERVICE:-argus-worker-portscan}"
+  "${WORKER_HIGHVALUE_SERVICE:-argus-worker-highvalue}"
+  "${WORKER_TECHID_SERVICE:-argus-worker-techid}"
 )
 
 docker_cmd() {
@@ -124,7 +124,7 @@ if identity_raw:
         ])
 PY
 
-compose_cmd exec -T postgres psql -U nightmare -d nightmare_v2 -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+compose_cmd exec -T postgres psql -U argus -d argus_v2 -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
 CREATE TABLE IF NOT EXISTS cloud_resource_usage_samples (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     sampled_at_utc timestamp with time zone NOT NULL,
@@ -139,7 +139,7 @@ CREATE INDEX IF NOT EXISTS ix_cloud_resource_usage_kind_resource_sampled
     ON cloud_resource_usage_samples (resource_kind, resource_id, sampled_at_utc);
 SQL
 
-compose_cmd exec -T postgres psql -U nightmare -d nightmare_v2 \
+compose_cmd exec -T postgres psql -U argus -d argus_v2 \
   -c "\copy cloud_resource_usage_samples (sampled_at_utc, resource_kind, resource_id, resource_name, running_count, metadata_json) FROM STDIN WITH (FORMAT csv)" \
   <"$csv_file" >/dev/null
 

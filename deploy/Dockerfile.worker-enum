@@ -13,8 +13,8 @@ ARG AMASS_PACKAGE=github.com/owasp-amass/amass/v5/cmd/amass@v5.1.1
 ENV GOBIN=/out \
     CGO_ENABLED=0
 
-RUN --mount=type=cache,id=nightmare-go-build,target=/root/.cache/go-build \
-    --mount=type=cache,id=nightmare-go-mod,target=/go/pkg/mod \
+RUN --mount=type=cache,id=argus-go-build,target=/root/.cache/go-build \
+    --mount=type=cache,id=argus-go-mod,target=/go/pkg/mod \
     mkdir -p /out \
     && go install -v "${SUBFINDER_PACKAGE}" \
     && go install -v "${AMASS_PACKAGE}" \
@@ -35,7 +35,7 @@ COPY src/ArgusEngine.Domain/ArgusEngine.Domain.csproj src/ArgusEngine.Domain/
 COPY src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj src/ArgusEngine.Infrastructure/
 COPY src/ArgusEngine.Workers.Enum/ArgusEngine.Workers.Enum.csproj src/ArgusEngine.Workers.Enum/
 
-RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
+RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 
 COPY src/ArgusEngine.Application/ src/ArgusEngine.Application/
@@ -44,7 +44,7 @@ COPY src/ArgusEngine.Domain/ src/ArgusEngine.Domain/
 COPY src/ArgusEngine.Infrastructure/ src/ArgusEngine.Infrastructure/
 COPY src/ArgusEngine.Workers.Enum/ src/ArgusEngine.Workers.Enum/
 
-RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
+RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
       -c Release -o /app/publish --no-restore /p:UseAppHost=false \
       /p:Version="${COMPONENT_VERSION}" \
@@ -70,7 +70,7 @@ WORKDIR /app
 
 COPY --from=recon-tools /out/subfinder /usr/local/bin/subfinder
 COPY --from=recon-tools /out/amass /usr/local/bin/amass
-COPY deploy/wordlists/subdomains.txt /opt/nightmare/wordlists/subdomains.txt
+COPY deploy/wordlists/subdomains.txt /opt/argus/wordlists/subdomains.txt
 COPY --from=build /app/publish .
 
 ENV APP_DLL=${APP_DLL}
@@ -81,8 +81,6 @@ LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
 LABEL org.opencontainers.image.version="${COMPONENT_VERSION}"
 
 ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
-ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
 ENV ARGUS_COMPONENT_VERSION=${COMPONENT_VERSION}
-ENV NIGHTMARE_COMPONENT_VERSION=${COMPONENT_VERSION}
 
 ENTRYPOINT ["sh", "-c", "exec dotnet /app/${APP_DLL}"]

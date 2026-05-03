@@ -31,7 +31,7 @@ namespace ArgusEngine.Infrastructure;
 public static class DependencyInjection
 {
     private const string DevelopmentPostgresConnectionString =
-        "Host=localhost;Port=5432;Database=nightmare_v2;Username=nightmare;Password=nightmare";
+        "Host=localhost;Port=5432;Database=argus_engine;Username=argus;Password=argus";
 
     private const string DevelopmentRedisConnectionString = "localhost:6379";
 
@@ -188,7 +188,7 @@ public static class DependencyInjection
 
         var builder = new NpgsqlConnectionStringBuilder(postgresConnectionString)
         {
-            Database = "nightmare_v2_files",
+            Database = "argus_engine_files",
         };
 
         return builder.ConnectionString;

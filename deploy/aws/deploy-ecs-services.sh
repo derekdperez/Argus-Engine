@@ -10,13 +10,13 @@ repo_root="$(cd -- "${script_dir}/../.." && pwd)"
 : "${ECS_TASK_EXECUTION_ROLE_ARN:?Set ECS_TASK_EXECUTION_ROLE_ARN}"
 : "${ECS_SUBNETS:?Set ECS_SUBNETS as a comma-separated subnet list}"
 : "${ECS_SECURITY_GROUPS:?Set ECS_SECURITY_GROUPS as a comma-separated security group list}"
-: "${ECR_PREFIX:=nightmare-v2}"
+: "${ECR_PREFIX:=argus-v2}"
 : "${IMAGE_TAG:=latest}"
 : "${ECS_LAUNCH_TYPE:=FARGATE}"
 : "${ECS_NETWORK_MODE:=awsvpc}"
 : "${ECS_ASSIGN_PUBLIC_IP:=DISABLED}"
-: "${ECS_LOG_GROUP:=/ecs/nightmare-v2}"
-: "${ECS_LOG_PREFIX:=nightmare-v2}"
+: "${ECS_LOG_GROUP:=/ecs/argus-v2}"
+: "${ECS_LOG_PREFIX:=argus-v2}"
 : "${ECS_CREATE_LOG_GROUP:=true}"
 : "${SERVICE_ENV_FILE:=${script_dir}/service-env}"
 : "${UPDATE_DESIRED_COUNTS:=false}"
@@ -63,13 +63,13 @@ fi
 
 service_name() {
   case "$1" in
-    command-center) echo "${COMMAND_CENTER_SERVICE:-nightmare-command-center}" ;;
-    gatekeeper) echo "${GATEKEEPER_SERVICE:-nightmare-gatekeeper}" ;;
-    worker-spider) echo "${WORKER_SPIDER_SERVICE:-nightmare-worker-spider}" ;;
-    worker-enum) echo "${WORKER_ENUM_SERVICE:-nightmare-worker-enum}" ;;
-    worker-portscan) echo "${WORKER_PORTSCAN_SERVICE:-nightmare-worker-portscan}" ;;
-    worker-highvalue) echo "${WORKER_HIGHVALUE_SERVICE:-nightmare-worker-highvalue}" ;;
-    worker-techid) echo "${WORKER_TECHID_SERVICE:-nightmare-worker-techid}" ;;
+    command-center) echo "${COMMAND_CENTER_SERVICE:-argus-command-center}" ;;
+    gatekeeper) echo "${GATEKEEPER_SERVICE:-argus-gatekeeper}" ;;
+    worker-spider) echo "${WORKER_SPIDER_SERVICE:-argus-worker-spider}" ;;
+    worker-enum) echo "${WORKER_ENUM_SERVICE:-argus-worker-enum}" ;;
+    worker-portscan) echo "${WORKER_PORTSCAN_SERVICE:-argus-worker-portscan}" ;;
+    worker-highvalue) echo "${WORKER_HIGHVALUE_SERVICE:-argus-worker-highvalue}" ;;
+    worker-techid) echo "${WORKER_TECHID_SERVICE:-argus-worker-techid}" ;;
     *) echo "Unknown service key: $1" >&2; return 1 ;;
   esac
 }
@@ -78,7 +78,7 @@ task_family() {
   local service="$1"
   local sanitized="${service//-/_}"
   local var="ECS_TASK_FAMILY_${sanitized^^}"
-  echo "${!var:-nightmare-v2-${service}}"
+  echo "${!var:-argus-v2-${service}}"
 }
 
 desired_count() {
@@ -150,12 +150,12 @@ env = parse_env(env_file)
 if service == "command-center":
     env.update({
         "ASPNETCORE_URLS": "http://+:8080",
-        "Nightmare__ListenPlainHttp": "true",
+        "argus__ListenPlainHttp": "true",
     })
 else:
     env.update({
-        "Nightmare__SkipStartupDatabase": "true",
-        "NIGHTMARE_SKIP_STARTUP_DATABASE": "1",
+        "argus__SkipStartupDatabase": "true",
+        "argus_SKIP_STARTUP_DATABASE": "1",
     })
 
 if service == "worker-spider":

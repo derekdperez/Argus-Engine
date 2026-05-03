@@ -105,13 +105,13 @@ systemctl start docker
 # Add ubuntu user to docker group for script operations
 usermod -aG docker ubuntu || true
 
-# Clone or update the NightmareV2 repository
-if [ ! -d /opt/nightmare ]; then
-  git clone https://github.com/derekdperez/NightmareV2.git /opt/nightmare
-  cd /opt/nightmare
+# Clone or update the argusV2 repository
+if [ ! -d /opt/argus ]; then
+  git clone https://github.com/derekdperez/argusV2.git /opt/argus
+  cd /opt/argus
   git checkout main
 else
-  cd /opt/nightmare
+  cd /opt/argus
   git fetch origin
   git checkout main
   git pull origin main
@@ -121,11 +121,11 @@ fi
 INSTANCE_ID=$(ec2-metadata --instance-id | cut -d ' ' -f 2 || curl -s http://169.254.169.254/latest/meta-data/instance-id)
 INSTANCE_IP=$(ec2-metadata --local-ipv4 | cut -d ' ' -f 2 || curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 
-echo "Instance provisioned: $INSTANCE_ID" > /opt/nightmare/PROVISION_LOG.txt
-echo "Private IP: $INSTANCE_IP" >> /opt/nightmare/PROVISION_LOG.txt
-echo "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> /opt/nightmare/PROVISION_LOG.txt
+echo "Instance provisioned: $INSTANCE_ID" > /opt/argus/PROVISION_LOG.txt
+echo "Private IP: $INSTANCE_IP" >> /opt/argus/PROVISION_LOG.txt
+echo "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> /opt/argus/PROVISION_LOG.txt
 
-chmod -R 777 /opt/nightmare
+chmod -R 777 /opt/argus
 EOF
 
 # Base64-encode the user data script
@@ -139,7 +139,7 @@ INSTANCE_IDS=()
 INSTANCE_PRIVATE_IPS=()
 
 for ((i=1; i<=INSTANCE_COUNT; i++)); do
-  INSTANCE_NAME="nightmare-worker-$i"
+  INSTANCE_NAME="argus-worker-$i"
   
   echo "Launching instance $i of $INSTANCE_COUNT: $INSTANCE_NAME"
   
@@ -151,7 +151,7 @@ for ((i=1; i<=INSTANCE_COUNT; i++)); do
     --key-name '$WORKER_KEY_PAIR' \
     --security-group-ids '$SG_ID' \
     --user-data '$USER_DATA_B64' \
-    --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=$INSTANCE_NAME},{Key=Purpose,Value=nightmare-worker}]' \
+    --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=$INSTANCE_NAME},{Key=Purpose,Value=argus-worker}]' \
     --output json"
   
   # Add subnet if available

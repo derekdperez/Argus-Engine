@@ -1,4 +1,4 @@
-# AWS ECS deployment helpers for NightmareV2
+# AWS ECS deployment helpers for argusV2
 
 These helpers keep the production stack self-hosted: Postgres, Redis, and RabbitMQ remain containers, while the .NET services run as independently scalable ECS services.
 
@@ -45,12 +45,12 @@ That mode:
 - Creates or updates ECS worker services and scales them back up on the newest task definitions/images.
 - Records ECS worker and current EC2 host usage samples for the Command Center Admin page.
 
-The mode is designed to be re-runnable. Existing roles, cluster, repositories, log groups, security group rules, generated env files, task definitions, and ECS services are reused. The worker tasks themselves are intentionally replaced on each `--ecs-workers` deploy (`NIGHTMARE_ECS_REPLACE_WORKERS=1` by default) so each deploy exercises worker loss/recovery and guarantees new worker containers start from the latest pushed image. Set `NIGHTMARE_ECS_REPLACE_WORKERS=0` to converge in place without the scale-to-zero replacement step.
+The mode is designed to be re-runnable. Existing roles, cluster, repositories, log groups, security group rules, generated env files, task definitions, and ECS services are reused. The worker tasks themselves are intentionally replaced on each `--ecs-workers` deploy (`argus_ECS_REPLACE_WORKERS=1` by default) so each deploy exercises worker loss/recovery and guarantees new worker containers start from the latest pushed image. Set `argus_ECS_REPLACE_WORKERS=0` to converge in place without the scale-to-zero replacement step.
 
-`--ecs-workers` defaults `NIGHTMARE_GIT_PULL=1`, so it runs `git pull --ff-only` before building. Disable that only when you intentionally want to deploy the checked-out working tree:
+`--ecs-workers` defaults `argus_GIT_PULL=1`, so it runs `git pull --ff-only` before building. Disable that only when you intentionally want to deploy the checked-out working tree:
 
 ```bash
-NIGHTMARE_GIT_PULL=0 ./deploy/deploy.sh --ecs-workers
+argus_GIT_PULL=0 ./deploy/deploy.sh --ecs-workers
 ```
 
 Required before running:
@@ -144,7 +144,7 @@ Delete only worker ECS services:
 CONFIRM_DESTROY_ECS_WORKERS=yes deploy/aws/destroy-ecs-services.sh workers
 ```
 
-Delete all Nightmare ECS services:
+Delete all argus ECS services:
 
 ```bash
 CONFIRM_DESTROY_ECS_ALL=yes deploy/aws/destroy-ecs-services.sh all
@@ -154,7 +154,7 @@ This deletes ECS services only. It does not delete ECR repositories, log groups,
 
 ## HTTP Request Worker Scaling
 
-For high-throughput HTTP request processing, NightmareV2 supports distributed worker deployment:
+For high-throughput HTTP request processing, argusV2 supports distributed worker deployment:
 
 **📖 See [SCALING_GUIDE.md](./SCALING_GUIDE.md) for comprehensive documentation on:**
 - Local docker-compose deployment with 10 workers
@@ -212,7 +212,7 @@ New deployments should prefer `autoscale-ecs-workers.sh` because it scales spide
 Defaults:
 
 - `subfinder` runs with all passive sources enabled and recursive discovery.
-- `amass` runs active enumeration with brute-force enabled against the bundled wordlist at `/opt/nightmare/wordlists/subdomains.txt`.
+- `amass` runs active enumeration with brute-force enabled against the bundled wordlist at `/opt/argus/wordlists/subdomains.txt`.
 - DNS fallback remains enabled so basic enumeration still works if a tool fails or times out.
 
 When changing tool versions, set these before running `deploy/aws/build-push-ecr.sh`:

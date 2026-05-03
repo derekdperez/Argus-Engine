@@ -1,6 +1,6 @@
 # Worker Scaling Guide
 
-This guide explains how to scale NightmareV2 workers to support high-throughput reconnaissance scanning. The system supports local Docker Compose, ECS services, and the older distributed EC2 worker deployment.
+This guide explains how to scale argusV2 workers to support high-throughput reconnaissance scanning. The system supports local Docker Compose, ECS services, and the older distributed EC2 worker deployment.
 
 ## Architecture Overview
 
@@ -152,7 +152,7 @@ This script:
 - Uses the `kp1` key pair for SSH access
 - Assigns the default security group
 - Installs Docker and Docker Compose via user data
-- Clones the NightmareV2 repository to `/opt/nightmare`
+- Clones the argusV2 repository to `/opt/argus`
 
 Wait for instances to reach 'running' state:
 
@@ -219,7 +219,7 @@ View worker logs from an instance:
 ssh -i ~/.ssh/kp1.pem ubuntu@<instance-ip>
 
 # View worker logs
-cd /opt/nightmare
+cd /opt/argus
 docker compose -f deploy/docker-compose.yml logs -f worker-spider
 ```
 
@@ -263,7 +263,7 @@ If only .NET code changed (not Docker configuration):
 
 ```bash
 # On the instance (via SSH)
-cd /opt/nightmare
+cd /opt/argus
 ./deploy/run-local.sh --hot
 ```
 
@@ -275,7 +275,7 @@ Restart workers without pulling new code:
 
 ```bash
 # On each instance (via SSH)
-cd /opt/nightmare
+cd /opt/argus
 docker compose -f deploy/docker-compose.yml restart worker-spider
 ```
 
@@ -301,13 +301,13 @@ curl http://${COMMAND_CENTER_URL}/api/ops/metrics
 
 ```bash
 # View recent worker logs
-ssh -i ~/.ssh/kp1.pem ubuntu@<ip> 'cd /opt/nightmare && docker compose logs --tail=50 worker-spider | grep -i error'
+ssh -i ~/.ssh/kp1.pem ubuntu@<ip> 'cd /opt/argus && docker compose logs --tail=50 worker-spider | grep -i error'
 
 # Check RabbitMQ connectivity
-ssh -i ~/.ssh/kp1.pem ubuntu@<ip> 'docker exec nightmare-v2-rabbitmq-1 rabbitmq-diagnostics -q ping'
+ssh -i ~/.ssh/kp1.pem ubuntu@<ip> 'docker exec argus-v2-rabbitmq-1 rabbitmq-diagnostics -q ping'
 
 # Verify database connectivity
-ssh -i ~/.ssh/kp1.pem ubuntu@<ip> 'docker exec nightmare-v2-postgres-1 pg_isready -U nightmare'
+ssh -i ~/.ssh/kp1.pem ubuntu@<ip> 'docker exec argus-v2-postgres-1 pg_isready -U argus'
 ```
 
 ### Scaling Down
@@ -316,7 +316,7 @@ To remove worker instances:
 
 ```bash
 # Stop workers on instance
-ssh -i ~/.ssh/kp1.pem ubuntu@<ip> 'cd /opt/nightmare && docker compose -f deploy/docker-compose.yml down'
+ssh -i ~/.ssh/kp1.pem ubuntu@<ip> 'cd /opt/argus && docker compose -f deploy/docker-compose.yml down'
 
 # Terminate the EC2 instance
 aws ec2 terminate-instances --region us-east-1 --instance-ids i-0123456789abcdef0
@@ -364,7 +364,7 @@ docker compose logs worker-spider | grep -i "concurrency\|adaptive"
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ NightmareV2 HTTP Request Processing Infrastructure          │
+│ argusV2 HTTP Request Processing Infrastructure          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  HTTP Request Queue (Postgres)                               │
@@ -397,7 +397,7 @@ docker compose logs worker-spider | grep -i "concurrency\|adaptive"
 
 ## References
 
-- Domain locking implementation: [HttpRequestQueueWorker.cs](../../src/NightmareV2.Workers.Spider/HttpRequestQueueWorker.cs#L152)
-- Concurrency management: [AdaptiveConcurrencyController.cs](../../src/NightmareV2.Workers.Spider/AdaptiveConcurrencyController.cs)
-- HTTP queue settings: [HttpRequestQueueSettings.cs](../../src/NightmareV2.Domain/Entities/HttpRequestQueueSettings.cs)
+- Domain locking implementation: [HttpRequestQueueWorker.cs](../../src/argusV2.Workers.Spider/HttpRequestQueueWorker.cs#L152)
+- Concurrency management: [AdaptiveConcurrencyController.cs](../../src/argusV2.Workers.Spider/AdaptiveConcurrencyController.cs)
+- HTTP queue settings: [HttpRequestQueueSettings.cs](../../src/argusV2.Domain/Entities/HttpRequestQueueSettings.cs)
 - Queue schema: Database migrations in `Infrastructure/Data`

@@ -33,9 +33,6 @@ public static class CommandCenterMiddleware
         // Required for .NET 9+ static web asset endpoint routing, including framework/package assets.
         app.MapStaticAssets();
 
-        // Keep static file middleware for conventional wwwroot files and any non-endpoint static file scenarios.
-        app.UseStaticFiles();
-
         app.UseAntiforgery();
 
         return app;

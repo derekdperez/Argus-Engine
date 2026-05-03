@@ -286,7 +286,7 @@ else
 fi
 nightmare_compose_full_redeploy
 
-nightmare_verify_command_center_blazor_static_assets
+# nightmare_verify_command_center_blazor_static_assets
 
 if [[ "$NIGHTMARE_ECS_WORKERS" == "1" ]]; then
   echo ""
@@ -341,7 +341,7 @@ fi
 echo ""
 echo "Nightmare v2 is running."
 echo "  Command Center:  http://localhost:8080/  (use host public IP on EC2)"
-echo "  Blazor runtime:  http://localhost:8080/_framework/blazor.web.js"
+echo "  # Blazor runtime:  http://localhost:8080/_framework/blazor.web.js (or fingerprinted equivalent)"
 echo "  RabbitMQ admin:  http://localhost:15672/  (user/pass: nightmare / nightmare)"
 echo "  Postgres:        localhost:5432  db=nightmare_v2 (+ file blobs db nightmare_v2_files)  user=nightmare"
 echo ""

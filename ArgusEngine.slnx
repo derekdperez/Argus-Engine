@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ArgusEngine.Application/ArgusEngine.Application.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.Domain/ArgusEngine.Domain.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.Workers.Enum/ArgusEngine.Workers.Enum.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.Workers.Spider/ArgusEngine.Workers.Spider.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj" Type="Classic C#" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="src/tests/ArgusEngine.CommandCenter.Tests/ArgusEngine.CommandCenter.Tests.csproj" Type="Classic C#" />
+    <Project Path="src/tests/ArgusEngine.Infrastructure.Tests/ArgusEngine.Infrastructure.Tests.csproj" Type="Classic C#" />
+  </Folder>
+</Solution>

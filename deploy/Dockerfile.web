@@ -6,32 +6,32 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy project files first so NuGet restore is cached when only .cs/.razor/css/js files change.
-COPY Directory.Build.props Directory.Build.targets NightmareV2.slnx ./
-COPY src/NightmareV2.Application/NightmareV2.Application.csproj src/NightmareV2.Application/
-COPY src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj src/NightmareV2.CommandCenter/
-COPY src/NightmareV2.Contracts/NightmareV2.Contracts.csproj src/NightmareV2.Contracts/
-COPY src/NightmareV2.Domain/NightmareV2.Domain.csproj src/NightmareV2.Domain/
-COPY src/NightmareV2.Infrastructure/NightmareV2.Infrastructure.csproj src/NightmareV2.Infrastructure/
+COPY Directory.Build.props Directory.Build.targets ArgusEngine.slnx ./
+COPY src/ArgusEngine.Application/ArgusEngine.Application.csproj src/ArgusEngine.Application/
+COPY src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj src/ArgusEngine.CommandCenter/
+COPY src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj src/ArgusEngine.Contracts/
+COPY src/ArgusEngine.Domain/ArgusEngine.Domain.csproj src/ArgusEngine.Domain/
+COPY src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj src/ArgusEngine.Infrastructure/
 
 RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
-    dotnet restore "src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj"
+    dotnet restore "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj"
 
 # Copy only the project dependency closure used by the web app. Unrelated worker edits no longer invalidate this layer.
-COPY src/NightmareV2.Application/ src/NightmareV2.Application/
-COPY src/NightmareV2.CommandCenter/ src/NightmareV2.CommandCenter/
-COPY src/NightmareV2.Contracts/ src/NightmareV2.Contracts/
-COPY src/NightmareV2.Domain/ src/NightmareV2.Domain/
-COPY src/NightmareV2.Infrastructure/ src/NightmareV2.Infrastructure/
+COPY src/ArgusEngine.Application/ src/ArgusEngine.Application/
+COPY src/ArgusEngine.CommandCenter/ src/ArgusEngine.CommandCenter/
+COPY src/ArgusEngine.Contracts/ src/ArgusEngine.Contracts/
+COPY src/ArgusEngine.Domain/ src/ArgusEngine.Domain/
+COPY src/ArgusEngine.Infrastructure/ src/ArgusEngine.Infrastructure/
 COPY src/Resources/ src/Resources/
 
-ARG COMPONENT_VERSION=2.3.0
+ARG COMPONENT_VERSION=2.6.1
 
 RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
-    dotnet publish "src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj" \
+    dotnet publish "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj" \
       -c Release -o /app/publish --no-restore /p:UseAppHost=false \
       /p:Version="${COMPONENT_VERSION}" \
-      /p:AssemblyVersion="2.3.0.0" \
-      /p:FileVersion="2.3.0.0" \
+      /p:AssemblyVersion="2.6.1.0" \
+      /p:FileVersion="2.6.1.0" \
       /p:InformationalVersion="${COMPONENT_VERSION}" \
     && test -s /app/publish/wwwroot/_framework/blazor.web.js \
     && ! grep -q "^404: Not Found" /app/publish/wwwroot/_framework/blazor.web.js
@@ -64,7 +64,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8080/health/ready >/dev/null || exit 1
 
 ARG BUILD_SOURCE_STAMP=unknown
-ARG COMPONENT_VERSION=2.3.0
+ARG COMPONENT_VERSION=2.6.1
 
 LABEL org.opencontainers.image.title="Argus Engine Command Center"
 LABEL org.opencontainers.image.description="Command Center for Argus Engine"
@@ -72,8 +72,8 @@ LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
 LABEL org.opencontainers.image.version="${COMPONENT_VERSION}"
 
 ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
-ENV NIGHTMARE_BUILD_STAMP=${BUILD_SOURCE_STAMP}
+ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
 ENV ARGUS_COMPONENT_VERSION=${COMPONENT_VERSION}
 ENV NIGHTMARE_COMPONENT_VERSION=${COMPONENT_VERSION}
 
-ENTRYPOINT ["dotnet", "NightmareV2.CommandCenter.dll"]
+ENTRYPOINT ["dotnet", "ArgusEngine.CommandCenter.dll"]

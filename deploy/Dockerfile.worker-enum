@@ -2,8 +2,8 @@
 # Enum worker image. This is separate from the generic worker Dockerfile so subfinder/amass are not
 # rebuilt or copied into every worker image.
 
-ARG PROJECT_DIR=NightmareV2.Workers.Enum
-ARG APP_DLL=NightmareV2.Workers.Enum.dll
+ARG PROJECT_DIR=ArgusEngine.Workers.Enum
+ARG APP_DLL=ArgusEngine.Workers.Enum.dll
 
 FROM golang:1.26.2-bookworm AS recon-tools
 
@@ -24,39 +24,39 @@ RUN --mount=type=cache,id=nightmare-go-build,target=/root/.cache/go-build \
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 ARG PROJECT_DIR
-ARG COMPONENT_VERSION=2.3.0
+ARG COMPONENT_VERSION=2.6.1
 
 WORKDIR /src
 
-COPY Directory.Build.props Directory.Build.targets NightmareV2.slnx ./
-COPY src/NightmareV2.Application/NightmareV2.Application.csproj src/NightmareV2.Application/
-COPY src/NightmareV2.Contracts/NightmareV2.Contracts.csproj src/NightmareV2.Contracts/
-COPY src/NightmareV2.Domain/NightmareV2.Domain.csproj src/NightmareV2.Domain/
-COPY src/NightmareV2.Infrastructure/NightmareV2.Infrastructure.csproj src/NightmareV2.Infrastructure/
-COPY src/NightmareV2.Workers.Enum/NightmareV2.Workers.Enum.csproj src/NightmareV2.Workers.Enum/
+COPY Directory.Build.props Directory.Build.targets ArgusEngine.slnx ./
+COPY src/ArgusEngine.Application/ArgusEngine.Application.csproj src/ArgusEngine.Application/
+COPY src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj src/ArgusEngine.Contracts/
+COPY src/ArgusEngine.Domain/ArgusEngine.Domain.csproj src/ArgusEngine.Domain/
+COPY src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj src/ArgusEngine.Infrastructure/
+COPY src/ArgusEngine.Workers.Enum/ArgusEngine.Workers.Enum.csproj src/ArgusEngine.Workers.Enum/
 
 RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 
-COPY src/NightmareV2.Application/ src/NightmareV2.Application/
-COPY src/NightmareV2.Contracts/ src/NightmareV2.Contracts/
-COPY src/NightmareV2.Domain/ src/NightmareV2.Domain/
-COPY src/NightmareV2.Infrastructure/ src/NightmareV2.Infrastructure/
-COPY src/NightmareV2.Workers.Enum/ src/NightmareV2.Workers.Enum/
+COPY src/ArgusEngine.Application/ src/ArgusEngine.Application/
+COPY src/ArgusEngine.Contracts/ src/ArgusEngine.Contracts/
+COPY src/ArgusEngine.Domain/ src/ArgusEngine.Domain/
+COPY src/ArgusEngine.Infrastructure/ src/ArgusEngine.Infrastructure/
+COPY src/ArgusEngine.Workers.Enum/ src/ArgusEngine.Workers.Enum/
 
 RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
       -c Release -o /app/publish --no-restore /p:UseAppHost=false \
       /p:Version="${COMPONENT_VERSION}" \
-      /p:AssemblyVersion="2.3.0.0" \
-      /p:FileVersion="2.3.0.0" \
+      /p:AssemblyVersion="2.6.1.0" \
+      /p:FileVersion="2.6.1.0" \
       /p:InformationalVersion="${COMPONENT_VERSION}"
 
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
 
 ARG APP_DLL
 ARG BUILD_SOURCE_STAMP=unknown
-ARG COMPONENT_VERSION=2.3.0
+ARG COMPONENT_VERSION=2.6.1
 
 ENV SubdomainEnumeration__Subfinder__BinaryPath=/usr/local/bin/subfinder
 ENV SubdomainEnumeration__Amass__BinaryPath=/usr/local/bin/amass
@@ -81,7 +81,7 @@ LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
 LABEL org.opencontainers.image.version="${COMPONENT_VERSION}"
 
 ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
-ENV NIGHTMARE_BUILD_STAMP=${BUILD_SOURCE_STAMP}
+ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
 ENV ARGUS_COMPONENT_VERSION=${COMPONENT_VERSION}
 ENV NIGHTMARE_COMPONENT_VERSION=${COMPONENT_VERSION}
 

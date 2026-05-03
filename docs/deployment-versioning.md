@@ -4,7 +4,7 @@ Argus Engine displays each deployed .NET component version on the Command Center
 
 ## Current deployment version
 
-`2.3.0`
+`2.6.1`
 
 ## Required deployment rule
 
@@ -20,9 +20,9 @@ The Docker build passes this value into .NET assembly metadata and OCI image lab
 ## Verification
 
 ```bash
-./scripts/verify-deployment-version.sh 2.3.0
+./scripts/verify-deployment-version.sh 2.6.1
 ```
 
 ```powershell
-./scripts/verify-deployment-version.ps1 -ExpectedVersion 2.3.0
+./scripts/verify-deployment-version.ps1 -ExpectedVersion 2.6.1
 ```

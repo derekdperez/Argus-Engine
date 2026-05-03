@@ -1,31 +1,29 @@
 #!/usr/bin/env python3
 """
-Apply the final repo-wide Argus Engine refactor safely and idempotently.
+Apply the repo-wide Argus Engine rename and final hardening updates.
 
-Why this script exists:
-- A zip overlay cannot delete old directories or rename every existing file when unzipped.
-- This script performs the destructive filesystem rename locally after the overlay is extracted.
-- Database names and table names are deliberately preserved unless a later explicit DB migration is created.
+A zip overlay can add and overwrite files, but it cannot delete or move the
+existing NightmareV2 directories that are already in a checkout. This script
+performs those filesystem renames locally, updates references, and preserves
+database names/tables and legacy config compatibility.
 
-Run from the project root:
+Run from repository root:
 
+    python scripts/apply-original-checklist-refactor.py --dry-run
     python scripts/apply-original-checklist-refactor.py --apply
-
-Use --dry-run first to see planned changes.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
+import json
 from pathlib import Path
 import re
 import shutil
 import sys
 
-VERSION = "2.3.0"
-FILE_VERSION = "2.3.0.0"
-
+VERSION = "2.4.0"
+FILE_VERSION = "2.4.0.0"
 ROOT = Path(__file__).resolve().parents[1]
 
 PROJECT_RENAMES = {
@@ -43,145 +41,135 @@ PROJECT_RENAMES = {
 }
 
 TEST_RENAMES = {
-    "NightmareV2.Application.Tests": "ArgusEngine.Application.Tests",
     "NightmareV2.CommandCenter.Tests": "ArgusEngine.CommandCenter.Tests",
     "NightmareV2.Infrastructure.Tests": "ArgusEngine.Infrastructure.Tests",
-    "NightmareV2.TechnologyIdentification.Tests": "ArgusEngine.TechnologyIdentification.Tests",
+    "NightmareV2.Application.Tests": "ArgusEngine.Application.Tests",
     "NightmareV2.Workers.Enum.Tests": "ArgusEngine.Workers.Enum.Tests",
     "NightmareV2.Workers.Spider.Tests": "ArgusEngine.Workers.Spider.Tests",
+    "NightmareV2.TechnologyIdentification.Tests": "ArgusEngine.TechnologyIdentification.Tests",
+}
+
+TYPE_RENAMES = {
+    "NightmareDbContext": "ArgusDbContext",
+    "NightmareRuntimeOptions": "ArgusRuntimeOptions",
+    "NightmareDbSeeder": "ArgusDbSeeder",
+    "NightmareDbSchemaPatches": "ArgusDbSchemaPatches",
 }
 
 TEXT_EXTENSIONS = {
     ".cs", ".csproj", ".slnx", ".razor", ".json", ".yaml", ".yml", ".props", ".targets",
-    ".md", ".sh", ".ps1", ".html", ".css", ".js", ".txt", ".env", ".example", ".config"
+    ".md", ".sh", ".ps1", ".html", ".css", ".js", ".txt", ".env", ".config", ".xml"
 }
+TEXT_NAMES = {"Dockerfile", "Dockerfile.web", "Dockerfile.worker", "Dockerfile.worker-enum", "VERSION"}
 
-TEXT_FILENAMES = {
-    "Dockerfile", "Dockerfile.web", "Dockerfile.worker", "Dockerfile.worker-enum",
-    "VERSION", ".env", ".env.example"
-}
-
-DIRECT_REPLACEMENTS = [
-    ("NightmareV2.Contracts", "ArgusEngine.Contracts"),
-    ("NightmareV2.Domain", "ArgusEngine.Domain"),
-    ("NightmareV2.Application", "ArgusEngine.Application"),
-    ("NightmareV2.Infrastructure", "ArgusEngine.Infrastructure"),
-    ("NightmareV2.CommandCenter", "ArgusEngine.CommandCenter"),
-    ("NightmareV2.Gatekeeper", "ArgusEngine.Gatekeeper"),
-    ("NightmareV2.Workers", "ArgusEngine.Workers"),
-    ("NightmareDbContext", "ArgusDbContext"),
-    ("NightmareRuntimeOptions", "ArgusRuntimeOptions"),
-    ("NightmareDbSeeder", "ArgusDbSeeder"),
-    ("NightmareDbSchemaPatches", "ArgusDbSchemaPatches"),
-    ("StartupDatabaseBootstrap", "ArgusStartupDatabaseBootstrap"),
-    ("NightmareV2", "ArgusEngine"),
-    ("N2 Nightmare Command Center", "Argus Engine Command Center"),
-    ("Nightmare Command Center", "Argus Engine Command Center"),
-    ("Nightmare v2", "Argus Engine"),
-    ("Nightmare V2", "Argus Engine"),
-    ("nightmare-v2", "argus-engine"),
-    ("nightmare_v2", "argus_engine"),
+# These identifiers must not be renamed by the product rename. They are database
+# compatibility boundaries and must remain until an explicit DB migration exists.
+PRESERVE_TOKENS = [
+    "nightmare_v2",
+    "nightmare_v2_files",
+    "recon_targets",
+    "stored_assets",
+    "http_request_queue",
+    "outbox_messages",
+    "inbox_messages",
+    "bus_journal",
+    "high_value_findings",
+    "technology_detections",
+    "asset_relationships",
 ]
 
-# DB object names intentionally preserved.
-PRESERVE_DB_NAMES = {
-    "recon_targets", "stored_assets", "http_request_queue", "outbox_messages", "inbox_messages",
-    "bus_journal", "high_value_findings", "technology_detections", "asset_relationships",
-    "nightmare_v2", "nightmare_v2_files",
-}
+def should_skip(path: Path) -> bool:
+    return any(part in {".git", "bin", "obj", "node_modules", ".vs"} for part in path.parts)
 
-def is_text_file(path: Path) -> bool:
-    if path.name in TEXT_FILENAMES:
-        return True
-    if path.suffix in TEXT_EXTENSIONS:
-        return True
-    return False
+def is_text(path: Path) -> bool:
+    return path.name in TEXT_NAMES or path.suffix in TEXT_EXTENSIONS
 
-def iter_files(root: Path):
-    excluded = {".git", "bin", "obj", "node_modules", ".vs"}
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
-        if any(part in excluded for part in path.parts):
-            continue
-        if is_text_file(path):
-            yield path
-
-def write(path: Path, text: str, apply: bool):
-    if apply:
-        path.write_text(text, encoding="utf-8", newline="")
-
-def rename_path(src: Path, dst: Path, apply: bool):
-    if not src.exists() or dst.exists():
+def move(src: Path, dst: Path, apply: bool) -> None:
+    if not src.exists():
+        return
+    if dst.exists():
+        print(f"skip existing {dst.relative_to(ROOT)}")
         return
     print(f"rename {src.relative_to(ROOT)} -> {dst.relative_to(ROOT)}")
     if apply:
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dst))
 
-def rename_directories(apply: bool):
+def rename_directories(apply: bool) -> None:
     for old, new in PROJECT_RENAMES.items():
-        rename_path(ROOT / "src" / old, ROOT / "src" / new, apply)
+        move(ROOT / "src" / old, ROOT / "src" / new, apply)
     for old, new in TEST_RENAMES.items():
-        rename_path(ROOT / "src" / "tests" / old, ROOT / "src" / "tests" / new, apply)
+        move(ROOT / "src" / "tests" / old, ROOT / "src" / "tests" / new, apply)
 
-def rename_files(apply: bool):
-    for path in sorted(ROOT.rglob("*"), reverse=True):
-        if not path.is_file():
+def rename_files(apply: bool) -> None:
+    rename_map = {**PROJECT_RENAMES, **TEST_RENAMES, **TYPE_RENAMES, "NightmareV2": "ArgusEngine"}
+
+    for path in sorted(ROOT.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        if should_skip(path) or not path.is_file():
             continue
-        if "bin" in path.parts or "obj" in path.parts or ".git" in path.parts:
-            continue
+
         new_name = path.name
-        for old, new in {**PROJECT_RENAMES, **TEST_RENAMES}.items():
+        for old, new in rename_map.items():
             new_name = new_name.replace(old, new)
-        for old, new in [
-            ("NightmareDbContext", "ArgusDbContext"),
-            ("NightmareRuntimeOptions", "ArgusRuntimeOptions"),
-            ("NightmareDbSeeder", "ArgusDbSeeder"),
-            ("NightmareDbSchemaPatches", "ArgusDbSchemaPatches"),
-            ("NightmareV2", "ArgusEngine"),
-        ]:
-            new_name = new_name.replace(old, new)
+
         if new_name != path.name:
-            rename_path(path, path.with_name(new_name), apply)
+            move(path, path.with_name(new_name), apply)
 
-    rename_path(ROOT / "NightmareV2.slnx", ROOT / "ArgusEngine.slnx", apply)
+    move(ROOT / "NightmareV2.slnx", ROOT / "ArgusEngine.slnx", apply)
 
-def rewrite_text_files(apply: bool):
-    for path in iter_files(ROOT):
+def rewrite_text_files(apply: bool) -> None:
+    replacements = [
+        ("NightmareV2.Contracts", "ArgusEngine.Contracts"),
+        ("NightmareV2.Domain", "ArgusEngine.Domain"),
+        ("NightmareV2.Application", "ArgusEngine.Application"),
+        ("NightmareV2.Infrastructure", "ArgusEngine.Infrastructure"),
+        ("NightmareV2.CommandCenter", "ArgusEngine.CommandCenter"),
+        ("NightmareV2.Gatekeeper", "ArgusEngine.Gatekeeper"),
+        ("NightmareV2.Workers", "ArgusEngine.Workers"),
+        *TYPE_RENAMES.items(),
+        ("N2 Nightmare Command Center", "Argus Engine Command Center"),
+        ("Nightmare Command Center", "Argus Engine Command Center"),
+        ("Nightmare v2", "Argus Engine"),
+        ("Nightmare V2", "Argus Engine"),
+        ("nightmare-v2", "argus-engine"),
+        ("nightmare-worker", "argus-worker"),
+    ]
+
+    for path in ROOT.rglob("*"):
+        if should_skip(path) or not path.is_file() or not is_text(path):
+            continue
+
         try:
-            original = path.read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
 
-        updated = original
-        placeholders = {}
-        for name in PRESERVE_DB_NAMES:
-            token = f"__ARGUS_PRESERVE_{len(placeholders)}__"
-            placeholders[token] = name
-            updated = updated.replace(name, token)
+        placeholders: dict[str, str] = {}
+        updated = text
+        for i, token in enumerate(PRESERVE_TOKENS):
+            key = f"__ARGUS_DB_PRESERVE_{i}__"
+            placeholders[key] = token
+            updated = updated.replace(token, key)
 
-        for old, new in DIRECT_REPLACEMENTS:
+        for old, new in replacements:
             updated = updated.replace(old, new)
 
-        # Public Docker/compose/env keys: new Argus values are primary; legacy keys remain where
-        # compatibility was explicitly added.
-        updated = updated.replace("NIGHTMARE_BUILD_STAMP", "ARGUS_BUILD_STAMP")
-        updated = updated.replace("NIGHTMARE_DIAGNOSTICS_API_KEY", "ARGUS_DIAGNOSTICS_API_KEY")
-        updated = updated.replace("NIGHTMARE_DATA_MAINTENANCE_API_KEY", "ARGUS_DATA_MAINTENANCE_API_KEY")
-        updated = updated.replace("Nightmare__", "Argus__")
+        # Build stamp changes are additive. Keep NIGHTMARE_BUILD_STAMP fallback
+        # in existing files while making ARGUS_BUILD_STAMP primary.
+        updated = updated.replace("Environment.GetEnvironmentVariable(\"NIGHTMARE_BUILD_STAMP\")",
+                                  "Environment.GetEnvironmentVariable(\"ARGUS_BUILD_STAMP\") ?? Environment.GetEnvironmentVariable(\"NIGHTMARE_BUILD_STAMP\")")
 
-        for token, name in placeholders.items():
-            updated = updated.replace(token, name)
+        for key, token in placeholders.items():
+            updated = updated.replace(key, token)
 
-        if updated != original:
+        if updated != text:
             print(f"rewrite {path.relative_to(ROOT)}")
-            write(path, updated, apply)
+            if apply:
+                path.write_text(updated, encoding="utf-8", newline="")
 
-def ensure_version_files(apply: bool):
+def write_version_files(apply: bool) -> None:
     targets = ROOT / "Directory.Build.targets"
-    version = ROOT / "VERSION"
-    targets_text = f"""<Project>
+    text = f"""<Project>
   <PropertyGroup>
     <ArgusEngineDeploymentVersion>{VERSION}</ArgusEngineDeploymentVersion>
     <Version>$(ArgusEngineDeploymentVersion)</Version>
@@ -190,65 +178,84 @@ def ensure_version_files(apply: bool):
     <FileVersion>{FILE_VERSION}</FileVersion>
     <InformationalVersion>$(ArgusEngineDeploymentVersion)</InformationalVersion>
   </PropertyGroup>
+
+  <Target Name="ValidateArgusEngineDeploymentVersion" BeforeTargets="GenerateAssemblyInfo">
+    <Error Condition="'$(ArgusEngineDeploymentVersion)' == ''" Text="ArgusEngineDeploymentVersion must be set before deploying." />
+  </Target>
 </Project>
 """
-    print("write Directory.Build.targets / VERSION")
-    write(targets, targets_text, apply)
-    write(version, VERSION + "\n", apply)
-
-def ensure_migration_note(apply: bool):
-    docs = ROOT / "docs"
-    note = docs / "argus-engine-migration-note.md"
+    print("write Directory.Build.targets and VERSION")
     if apply:
-        docs.mkdir(exist_ok=True)
-    text = """# Argus Engine Migration Note
+        targets.write_text(text, encoding="utf-8", newline="")
+        (ROOT / "VERSION").write_text(VERSION + "\n", encoding="utf-8")
 
-Argus Engine was previously developed under the internal codename NightmareV2.
+def write_solution_file(apply: bool) -> None:
+    projects = [
+        "ArgusEngine.Application",
+        "ArgusEngine.CommandCenter",
+        "ArgusEngine.Contracts",
+        "ArgusEngine.Domain",
+        "ArgusEngine.Gatekeeper",
+        "ArgusEngine.Infrastructure",
+        "ArgusEngine.Workers.Enum",
+        "ArgusEngine.Workers.Spider",
+        "ArgusEngine.Workers.PortScan",
+        "ArgusEngine.Workers.HighValue",
+        "ArgusEngine.Workers.TechnologyIdentification",
+    ]
+    tests_root = ROOT / "src" / "tests"
+    test_projects = sorted(p.parent.name for p in tests_root.glob("ArgusEngine*.Tests/*.csproj")) if tests_root.exists() else []
 
-For transition safety, the application temporarily supports both:
+    lines = ["<Solution>", "  <Folder Name=\"/src/\">"]
+    for name in projects:
+        lines.append(f"    <Project Path=\"src/{name}/{name}.csproj\" Type=\"Classic C#\" />")
+    lines.append("  </Folder>")
+    if test_projects:
+        lines.append("  <Folder Name=\"/tests/\">")
+        for name in test_projects:
+            lines.append(f"    <Project Path=\"src/tests/{name}/{name}.csproj\" Type=\"Classic C#\" />")
+        lines.append("  </Folder>")
+    lines.append("</Solution>")
+    print("write ArgusEngine.slnx")
+    if apply:
+        (ROOT / "ArgusEngine.slnx").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-- `Argus:*` and `Nightmare:*` configuration keys
-- `ARGUS_*` and `NIGHTMARE_*` environment variables where compatibility was required
-- existing database names and table names such as `nightmare_v2`, `stored_assets`, and `http_request_queue`
-
-Do not rename production databases or tables without a separate explicit migration/backfill plan.
-"""
-    print("write docs/argus-engine-migration-note.md")
-    write(note, text, apply)
-
-def ensure_solution_hint(apply: bool):
-    # The .slnx file is text and is already rewritten by replacement. This file documents the one command
-    # contractors can run to regenerate solution metadata after destructive project directory renames.
-    text = """# Solution Rename Follow-up
-
-After running `scripts/apply-original-checklist-refactor.py --apply`, verify:
-
-```bash
-dotnet build ArgusEngine.slnx
-dotnet test ArgusEngine.slnx
-docker compose -f deploy/docker-compose.yml build
-```
-
-If the `.slnx` file still contains stale paths, regenerate project entries with your IDE or `dotnet sln`
-after the directory rename has completed.
-"""
-    path = ROOT / "docs" / "solution-rename-follow-up.md"
-    print("write docs/solution-rename-follow-up.md")
-    write(path, text, apply)
+def write_report(apply: bool) -> None:
+    report = {
+        "version": VERSION,
+        "renamedProjects": PROJECT_RENAMES,
+        "renamedTests": TEST_RENAMES,
+        "renamedTypes": TYPE_RENAMES,
+        "preservedDatabaseTokens": PRESERVE_TOKENS,
+        "postApplyCommands": [
+            "dotnet build ArgusEngine.slnx",
+            "dotnet test ArgusEngine.slnx",
+            "docker compose -f deploy/docker-compose.yml build",
+            "docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml up -d --build",
+        ],
+    }
+    print("write docs/refactor-apply-report.json")
+    if apply:
+        path = ROOT / "docs" / "refactor-apply-report.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--apply", action="store_true", help="Apply changes. Without this flag the script is a dry run.")
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    apply = args.apply
 
-    print(f"Argus Engine final refactor migration ({'apply' if apply else 'dry-run'})")
+    apply = args.apply and not args.dry_run
+    print(f"Argus Engine refactor migration ({'apply' if apply else 'dry-run'})")
+
     rename_directories(apply)
     rename_files(apply)
     rewrite_text_files(apply)
-    ensure_version_files(apply)
-    ensure_migration_note(apply)
-    ensure_solution_hint(apply)
+    write_version_files(apply)
+    write_solution_file(apply)
+    write_report(apply)
+
     print("done")
     return 0
 

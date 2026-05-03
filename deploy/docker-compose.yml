@@ -8,7 +8,7 @@
 
 name: argus-engine
 
-x-component-version: &component-version ${ARGUS_ENGINE_VERSION:-2.3.0}
+x-component-version: &component-version ${ARGUS_ENGINE_VERSION:-2.6.1}
 
 x-dotnet-build-args: &dotnet-build-args
   BUILD_SOURCE_STAMP: ${BUILD_SOURCE_STAMP:-unknown}
@@ -104,7 +104,7 @@ services:
       start_period: 30s
 
   command-center:
-    image: argus-engine/command-center:${ARGUS_ENGINE_VERSION:-2.3.0}
+    image: argus-engine/command-center:${ARGUS_ENGINE_VERSION:-2.6.1}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.web
@@ -120,7 +120,7 @@ services:
       Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-local-dev-diagnostics-key-change-me}
       Nightmare__Diagnostics__ApiKey: ${NIGHTMARE_DIAGNOSTICS_API_KEY:-local-dev-diagnostics-key-change-me}
       AWS_REGION: ${AWS_REGION:-}
-      ECS_CLUSTER: ${ECS_CLUSTER:-nightmare-v2}
+      ECS_CLUSTER: ${ECS_CLUSTER:-argus-engine}
       ECS_SUBNETS: ${ECS_SUBNETS:-}
       ECS_SECURITY_GROUPS: ${ECS_SECURITY_GROUPS:-}
       ECS_LAUNCH_TYPE: ${ECS_LAUNCH_TYPE:-FARGATE}
@@ -153,14 +153,14 @@ services:
         condition: service_healthy
 
   gatekeeper:
-    image: argus-engine/gatekeeper:${ARGUS_ENGINE_VERSION:-2.3.0}
+    image: argus-engine/gatekeeper:${ARGUS_ENGINE_VERSION:-2.6.1}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
         <<: *dotnet-build-args
-        PROJECT_DIR: NightmareV2.Gatekeeper
-        APP_DLL: NightmareV2.Gatekeeper.dll
+        PROJECT_DIR: ArgusEngine.Gatekeeper
+        APP_DLL: ArgusEngine.Gatekeeper.dll
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
@@ -174,14 +174,14 @@ services:
         condition: service_healthy
 
   worker-spider:
-    image: argus-engine/worker-spider:${ARGUS_ENGINE_VERSION:-2.3.0}
+    image: argus-engine/worker-spider:${ARGUS_ENGINE_VERSION:-2.6.1}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
         <<: *dotnet-build-args
-        PROJECT_DIR: NightmareV2.Workers.Spider
-        APP_DLL: NightmareV2.Workers.Spider.dll
+        PROJECT_DIR: ArgusEngine.Workers.Spider
+        APP_DLL: ArgusEngine.Workers.Spider.dll
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
@@ -198,14 +198,14 @@ services:
       replicas: 10
 
   worker-enum:
-    image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.3.0}
+    image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.6.1}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker-enum
       args:
         <<: *enum-build-args
-        PROJECT_DIR: NightmareV2.Workers.Enum
-        APP_DLL: NightmareV2.Workers.Enum.dll
+        PROJECT_DIR: ArgusEngine.Workers.Enum
+        APP_DLL: ArgusEngine.Workers.Enum.dll
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
@@ -234,14 +234,14 @@ services:
       replicas: 10
 
   worker-portscan:
-    image: argus-engine/worker-portscan:${ARGUS_ENGINE_VERSION:-2.3.0}
+    image: argus-engine/worker-portscan:${ARGUS_ENGINE_VERSION:-2.6.1}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
         <<: *dotnet-build-args
-        PROJECT_DIR: NightmareV2.Workers.PortScan
-        APP_DLL: NightmareV2.Workers.PortScan.dll
+        PROJECT_DIR: ArgusEngine.Workers.PortScan
+        APP_DLL: ArgusEngine.Workers.PortScan.dll
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
@@ -255,14 +255,14 @@ services:
         condition: service_healthy
 
   worker-highvalue:
-    image: argus-engine/worker-highvalue:${ARGUS_ENGINE_VERSION:-2.3.0}
+    image: argus-engine/worker-highvalue:${ARGUS_ENGINE_VERSION:-2.6.1}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
         <<: *dotnet-build-args
-        PROJECT_DIR: NightmareV2.Workers.HighValue
-        APP_DLL: NightmareV2.Workers.HighValue.dll
+        PROJECT_DIR: ArgusEngine.Workers.HighValue
+        APP_DLL: ArgusEngine.Workers.HighValue.dll
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
@@ -276,14 +276,14 @@ services:
         condition: service_healthy
 
   worker-techid:
-    image: argus-engine/worker-techid:${ARGUS_ENGINE_VERSION:-2.3.0}
+    image: argus-engine/worker-techid:${ARGUS_ENGINE_VERSION:-2.6.1}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
       args:
         <<: *dotnet-build-args
-        PROJECT_DIR: NightmareV2.Workers.TechnologyIdentification
-        APP_DLL: NightmareV2.Workers.TechnologyIdentification.dll
+        PROJECT_DIR: ArgusEngine.Workers.TechnologyIdentification
+        APP_DLL: ArgusEngine.Workers.TechnologyIdentification.dll
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"

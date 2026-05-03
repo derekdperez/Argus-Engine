@@ -1,31 +1,34 @@
 # Original Checklist Completion Notes
 
-This overlay completes the remaining implementation work from the original Argus Engine / NightmareV2 hardening plan.
+This overlay completes the source-level changes requested in the original Argus Engine / NightmareV2 refactor and hardening plan.
 
-## Important extraction behavior
+## How to apply
 
-Unzipping the overlay writes changed and added files. A zip extraction cannot remove old directories or rename existing project directories. To complete the destructive repo-wide `NightmareV2.*` -> `ArgusEngine.*` rename, run:
+From the repository root:
 
 ```bash
+unzip argus-engine-rest-of-original-checklist-v2.6.1-overlay.zip -d .
+python scripts/apply-original-checklist-refactor.py --dry-run
 python scripts/apply-original-checklist-refactor.py --apply
+python scripts/validate-original-checklist.py
 ```
 
-or:
+Then run the full validation locally:
 
 ```bash
-./scripts/apply-argus-engine-rename.sh
-```
-
-The script keeps existing database names and table names stable.
-
-## Deployment version
-
-This overlay bumps the deployment version to `2.3.0` / `2.3.0.0`.
-
-## Verification commands
-
-```bash
+dotnet restore ArgusEngine.slnx
 dotnet build ArgusEngine.slnx
 dotnet test ArgusEngine.slnx
 docker compose -f deploy/docker-compose.yml build
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml up -d --build
 ```
+
+## Destructive rename boundary
+
+The zip can add `ArgusEngine.slnx` and the migration script, but unzipping alone cannot delete or move the existing `src/NightmareV2.*` directories in an already checked-out repository. The script performs the project directory, project file, namespace, and branded type renames.
+
+Database names and existing table names remain stable. Do not rename `nightmare_v2`, `nightmare_v2_files`, or existing production tables without a separate migration/backfill plan.
+
+## Deployment version
+
+This overlay bumps the deployable version to `2.6.1` / `2.6.1.0`.

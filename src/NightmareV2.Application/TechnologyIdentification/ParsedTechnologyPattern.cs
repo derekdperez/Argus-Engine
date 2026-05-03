@@ -1,6 +1,0 @@
-namespace NightmareV2.Application.TechnologyIdentification;
-
-public sealed record ParsedTechnologyPattern(
-    string RegexPattern,
-    int Confidence,
-    string? VersionExpression);

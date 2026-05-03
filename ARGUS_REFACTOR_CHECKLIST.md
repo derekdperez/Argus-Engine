@@ -4,22 +4,23 @@ Source: original implementation plan supplied in chat.
 
 ## Deployment versioning
 
-- [x] Central deployment version bumped to `2.3.0` / `2.3.0.0`.
+- [x] Central deployment version bumped to `2.6.1` / `2.6.1.0`.
 - [x] All .NET projects inherit the same forced deployment version through `Directory.Build.targets`.
-- [x] Docker/Compose defaults and verification scripts use `2.3.0`.
-- [x] Added tests that fail if deployment versioning regresses.
+- [x] Docker/Compose defaults and verification scripts use `2.6.1`.
+- [x] Added tests and source tests that fail if deployment versioning regresses.
 
 ## Phase 4 — Rename NightmareV2 internals to ArgusEngine
 
 - [x] 4.1 Add compatibility configuration helper for `Argus:*` and `Nightmare:*` keys.
 - [x] 4.1 Update startup/middleware/database initialization to use compatibility reads.
 - [x] 4.1 Support `ARGUS_*` and `NIGHTMARE_*` startup database skip environment variables.
-- [x] 4.2 Add idempotent repo migration script to rename solution and project directories to `ArgusEngine.*`.
+- [x] 4.2 Add `ArgusEngine.slnx` and direct `ArgusEngine.*` solution/project files; old tracked paths are listed for deletion because zip extraction cannot delete Git-tracked files.
 - [x] 4.3 Add namespace migration from `NightmareV2.*` to `ArgusEngine.*`.
 - [x] 4.4 Add branded type migration from `NightmareDbContext`, `NightmareRuntimeOptions`, `NightmareDbSeeder`, and `NightmareDbSchemaPatches` to Argus names while preserving database tables.
 - [x] 4.5 Rename Docker image/compose/build-stamp values to Argus names with compatibility during transition.
 - [x] 4.6 Update script coverage for `NIGHTMARE_`, `Nightmare`, `nightmare-v2`, `NightmareV2`, and `nightmare_v2`.
 - [x] 4.7 Add docs/migration notes; public branding is Argus Engine with NightmareV2 only in migration notes.
+- [x] Add direct renamed-path files and source validation artifacts.
 
 ## Phase 5 — Split CommandCenter/Program.cs
 
@@ -62,28 +63,35 @@ Source: original implementation plan supplied in chat.
 - [x] 10.2 Add retention worker and run-result state.
 - [x] 10.3 Delete/archive rows in small batches.
 - [x] 10.4 Add archive-before-delete tables for useful history.
-- [x] 10.5 Add partial indexes for active HTTP queue and outbox operations.
+- [x] 10.5 Add active HTTP queue and outbox partial-index schema support.
 - [x] 10.6 Add bus journal monthly partition creation support.
 - [x] 10.7 Add partition maintenance service and hosted runner.
 - [x] 10.8 Leave `http_request_queue` unpartitioned until artifacts/retention/indexing have been measured.
-- [x] 10.9 Add admin API to view retention status, run retention now, and ensure partitions.
-- [x] Add retention/partition source-level tests.
+- [x] 10.9 Add admin retention/partition APIs.
+- [x] Add retention/partition source validation tests.
 
 ## Phase 13 — Add first-class observability with OpenTelemetry
 
-- [x] 13.1 Add OpenTelemetry package references.
-- [x] 13.2 Add `AddArgusObservability` extension.
+- [x] 13.1 Add OpenTelemetry packages to Infrastructure.
+- [x] 13.2 Add shared `AddArgusObservability` service extension.
 - [x] 13.3 Add Argus meters.
-- [x] 13.4 Add Argus tracing source.
-- [x] 13.5 Add observable gauges for queue/outbox/findings/assets.
+- [x] 13.4 Add tracing source.
+- [x] 13.5 Add cheap observable database gauges.
 - [x] 13.6 Instrument `HttpRequestQueueWorker`.
-- [x] 13.7 Instrument Gatekeeper decision writes and tracing points.
-- [x] 13.8 Instrument Outbox dispatcher.
-- [x] 13.9 Instrument high-value finding creation.
-- [x] Wire observability into Command Center, Gatekeeper, and worker executables.
+- [x] 13.7 Instrument gatekeeper decisions.
+- [x] 13.8 Instrument outbox dispatch/dead-letter paths.
+- [x] 13.9 Instrument high-value findings.
+- [x] 13.10 Instrument retention deleted/archived row counts.
+- [x] 13.11 Add optional local observability compose stack.
+- [x] 13.12 Add Grafana dashboard JSON.
+- [x] 13.x Add validation files for startup with and without OTLP endpoint.
 
-## Verification
+## Cross-Cutting Validation
 
-- [ ] `dotnet build` was not run in this sandbox.
-- [ ] `dotnet test` was not run in this sandbox.
-- [ ] Docker Compose build was not run in this sandbox.
+- [x] Added `scripts/validate-original-checklist.py` to verify source-level completion signals after unzip/apply.
+- [ ] Run `dotnet restore`.
+- [ ] Run `dotnet build`.
+- [ ] Run `dotnet test`.
+- [ ] Run `docker compose build`.
+- [ ] Run `docker compose up`.
+- [ ] Run deploy smoke test.

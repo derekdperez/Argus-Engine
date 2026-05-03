@@ -105,26 +105,26 @@ nightmare_sha256_file_list() {
 
 nightmare_service_project_path() {
   case "$1" in
-    command-center) echo "src/NightmareV2.CommandCenter" ;;
-    gatekeeper) echo "src/NightmareV2.Gatekeeper" ;;
-    worker-spider) echo "src/NightmareV2.Workers.Spider" ;;
-    worker-enum) echo "src/NightmareV2.Workers.Enum" ;;
-    worker-portscan) echo "src/NightmareV2.Workers.PortScan" ;;
-    worker-highvalue) echo "src/NightmareV2.Workers.HighValue" ;;
-    worker-techid) echo "src/NightmareV2.Workers.TechnologyIdentification" ;;
+    command-center) echo "src/ArgusEngine.CommandCenter" ;;
+    gatekeeper) echo "src/ArgusEngine.Gatekeeper" ;;
+    worker-spider) echo "src/ArgusEngine.Workers.Spider" ;;
+    worker-enum) echo "src/ArgusEngine.Workers.Enum" ;;
+    worker-portscan) echo "src/ArgusEngine.Workers.PortScan" ;;
+    worker-highvalue) echo "src/ArgusEngine.Workers.HighValue" ;;
+    worker-techid) echo "src/ArgusEngine.Workers.TechnologyIdentification" ;;
     *) return 1 ;;
   esac
 }
 
 nightmare_service_app_dll() {
   case "$1" in
-    command-center) echo "NightmareV2.CommandCenter.dll" ;;
-    gatekeeper) echo "NightmareV2.Gatekeeper.dll" ;;
-    worker-spider) echo "NightmareV2.Workers.Spider.dll" ;;
-    worker-enum) echo "NightmareV2.Workers.Enum.dll" ;;
-    worker-portscan) echo "NightmareV2.Workers.PortScan.dll" ;;
-    worker-highvalue) echo "NightmareV2.Workers.HighValue.dll" ;;
-    worker-techid) echo "NightmareV2.Workers.TechnologyIdentification.dll" ;;
+    command-center) echo "ArgusEngine.CommandCenter.dll" ;;
+    gatekeeper) echo "ArgusEngine.Gatekeeper.dll" ;;
+    worker-spider) echo "ArgusEngine.Workers.Spider.dll" ;;
+    worker-enum) echo "ArgusEngine.Workers.Enum.dll" ;;
+    worker-portscan) echo "ArgusEngine.Workers.PortScan.dll" ;;
+    worker-highvalue) echo "ArgusEngine.Workers.HighValue.dll" ;;
+    worker-techid) echo "ArgusEngine.Workers.TechnologyIdentification.dll" ;;
     *) return 1 ;;
   esac
 }
@@ -161,11 +161,11 @@ nightmare_common_source_inputs() {
     "Directory.Packages.props" \
     "NuGet.config" \
     "global.json" \
-    "NightmareV2.slnx" \
-    "src/NightmareV2.Application" \
-    "src/NightmareV2.Contracts" \
-    "src/NightmareV2.Domain" \
-    "src/NightmareV2.Infrastructure"
+    "ArgusEngine.slnx" \
+    "src/ArgusEngine.Application" \
+    "src/ArgusEngine.Contracts" \
+    "src/ArgusEngine.Domain" \
+    "src/ArgusEngine.Infrastructure"
 }
 
 nightmare_service_specific_source_inputs() {

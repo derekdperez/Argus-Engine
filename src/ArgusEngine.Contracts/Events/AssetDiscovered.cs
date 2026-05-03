@@ -23,6 +23,7 @@ public record AssetDiscovered(
     AssetRelationshipType? RelationshipType = null,
     bool IsPrimaryRelationship = false,
     string RelationshipPropertiesJson = "",
+    decimal Confidence = 1.0m,
     Guid EventId = default,
     Guid CausationId = default,
     string SchemaVersion = "2",

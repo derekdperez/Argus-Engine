@@ -524,6 +524,16 @@ nightmare_detect_hot_image_materialization_plan() {
   local service
 
   for service in "${stale_services[@]}"; do
+    # Optimization: if the image already exists in Docker and its revision label matches
+    # our current BUILD_SOURCE_STAMP, then it's not actually stale, even if the state file is missing.
+    local image_name="argus-engine-${service}:local"
+    local existing_revision
+    existing_revision="$(nightmare_docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image_name" 2>/dev/null || echo "missing")"
+
+    if [[ "$existing_revision" == "${BUILD_SOURCE_STAMP}" ]]; then
+      continue
+    fi
+
     if [[ "${NIGHTMARE_RUNTIME_CONFIG_CHANGED:-0}" == "1" || "${NIGHTMARE_FORCE_RECREATE:-0}" == "1" ]]; then
       materialize+=("$service")
     elif ! nightmare_compose_service_running "$service"; then

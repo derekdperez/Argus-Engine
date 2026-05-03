@@ -1,0 +1,1 @@
+- The GatekeeperOrchestrator can be split into at least two parts - one to handle deduplication logic, one to handle asset admission policies and decision making, and any other responsibilities that work better in a separate file.

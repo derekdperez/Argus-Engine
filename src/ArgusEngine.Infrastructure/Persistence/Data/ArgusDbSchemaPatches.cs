@@ -306,6 +306,9 @@ public static class ArgusDbSchemaPatches
                     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bus_journal' AND column_name = 'PayloadJson') THEN
                         ALTER TABLE bus_journal RENAME COLUMN "PayloadJson" TO payload_json;
                     END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bus_journal' AND column_name = 'Id') THEN
+                        ALTER TABLE bus_journal RENAME COLUMN "Id" TO id;
+                    END IF;
                 END
                 $patch$;
                 """,

@@ -7,6 +7,7 @@ WORKDIR /src
 
 # Copy project files first so NuGet restore is cached when only .cs/.razor/css/js files change.
 COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
+
 COPY src/ArgusEngine.Application/ArgusEngine.Application.csproj src/ArgusEngine.Application/
 COPY src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj src/ArgusEngine.CommandCenter/
 COPY src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj src/ArgusEngine.Contracts/
@@ -16,7 +17,8 @@ COPY src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj src/ArgusE
 RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj"
 
-# Copy only the project dependency closure used by the web app. Unrelated worker edits no longer invalidate this layer.
+# Copy only the project dependency closure used by the web app.
+# Unrelated worker edits no longer invalidate this layer.
 COPY src/ArgusEngine.Application/ src/ArgusEngine.Application/
 COPY src/ArgusEngine.CommandCenter/ src/ArgusEngine.CommandCenter/
 COPY src/ArgusEngine.Contracts/ src/ArgusEngine.Contracts/
@@ -33,8 +35,12 @@ RUN --mount=type=cache,id=nightmare-nuget,target=/root/.nuget/packages,sharing=l
       /p:AssemblyVersion="2.6.1.0" \
       /p:FileVersion="2.6.1.0" \
       /p:InformationalVersion="${COMPONENT_VERSION}" \
-    && test -s /app/publish/wwwroot/_framework/blazor.web.js \
-    && ! grep -q "^404: Not Found" /app/publish/wwwroot/_framework/blazor.web.js
+    && test -s /app/publish/ArgusEngine.CommandCenter.dll \
+    && if [ -s /app/publish/wwwroot/_framework/blazor.web.js ]; then \
+         ! grep -q "^404: Not Found" /app/publish/wwwroot/_framework/blazor.web.js; \
+       else \
+         echo "blazor.web.js was not published as a physical wwwroot file; static web assets will be served by the app."; \
+       fi
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 
@@ -48,6 +54,7 @@ RUN apt-get update \
 WORKDIR /app
 
 ENV ASPNETCORE_URLS=http://+:8080
+
 # Blazor Server components call this app's own JSON endpoints from inside the container.
 ENV Nightmare__CommandCenterInternalBaseUrl=http://127.0.0.1:8080/
 ENV Argus__CommandCenterInternalBaseUrl=http://127.0.0.1:8080/
@@ -71,7 +78,6 @@ LABEL org.opencontainers.image.description="Command Center for Argus Engine"
 LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
 LABEL org.opencontainers.image.version="${COMPONENT_VERSION}"
 
-ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
 ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
 ENV ARGUS_COMPONENT_VERSION=${COMPONENT_VERSION}
 ENV NIGHTMARE_COMPONENT_VERSION=${COMPONENT_VERSION}

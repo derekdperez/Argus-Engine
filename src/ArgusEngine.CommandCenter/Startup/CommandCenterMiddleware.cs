@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+
 using ArgusEngine.Infrastructure.Configuration;
 
 namespace ArgusEngine.CommandCenter.Startup;
@@ -29,7 +30,12 @@ public static class CommandCenterMiddleware
         app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
         app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 
+        // Required for .NET 9+ static web asset endpoint routing, including framework/package assets.
+        app.MapStaticAssets();
+
+        // Keep static file middleware for conventional wwwroot files and any non-endpoint static file scenarios.
         app.UseStaticFiles();
+
         app.UseAntiforgery();
 
         return app;

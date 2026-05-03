@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MassTransit;
+using ArgusEngine.Application.Assets;
 using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Application.Messaging;
 using ArgusEngine.Contracts;

@@ -6,9 +6,9 @@ public sealed class RabbitMqOptions
 
     public int Port { get; set; } = 5672;
 
-    public string Username { get; set; } = "guest";
+    public string Username { get; set; } = "argus";
 
-    public string Password { get; set; } = "guest";
+    public string Password { get; set; } = "argus";
 
     public string VirtualHost { get; set; } = "/";
 

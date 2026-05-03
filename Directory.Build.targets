@@ -9,11 +9,11 @@
       intentionally override stale per-project <Version> metadata.
     -->
     <ArgusEngineDeploymentVersion>2.6.1</ArgusEngineDeploymentVersion>
-    <Version>$(ArgusEngineDeploymentVersion)</Version>
-    <PackageVersion>$(ArgusEngineDeploymentVersion)</PackageVersion>
-    <AssemblyVersion>2.6.1.0</AssemblyVersion>
-    <FileVersion>2.6.1.0</FileVersion>
-    <InformationalVersion>$(ArgusEngineDeploymentVersion)</InformationalVersion>
+    <Version>2.6.2</Version>
+    <PackageVersion>2.6.2</PackageVersion>
+    <AssemblyVersion>2.6.2.0</AssemblyVersion>
+    <FileVersion>2.6.2.0</FileVersion>
+    <InformationalVersion>2.6.2</InformationalVersion>
   </PropertyGroup>
 
   <Target Name="ValidateArgusEngineDeploymentVersion" BeforeTargets="GenerateAssemblyInfo">

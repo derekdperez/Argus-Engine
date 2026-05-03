@@ -2,4 +2,7 @@
   <PropertyGroup>
     <Version>2.6.1</Version>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ArgusEngine.Contracts\ArgusEngine.Contracts.csproj" />
+  </ItemGroup>
 </Project>

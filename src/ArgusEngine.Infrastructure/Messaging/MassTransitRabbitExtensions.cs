@@ -9,12 +9,6 @@ namespace ArgusEngine.Infrastructure.Messaging;
 
 public static class MassTransitRabbitExtensions
 {
-    public static IServiceCollection AddNightmareRabbitMq(
-        this IServiceCollection services,
-        IConfiguration configuration,
-        Action<IBusRegistrationConfigurator> configureConsumers) =>
-        services.AddArgusRabbitMq(configuration, configureConsumers);
-
     public static IServiceCollection AddArgusRabbitMq(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -44,7 +38,7 @@ public static class MassTransitRabbitExtensions
             .Validate(o => o.StopTimeoutSeconds is >= 1 and <= 300, "RabbitMq:StopTimeoutSeconds must be between 1 and 300.")
             .Validate<IHostEnvironment>(
                 (options, environment) => environment.IsDevelopment() || !UsesDevelopmentDefaults(options),
-                "RabbitMQ development defaults (localhost or guest/guest credentials) are not allowed outside Development.")
+                "RabbitMQ development defaults (localhost or argus/argus credentials) are not allowed outside Development.")
             .ValidateOnStart();
 
         services.TryAddSingleton<BusJournalPublishObserver>();
@@ -97,8 +91,8 @@ public static class MassTransitRabbitExtensions
         string.Equals(options.Host, "localhost", StringComparison.OrdinalIgnoreCase)
         || string.Equals(options.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)
         || string.Equals(options.Host, "::1", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(options.Username, "guest", StringComparison.Ordinal)
-        || string.Equals(options.Password, "guest", StringComparison.Ordinal);
+        || string.Equals(options.Username, "argus", StringComparison.Ordinal)
+        || string.Equals(options.Password, "argus", StringComparison.Ordinal);
 
     private static string GetString(IConfiguration section, string key, string fallback)
     {

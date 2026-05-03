@@ -1,3 +1,4 @@
+using ArgusEngine.CommandCenter.Components;
 using ArgusEngine.CommandCenter.Hubs;
 
 namespace ArgusEngine.CommandCenter.Endpoints;
@@ -10,6 +11,9 @@ public static class CommandCenterEndpointRegistration
         app.MapDataRetentionAdminEndpoints();
         app.MapHttpArtifactBackfillEndpoints();
         app.MapHub<DiscoveryHub>("/hubs/discovery");
+
+        app.MapRazorComponents<App>()
+            .AddInteractiveServerRenderMode();
 
         return app;
     }

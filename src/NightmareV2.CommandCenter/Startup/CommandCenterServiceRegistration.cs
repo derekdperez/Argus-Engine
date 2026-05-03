@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Components;
 using NightmareV2.CommandCenter.DataMaintenance;
 
 using NightmareV2.Application.Sagas;
+using NightmareV2.CommandCenter.Components.Pages.Operations;
 using NightmareV2.CommandCenter.Realtime;
 using NightmareV2.CommandCenter.Services.Aws;
 using NightmareV2.CommandCenter.Services.Targets;
@@ -72,10 +73,14 @@ public static class CommandCenterServiceRegistration
 
     private static IServiceCollection AddCommandCenterApplicationServices(this IServiceCollection services)
     {
+        services.AddScoped<TargetManagementService>();
+        services.AddScoped<TargetSummaryQueryService>();
         services.AddScoped<RootSpiderSeedService>();
         services.AddScoped<HttpQueueArtifactBackfillService>();
 
         services.AddSingleton<WorkerScaleDefinitionProvider>();
+        services.AddScoped<WorkerScalingSettingsService>();
+        services.AddScoped<WorkerSwitchService>();
 
         services.AddScoped<AwsRegionResolver>();
         services.AddScoped<EcsWorkerServiceManager>();

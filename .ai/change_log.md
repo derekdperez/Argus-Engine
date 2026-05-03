@@ -2,6 +2,15 @@
 
 ## 2026-05-02
 
+- Fixed Command Center deployment publish blockers from recent refactor drift:
+  - Removed invalid namespace import in `Startup/CommandCenterServiceRegistration.cs` (`Components.Pages.Operations` did not exist).
+  - Removed DI registrations for non-existent service types (`TargetManagementService`, `TargetSummaryQueryService`, `WorkerScalingSettingsService`, `WorkerSwitchService`) while keeping existing service registrations intact.
+  - Why: restore `dotnet publish` for `NightmareV2.CommandCenter` in Docker and local publish flows.
+  - Validation:
+    - `dotnet restore src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj`
+    - `dotnet publish src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release -o .tmp/publish-command-center-verify --no-restore /p:UseAppHost=false`
+    - Verified `.tmp/publish-command-center-verify/wwwroot/_framework/blazor.web.js` exists and contains JavaScript (not `404: Not Found`).
+
 - Split CommandCenter startup composition out of `Program.cs`:
   - Reduced `Program.cs` to composition-only startup: service registration, database initialization, middleware, endpoint registration, Razor component mapping, and `RunAsync`.
   - Added `Startup/` extensions for CommandCenter service registration, middleware, and startup database initialization.

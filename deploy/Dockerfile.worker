@@ -13,7 +13,7 @@ ARG COMPONENT_VERSION=2.6.1
 WORKDIR /src
 
 # Copy project files first so NuGet restore is cached when only .cs files change.
-COPY Directory.Build.props Directory.Build.targets ArgusEngine.slnx ./
+COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
 COPY src/ArgusEngine.Application/ArgusEngine.Application.csproj src/ArgusEngine.Application/
 COPY src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj src/ArgusEngine.Contracts/
 COPY src/ArgusEngine.Domain/ArgusEngine.Domain.csproj src/ArgusEngine.Domain/

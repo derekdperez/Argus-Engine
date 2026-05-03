@@ -6,7 +6,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy project files first so NuGet restore is cached when only .cs/.razor/css/js files change.
-COPY Directory.Build.props Directory.Build.targets ArgusEngine.slnx ./
+COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
 COPY src/ArgusEngine.Application/ArgusEngine.Application.csproj src/ArgusEngine.Application/
 COPY src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj src/ArgusEngine.CommandCenter/
 COPY src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj src/ArgusEngine.Contracts/

@@ -6,5 +6,11 @@
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- Central product metadata. Final deployment version is forced in Directory.Build.targets. -->
+    <Product>Argus Engine</Product>
+    <Company>Argus Engine</Company>
+    <Authors>Argus Engine</Authors>
+    <RepositoryUrl>https://github.com/derekdperez/Argus-Engine</RepositoryUrl>
   </PropertyGroup>
 </Project>

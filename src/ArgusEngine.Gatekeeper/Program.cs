@@ -1,4 +1,7 @@
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Gatekeeper.Consumers;
 using ArgusEngine.Infrastructure;
@@ -13,7 +16,7 @@ builder.Services.AddArgusObservability(builder.Configuration, "argus-gatekeeper"
 builder.Services.AddArgusInfrastructure(builder.Configuration);
 builder.Services.AddScoped<GatekeeperOrchestrator>();
 
-builder.Services.AddNightmareRabbitMq(
+builder.Services.AddArgusRabbitMq(
     builder.Configuration,
     x =>
     {
@@ -68,7 +71,7 @@ static async Task InitializeGatekeeperDatabaseAsync(
     {
         try
         {
-            await StartupDatabaseBootstrap.InitializeAsync(
+            await ArgusDbBootstrap.InitializeAsync(
                 services,
                 configuration,
                 startupLog,

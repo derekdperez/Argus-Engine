@@ -1,3 +1,7 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using ArgusEngine.Application.TechnologyIdentification;
 using ArgusEngine.Infrastructure;
 using ArgusEngine.Infrastructure.Configuration;
@@ -12,17 +16,21 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-techid");
 builder.Services.AddArgusInfrastructure(builder.Configuration);
 
-builder.Services.AddSingleton<TechnologyFingerprintMatcher>();
-builder.Services.AddSingleton<TechnologyEvidenceExtractor>();
+builder.Services.AddOptions<TechnologyIdentificationScanOptions>()
+    .Bind(builder.Configuration.GetSection("Argus:TechnologyIdentification"))
+    .ValidateOnStart();
+
+builder.Services.AddSingleton<TechnologyScanner>();
+builder.Services.AddSingleton<HtmlSignalExtractor>();
+builder.Services.AddSingleton<CookieExtractor>();
 builder.Services.AddSingleton(sp =>
 {
     var logger = sp.GetRequiredService<ILogger<TechnologyCatalogLoader>>();
     var catalogRoot = Path.Combine(AppContext.BaseDirectory, "Resources", "TechnologyDetection");
     return new TechnologyCatalogLoader(logger).Load(catalogRoot);
 });
-builder.Services.AddSingleton<TechnologyDetectionService>();
 
-builder.Services.AddNightmareRabbitMq(
+builder.Services.AddArgusRabbitMq(
     builder.Configuration,
     x =>
     {
@@ -34,7 +42,7 @@ var host = builder.Build();
 var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
 if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
 {
-    await StartupDatabaseBootstrap.InitializeAsync(
+    await ArgusDbBootstrap.InitializeAsync(
             host.Services,
             host.Services.GetRequiredService<IConfiguration>(),
             startupLog,
@@ -67,7 +75,7 @@ static async Task SeedTechnologyTagsAsync(IHost host)
 {
     await using var scope = host.Services.CreateAsyncScope();
     var catalog = scope.ServiceProvider.GetRequiredService<TechnologyCatalog>();
-    var tagService = scope.ServiceProvider.GetRequiredService<ITechnologyTagService>();
+    var tagService = scope.ServiceProvider.GetRequiredService<IAssetTagService>();
     var lifetime = scope.ServiceProvider.GetRequiredService<IHostApplicationLifetime>();
 
     await tagService.SeedTechnologyTagsAsync(catalog.Technologies.Values.ToArray(), lifetime.ApplicationStopping)

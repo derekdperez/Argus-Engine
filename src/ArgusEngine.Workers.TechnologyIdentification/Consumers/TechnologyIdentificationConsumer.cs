@@ -1,36 +1,34 @@
 using System.Diagnostics;
 using System.Text.Json;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using MassTransit;
 using ArgusEngine.Application.Assets;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Application.FileStore;
+using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Application.TechnologyIdentification;
 using ArgusEngine.Application.Workers;
-using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Infrastructure.Data;
 
 namespace ArgusEngine.Workers.TechnologyIdentification.Consumers;
 
 public sealed class TechnologyIdentificationConsumer(
-    ArgusDbContext db,
-    IWorkerToggleReader toggles,
+    IDbContextFactory<ArgusDbContext> dbFactory,
     IInboxDeduplicator inbox,
-    TechnologyCatalog catalog,
+    IWorkerToggleReader toggles,
     TechnologyScanner scanner,
-    HtmlSignalExtractor htmlSignals,
-    CookieExtractor cookieExtractor,
+    TechnologyCatalog catalog,
     IAssetTagService tagService,
     IHttpArtifactReader artifactReader,
+    HtmlSignalExtractor htmlSignals,
+    CookieExtractor cookieExtractor,
     IOptions<TechnologyIdentificationScanOptions> scanOptions,
     ILogger<TechnologyIdentificationConsumer> logger) : IConsumer<ScannableContentAvailable>
 {
-    private static readonly JsonSerializerOptions JsonOpts = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     public async Task Consume(ConsumeContext<ScannableContentAvailable> context)
     {
@@ -46,6 +44,7 @@ public sealed class TechnologyIdentificationConsumer(
         if (message.Source != ScannableContentSource.UrlHttpResponse)
             return;
 
+        await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var asset = await db.Assets.AsNoTracking()
             .Where(a => a.Id == message.AssetId)
             .Select(a => new { a.TypeDetailsJson })

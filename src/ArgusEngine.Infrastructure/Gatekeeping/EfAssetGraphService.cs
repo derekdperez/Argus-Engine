@@ -97,18 +97,18 @@ public sealed class EfAssetGraphService(
         if (message.ParentAssetId is { } parentId && parentId != Guid.Empty)
         {
             var relResult = await UpsertRelationshipInsideTransactionAsync(
-                new AssetRelationshipDiscovered
-                {
-                    TargetId = message.TargetId,
-                    ParentAssetId = parentId,
-                    ChildAssetId = child.Id,
-                    RelationshipType = message.RelationshipType,
-                    IsPrimary = message.IsPrimaryRelationship,
-                    Confidence = message.Confidence,
-                    DiscoveredBy = message.DiscoveredBy,
-                    DiscoveryContext = message.DiscoveryContext,
-                    OccurredAtUtc = now,
-                }, cancellationToken).ConfigureAwait(false);
+                new AssetRelationshipDiscovered(
+                    message.TargetId,
+                    parentId,
+                    child.Id,
+                    message.RelationshipType ?? AssetRelationshipType.Contains,
+                    message.IsPrimaryRelationship,
+                    message.Confidence,
+                    message.DiscoveredBy,
+                    message.DiscoveryContext ?? "",
+                    message.RelationshipPropertiesJson ?? "",
+                    message.CorrelationId,
+                    now), cancellationToken).ConfigureAwait(false);
 
             relationshipInserted = relResult.Inserted;
             relationshipUpdated = relResult.Updated;

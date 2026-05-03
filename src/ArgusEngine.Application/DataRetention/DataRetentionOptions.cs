@@ -13,6 +13,7 @@ public sealed class DataRetentionOptions
 
     public int CompletedHttpQueueRetentionDays { get; set; } = 30;
     public int FailedHttpQueueRetentionDays { get; set; } = 90;
+    public int HttpQueueRetentionDays { get; set; } = 30;
 
     public int CloudUsageRetentionDays { get; set; } = 90;
 

@@ -1,3 +1,4 @@
+using NightmareV2.Infrastructure.Configuration;
 using NightmareV2.Infrastructure.Data;
 
 namespace NightmareV2.CommandCenter.Startup;
@@ -7,13 +8,15 @@ public static class StartupDatabaseInitializer
     public static async Task InitializeCommandCenterDatabasesAsync(this WebApplication app)
     {
         var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+
         if (ShouldSkipStartupDatabase(app.Configuration))
         {
             StartupLogMessages.StartupDatabaseSkipped(startupLog);
             return;
         }
 
-        var continueOnFailure = app.Configuration.GetValue("Nightmare:ContinueOnStartupDatabaseFailure", true);
+        var continueOnFailure = app.Configuration.GetArgusValue("ContinueOnStartupDatabaseFailure", true);
+
         var retryDelays = new[]
         {
             TimeSpan.FromSeconds(1),
@@ -34,6 +37,7 @@ public static class StartupDatabaseInitializer
                         includeFileStore: true,
                         app.Lifetime.ApplicationStopping)
                     .ConfigureAwait(false);
+
                 StartupLogMessages.StartupDatabaseInitializationCompleted(startupLog);
                 return;
             }
@@ -56,18 +60,14 @@ public static class StartupDatabaseInitializer
     private static bool ShouldSkipStartupDatabase(IConfiguration configuration)
     {
         var configuredSkip =
-            configuration["Nightmare:SkipStartupDatabase"]
-            ?? configuration["NIGHTMARE_SKIP_STARTUP_DATABASE"];
+            configuration["Argus:SkipStartupDatabase"]
+            ?? configuration["Nightmare:SkipStartupDatabase"]
+            ?? configuration["ARGUS_SKIP_STARTUP_DATABASE"]
+            ?? configuration["NIGHTMARE_SKIP_STARTUP_DATABASE"]
+            ?? Environment.GetEnvironmentVariable("ARGUS_SKIP_STARTUP_DATABASE")
+            ?? Environment.GetEnvironmentVariable("NIGHTMARE_SKIP_STARTUP_DATABASE");
 
-        if (string.Equals(configuredSkip, "true", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(configuredSkip, "1", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return string.Equals(
-            Environment.GetEnvironmentVariable("NIGHTMARE_SKIP_STARTUP_DATABASE"),
-            "1",
-            StringComparison.OrdinalIgnoreCase);
+        return string.Equals(configuredSkip, "true", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(configuredSkip, "1", StringComparison.OrdinalIgnoreCase);
     }
 }

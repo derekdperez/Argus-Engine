@@ -23,7 +23,11 @@ public static class CommandCenterEndpointRegistration
         app.MapFileStoreEndpoints();
         app.MapHighValueFindingEndpoints();
         app.MapToolRestartEndpoints();
+        app.MapAssetAdmissionDecisionEndpoints();
+        app.MapDataRetentionAdminEndpoints();
+
         app.MapHub<DiscoveryHub>("/hubs/discovery");
+
         app.MapCommandCenterInlineEndpoints();
 
         return app;

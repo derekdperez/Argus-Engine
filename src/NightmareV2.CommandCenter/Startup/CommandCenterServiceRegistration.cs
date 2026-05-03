@@ -1,13 +1,19 @@
 using MassTransit;
+
 using Microsoft.AspNetCore.Components;
+
 using NightmareV2.Application.Sagas;
+using NightmareV2.CommandCenter.Components.Pages.Operations;
 using NightmareV2.CommandCenter.Realtime;
 using NightmareV2.CommandCenter.Services.Aws;
 using NightmareV2.CommandCenter.Services.Targets;
 using NightmareV2.CommandCenter.Services.Workers;
 using NightmareV2.Infrastructure;
+using NightmareV2.Infrastructure.Configuration;
 using NightmareV2.Infrastructure.Data;
 using NightmareV2.Infrastructure.Messaging;
+using NightmareV2.Infrastructure.Observability;
+
 using Radzen;
 
 namespace NightmareV2.CommandCenter.Startup;
@@ -20,6 +26,8 @@ public static class CommandCenterServiceRegistration
         IWebHostEnvironment environment)
     {
         _ = environment;
+
+        services.AddArgusObservability(configuration, "argus-command-center");
 
         OpsSnapshotBuilder.RegisterHttpClient(services);
 
@@ -34,40 +42,65 @@ public static class CommandCenterServiceRegistration
             return new HttpClient { BaseAddress = new Uri(nav.BaseUri) };
         });
 
-        services.AddNightmareInfrastructure(configuration);
+        services.AddArgusInfrastructure(configuration);
         services.AddSignalR();
-        services.AddScoped<DiscoveryRealtimeClient>();
-        services.AddSingleton<WorkerScaleDefinitionProvider>();
-        services.AddSingleton<AwsRegionResolver>();
-        services.AddSingleton<EcsServiceNameResolver>();
-        services.AddScoped<EcsWorkerServiceManager>();
-        services.AddScoped<RootSpiderSeedService>();
-        services.AddNightmareRabbitMq(
-            configuration,
-            consumers =>
-            {
-                consumers.AddConsumer<TargetCreatedUiEventConsumer>();
-                consumers.AddConsumer<AssetDiscoveredUiEventConsumer>();
-                consumers.AddConsumer<ScannableContentAvailableUiEventConsumer>();
-                consumers.AddConsumer<CriticalHighValueFindingAlertUiEventConsumer>();
-                consumers.AddConsumer<PortScanRequestedUiEventConsumer>();
-                consumers.AddConsumer<SubdomainEnumerationRequestedUiEventConsumer>();
-                consumers.AddSagaStateMachine<TargetScanStateMachine, TargetScanState>()
-                    .EntityFrameworkRepository(r =>
-                    {
-                        r.ConcurrencyMode = MassTransit.ConcurrencyMode.Pessimistic;
-                        r.ExistingDbContext<NightmareDbContext>();
-                    });
-            });
 
+        services.AddScoped<DiscoveryRealtimeClient>();
+
+        services.AddCommandCenterApplicationServices();
+        services.AddCommandCenterOptions();
+
+        services.AddNightmareRabbitMq(configuration, consumers =>
+        {
+            consumers.AddConsumer<TargetCreatedUiEventConsumer>();
+            consumers.AddConsumer<AssetDiscoveredUiEventConsumer>();
+            consumers.AddConsumer<ScannableContentAvailableUiEventConsumer>();
+            consumers.AddConsumer<CriticalHighValueFindingAlertUiEventConsumer>();
+            consumers.AddConsumer<PortScanRequestedUiEventConsumer>();
+            consumers.AddConsumer<SubdomainEnumerationRequestedUiEventConsumer>();
+
+            consumers.AddSagaStateMachine<TargetScanStateMachine, TargetScanState>()
+                .EntityFrameworkRepository(r =>
+                {
+                    r.ConcurrencyMode = ConcurrencyMode.Pessimistic;
+                    r.ExistingDbContext<NightmareDbContext>();
+                });
+        });
+
+        return services;
+    }
+
+    private static IServiceCollection AddCommandCenterApplicationServices(this IServiceCollection services)
+    {
+        services.AddScoped<TargetManagementService>();
+        services.AddScoped<TargetSummaryQueryService>();
+        services.AddScoped<RootSpiderSeedService>();
+
+        services.AddSingleton<WorkerScaleDefinitionProvider>();
+        services.AddScoped<WorkerScalingSettingsService>();
+        services.AddScoped<WorkerSwitchService>();
+
+        services.AddScoped<AwsRegionResolver>();
+        services.AddScoped<EcsWorkerServiceManager>();
+        services.AddScoped<EcsServiceNameResolver>();
+
+        return services;
+    }
+
+    private static IServiceCollection AddCommandCenterOptions(this IServiceCollection services)
+    {
         services.AddOptions<NightmareRuntimeOptions>()
-            .Bind(configuration.GetSection("Nightmare"))
+            .Configure<IConfiguration>((options, cfg) =>
+            {
+                cfg.GetSection("Nightmare").Bind(options);
+                cfg.GetSection("Argus").Bind(options);
+            })
             .Validate(
                 o => !o.Diagnostics.Enabled || !string.IsNullOrWhiteSpace(o.Diagnostics.ApiKey),
-                "Nightmare:Diagnostics:Enabled=true requires Nightmare:Diagnostics:ApiKey.")
+                "Argus/Nightmare Diagnostics Enabled=true requires Diagnostics ApiKey.")
             .Validate(
                 o => !o.DataMaintenance.Enabled || !string.IsNullOrWhiteSpace(o.DataMaintenance.ApiKey),
-                "Nightmare:DataMaintenance:Enabled=true requires Nightmare:DataMaintenance:ApiKey.")
+                "Argus/Nightmare DataMaintenance Enabled=true requires DataMaintenance ApiKey.")
             .ValidateOnStart();
 
         return services;

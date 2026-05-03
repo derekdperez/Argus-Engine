@@ -1,4 +1,5 @@
 using NightmareV2.CommandCenter.Security;
+using NightmareV2.Infrastructure.Configuration;
 
 namespace NightmareV2.CommandCenter.Startup;
 
@@ -6,7 +7,7 @@ public static class CommandCenterMiddleware
 {
     public static WebApplication UseCommandCenterMiddleware(this WebApplication app)
     {
-        var listenPlainHttp = app.Configuration.GetValue("Nightmare:ListenPlainHttp", false);
+        var listenPlainHttp = app.Configuration.GetArgusValue("ListenPlainHttp", false);
 
         if (!app.Environment.IsDevelopment())
         {
@@ -22,7 +23,6 @@ public static class CommandCenterMiddleware
             app.UseHttpsRedirection();
 
         app.UseSensitiveEndpointProtection();
-
         app.UseStaticFiles();
         app.UseAntiforgery();
 

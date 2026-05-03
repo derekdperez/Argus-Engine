@@ -2,6 +2,13 @@
 
 ## 2026-05-02
 
+- Hardened deploy build liveness controls for EC2/docker-compose runs:
+  - Added `NIGHTMARE_BUILD_TIMEOUT_MIN` to enforce an optional max runtime for compose build invocations (uses `timeout` when available).
+  - Added `NIGHTMARE_BUILD_SEQUENTIAL=1` mode to build selected services one-by-one for clearer progress and easier fault isolation.
+  - Added `NIGHTMARE_BUILD_PROGRESS` to control BuildKit progress style (`auto|plain|tty`) through `BUILDKIT_PROGRESS`.
+  - Why: recent deployments appeared hung during long parallel restore/publish stages; these controls provide bounded runtime and clearer operator visibility.
+  - Validation: `bash -n deploy/deploy.sh` and `bash -n deploy/lib-nightmare-compose.sh` (Git Bash) succeeded.
+
 - Fixed Command Center deployment publish blockers from recent refactor drift:
   - Removed invalid namespace import in `Startup/CommandCenterServiceRegistration.cs` (`Components.Pages.Operations` did not exist).
   - Removed DI registrations for non-existent service types (`TargetManagementService`, `TargetSummaryQueryService`, `WorkerScalingSettingsService`, `WorkerSwitchService`) while keeping existing service registrations intact.

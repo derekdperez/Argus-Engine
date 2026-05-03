@@ -17,6 +17,9 @@
 #   NIGHTMARE_DEPLOY_SKIP_BUILD=1    Set when app images do not need rebuilding for this deploy.
 #   NIGHTMARE_DEPLOY_FRESH=1         Force full rebuild (--no-cache); set by ./deploy.sh -fresh.
 #   NIGHTMARE_FORCE_RECREATE=1       Use compose up --force-recreate. Defaults to 0.
+#   NIGHTMARE_BUILD_TIMEOUT_MIN=0    Max minutes allowed for a compose build invocation (0 disables timeout).
+#   NIGHTMARE_BUILD_SEQUENTIAL=0     Build selected services one-by-one instead of one parallel compose build.
+#   NIGHTMARE_BUILD_PROGRESS=auto    Build progress style: auto|plain|tty (default auto).
 
 nightmare_docker() {
   if [[ "${NIGHTMARE_DOCKER_USE_SUDO:-}" == "1" ]]; then
@@ -743,6 +746,7 @@ compose() {
   # BuildKit enables Dockerfile cache mounts for NuGet and Go module caches.
   export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
   export COMPOSE_DOCKER_CLI_BUILD="${COMPOSE_DOCKER_CLI_BUILD:-1}"
+  export BUILDKIT_PROGRESS="${NIGHTMARE_BUILD_PROGRESS:-auto}"
   local cf="$ROOT/deploy/docker-compose.yml"
   if nightmare_docker compose version >/dev/null 2>&1; then
     nightmare_docker compose -f "$cf" "$@"
@@ -756,6 +760,19 @@ compose() {
     echo "Docker Compose is not available (need 'docker compose' or docker-compose)." >&2
     exit 1
   fi
+}
+
+nightmare_run_with_timeout() {
+  local timeout_min="${NIGHTMARE_BUILD_TIMEOUT_MIN:-0}"
+  if [[ "$timeout_min" =~ ^[0-9]+$ ]] && [[ "$timeout_min" -gt 0 ]]; then
+    if command -v timeout >/dev/null 2>&1; then
+      timeout "${timeout_min}m" "$@"
+      return $?
+    fi
+    echo "WARN: NIGHTMARE_BUILD_TIMEOUT_MIN is set but 'timeout' is unavailable; continuing without timeout." >&2
+  fi
+
+  "$@"
 }
 
 nightmare_note_built_services() {
@@ -776,8 +793,20 @@ nightmare_compose_build_service_list() {
   else
     mapfile -t built_services < <(nightmare_all_dotnet_services)
   fi
-  compose "${args[@]}"
-  nightmare_note_built_services "${built_services[@]}"
+  if [[ "${NIGHTMARE_BUILD_SEQUENTIAL:-0}" == "1" ]]; then
+    local build_flags=()
+    [[ "${NIGHTMARE_PULL_IMAGES:-0}" == "1" || "${NIGHTMARE_DEPLOY_FRESH:-0}" == "1" ]] && build_flags+=(--pull)
+    [[ "${NIGHTMARE_NO_CACHE:-}" == "1" ]] && build_flags+=(--no-cache)
+    local svc
+    for svc in "${built_services[@]}"; do
+      echo "Building service: $svc"
+      nightmare_run_with_timeout compose build "${build_flags[@]}" "$svc"
+      nightmare_note_built_services "$svc"
+    done
+  else
+    nightmare_run_with_timeout compose "${args[@]}"
+    nightmare_note_built_services "${built_services[@]}"
+  fi
 }
 
 nightmare_compose_build() {

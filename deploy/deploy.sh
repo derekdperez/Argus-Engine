@@ -24,6 +24,9 @@
 #   NIGHTMARE_DEPLOY_FRESH=1   Same as passing -fresh on the command line.
 #   NIGHTMARE_ECS_REPLACE_WORKERS=1  In --ecs-workers mode, stop existing ECS worker tasks before recreating them.
 #   NIGHTMARE_SKIP_BLAZOR_ASSET_VERIFY=1  Skip post-deploy verification of /_framework/blazor.web.js.
+#   NIGHTMARE_BUILD_TIMEOUT_MIN=0  Max minutes for a compose build invocation; 0 disables timeout.
+#   NIGHTMARE_BUILD_SEQUENTIAL=0   Build selected services one-by-one for clearer progress/isolation.
+#   NIGHTMARE_BUILD_PROGRESS=auto  Build progress style: auto|plain|tty.
 #   SUBFINDER_PACKAGE=...  Optional go install package for the worker image subfinder binary.
 #   AMASS_PACKAGE=...      Optional go install package for the worker image amass binary.
 #   COMPOSE_BAKE=true|false    Multi-service compose builds may use "bake"; scripts default to false for stability.
@@ -96,6 +99,9 @@ Environment:
   NIGHTMARE_ECS_WORKERS=1
   NIGHTMARE_ECS_REPLACE_WORKERS=1
   NIGHTMARE_SKIP_BLAZOR_ASSET_VERIFY=1
+  NIGHTMARE_BUILD_TIMEOUT_MIN=0
+  NIGHTMARE_BUILD_SEQUENTIAL=0
+  NIGHTMARE_BUILD_PROGRESS=auto
 EOF
       exit 0
       ;;

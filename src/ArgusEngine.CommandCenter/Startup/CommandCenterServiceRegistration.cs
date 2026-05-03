@@ -31,6 +31,7 @@ public static class CommandCenterServiceRegistration
         });
 
         services.AddArgusInfrastructure(configuration);
+        services.AddSignalR();
         services.AddCommandCenterApplicationServices();
 
         return services;

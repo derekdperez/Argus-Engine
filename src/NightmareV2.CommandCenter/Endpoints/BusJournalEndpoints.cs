@@ -6,7 +6,7 @@ namespace NightmareV2.CommandCenter.Endpoints;
 
 public static class BusJournalEndpoints
 {
-    public static void Map(WebApplication app)
+    public static IEndpointRouteBuilder MapBusJournalEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet(
                 "/api/bus/live",
@@ -40,5 +40,9 @@ public static class BusJournalEndpoints
                     return Results.Ok(rows);
                 })
             .WithName("BusHistory");
+
+        return app;
     }
+
+    public static void Map(WebApplication app) => app.MapBusJournalEndpoints();
 }

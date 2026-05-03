@@ -16,6 +16,13 @@ public static class CommandCenterEndpointRegistration
         AssetGraphEndpoints.Map(app);
         TagEndpoints.Map(app);
 
+        app.MapTargetEndpoints();
+        app.MapHttpRequestQueueEndpoints();
+        app.MapBusJournalEndpoints();
+        app.MapAssetEndpoints();
+        app.MapFileStoreEndpoints();
+        app.MapHighValueFindingEndpoints();
+        app.MapToolRestartEndpoints();
         app.MapHub<DiscoveryHub>("/hubs/discovery");
         app.MapCommandCenterInlineEndpoints();
 

@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.SignalR;
+using NightmareV2.CommandCenter.Hubs;
 using NightmareV2.CommandCenter.Models;
+using NightmareV2.CommandCenter.Realtime;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure.Data;
 
@@ -7,7 +10,7 @@ namespace NightmareV2.CommandCenter.Endpoints;
 
 public static class HttpRequestQueueEndpoints
 {
-    public static void Map(WebApplication app)
+    public static IEndpointRouteBuilder MapHttpRequestQueueEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet(
                 "/api/http-request-queue/settings",
@@ -31,7 +34,7 @@ public static class HttpRequestQueueEndpoints
 
         app.MapPut(
                 "/api/http-request-queue/settings",
-                async (HttpRequestQueueSettingsPatch body, NightmareDbContext db, CancellationToken ct) =>
+                async (HttpRequestQueueSettingsPatch body, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
                 {
                     var row = await db.HttpRequestQueueSettings.FirstOrDefaultAsync(s => s.Id == 1, ct).ConfigureAwait(false);
                     if (row is null)
@@ -48,6 +51,17 @@ public static class HttpRequestQueueEndpoints
                     row.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                    await hub.Clients.All.SendAsync(
+                            DiscoveryHubEvents.DomainEvent,
+                            new LiveUiEventDto(
+                                "QueueSettingsChanged",
+                                null,
+                                null,
+                                "http",
+                                body.Enabled ? "HTTP queue enabled" : "HTTP queue disabled",
+                                row.UpdatedAtUtc),
+                            cancellationToken: ct)
+                        .ConfigureAwait(false);
                     return Results.NoContent();
                 })
             .WithName("UpdateHttpRequestQueueSettings");
@@ -179,5 +193,9 @@ public static class HttpRequestQueueEndpoints
                             sentLast24Hours));
                 })
             .WithName("GetHttpRequestQueueMetrics");
+
+        return app;
     }
+
+    public static void Map(WebApplication app) => app.MapHttpRequestQueueEndpoints();
 }

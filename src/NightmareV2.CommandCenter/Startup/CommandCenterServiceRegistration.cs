@@ -2,6 +2,9 @@ using MassTransit;
 using Microsoft.AspNetCore.Components;
 using NightmareV2.Application.Sagas;
 using NightmareV2.CommandCenter.Realtime;
+using NightmareV2.CommandCenter.Services.Aws;
+using NightmareV2.CommandCenter.Services.Targets;
+using NightmareV2.CommandCenter.Services.Workers;
 using NightmareV2.Infrastructure;
 using NightmareV2.Infrastructure.Data;
 using NightmareV2.Infrastructure.Messaging;
@@ -34,6 +37,11 @@ public static class CommandCenterServiceRegistration
         services.AddNightmareInfrastructure(configuration);
         services.AddSignalR();
         services.AddScoped<DiscoveryRealtimeClient>();
+        services.AddSingleton<WorkerScaleDefinitionProvider>();
+        services.AddSingleton<AwsRegionResolver>();
+        services.AddSingleton<EcsServiceNameResolver>();
+        services.AddScoped<EcsWorkerServiceManager>();
+        services.AddScoped<RootSpiderSeedService>();
         services.AddNightmareRabbitMq(
             configuration,
             consumers =>

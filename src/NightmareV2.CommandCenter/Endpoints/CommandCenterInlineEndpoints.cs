@@ -16,6 +16,9 @@ using NightmareV2.Application.Workers;
 using NightmareV2.CommandCenter.Hubs;
 using NightmareV2.CommandCenter.Models;
 using NightmareV2.CommandCenter.Realtime;
+using NightmareV2.CommandCenter.Services.Aws;
+using NightmareV2.CommandCenter.Services.Targets;
+using NightmareV2.CommandCenter.Services.Workers;
 using NightmareV2.Contracts.Events;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure.Data;
@@ -41,1214 +44,20 @@ internal static class CommandCenterInlineEndpoints
 {
     public static IEndpointRouteBuilder MapCommandCenterInlineEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet(
-                "/api/targets",
-                async (NightmareDbContext db, CancellationToken ct) =>
-                {
-                    var targets = await db.Targets.AsNoTracking()
-                        .OrderByDescending(t => t.CreatedAtUtc)
-                        .Take(5000)
-                        .ToListAsync(ct)
-                        .ConfigureAwait(false);
 
-                    var targetIds = targets.Select(t => t.Id).ToList();
-                    var now = DateTimeOffset.UtcNow;
-                    var assetRollups = await db.Assets.AsNoTracking()
-                        .Where(a => targetIds.Contains(a.TargetId))
-                        .GroupBy(a => a.TargetId)
-                        .Select(
-                            g => new
-                            {
-                                TargetId = g.Key,
-                                ConfirmedSubdomains = g.LongCount(a => a.Kind == AssetKind.Subdomain
-                                    && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
-                                ConfirmedAssets = g.LongCount(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
-                                ConfirmedUrls = g.LongCount(a => a.Kind == AssetKind.Url
-                                    && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
-                                LastAssetAtUtc = g.Max(a => (DateTimeOffset?)a.DiscoveredAtUtc),
-                            })
-                        .ToDictionaryAsync(x => x.TargetId, ct)
-                        .ConfigureAwait(false);
-
-                    var queueRollups = await db.HttpRequestQueue.AsNoTracking()
-                        .Where(q => targetIds.Contains(q.TargetId))
-                        .GroupBy(q => q.TargetId)
-                        .Select(
-                            g => new
-                            {
-                                TargetId = g.Key,
-                                Queued = g.LongCount(q => q.State == HttpRequestQueueState.Queued
-                                    || (q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now)),
-                                LastQueueAtUtc = g.Max(q => (DateTimeOffset?)q.UpdatedAtUtc),
-                            })
-                        .ToDictionaryAsync(x => x.TargetId, ct)
-                        .ConfigureAwait(false);
-
-                    var rows = targets
-                        .Select(
-                            t =>
-                            {
-                                assetRollups.TryGetValue(t.Id, out var assets);
-                                queueRollups.TryGetValue(t.Id, out var queue);
-                                var lastRun = MaxUtc(assets?.LastAssetAtUtc, queue?.LastQueueAtUtc);
-                                return new TargetSummary(
-                                    t.Id,
-                                    t.RootDomain,
-                                    t.GlobalMaxDepth,
-                                    t.CreatedAtUtc,
-                                    assets?.ConfirmedSubdomains ?? 0,
-                                    assets?.ConfirmedAssets ?? 0,
-                                    assets?.ConfirmedUrls ?? 0,
-                                    queue?.Queued ?? 0,
-                                    lastRun);
-                            })
-                        .ToList();
-
-                    return Results.Ok(rows);
-                })
-            .WithName("ListTargets");
-
-        static DateTimeOffset? MaxUtc(DateTimeOffset? first, DateTimeOffset? second)
-        {
-            if (first is null)
-                return second;
-            if (second is null)
-                return first;
-            return first > second ? first : second;
-        }
-
-        static string[] RequiredWorkerKeys() =>
-        [
-            WorkerKeys.Gatekeeper,
-            WorkerKeys.Spider,
-            WorkerKeys.Enumeration,
-            WorkerKeys.PortScan,
-            WorkerKeys.HighValueRegex,
-            WorkerKeys.HighValuePaths,
-            WorkerKeys.TechnologyIdentification,
-        ];
-
-        static (string ScaleKey, string DefaultServiceName)? WorkerScaleTargetForKey(string workerKey) =>
-            workerKey switch
-            {
-                WorkerKeys.Spider => ("worker-spider", "nightmare-worker-spider"),
-                WorkerKeys.Enumeration => ("worker-enum", "nightmare-worker-enum"),
-                WorkerKeys.PortScan => ("worker-portscan", "nightmare-worker-portscan"),
-                WorkerKeys.HighValueRegex or WorkerKeys.HighValuePaths => ("worker-highvalue", "nightmare-worker-highvalue"),
-                WorkerKeys.TechnologyIdentification => ("worker-techid", "nightmare-worker-techid"),
-                _ => null,
-            };
-
-        static (string ScaleKey, string DefaultServiceName, string DisplayName)[] WorkerScaleDefinitions() =>
-        [
-            ("worker-spider", "nightmare-worker-spider", "Spider Worker"),
-            ("worker-enum", "nightmare-worker-enum", "Subdomain Enum Worker"),
-            ("worker-portscan", "nightmare-worker-portscan", "Port Scan Worker"),
-            ("worker-highvalue", "nightmare-worker-highvalue", "High Value Worker"),
-            ("worker-techid", "nightmare-worker-techid", "Technology Identification Worker"),
-        ];
-
-        static WorkerScalingSettingsDto DefaultWorkerScalingSetting(string scaleKey)
-        {
-            var displayName = WorkerScaleDefinitions().FirstOrDefault(d => d.ScaleKey == scaleKey).DisplayName ?? scaleKey;
-            return scaleKey switch
-            {
-                "worker-spider" => new(scaleKey, displayName, 1, 50, 100, DateTimeOffset.UnixEpoch),
-                "worker-enum" => new(scaleKey, displayName, 1, 20, 25, DateTimeOffset.UnixEpoch),
-                "worker-portscan" => new(scaleKey, displayName, 1, 20, 100, DateTimeOffset.UnixEpoch),
-                "worker-highvalue" => new(scaleKey, displayName, 1, 20, 100, DateTimeOffset.UnixEpoch),
-                "worker-techid" => new(scaleKey, displayName, 1, 20, 100, DateTimeOffset.UnixEpoch),
-                _ => new(scaleKey, displayName, 1, 20, 100, DateTimeOffset.UnixEpoch),
-            };
-        }
-
-        static string EcsServiceNameForScaleKey(IConfiguration configuration, string scaleKey, string defaultServiceName)
-        {
-            var envName = scaleKey switch
-            {
-                "worker-spider" => "WORKER_SPIDER_SERVICE",
-                "worker-enum" => "WORKER_ENUM_SERVICE",
-                "worker-portscan" => "WORKER_PORTSCAN_SERVICE",
-                "worker-highvalue" => "WORKER_HIGHVALUE_SERVICE",
-                "worker-techid" => "WORKER_TECHID_SERVICE",
-                _ => "",
-            };
-
-            return string.IsNullOrWhiteSpace(envName)
-                ? defaultServiceName
-                : configuration[envName] ?? defaultServiceName;
-        }
-
-        static string EcsTaskFamilyForScaleKey(IConfiguration configuration, string scaleKey)
-        {
-            var envName = scaleKey switch
-            {
-                "worker-spider" => "ECS_TASK_FAMILY_WORKER_SPIDER",
-                "worker-enum" => "ECS_TASK_FAMILY_WORKER_ENUM",
-                "worker-portscan" => "ECS_TASK_FAMILY_WORKER_PORTSCAN",
-                "worker-highvalue" => "ECS_TASK_FAMILY_WORKER_HIGHVALUE",
-                "worker-techid" => "ECS_TASK_FAMILY_WORKER_TECHID",
-                _ => "",
-            };
-
-            return string.IsNullOrWhiteSpace(envName)
-                ? $"nightmare-v2-{scaleKey}"
-                : configuration[envName] ?? $"nightmare-v2-{scaleKey}";
-        }
-
-        static List<string> SplitCsvConfiguration(string? value) =>
-            string.IsNullOrWhiteSpace(value)
-                ? []
-                : value
-                    .Replace(' ', ',')
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .ToList();
-
-        static async Task<string?> ResolveAwsRegionAsync(IConfiguration configuration, CancellationToken ct)
-        {
-            var configured = configuration["AWS_REGION"]
-                ?? configuration["AWS_DEFAULT_REGION"]
-                ?? configuration["AWS:Region"];
-            if (!string.IsNullOrWhiteSpace(configured))
-                return configured.Trim();
-
-            try
-            {
-                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-                var token = "";
-                using (var tokenRequest = new HttpRequestMessage(HttpMethod.Put, "http://169.254.169.254/latest/api/token"))
-                {
-                    tokenRequest.Headers.TryAddWithoutValidation("X-aws-ec2-metadata-token-ttl-seconds", "60");
-                    using var tokenResponse = await http.SendAsync(tokenRequest, ct).ConfigureAwait(false);
-                    if (tokenResponse.IsSuccessStatusCode)
-                        token = await tokenResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                }
-
-                using var identityRequest = new HttpRequestMessage(HttpMethod.Get, "http://169.254.169.254/latest/dynamic/instance-identity/document");
-                if (!string.IsNullOrWhiteSpace(token))
-                    identityRequest.Headers.TryAddWithoutValidation("X-aws-ec2-metadata-token", token);
-
-                using var identityResponse = await http.SendAsync(identityRequest, ct).ConfigureAwait(false);
-                if (!identityResponse.IsSuccessStatusCode)
-                    return null;
-
-                var json = await identityResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                using var doc = JsonDocument.Parse(json);
-                return doc.RootElement.TryGetProperty("region", out var region) ? region.GetString() : null;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        static async Task<Dictionary<string, EcsService>> DescribeEcsServicesAsync(
-            IConfiguration configuration,
-            IEnumerable<string> serviceNames,
-            CancellationToken ct)
-        {
-            var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(region))
-                return [];
-
-            var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
-            using var ecs = new AmazonECSClient(RegionEndpoint.GetBySystemName(region));
-            var response = await ecs.DescribeServicesAsync(
-                    new DescribeServicesRequest
-                    {
-                        Cluster = cluster,
-                        Services = serviceNames.Distinct(StringComparer.Ordinal).ToList(),
-                    },
-                    ct)
-                .ConfigureAwait(false);
-
-            return response.Services.ToDictionary(s => s.ServiceName, StringComparer.Ordinal);
-        }
-
-
-
-        static async Task UpdateEcsServiceDesiredCountAsync(
-            IConfiguration configuration,
-            string serviceName,
-            int desiredCount,
-            CancellationToken ct)
-        {
-            var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(region))
-                throw new InvalidOperationException("AWS region is not configured and could not be inferred from EC2 metadata.");
-
-            var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
-            using var ecs = new AmazonECSClient(RegionEndpoint.GetBySystemName(region));
-            await ecs.UpdateServiceAsync(
-                    new UpdateServiceRequest
-                    {
-                        Cluster = cluster,
-                        Service = serviceName,
-                        DesiredCount = desiredCount,
-                    },
-                    ct)
-                .ConfigureAwait(false);
-        }
-
-        static async Task<(bool Changed, string Action)> EnsureEcsWorkerServiceDesiredCountAsync(
-            IConfiguration configuration,
-            string scaleKey,
-            string serviceName,
-            int desiredCount,
-            CancellationToken ct)
-        {
-            var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(region))
-                throw new InvalidOperationException("AWS region is not configured and could not be inferred from EC2 metadata.");
-
-            var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
-            using var ecs = new AmazonECSClient(RegionEndpoint.GetBySystemName(region));
-            var services = await ecs.DescribeServicesAsync(
-                    new DescribeServicesRequest
-                    {
-                        Cluster = cluster,
-                        Services = [serviceName],
-                    },
-                    ct)
-                .ConfigureAwait(false);
-
-            var service = services.Services.FirstOrDefault(s => string.Equals(s.ServiceName, serviceName, StringComparison.Ordinal));
-            if (service is not null)
-            {
-                if (!string.Equals(service.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException($"ECS service {serviceName} is {service.Status}; wait for it to become ACTIVE or finish deletion.");
-
-                await ecs.UpdateServiceAsync(
-                        new UpdateServiceRequest
-                        {
-                            Cluster = cluster,
-                            Service = serviceName,
-                            DesiredCount = desiredCount,
-                        },
-                        ct)
-                    .ConfigureAwait(false);
-
-                return (true, "updated");
-            }
-
-            if (desiredCount == 0)
-                return (false, "saved");
-
-            var family = EcsTaskFamilyForScaleKey(configuration, scaleKey);
-            var taskDefinitions = await ecs.ListTaskDefinitionsAsync(
-                    new ListTaskDefinitionsRequest
-                    {
-                        FamilyPrefix = family,
-                        Status = TaskDefinitionStatus.ACTIVE,
-                        Sort = SortOrder.DESC,
-                        MaxResults = 1,
-                    },
-                    ct)
-                .ConfigureAwait(false);
-            var taskDefinition = taskDefinitions.TaskDefinitionArns.FirstOrDefault();
-            if (string.IsNullOrWhiteSpace(taskDefinition))
-                throw new InvalidOperationException($"No active ECS task definition was found for family {family}. Run deploy/aws/deploy-ecs-services.sh or ./deploy/deploy.sh --ecs-workers once to register it.");
-
-            var subnets = SplitCsvConfiguration(configuration["ECS_SUBNETS"]);
-            var securityGroups = SplitCsvConfiguration(configuration["ECS_SECURITY_GROUPS"]);
-            if (subnets.Count == 0 || securityGroups.Count == 0)
-                throw new InvalidOperationException("ECS_SUBNETS and ECS_SECURITY_GROUPS must be configured before Command Center can create worker services.");
-
-            var request = new CreateServiceRequest
-            {
-                Cluster = cluster,
-                ServiceName = serviceName,
-                TaskDefinition = taskDefinition,
-                DesiredCount = desiredCount,
-                LaunchType = LaunchType.FindValue(configuration["ECS_LAUNCH_TYPE"] ?? "FARGATE"),
-                DeploymentConfiguration = new DeploymentConfiguration
-                {
-                    MinimumHealthyPercent = configuration.GetValue<int?>("ECS_MIN_HEALTHY_PERCENT") ?? 100,
-                    MaximumPercent = configuration.GetValue<int?>("ECS_MAX_PERCENT") ?? 200,
-                },
-                NetworkConfiguration = new NetworkConfiguration
-                {
-                    AwsvpcConfiguration = new AwsVpcConfiguration
-                    {
-                        Subnets = subnets,
-                        SecurityGroups = securityGroups,
-                        AssignPublicIp = AssignPublicIp.FindValue(configuration["ECS_ASSIGN_PUBLIC_IP"] ?? "DISABLED"),
-                    },
-                },
-            };
-
-            if (bool.TryParse(configuration["ECS_ENABLE_EXECUTE_COMMAND"], out var enableExecuteCommand) && enableExecuteCommand)
-                request.EnableExecuteCommand = true;
-
-            await ecs.CreateServiceAsync(request, ct).ConfigureAwait(false);
-            return (true, "created");
-        }
-
-        static string ExtractTaskDefinitionVersion(string? taskDefinition)
-        {
-            if (string.IsNullOrWhiteSpace(taskDefinition))
-                return "-";
-
-            var slash = taskDefinition.LastIndexOf('/');
-            var familyRevision = slash >= 0 ? taskDefinition[(slash + 1)..] : taskDefinition;
-            return familyRevision;
-        }
-
-        static async Task QueueRootSpiderSeedsAsync(
-            IEventOutbox outbox,
-            Guid targetId,
-            string rootDomain,
-            int globalMaxDepth,
-            DateTimeOffset occurredAtUtc,
-            Guid correlationId,
-            Guid causationId,
-            CancellationToken ct)
-        {
-            foreach (var rootUrl in RootSpiderSeedUrls(rootDomain))
-            {
-                await outbox.EnqueueAsync(
-                        new AssetDiscovered(
-                            targetId,
-                            rootDomain,
-                            globalMaxDepth,
-                            0,
-                            AssetKind.Url,
-                            rootUrl,
-                            "command-center-root-seed",
-                            occurredAtUtc,
-                            correlationId,
-                            AssetAdmissionStage.Raw,
-                            null,
-                            "Target root domain spider seed",
-                            EventId: NewId.NextGuid(),
-                            CausationId: causationId == Guid.Empty ? correlationId : causationId,
-                            Producer: "command-center"),
-                        ct)
-                    .ConfigureAwait(false);
-            }
-        }
-
-        static IEnumerable<string> RootSpiderSeedUrls(string rootDomain)
-        {
-            var host = rootDomain.Trim().Trim('/').TrimEnd('.');
-            if (host.Length == 0)
-                yield break;
-
-            yield return $"https://{host}/";
-            yield return $"http://{host}/";
-        }
-
-        app.MapPost(
-                "/api/targets",
-                async (
-                    CreateTargetRequest dto,
-                    NightmareDbContext db,
-                    IEventOutbox outbox,
-                    IHubContext<DiscoveryHub> hub,
-                    CancellationToken ct) =>
-                {
-                    if (!TargetRootNormalization.TryNormalize(dto.RootDomain, out var root))
-                        return Results.BadRequest("root domain required");
-
-                    var target = new ReconTarget
-                    {
-                        Id = Guid.NewGuid(),
-                        RootDomain = root,
-                        GlobalMaxDepth = dto.GlobalMaxDepth > 0 ? dto.GlobalMaxDepth : 12,
-                        CreatedAtUtc = DateTimeOffset.UtcNow,
-                    };
-
-                    db.Targets.Add(target);
-                    await db.SaveChangesAsync(ct).ConfigureAwait(false);
-
-                    var correlation = NewId.NextGuid();
-                    var eventId = NewId.NextGuid();
-                    await QueueRootSpiderSeedsAsync(outbox, target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc, correlation, eventId, ct)
-                        .ConfigureAwait(false);
-                    await outbox.EnqueueAsync(
-                            new TargetCreated(
-                                target.Id,
-                                target.RootDomain,
-                                target.GlobalMaxDepth,
-                                target.CreatedAtUtc,
-                                correlation,
-                                EventId: eventId,
-                                CausationId: correlation,
-                                Producer: "command-center"),
-                            ct)
-                        .ConfigureAwait(false);
-
-                    await hub.Clients.All.SendAsync(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
-                        .ConfigureAwait(false);
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
-                            new LiveUiEventDto(
-                                "TargetCreated",
-                                target.Id,
-                                target.Id,
-                                "targets",
-                                $"Target queued: {target.RootDomain}",
-                                target.CreatedAtUtc),
-                            cancellationToken: ct)
-                        .ConfigureAwait(false);
-
-                    return Results.Created($"/api/targets/{target.Id}", new TargetSummary(target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc));
-                })
-            .WithName("CreateTarget");
-
-        app.MapPut(
-                "/api/targets/{id:guid}",
-                async (Guid id, UpdateTargetRequest dto, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
-                {
-                    if (!TargetRootNormalization.TryNormalize(dto.RootDomain, out var root))
-                        return Results.BadRequest("root domain required");
-
-                    var depth = dto.GlobalMaxDepth > 0 ? dto.GlobalMaxDepth : 12;
-                    var target = await db.Targets.FirstOrDefaultAsync(t => t.Id == id, ct).ConfigureAwait(false);
-                    if (target is null)
-                        return Results.NotFound();
-
-                    if (!string.Equals(target.RootDomain, root, StringComparison.Ordinal))
-                    {
-                        var taken = await db.Targets.AnyAsync(t => t.RootDomain == root && t.Id != id, ct).ConfigureAwait(false);
-                        if (taken)
-                            return Results.Conflict("root domain already in use");
-                    }
-
-                    target.RootDomain = root;
-                    target.GlobalMaxDepth = depth;
-                    await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                    var summary = new TargetSummary(target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc);
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
-                            new LiveUiEventDto(
-                                "TargetUpdated",
-                                target.Id,
-                                target.Id,
-                                "targets",
-                                $"Target updated: {target.RootDomain}",
-                                DateTimeOffset.UtcNow),
-                            cancellationToken: ct)
-                        .ConfigureAwait(false);
-                    return Results.Ok(summary);
-                })
-            .WithName("UpdateTarget");
-
-        app.MapPut(
-                "/api/targets/max-depth",
-                async (UpdateTargetMaxDepthRequest dto, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
-                {
-                    if (dto.GlobalMaxDepth <= 0)
-                        return Results.BadRequest("globalMaxDepth must be greater than zero");
-
-                    IQueryable<ReconTarget> query = db.Targets;
-                    if (!dto.AllTargets)
-                    {
-                        if (dto.TargetIds is null || dto.TargetIds.Count == 0)
-                            return Results.BadRequest("targetIds is required unless allTargets is true");
-
-                        var ids = dto.TargetIds.Distinct().ToArray();
-                        query = query.Where(t => ids.Contains(t.Id));
-                    }
-
-                    var updated = await query
-                        .ExecuteUpdateAsync(
-                            setters => setters.SetProperty(t => t.GlobalMaxDepth, dto.GlobalMaxDepth),
-                            ct)
-                        .ConfigureAwait(false);
-
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
-                            new LiveUiEventDto(
-                                "TargetsMaxDepthUpdated",
-                                null,
-                                null,
-                                "targets",
-                                dto.AllTargets
-                                    ? $"Max depth set to {dto.GlobalMaxDepth} for all targets"
-                                    : $"Max depth set to {dto.GlobalMaxDepth} for {updated} targets",
-                                DateTimeOffset.UtcNow),
-                            cancellationToken: ct)
-                        .ConfigureAwait(false);
-
-                    return Results.Ok(new UpdateTargetMaxDepthResult(updated, dto.GlobalMaxDepth));
-                })
-            .WithName("UpdateTargetsMaxDepth");
-
-        app.MapDelete(
-                "/api/targets/{id:guid}",
-                async (Guid id, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
-                {
-                    var target = await db.Targets.FirstOrDefaultAsync(t => t.Id == id, ct).ConfigureAwait(false);
-                    if (target is null)
-                        return Results.NotFound();
-                    var rootDomain = target.RootDomain;
-                    db.Targets.Remove(target);
-                    await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
-                            new LiveUiEventDto(
-                                "TargetDeleted",
-                                id,
-                                id,
-                                "targets",
-                                $"Target deleted: {rootDomain}",
-                                DateTimeOffset.UtcNow),
-                            cancellationToken: ct)
-                        .ConfigureAwait(false);
-                    return Results.NoContent();
-                })
-            .WithName("DeleteTarget");
-
-        app.MapPost(
-                "/api/targets/bulk",
-                async (HttpRequest httpRequest, NightmareDbContext db, IEventOutbox outbox, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
-                {
-                    const int maxLines = 50_000;
-                    var rawLines = new List<string>();
-                    var globalDepth = 12;
-                    var contentType = httpRequest.ContentType ?? "";
-
-                    if (contentType.Contains("multipart/form-data", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var form = await httpRequest.ReadFormAsync(ct).ConfigureAwait(false);
-                        if (form.TryGetValue("globalMaxDepth", out var depthVals) && int.TryParse(depthVals.ToString(), out var parsedDepth) && parsedDepth > 0)
-                            globalDepth = parsedDepth;
-                        var file = form.Files.GetFile("file");
-                        if (file is null || file.Length == 0)
-                            return Results.BadRequest("multipart field \"file\" is required");
-                        await using var stream = file.OpenReadStream();
-                        using var reader = new StreamReader(stream);
-                        var text = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
-                        rawLines.AddRange(TargetRootNormalization.SplitLines(text));
-                    }
-                    else
-                    {
-                        var dto = await httpRequest.ReadFromJsonAsync<BulkImportRequest>(cancellationToken: ct).ConfigureAwait(false);
-                        if (dto is null)
-                            return Results.BadRequest("expected JSON body or multipart/form-data with field \"file\"");
-                        globalDepth = dto.GlobalMaxDepth > 0 ? dto.GlobalMaxDepth : 12;
-                        if (dto.Domains is not null)
-                            rawLines.AddRange(dto.Domains);
-                    }
-
-                    if (rawLines.Count > maxLines)
-                        return Results.BadRequest($"maximum {maxLines} lines per import");
-
-                    var firstOrder = new List<string>();
-                    var batchSeen = new HashSet<string>(StringComparer.Ordinal);
-                    var skippedEmpty = 0;
-                    var skippedDupBatch = 0;
-                    var skippedInvalid = 0;
-                    foreach (var line in rawLines)
-                    {
-                        var trimmed = line.Trim();
-                        if (trimmed.Length == 0)
-                        {
-                            skippedEmpty++;
-                            continue;
-                        }
-
-                        if (!TargetRootNormalization.TryNormalize(trimmed, out var n))
-                        {
-                            skippedInvalid++;
-                            continue;
-                        }
-
-                        if (!batchSeen.Add(n))
-                        {
-                            skippedDupBatch++;
-                            continue;
-                        }
-
-                        firstOrder.Add(n);
-                    }
-
-                    if (firstOrder.Count == 0)
-                    {
-                        return Results.Ok(
-                            new BulkImportResult(
-                                0,
-                                0,
-                                skippedInvalid + skippedEmpty,
-                                skippedDupBatch));
-                    }
-
-                    var existing = await db.Targets.AsNoTracking()
-                        .Where(t => firstOrder.Contains(t.RootDomain))
-                        .Select(t => t.RootDomain)
-                        .ToListAsync(ct)
-                        .ConfigureAwait(false);
-                    var existingSet = existing.ToHashSet(StringComparer.Ordinal);
-
-                    var skippedExist = 0;
-                    var newTargets = new List<ReconTarget>();
-                    foreach (var n in firstOrder)
-                    {
-                        if (existingSet.Contains(n))
-                        {
-                            skippedExist++;
-                            continue;
-                        }
-
-                        existingSet.Add(n);
-                        var target = new ReconTarget
-                        {
-                            Id = Guid.NewGuid(),
-                            RootDomain = n,
-                            GlobalMaxDepth = globalDepth,
-                            CreatedAtUtc = DateTimeOffset.UtcNow,
-                        };
-                        newTargets.Add(target);
-                        db.Targets.Add(target);
-                    }
-
-                    await db.SaveChangesAsync(ct).ConfigureAwait(false);
-
-                    foreach (var target in newTargets)
-                    {
-                        var correlation = NewId.NextGuid();
-                        var eventId = NewId.NextGuid();
-                        await QueueRootSpiderSeedsAsync(outbox, target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc, correlation, eventId, ct)
-                            .ConfigureAwait(false);
-                        await outbox.EnqueueAsync(
-                                new TargetCreated(
-                                    target.Id,
-                                    target.RootDomain,
-                                    target.GlobalMaxDepth,
-                                    target.CreatedAtUtc,
-                                    correlation,
-                                    EventId: eventId,
-                                    CausationId: correlation,
-                                    Producer: "command-center"),
-                                ct)
-                            .ConfigureAwait(false);
-                        await hub.Clients.All.SendAsync(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
-                            .ConfigureAwait(false);
-                        await hub.Clients.All.SendAsync(
-                                DiscoveryHubEvents.DomainEvent,
-                                new LiveUiEventDto(
-                                    "TargetCreated",
-                                    target.Id,
-                                    target.Id,
-                                    "targets",
-                                    $"Target queued: {target.RootDomain}",
-                                    target.CreatedAtUtc),
-                                cancellationToken: ct)
-                            .ConfigureAwait(false);
-                    }
-
-                    return Results.Ok(
-                        new BulkImportResult(
-                            newTargets.Count,
-                            skippedExist,
-                            skippedInvalid + skippedEmpty,
-                            skippedDupBatch));
-                })
-            .WithName("BulkImportTargets");
-
-
-        app.MapGet(
-                "/api/http-request-queue/settings",
-                async (NightmareDbContext db, CancellationToken ct) =>
-                {
-                    var row = await db.HttpRequestQueueSettings.AsNoTracking()
-                        .FirstOrDefaultAsync(s => s.Id == 1, ct)
-                        .ConfigureAwait(false)
-                        ?? new HttpRequestQueueSettings();
-
-                    return Results.Ok(
-                        new HttpRequestQueueSettingsDto(
-                            row.Enabled,
-                            row.GlobalRequestsPerMinute,
-                            row.PerDomainRequestsPerMinute,
-                            row.MaxConcurrency,
-                            row.RequestTimeoutSeconds,
-                            row.UpdatedAtUtc));
-                })
-            .WithName("GetHttpRequestQueueSettings");
-
-        app.MapPut(
-                "/api/http-request-queue/settings",
-                async (HttpRequestQueueSettingsPatch body, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
-                {
-                    var row = await db.HttpRequestQueueSettings.FirstOrDefaultAsync(s => s.Id == 1, ct).ConfigureAwait(false);
-                    if (row is null)
-                    {
-                        row = new HttpRequestQueueSettings { Id = 1 };
-                        db.HttpRequestQueueSettings.Add(row);
-                    }
-
-                    row.Enabled = body.Enabled;
-                    row.GlobalRequestsPerMinute = Math.Clamp(body.GlobalRequestsPerMinute, 1, 100_000);
-                    row.PerDomainRequestsPerMinute = Math.Clamp(body.PerDomainRequestsPerMinute, 1, 10_000);
-                    row.MaxConcurrency = Math.Clamp(body.MaxConcurrency, 1, 1_000);
-                    row.RequestTimeoutSeconds = Math.Clamp(body.RequestTimeoutSeconds, 5, 300);
-                    row.UpdatedAtUtc = DateTimeOffset.UtcNow;
-
-                    await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
-                            new LiveUiEventDto(
-                                "QueueSettingsChanged",
-                                null,
-                                null,
-                                "http",
-                                body.Enabled ? "HTTP queue enabled" : "HTTP queue disabled",
-                                row.UpdatedAtUtc),
-                            cancellationToken: ct)
-                        .ConfigureAwait(false);
-                    return Results.NoContent();
-                })
-            .WithName("UpdateHttpRequestQueueSettings");
-
-        app.MapGet(
-                "/api/http-request-queue",
-                async (NightmareDbContext db, Guid? targetId, string? state, int? take, CancellationToken ct) =>
-                {
-                    var q = db.HttpRequestQueue.AsNoTracking().AsQueryable();
-                    if (targetId is { } tid)
-                        q = q.Where(r => r.TargetId == tid);
-
-                    if (!string.IsNullOrWhiteSpace(state))
-                    {
-                        var requestedState = state.Trim();
-                        q = q.Where(r => r.State == requestedState);
-                    }
-
-                    IQueryable<HttpRequestQueueItem> ordered = q.OrderByDescending(r => r.CreatedAtUtc);
-                    if (take is > 0)
-                        ordered = ordered.Take(Math.Clamp(take.Value, 1, 100_000));
-
-                    var rows = await ordered
-                        .Select(r => new HttpRequestQueueRowDto(
-                            r.Id,
-                            r.AssetId,
-                            r.TargetId,
-                            r.AssetKind.ToString(),
-                            r.Method,
-                            r.RequestUrl,
-                            r.DomainKey,
-                            r.State.ToString(),
-                            r.AttemptCount,
-                            r.MaxAttempts,
-                            r.Priority,
-                            r.CreatedAtUtc,
-                            r.UpdatedAtUtc,
-                            r.NextAttemptAtUtc,
-                            r.StartedAtUtc,
-                            r.CompletedAtUtc,
-                            r.LockedBy,
-                            r.LockedUntilUtc,
-                            r.LastHttpStatus,
-                            r.LastError,
-                            r.RequestHeadersJson,
-                            r.RequestBody,
-                            r.ResponseHeadersJson,
-                            r.ResponseBody,
-                            r.DurationMs,
-                            r.ResponseContentType,
-                            r.ResponseContentLength,
-                            r.FinalUrl,
-                            r.RedirectCount,
-                            r.RedirectChainJson))
-                        .ToListAsync(ct)
-                        .ConfigureAwait(false);
-
-                    return Results.Ok(rows);
-                })
-            .WithName("ListHttpRequestQueue");
-
-        app.MapGet(
-                "/api/http-request-queue/metrics",
-                async (NightmareDbContext db, CancellationToken ct) =>
-                {
-                    var now = DateTimeOffset.UtcNow;
-                    var oneMinuteAgo = now.AddMinutes(-1);
-                    var oneHourAgo = now.AddHours(-1);
-                    var oneDayAgo = now.AddHours(-24);
-
-                    var queued = await db.HttpRequestQueue.AsNoTracking()
-                        .LongCountAsync(q => q.State == HttpRequestQueueState.Queued, ct)
-                        .ConfigureAwait(false);
-                    var retry = await db.HttpRequestQueue.AsNoTracking()
-                        .LongCountAsync(q => q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now, ct)
-                        .ConfigureAwait(false);
-                    var scheduledRetry = await db.HttpRequestQueue.AsNoTracking()
-                        .LongCountAsync(q => q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc > now, ct)
-                        .ConfigureAwait(false);
-                    var inFlight = await db.HttpRequestQueue.AsNoTracking()
-                        .LongCountAsync(q => q.State == HttpRequestQueueState.InFlight, ct)
-                        .ConfigureAwait(false);
-                    var failed = await db.HttpRequestQueue.AsNoTracking()
-                        .LongCountAsync(q => q.State == HttpRequestQueueState.Failed, ct)
-                        .ConfigureAwait(false);
-                    var completedLastHour = await db.HttpRequestQueue.AsNoTracking()
-                        .LongCountAsync(q => q.State == HttpRequestQueueState.Succeeded && q.CompletedAtUtc >= oneHourAgo, ct)
-                        .ConfigureAwait(false);
-                    var failedLastMinute = await db.HttpRequestQueue.AsNoTracking()
-                        .LongCountAsync(q => q.State == HttpRequestQueueState.Failed && q.UpdatedAtUtc >= oneMinuteAgo, ct)
-                        .ConfigureAwait(false);
-                    var failedLastHour = await db.HttpRequestQueue.AsNoTracking()
-                        .LongCountAsync(q => q.State == HttpRequestQueueState.Failed && q.UpdatedAtUtc >= oneHourAgo, ct)
-                        .ConfigureAwait(false);
-                    var failedLast24Hours = await db.HttpRequestQueue.AsNoTracking()
-                        .LongCountAsync(q => q.State == HttpRequestQueueState.Failed && q.UpdatedAtUtc >= oneDayAgo, ct)
-                        .ConfigureAwait(false);
-                    var sentLastMinute = await db.HttpRequestQueue.AsNoTracking()
-                        .LongCountAsync(q => q.StartedAtUtc >= oneMinuteAgo, ct)
-                        .ConfigureAwait(false);
-                    var sentLastHour = await db.HttpRequestQueue.AsNoTracking()
-                        .LongCountAsync(q => q.StartedAtUtc >= oneHourAgo, ct)
-                        .ConfigureAwait(false);
-                    var sentLast24Hours = await db.HttpRequestQueue.AsNoTracking()
-                        .LongCountAsync(q => q.StartedAtUtc >= oneDayAgo, ct)
-                        .ConfigureAwait(false);
-                    var oldestQueuedAt = await db.HttpRequestQueue.AsNoTracking()
-                        .Where(q => q.State == HttpRequestQueueState.Queued)
-                        .OrderBy(q => q.CreatedAtUtc)
-                        .Select(q => (DateTimeOffset?)q.CreatedAtUtc)
-                        .FirstOrDefaultAsync(ct)
-                        .ConfigureAwait(false);
-
-                    return Results.Ok(
-                        new HttpRequestQueueMetricsDto(
-                            queued,
-                            retry,
-                            scheduledRetry,
-                            inFlight,
-                            failed,
-                            completedLastHour,
-                            queued,
-                            oldestQueuedAt,
-                            oldestQueuedAt is null ? null : (long)(now - oldestQueuedAt.Value).TotalSeconds,
-                            failedLastMinute,
-                            failedLastHour,
-                            failedLast24Hours,
-                            sentLastMinute,
-                            sentLastHour,
-                            sentLast24Hours));
-                })
-            .WithName("GetHttpRequestQueueMetrics");
-
-        app.MapGet(
-                "/api/bus/live",
-                async (NightmareDbContext db, int? minutes, int? take, CancellationToken ct) =>
-                {
-                    var window = TimeSpan.FromMinutes(Math.Clamp(minutes ?? 3, 1, 60));
-                    var limit = Math.Clamp(take ?? 150, 1, 500);
-                    var since = DateTimeOffset.UtcNow - window;
-                    var rows = await db.BusJournal.AsNoTracking()
-                        .Where(e => e.Direction == "Publish" && e.OccurredAtUtc >= since)
-                        .OrderByDescending(e => e.OccurredAtUtc)
-                        .Take(limit)
-                        .Select(e => new BusJournalRowDto(e.Id, e.Direction, e.MessageType, e.PayloadJson, e.OccurredAtUtc, e.ConsumerType, e.HostName))
-                        .ToListAsync(ct)
-                        .ConfigureAwait(false);
-                    return Results.Ok(rows);
-                })
-            .WithName("BusLive");
-
-        app.MapGet(
-                "/api/bus/history",
-                async (NightmareDbContext db, int? take, CancellationToken ct) =>
-                {
-                    var limit = Math.Clamp(take ?? 400, 1, 2000);
-                    var rows = await db.BusJournal.AsNoTracking()
-                        .OrderByDescending(e => e.Id)
-                        .Take(limit)
-                        .Select(e => new BusJournalRowDto(e.Id, e.Direction, e.MessageType, e.PayloadJson, e.OccurredAtUtc, e.ConsumerType, e.HostName))
-                        .ToListAsync(ct)
-                        .ConfigureAwait(false);
-                    return Results.Ok(rows);
-                })
-            .WithName("BusHistory");
-
-        app.MapGet(
-                "/api/assets",
-                async (NightmareDbContext db, Guid? targetId, int? take, string? tag, CancellationToken ct) =>
-                {
-                    var q = db.Assets.AsNoTracking()
-                        .Where(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed)
-                        .OrderByDescending(a => a.DiscoveredAtUtc)
-                        .AsQueryable();
-                    if (targetId is { } tid)
-                        q = q.Where(a => a.TargetId == tid);
-                    if (!string.IsNullOrWhiteSpace(tag))
-                    {
-                        var tagSlug = tag.Trim();
-                        q = q.Where(a => db.AssetTags.Any(at => at.AssetId == a.Id && db.Tags.Any(t => t.Id == at.TagId && t.Slug == tagSlug)));
-                    }
-
-                    if (take is > 0)
-                        q = q.Take(Math.Clamp(take.Value, 1, 1_000_000));
-
-                    var rows = await q
-                        .Select(a => new AssetGridRowDto(
-                            a.Id,
-                            a.TargetId,
-                            a.Kind.ToString(),
-                            a.Category.ToString(),
-                            a.CanonicalKey,
-                            a.RawValue,
-                            a.DisplayName,
-                            a.Depth,
-                            a.DiscoveredBy,
-                            a.DiscoveryContext,
-                            a.DiscoveredAtUtc,
-                            a.LastSeenAtUtc,
-                            a.Confidence,
-                            a.LifecycleStatus,
-                            a.TypeDetailsJson,
-                            a.FinalUrl,
-                            a.RedirectCount,
-                            a.RedirectChainJson))
-                        .ToListAsync(ct)
-                        .ConfigureAwait(false);
-                    return Results.Ok(rows);
-                })
-            .WithName("ListAssets");
-
-        const long fileStoreMaxUploadBytes = 50L * 1024 * 1024;
-
-        app.MapPost(
-                "/api/filestore",
-                async (HttpRequest req, IFileStore store, CancellationToken ct) =>
-                {
-                    if (!req.HasFormContentType)
-                        return Results.BadRequest("multipart/form-data with field \"file\" is required");
-                    var form = await req.ReadFormAsync(ct).ConfigureAwait(false);
-                    var file = form.Files.GetFile("file");
-                    if (file is null || file.Length == 0)
-                        return Results.BadRequest("multipart field \"file\" is required");
-                    if (file.Length > fileStoreMaxUploadBytes)
-                        return Results.BadRequest($"file exceeds maximum size ({fileStoreMaxUploadBytes} bytes)");
-                    var logical = form["logicalName"].ToString();
-                    if (string.IsNullOrWhiteSpace(logical))
-                        logical = file.FileName;
-                    await using var uploadStream = file.OpenReadStream();
-                    var created = await store.StoreAsync(uploadStream, file.ContentType, logical, ct).ConfigureAwait(false);
-                    return Results.Created($"/api/filestore/{created.Id}", created);
-                })
-            .WithName("UploadFileBlob")
-            .DisableAntiforgery();
-
-        app.MapGet(
-                "/api/filestore/{id:guid}",
-                async (Guid id, IFileStore store, CancellationToken ct) =>
-                {
-                    var meta = await store.GetDescriptorAsync(id, ct).ConfigureAwait(false);
-                    return meta is null ? Results.NotFound() : Results.Ok(meta);
-                })
-            .WithName("GetFileBlobInfo");
-
-        app.MapGet(
-                "/api/filestore/{id:guid}/download",
-                async (Guid id, IFileStore store, CancellationToken ct) =>
-                {
-                    var meta = await store.GetDescriptorAsync(id, ct).ConfigureAwait(false);
-                    if (meta is null)
-                        return Results.NotFound();
-                    var stream = await store.OpenReadAsync(id, ct).ConfigureAwait(false);
-                    if (stream is null)
-                        return Results.NotFound();
-                    return Results.File(
-                        stream,
-                        meta.ContentType ?? "application/octet-stream",
-                        fileDownloadName: meta.LogicalName ?? $"{meta.Id:N}");
-                })
-            .WithName("DownloadFileBlob");
-
-        app.MapDelete(
-                "/api/filestore/{id:guid}",
-                async (Guid id, IFileStore store, CancellationToken ct) =>
-                {
-                    var meta = await store.GetDescriptorAsync(id, ct).ConfigureAwait(false);
-                    if (meta is null)
-                        return Results.NotFound();
-                    await store.DeleteAsync(id, ct).ConfigureAwait(false);
-                    return Results.NoContent();
-                })
-            .WithName("DeleteFileBlob");
-
-        app.MapGet(
-                "/api/high-value-findings",
-                async (NightmareDbContext db, bool? criticalOnly, int? take, CancellationToken ct) =>
-                {
-                    var q =
-                        from f in db.HighValueFindings.AsNoTracking()
-                        join t in db.Targets.AsNoTracking() on f.TargetId equals t.Id
-                        join a in db.Assets.AsNoTracking() on f.SourceAssetId equals (Guid?)a.Id into assetJoin
-                        from a in assetJoin.DefaultIfEmpty()
-                        select new
-                        {
-                            f,
-                            t.RootDomain,
-                            AssetLifecycleStatus = a == null ? null : a.LifecycleStatus,
-                            TypeDetailsJson = a == null ? null : a.TypeDetailsJson,
-                            AssetRawValue = a == null ? null : a.RawValue,
-                            AssetFinalUrl = a == null ? null : a.FinalUrl,
-                            AssetRedirectCount = a == null ? 0 : a.RedirectCount,
-                            AssetRedirectChainJson = a == null ? null : a.RedirectChainJson,
-                        };
-
-                    if (criticalOnly == true)
-                        q = q.Where(x => x.f.Severity == "Critical");
-
-                    var ordered = q.OrderByDescending(x => x.f.DiscoveredAtUtc);
-                    var rowQuery = take is > 0
-                        ? ordered.Take(Math.Clamp(take.Value, 1, 1_000_000))
-                        : ordered;
-
-                    var rows = await rowQuery
-                        .Select(x => new HighValueFindingRowDto(
-                            x.f.Id,
-                            x.f.TargetId,
-                            x.f.SourceAssetId,
-                            x.f.FindingType,
-                            x.f.Severity,
-                            x.f.PatternName,
-                            x.f.Category ?? "",
-                            x.f.MatchedText ?? "",
-                            string.IsNullOrWhiteSpace(x.AssetFinalUrl) ? x.f.SourceUrl : x.AssetFinalUrl,
-                            x.AssetRawValue,
-                            x.AssetFinalUrl,
-                            x.AssetRedirectCount,
-                            x.AssetRedirectChainJson,
-                            x.f.WorkerName,
-                            x.f.ImportanceScore,
-                            x.f.DiscoveredAtUtc,
-                            x.RootDomain))
-                        .ToListAsync(ct)
-                        .ConfigureAwait(false);
-
-                    return Results.Ok(rows);
-                })
-            .WithName("ListHighValueFindings");
-
-        app.MapPost(
-                "/api/ops/subdomain-enum/restart",
-                async (RestartToolRequest body, NightmareDbContext db, IEventOutbox outbox, IOptions<SubdomainEnumerationOptions> options, CancellationToken ct) =>
-                {
-                    var targetsQuery = db.Targets.AsNoTracking();
-                    if (!body.AllTargets)
-                    {
-                        if (body.TargetIds is null || body.TargetIds.Length == 0)
-                            return Results.BadRequest("targetIds is required unless allTargets is true");
-
-                        var ids = body.TargetIds
-                            .Select(x => Guid.TryParse(x, out var id) ? id : Guid.Empty)
-                            .Where(x => x != Guid.Empty)
-                            .ToHashSet();
-                        if (ids.Count == 0)
-                            return Results.BadRequest("no valid target ids supplied");
-
-                        targetsQuery = targetsQuery.Where(t => ids.Contains(t.Id));
-                    }
-
-                    var targets = await targetsQuery.Take(5000).ToListAsync(ct).ConfigureAwait(false);
-                    var providers = options.Value.DefaultProviders
-                        .Where(p => !string.IsNullOrWhiteSpace(p))
-                        .Select(p => p.Trim().ToLowerInvariant())
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToArray();
-                    if (providers.Length == 0)
-                        providers = ["subfinder", "amass"];
-
-                    var queued = 0;
-                    foreach (var target in targets)
-                    {
-                        var correlation = NewId.NextGuid();
-                        foreach (var provider in providers)
-                        {
-                            var eventId = NewId.NextGuid();
-                            await outbox.EnqueueAsync(
-                                    new SubdomainEnumerationRequested(
-                                        target.Id,
-                                        target.RootDomain,
-                                        provider,
-                                        "command-center-manual-restart",
-                                        DateTimeOffset.UtcNow,
-                                        correlation,
-                                        EventId: eventId,
-                                        CausationId: correlation,
-                                        Producer: "command-center"),
-                                    ct)
-                                .ConfigureAwait(false);
-                            queued++;
-                        }
-                    }
-
-                    return Results.Ok(new { Targets = targets.Count, JobsQueued = queued });
-                })
-            .WithName("RestartSubdomainEnumeration");
-
-        app.MapPost(
-                "/api/ops/spider/restart",
-                async (RestartToolRequest body, NightmareDbContext db, IEventOutbox outbox, CancellationToken ct) =>
-                {
-                    var targetsQuery = db.Targets.AsNoTracking();
-                    if (!body.AllTargets)
-                    {
-                        if (body.TargetIds is null || body.TargetIds.Length == 0)
-                            return Results.BadRequest("targetIds is required unless allTargets is true");
-
-                        var ids = body.TargetIds
-                            .Select(x => Guid.TryParse(x, out var id) ? id : Guid.Empty)
-                            .Where(x => x != Guid.Empty)
-                            .ToHashSet();
-                        if (ids.Count == 0)
-                            return Results.BadRequest("no valid target ids supplied");
-
-                        targetsQuery = targetsQuery.Where(t => ids.Contains(t.Id));
-                    }
-
-                    var targets = await targetsQuery.Take(5000).ToListAsync(ct).ConfigureAwait(false);
-                    var targetIds = targets.Select(t => t.Id).ToHashSet();
-                    var now = DateTimeOffset.UtcNow;
-
-                    var existingQueueRows = await db.HttpRequestQueue
-                        .Where(q => targetIds.Contains(q.TargetId))
-                        .ToListAsync(ct)
-                        .ConfigureAwait(false);
-                    foreach (var row in existingQueueRows)
-                    {
-                        row.State = HttpRequestQueueState.Queued;
-                        row.LockedBy = null;
-                        row.LockedUntilUtc = null;
-                        row.StartedAtUtc = null;
-                        row.CompletedAtUtc = null;
-                        row.LastError = null;
-                        row.UpdatedAtUtc = now;
-                        row.NextAttemptAtUtc = now;
-                    }
-
-                    var queuedRootSeeds = 0;
-                    foreach (var target in targets)
-                    {
-                        var correlation = NewId.NextGuid();
-                        await QueueRootSpiderSeedsAsync(outbox, target.Id, target.RootDomain, target.GlobalMaxDepth, now, correlation, correlation, ct)
-                            .ConfigureAwait(false);
-                        queuedRootSeeds += 2;
-                    }
-
-                    await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                    return Results.Ok(new { Targets = targets.Count, RequeuedExistingRequests = existingQueueRows.Count, RootSeedsQueued = queuedRootSeeds });
-                })
-            .WithName("RestartSpidering");
 
         app.MapGet(
                 "/api/workers",
-                async (NightmareDbContext db, CancellationToken ct) =>
+                async (NightmareDbContext db, WorkerScaleDefinitionProvider workerDefinitions, CancellationToken ct) =>
                 {
                     var now = DateTimeOffset.UtcNow;
                     var persisted = await db.WorkerSwitches.AsNoTracking()
                         .Select(w => new WorkerSwitchDto(w.WorkerKey, w.IsEnabled, w.UpdatedAtUtc))
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
-                    var rows = RequiredWorkerKeys()
+                    var rows = workerDefinitions.RequiredWorkerKeys
                         .Select(key => persisted.FirstOrDefault(w => w.WorkerKey == key) ?? new WorkerSwitchDto(key, true, now))
-                        .Concat(persisted.Where(w => !RequiredWorkerKeys().Contains(w.WorkerKey, StringComparer.Ordinal)))
+                        .Concat(persisted.Where(w => !workerDefinitions.RequiredWorkerKeys.Contains(w.WorkerKey, StringComparer.Ordinal)))
                         .OrderBy(w => w.WorkerKey, StringComparer.Ordinal)
                         .ToList();
                     return Results.Ok(rows);
@@ -1377,24 +186,31 @@ internal static class CommandCenterInlineEndpoints
 
         app.MapGet(
                 "/api/workers/scale",
-                async (NightmareDbContext db, IConfiguration configuration, CancellationToken ct) =>
+                async (
+                    NightmareDbContext db,
+                    IConfiguration configuration,
+                    WorkerScaleDefinitionProvider workerDefinitions,
+                    AwsRegionResolver regionResolver,
+                    EcsServiceNameResolver serviceNameResolver,
+                    EcsWorkerServiceManager ecsWorkerServices,
+                    CancellationToken ct) =>
                 {
                     var overrides = await db.WorkerScaleTargets.AsNoTracking()
                         .ToDictionaryAsync(t => t.ScaleKey, t => t, StringComparer.Ordinal, ct)
                         .ConfigureAwait(false);
 
-                    var definitions = RequiredWorkerKeys()
-                        .Select(key => new { WorkerKey = key, Target = WorkerScaleTargetForKey(key) })
+                    var definitions = workerDefinitions.RequiredWorkerKeys
+                        .Select(key => new { WorkerKey = key, Target = workerDefinitions.GetScaleTargetForWorkerKey(key) })
                         .Where(x => x.Target is not null)
                         .Select(
                             x =>
                             {
-                                var target = x.Target!.Value;
+                                var target = x.Target!;
                                 return new
                                 {
                                     x.WorkerKey,
                                     target.ScaleKey,
-                                    ServiceName = EcsServiceNameForScaleKey(configuration, target.ScaleKey, target.DefaultServiceName),
+                                    ServiceName = serviceNameResolver.ServiceNameForScaleKey(target.ScaleKey, target.DefaultServiceName),
                                 };
                             })
                         .ToList();
@@ -1402,12 +218,12 @@ internal static class CommandCenterInlineEndpoints
                     Dictionary<string, EcsService> services = [];
                     var ecsConfigured = false;
                     var status = "ECS region is not configured and could not be inferred from EC2 metadata.";
-                    var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);
+                    var region = await regionResolver.ResolveAsync(ct).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(region))
                     {
                         try
                         {
-                            services = await DescribeEcsServicesAsync(configuration, definitions.Select(d => d.ServiceName), ct).ConfigureAwait(false);
+                            services = await ecsWorkerServices.DescribeServicesAsync(definitions.Select(d => d.ServiceName), ct).ConfigureAwait(false);
                             ecsConfigured = true;
                             status = "ECS service state loaded.";
                         }
@@ -1434,14 +250,14 @@ internal static class CommandCenterInlineEndpoints
                             if (!services.TryGetValue(definition.ServiceName, out var service))
                                 continue;
 
-                            var fallback = DefaultWorkerScalingSetting(definition.ScaleKey);
+                            var fallback = workerDefinitions.DefaultWorkerScalingSetting(definition.ScaleKey);
                             var currentDesired = Math.Max(0, service.DesiredCount.GetValueOrDefault());
                             if (currentDesired >= fallback.MinTasks)
                                 continue;
 
                             try
                             {
-                                await UpdateEcsServiceDesiredCountAsync(configuration, definition.ServiceName, fallback.MinTasks, ct)
+                                await ecsWorkerServices.UpdateDesiredCountAsync(definition.ServiceName, fallback.MinTasks, ct)
                                     .ConfigureAwait(false);
                                 service.DesiredCount = fallback.MinTasks;
                                 status = "ECS service state loaded; default minimum worker counts reconciled.";
@@ -1459,7 +275,7 @@ internal static class CommandCenterInlineEndpoints
                             {
                                 overrides.TryGetValue(definition.ScaleKey, out var manual);
                                 services.TryGetValue(definition.ServiceName, out var service);
-                                var fallback = DefaultWorkerScalingSetting(definition.ScaleKey);
+                                var fallback = workerDefinitions.DefaultWorkerScalingSetting(definition.ScaleKey);
                                 var displayedDesired = service?.DesiredCount;
                                 var displayedManual = manual?.DesiredCount ?? (service is null ? (int?)fallback.MinTasks : null);
                                 return new WorkerScaleTargetDto(
@@ -1481,17 +297,17 @@ internal static class CommandCenterInlineEndpoints
 
         app.MapGet(
                 "/api/workers/scaling-settings",
-                async (NightmareDbContext db, CancellationToken ct) =>
+                async (NightmareDbContext db, WorkerScaleDefinitionProvider workerDefinitions, CancellationToken ct) =>
                 {
                     var persisted = await db.WorkerScalingSettings.AsNoTracking()
                         .ToDictionaryAsync(s => s.ScaleKey, StringComparer.Ordinal, ct)
                         .ConfigureAwait(false);
 
-                    var rows = WorkerScaleDefinitions()
+                    var rows = workerDefinitions.WorkerScaleDefinitions
                         .Select(
                             definition =>
                             {
-                                var fallback = DefaultWorkerScalingSetting(definition.ScaleKey);
+                                var fallback = workerDefinitions.DefaultWorkerScalingSetting(definition.ScaleKey);
                                 return persisted.TryGetValue(definition.ScaleKey, out var row)
                                     ? new WorkerScalingSettingsDto(
                                         definition.ScaleKey,
@@ -1510,9 +326,15 @@ internal static class CommandCenterInlineEndpoints
 
         app.MapPut(
                 "/api/workers/scaling-settings/{scaleKey}",
-                async (string scaleKey, WorkerScalingSettingsPatchDto body, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (
+                    string scaleKey,
+                    WorkerScalingSettingsPatchDto body,
+                    NightmareDbContext db,
+                    WorkerScaleDefinitionProvider workerDefinitions,
+                    IHubContext<DiscoveryHub> hub,
+                    CancellationToken ct) =>
                 {
-                    if (!WorkerScaleDefinitions().Any(d => string.Equals(d.ScaleKey, scaleKey, StringComparison.Ordinal)))
+                    if (!workerDefinitions.WorkerScaleDefinitions.Any(d => string.Equals(d.ScaleKey, scaleKey, StringComparison.Ordinal)))
                         return Results.BadRequest($"Unknown worker scale key: {scaleKey}");
 
                     if (body.MinTasks < 0)
@@ -1542,17 +364,23 @@ internal static class CommandCenterInlineEndpoints
                             cancellationToken: ct)
                         .ConfigureAwait(false);
 
-                    var displayName = WorkerScaleDefinitions().First(d => d.ScaleKey == scaleKey).DisplayName;
+                    var displayName = workerDefinitions.WorkerScaleDefinitions.First(d => d.ScaleKey == scaleKey).DisplayName;
                     return Results.Ok(new WorkerScalingSettingsDto(scaleKey, displayName, row.MinTasks, row.MaxTasks, row.TargetBacklogPerTask, now));
                 })
             .WithName("UpdateWorkerScalingSettings");
 
         app.MapGet(
                 "/api/ops/ecs-status",
-                async (IConfiguration configuration, CancellationToken ct) =>
+                async (
+                    IConfiguration configuration,
+                    WorkerScaleDefinitionProvider workerDefinitions,
+                    AwsRegionResolver regionResolver,
+                    EcsServiceNameResolver serviceNameResolver,
+                    EcsWorkerServiceManager ecsWorkerServices,
+                    CancellationToken ct) =>
                 {
                     var at = DateTimeOffset.UtcNow;
-                    var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);
+                    var region = await regionResolver.ResolveAsync(ct).ConfigureAwait(false);
                     var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
                     if (string.IsNullOrWhiteSpace(region))
                     {
@@ -1567,18 +395,18 @@ internal static class CommandCenterInlineEndpoints
                                 []));
                     }
 
-                    var definitions = WorkerScaleDefinitions()
+                    var definitions = workerDefinitions.WorkerScaleDefinitions
                         .Select(d => new
                         {
                             d.ScaleKey,
                             d.DisplayName,
-                            ServiceName = EcsServiceNameForScaleKey(configuration, d.ScaleKey, d.DefaultServiceName),
+                            ServiceName = serviceNameResolver.ServiceNameForScaleKey(d.ScaleKey, d.DefaultServiceName),
                         })
                         .ToList();
 
                     try
                     {
-                        var services = await DescribeEcsServicesAsync(configuration, definitions.Select(d => d.ServiceName), ct).ConfigureAwait(false);
+                        var services = await ecsWorkerServices.DescribeServicesAsync(definitions.Select(d => d.ServiceName), ct).ConfigureAwait(false);
                         var rows = definitions
                             .Select(
                                 definition =>
@@ -1617,7 +445,7 @@ internal static class CommandCenterInlineEndpoints
                                         definition.ScaleKey,
                                         service.ServiceName,
                                         status,
-                                        ExtractTaskDefinitionVersion(taskDefinition),
+                                        EcsWorkerServiceManager.ExtractTaskDefinitionVersion(taskDefinition),
                                         deployment?.CreatedAt is { } created ? new DateTimeOffset(created, TimeSpan.Zero) : null,
                                         desiredCount,
                                         runningCount,
@@ -1840,10 +668,14 @@ internal static class CommandCenterInlineEndpoints
                     WorkerScalePatchRequest body,
                     NightmareDbContext db,
                     IConfiguration configuration,
+                    WorkerScaleDefinitionProvider workerDefinitions,
+                    AwsRegionResolver regionResolver,
+                    EcsServiceNameResolver serviceNameResolver,
+                    EcsWorkerServiceManager ecsWorkerServices,
                     IHubContext<DiscoveryHub> hub,
                     CancellationToken ct) =>
                 {
-                    var target = WorkerScaleTargetForKey(key);
+                    var target = workerDefinitions.GetScaleTargetForWorkerKey(key);
                     if (target is null)
                         return Results.BadRequest($"{key} does not map to a scalable ECS worker service.");
 
@@ -1851,7 +683,7 @@ internal static class CommandCenterInlineEndpoints
                     if (body.DesiredCount < 0 || body.DesiredCount > maxDesiredCount)
                         return Results.BadRequest($"desiredCount must be between 0 and {maxDesiredCount}.");
 
-                    var scaleKey = target.Value.ScaleKey;
+                    var scaleKey = target.ScaleKey;
                     var now = DateTimeOffset.UtcNow;
                     var row = await db.WorkerScaleTargets.FirstOrDefaultAsync(t => t.ScaleKey == scaleKey, ct).ConfigureAwait(false);
                     if (row is null)
@@ -1864,15 +696,15 @@ internal static class CommandCenterInlineEndpoints
                     row.UpdatedAtUtc = now;
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                    var serviceName = EcsServiceNameForScaleKey(configuration, scaleKey, target.Value.DefaultServiceName);
+                    var serviceName = serviceNameResolver.ServiceNameForScaleKey(scaleKey, target.DefaultServiceName);
                     var ecsUpdated = false;
                     var message = "Manual worker count saved. ECS was not updated because AWS region is not configured and could not be inferred from EC2 metadata.";
-                    var region = await ResolveAwsRegionAsync(configuration, ct).ConfigureAwait(false);
+                    var region = await regionResolver.ResolveAsync(ct).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(region))
                     {
                         try
                         {
-                            var result = await EnsureEcsWorkerServiceDesiredCountAsync(configuration, scaleKey, serviceName, body.DesiredCount, ct)
+                            var result = await ecsWorkerServices.EnsureWorkerServiceDesiredCountAsync(scaleKey, serviceName, body.DesiredCount, ct)
                                 .ConfigureAwait(false);
                             ecsUpdated = result.Changed;
                             message = result.Action switch

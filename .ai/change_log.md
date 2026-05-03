@@ -9,6 +9,15 @@
   - Why: make later endpoint/service hardening work easier without combining it with the ArgusEngine rename.
   - Validation: `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release`, `dotnet test src/tests/NightmareV2.CommandCenter.Tests/NightmareV2.CommandCenter.Tests.csproj -c Release --no-restore`, and `git diff --check` succeeded. Build still reports existing Application analyzer warnings.
 
+- Continued the CommandCenter endpoint split:
+  - Added `.ai/production_checklist.txt` to track the full Argus/Nightmare refactor and hardening plan.
+  - Moved the target route group into `Endpoints/TargetEndpoints.cs` and registered it from central endpoint registration.
+  - Extracted root spider seed queuing into `Services/Targets/RootSpiderSeedService` and reused it from target create/import and spider restart.
+  - Moved HTTP request queue and bus journal route groups into their focused endpoint classes.
+  - Moved asset, file store, high-value finding, and tool restart route groups into focused endpoint classes.
+  - Why: reduce the temporary inline endpoint block and start moving target behavior toward focused services.
+  - Validation: `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release`, `dotnet test src/tests/NightmareV2.CommandCenter.Tests/NightmareV2.CommandCenter.Tests.csproj -c Release --no-restore`, and `git diff --check` succeeded.
+
 - Added browser-side chunked target bulk import:
   - The Targets page now uses browser JavaScript to read the selected file, split it into 20 chunks, and post each chunk to `/api/targets/bulk`.
   - The UI shows chunk progress, updates cumulative import counts after every server response, and reloads target data as chunks are inserted.

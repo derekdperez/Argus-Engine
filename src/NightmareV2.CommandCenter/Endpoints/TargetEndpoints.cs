@@ -4,53 +4,95 @@ using Microsoft.EntityFrameworkCore;
 using NightmareV2.Application.Events;
 using NightmareV2.CommandCenter.Hubs;
 using NightmareV2.CommandCenter.Models;
-using NightmareV2.Contracts;
+using NightmareV2.CommandCenter.Realtime;
+using NightmareV2.CommandCenter.Services.Targets;
 using NightmareV2.Contracts.Events;
 using NightmareV2.Domain.Entities;
 using NightmareV2.Infrastructure.Data;
+using AssetAdmissionStage = NightmareV2.Contracts.AssetAdmissionStage;
+using AssetKind = NightmareV2.Contracts.AssetKind;
 
 namespace NightmareV2.CommandCenter.Endpoints;
 
 public static class TargetEndpoints
 {
-    private static StoredAsset CreateRootAsset(ReconTarget target, string discoveredBy)
-    {
-        var root = target.RootDomain.Trim().TrimEnd('.').ToLowerInvariant();
-        var now = DateTimeOffset.UtcNow;
-        return new StoredAsset
-        {
-            Id = Guid.NewGuid(),
-            TargetId = target.Id,
-            Kind = AssetKind.Target,
-            Category = AssetCategory.ScopeRoot,
-            CanonicalKey = $"target:{root}",
-            RawValue = root,
-            DisplayName = root,
-            Depth = 0,
-            DiscoveredBy = discoveredBy,
-            DiscoveryContext = "Root target asset",
-            DiscoveredAtUtc = target.CreatedAtUtc == default ? now : target.CreatedAtUtc,
-            LastSeenAtUtc = now,
-            Confidence = 1.0m,
-            LifecycleStatus = AssetLifecycleStatus.Confirmed,
-        };
-    }
-
-    public static void Map(WebApplication app)
+    public static IEndpointRouteBuilder MapTargetEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet(
                 "/api/targets",
                 async (NightmareDbContext db, CancellationToken ct) =>
                 {
-                    var rows = await db.Targets.AsNoTracking()
+                    var targets = await db.Targets.AsNoTracking()
                         .OrderByDescending(t => t.CreatedAtUtc)
-                        .Select(t => new TargetSummary(t.Id, t.RootDomain, t.GlobalMaxDepth, t.CreatedAtUtc))
                         .Take(5000)
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
+
+                    var targetIds = targets.Select(t => t.Id).ToList();
+                    var now = DateTimeOffset.UtcNow;
+                    var assetRollups = await db.Assets.AsNoTracking()
+                        .Where(a => targetIds.Contains(a.TargetId))
+                        .GroupBy(a => a.TargetId)
+                        .Select(
+                            g => new
+                            {
+                                TargetId = g.Key,
+                                ConfirmedSubdomains = g.LongCount(a => a.Kind == AssetKind.Subdomain
+                                    && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
+                                ConfirmedAssets = g.LongCount(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
+                                ConfirmedUrls = g.LongCount(a => a.Kind == AssetKind.Url
+                                    && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
+                                LastAssetAtUtc = g.Max(a => (DateTimeOffset?)a.DiscoveredAtUtc),
+                            })
+                        .ToDictionaryAsync(x => x.TargetId, ct)
+                        .ConfigureAwait(false);
+
+                    var queueRollups = await db.HttpRequestQueue.AsNoTracking()
+                        .Where(q => targetIds.Contains(q.TargetId))
+                        .GroupBy(q => q.TargetId)
+                        .Select(
+                            g => new
+                            {
+                                TargetId = g.Key,
+                                Queued = g.LongCount(q => q.State == HttpRequestQueueState.Queued
+                                    || (q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now)),
+                                LastQueueAtUtc = g.Max(q => (DateTimeOffset?)q.UpdatedAtUtc),
+                            })
+                        .ToDictionaryAsync(x => x.TargetId, ct)
+                        .ConfigureAwait(false);
+
+                    var rows = targets
+                        .Select(
+                            t =>
+                            {
+                                assetRollups.TryGetValue(t.Id, out var assets);
+                                queueRollups.TryGetValue(t.Id, out var queue);
+                                var lastRun = MaxUtc(assets?.LastAssetAtUtc, queue?.LastQueueAtUtc);
+                                return new TargetSummary(
+                                    t.Id,
+                                    t.RootDomain,
+                                    t.GlobalMaxDepth,
+                                    t.CreatedAtUtc,
+                                    assets?.ConfirmedSubdomains ?? 0,
+                                    assets?.ConfirmedAssets ?? 0,
+                                    assets?.ConfirmedUrls ?? 0,
+                                    queue?.Queued ?? 0,
+                                    lastRun);
+                            })
+                        .ToList();
+
                     return Results.Ok(rows);
                 })
             .WithName("ListTargets");
+
+        static DateTimeOffset? MaxUtc(DateTimeOffset? first, DateTimeOffset? second)
+        {
+            if (first is null)
+                return second;
+            if (second is null)
+                return first;
+            return first > second ? first : second;
+        }
 
         app.MapPost(
                 "/api/targets",
@@ -58,6 +100,7 @@ public static class TargetEndpoints
                     CreateTargetRequest dto,
                     NightmareDbContext db,
                     IEventOutbox outbox,
+                    RootSpiderSeedService rootSpiderSeedService,
                     IHubContext<DiscoveryHub> hub,
                     CancellationToken ct) =>
                 {
@@ -73,11 +116,19 @@ public static class TargetEndpoints
                     };
 
                     db.Targets.Add(target);
-                    db.Assets.Add(CreateRootAsset(target, "command-center"));
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
                     var correlation = NewId.NextGuid();
                     var eventId = NewId.NextGuid();
+                    await rootSpiderSeedService.QueueRootSpiderSeedsAsync(
+                            target.Id,
+                            target.RootDomain,
+                            target.GlobalMaxDepth,
+                            target.CreatedAtUtc,
+                            correlation,
+                            eventId,
+                            ct)
+                        .ConfigureAwait(false);
                     await outbox.EnqueueAsync(
                             new TargetCreated(
                                 target.Id,
@@ -91,7 +142,18 @@ public static class TargetEndpoints
                             ct)
                         .ConfigureAwait(false);
 
-                    await hub.Clients.All.SendAsync("TargetQueued", target.Id, target.RootDomain, cancellationToken: ct)
+                    await hub.Clients.All.SendAsync(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
+                        .ConfigureAwait(false);
+                    await hub.Clients.All.SendAsync(
+                            DiscoveryHubEvents.DomainEvent,
+                            new LiveUiEventDto(
+                                "TargetCreated",
+                                target.Id,
+                                target.Id,
+                                "targets",
+                                $"Target queued: {target.RootDomain}",
+                                target.CreatedAtUtc),
+                            cancellationToken: ct)
                         .ConfigureAwait(false);
 
                     return Results.Created($"/api/targets/{target.Id}", new TargetSummary(target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc));
@@ -100,7 +162,7 @@ public static class TargetEndpoints
 
         app.MapPut(
                 "/api/targets/{id:guid}",
-                async (Guid id, UpdateTargetRequest dto, NightmareDbContext db, CancellationToken ct) =>
+                async (Guid id, UpdateTargetRequest dto, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
                 {
                     if (!TargetRootNormalization.TryNormalize(dto.RootDomain, out var root))
                         return Results.BadRequest("root domain required");
@@ -120,26 +182,97 @@ public static class TargetEndpoints
                     target.RootDomain = root;
                     target.GlobalMaxDepth = depth;
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                    return Results.Ok(new TargetSummary(target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc));
+                    var summary = new TargetSummary(target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc);
+                    await hub.Clients.All.SendAsync(
+                            DiscoveryHubEvents.DomainEvent,
+                            new LiveUiEventDto(
+                                "TargetUpdated",
+                                target.Id,
+                                target.Id,
+                                "targets",
+                                $"Target updated: {target.RootDomain}",
+                                DateTimeOffset.UtcNow),
+                            cancellationToken: ct)
+                        .ConfigureAwait(false);
+                    return Results.Ok(summary);
                 })
             .WithName("UpdateTarget");
 
+        app.MapPut(
+                "/api/targets/max-depth",
+                async (UpdateTargetMaxDepthRequest dto, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                {
+                    if (dto.GlobalMaxDepth <= 0)
+                        return Results.BadRequest("globalMaxDepth must be greater than zero");
+
+                    IQueryable<ReconTarget> query = db.Targets;
+                    if (!dto.AllTargets)
+                    {
+                        if (dto.TargetIds is null || dto.TargetIds.Count == 0)
+                            return Results.BadRequest("targetIds is required unless allTargets is true");
+
+                        var ids = dto.TargetIds.Distinct().ToArray();
+                        query = query.Where(t => ids.Contains(t.Id));
+                    }
+
+                    var updated = await query
+                        .ExecuteUpdateAsync(
+                            setters => setters.SetProperty(t => t.GlobalMaxDepth, dto.GlobalMaxDepth),
+                            ct)
+                        .ConfigureAwait(false);
+
+                    await hub.Clients.All.SendAsync(
+                            DiscoveryHubEvents.DomainEvent,
+                            new LiveUiEventDto(
+                                "TargetsMaxDepthUpdated",
+                                null,
+                                null,
+                                "targets",
+                                dto.AllTargets
+                                    ? $"Max depth set to {dto.GlobalMaxDepth} for all targets"
+                                    : $"Max depth set to {dto.GlobalMaxDepth} for {updated} targets",
+                                DateTimeOffset.UtcNow),
+                            cancellationToken: ct)
+                        .ConfigureAwait(false);
+
+                    return Results.Ok(new UpdateTargetMaxDepthResult(updated, dto.GlobalMaxDepth));
+                })
+            .WithName("UpdateTargetsMaxDepth");
+
         app.MapDelete(
                 "/api/targets/{id:guid}",
-                async (Guid id, NightmareDbContext db, CancellationToken ct) =>
+                async (Guid id, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
                 {
                     var target = await db.Targets.FirstOrDefaultAsync(t => t.Id == id, ct).ConfigureAwait(false);
                     if (target is null)
                         return Results.NotFound();
+                    var rootDomain = target.RootDomain;
                     db.Targets.Remove(target);
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                    await hub.Clients.All.SendAsync(
+                            DiscoveryHubEvents.DomainEvent,
+                            new LiveUiEventDto(
+                                "TargetDeleted",
+                                id,
+                                id,
+                                "targets",
+                                $"Target deleted: {rootDomain}",
+                                DateTimeOffset.UtcNow),
+                            cancellationToken: ct)
+                        .ConfigureAwait(false);
                     return Results.NoContent();
                 })
             .WithName("DeleteTarget");
 
         app.MapPost(
                 "/api/targets/bulk",
-                async (HttpRequest httpRequest, NightmareDbContext db, IEventOutbox outbox, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (
+                    HttpRequest httpRequest,
+                    NightmareDbContext db,
+                    IEventOutbox outbox,
+                    RootSpiderSeedService rootSpiderSeedService,
+                    IHubContext<DiscoveryHub> hub,
+                    CancellationToken ct) =>
                 {
                     const int maxLines = 50_000;
                     var rawLines = new List<string>();
@@ -238,7 +371,6 @@ public static class TargetEndpoints
                         };
                         newTargets.Add(target);
                         db.Targets.Add(target);
-                        db.Assets.Add(CreateRootAsset(target, "command-center-bulk"));
                     }
 
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
@@ -247,6 +379,15 @@ public static class TargetEndpoints
                     {
                         var correlation = NewId.NextGuid();
                         var eventId = NewId.NextGuid();
+                        await rootSpiderSeedService.QueueRootSpiderSeedsAsync(
+                                target.Id,
+                                target.RootDomain,
+                                target.GlobalMaxDepth,
+                                target.CreatedAtUtc,
+                                correlation,
+                                eventId,
+                                ct)
+                            .ConfigureAwait(false);
                         await outbox.EnqueueAsync(
                                 new TargetCreated(
                                     target.Id,
@@ -259,7 +400,18 @@ public static class TargetEndpoints
                                     Producer: "command-center"),
                                 ct)
                             .ConfigureAwait(false);
-                        await hub.Clients.All.SendAsync("TargetQueued", target.Id, target.RootDomain, cancellationToken: ct)
+                        await hub.Clients.All.SendAsync(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
+                            .ConfigureAwait(false);
+                        await hub.Clients.All.SendAsync(
+                                DiscoveryHubEvents.DomainEvent,
+                                new LiveUiEventDto(
+                                    "TargetCreated",
+                                    target.Id,
+                                    target.Id,
+                                    "targets",
+                                    $"Target queued: {target.RootDomain}",
+                                    target.CreatedAtUtc),
+                                cancellationToken: ct)
                             .ConfigureAwait(false);
                     }
 
@@ -271,5 +423,9 @@ public static class TargetEndpoints
                             skippedDupBatch));
                 })
             .WithName("BulkImportTargets");
+
+        return app;
     }
+
+    public static void Map(WebApplication app) => app.MapTargetEndpoints();
 }

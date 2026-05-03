@@ -1,0 +1,107 @@
+@using ArgusEngine.CommandCenter.Models
+@using ArgusEngine.CommandCenter
+@page "/"
+@page "/ops"
+@rendermode InteractiveServer
+@using System.Globalization
+@using System.Net
+@using System.Net.Http.Json
+@using ArgusEngine.CommandCenter.DataMaintenance
+@using ArgusEngine.CommandCenter.Realtime
+@implements IDisposable
+@inject HttpClient Http
+@inject IJSRuntime Js
+@inject DiscoveryRealtimeClient Realtime
+
+<PageTitle>Operations - Argus Engine</PageTitle>
+
+<div class="page-shell ops-page">
+    <div class="ops-hero">
+        <div>
+            <p class="eyebrow">Project Argus Engine</p>
+            <h1>Operations Dashboard</h1>
+            <p class="muted">Real-time health, bus traffic, and asset discovery metrics.</p>
+        </div>
+    </div>
+
+    <div class="ops-stack-grid">
+        <section class="stat-group">
+            <div class="stat-grid compact-stats">
+                <div class="stat-card">
+                    <p class="stat-label">Discovered (Total)</p>
+                    <p class="stat-value">@(_overview?.TotalAssetsConfirmed.ToString("N0") ?? "-")</p>
+                </div>
+                <div class="stat-card">
+                    <p class="stat-label">Targets</p>
+                    <p class="stat-value">@(_overview?.TotalTargets.ToString("N0") ?? "-")</p>
+                </div>
+                <div class="stat-card">
+                    <p class="stat-label">Subdomains</p>
+                    <p class="stat-value">@(_overview?.SubdomainsDiscovered.ToString("N0") ?? "-")</p>
+                </div>
+                <div class="stat-card">
+                    <p class="stat-label">URLs</p>
+                    <p class="stat-value">@(_overview?.TotalUrls.ToString("N0") ?? "-")</p>
+                </div>
+                <div class="stat-card">
+                    <p class="stat-label">Last Discovery</p>
+                    <p class="stat-value small">@(FormatOpsTime(_overview?.LastAssetCreatedAt))</p>
+                </div>
+            </div>
+        </section>
+
+        <div class="alert info" style="margin: 0;">
+            <p><strong>System Online:</strong> UI is connected and receiving real-time updates.</p>
+        </div>
+    </div>
+</div>
+
+@code {
+    private OpsOverviewSimplified? _overview;
+    private readonly CancellationTokenSource _pollCts = new();
+
+    public record OpsOverviewSimplified(
+        long TotalTargets,
+        long TotalAssetsConfirmed,
+        long TotalUrls,
+        long SubdomainsDiscovered,
+        DateTimeOffset? LastAssetCreatedAt);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Realtime.DomainEventReceived += OnRealtimeEvent;
+        await Realtime.EnsureStartedAsync();
+        await ReloadAllAsync();
+    }
+
+    private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await ReloadAllAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task ReloadAllAsync()
+    {
+        try
+        {
+            _overview = await Http.GetFromJsonAsync<OpsOverviewSimplified>("/api/ops/overview");
+        }
+        catch
+        {
+            // Ignore
+        }
+    }
+
+    private static string FormatOpsTime(DateTimeOffset? value) =>
+        AppTimeFormat.Format(value);
+
+    public void Dispose()
+    {
+        Realtime.DomainEventReceived -= OnRealtimeEvent;
+        _pollCts.Cancel();
+        _pollCts.Dispose();
+    }
+}

@@ -10,6 +10,7 @@ public static class CommandCenterEndpointRegistration
         app.MapAssetAdmissionDecisionEndpoints();
         app.MapDataRetentionAdminEndpoints();
         app.MapHttpArtifactBackfillEndpoints();
+        app.MapOpsEndpoints();
         app.MapHub<DiscoveryHub>("/hubs/discovery");
 
         app.MapRazorComponents<App>()

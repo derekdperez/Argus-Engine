@@ -44,6 +44,7 @@ public static class DiagnosticsEndpoints
                     IConfiguration config,
                     ArgusDbContext db,
                     IDbContextFactory<FileStoreDbContext> fileStoreFactory,
+                    IWebHostEnvironment env,
                     CancellationToken ct) =>
                 {
                     if (!TryAuthorizeDiagnostics(http, config, out var rejected))
@@ -65,14 +66,14 @@ public static class DiagnosticsEndpoints
                         {
                             at = DateTimeOffset.UtcNow,
                             service = "command-center",
-                            environment = app.Environment.EnvironmentName,
+                            environment = env.EnvironmentName,
                             machine = Environment.MachineName,
                             processId = Environment.ProcessId,
                             uptimeSeconds = (int)Math.Floor(uptime.TotalSeconds),
                             buildStamp = Environment.GetEnvironmentVariable("NIGHTMARE_BUILD_STAMP") ?? "(not set)",
                             assemblyInformationalVersion = informational,
-                            contentRoot = app.Environment.ContentRootPath,
-                            webRoot = app.Environment.WebRootPath,
+                            contentRoot = env.ContentRootPath,
+                            webRoot = env.WebRootPath,
                             postgres = postgres.Status,
                             fileStore = fileStore.Status,
                             rabbitHost = config["RabbitMq:Host"],

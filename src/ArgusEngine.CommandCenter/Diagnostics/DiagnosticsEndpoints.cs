@@ -11,7 +11,7 @@ public static class DiagnosticsEndpoints
 {
     private const string DiagnosticsKeyHeader = "X-Nightmare-Diagnostics-Key";
 
-    public static void Map(WebApplication app)
+    public static IEndpointRouteBuilder MapDiagnosticsEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet(
                 "/health",
@@ -127,6 +127,7 @@ public static class DiagnosticsEndpoints
                 })
             .WithName("DiagnosticsDependencies")
             .AllowAnonymous();
+        return app;
     }
 
     private static bool TryAuthorizeDiagnostics(HttpContext http, IConfiguration config, out IResult? rejected)

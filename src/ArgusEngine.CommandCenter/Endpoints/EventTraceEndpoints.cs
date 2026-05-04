@@ -8,7 +8,7 @@ namespace ArgusEngine.CommandCenter.Endpoints;
 
 public static class EventTraceEndpoints
 {
-    public static void Map(WebApplication app)
+    public static IEndpointRouteBuilder MapEventTraceEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet(
                 "/api/events/live",
@@ -116,6 +116,7 @@ public static class EventTraceEndpoints
                     return Results.Ok(rows);
                 })
             .WithName("LiveEventTrace");
+        return app;
     }
 
     private static ParsedJournalRow ParseJournalRow(

@@ -8,7 +8,7 @@ namespace ArgusEngine.CommandCenter.Endpoints;
 
 public static class AssetGraphEndpoints
 {
-    public static void Map(WebApplication app)
+    public static IEndpointRouteBuilder MapAssetGraphEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet(
                 "/api/targets/{targetId:guid}/assets/root",
@@ -162,6 +162,7 @@ public static class AssetGraphEndpoints
                             duplicateRelationshipCollapseCount));
                 })
             .WithName("GetAssetGraphMetrics");
+        return app;
     }
 
     public sealed record CreateAssetRelationshipRequest(

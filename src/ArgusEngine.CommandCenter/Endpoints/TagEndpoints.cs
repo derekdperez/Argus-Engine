@@ -130,5 +130,6 @@ public static class TagEndpoints
                     return Results.Ok(rows);
                 })
             .WithName("ListTechnologies");
+        return app;
     }
 }

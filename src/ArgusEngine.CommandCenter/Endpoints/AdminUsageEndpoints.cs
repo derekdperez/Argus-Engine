@@ -15,7 +15,7 @@ public static class AdminUsageEndpoints
 {
     private const decimal EcsFreeTierWorkerHours = 2200m;
 
-    public static void Map(WebApplication app)
+    public static IEndpointRouteBuilder MapAdminUsageEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet(
                 "/api/admin/usage",
@@ -56,7 +56,8 @@ public static class AdminUsageEndpoints
                             samples.Count == 0 ? null : samples.Max(s => (DateTimeOffset?)s.SampledAtUtc),
                             cloud));
                 })
-            .WithName("AdminUsage");
+            .WithName("ListAdminUsage");
+        return app;
     }
 
     private static async Task AddLiveEcsFallbackRowsAsync(

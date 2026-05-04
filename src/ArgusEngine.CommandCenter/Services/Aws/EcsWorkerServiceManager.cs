@@ -29,7 +29,7 @@ public sealed class EcsWorkerServiceManager(
         if (string.IsNullOrWhiteSpace(region))
             return [];
 
-        var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
+        var cluster = configuration.GetArgusValue("Ecs:Cluster") ?? configuration["ECS_CLUSTER"] ?? "argus-engine";
         using var ecs = new AmazonECSClient(RegionEndpoint.GetBySystemName(region));
         var response = await ecs.DescribeServicesAsync(
                 new DescribeServicesRequest
@@ -52,7 +52,7 @@ public sealed class EcsWorkerServiceManager(
         if (string.IsNullOrWhiteSpace(region))
             throw new InvalidOperationException("AWS region is not configured and could not be inferred from EC2 metadata.");
 
-        var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
+        var cluster = configuration.GetArgusValue("Ecs:Cluster") ?? configuration["ECS_CLUSTER"] ?? "argus-engine";
         using var ecs = new AmazonECSClient(RegionEndpoint.GetBySystemName(region));
         await ecs.UpdateServiceAsync(
                 new UpdateServiceRequest
@@ -75,7 +75,7 @@ public sealed class EcsWorkerServiceManager(
         if (string.IsNullOrWhiteSpace(region))
             throw new InvalidOperationException("AWS region is not configured and could not be inferred from EC2 metadata.");
 
-        var cluster = configuration["ECS_CLUSTER"] ?? "nightmare-v2";
+        var cluster = configuration.GetArgusValue("Ecs:Cluster") ?? configuration["ECS_CLUSTER"] ?? "argus-engine";
         using var ecs = new AmazonECSClient(RegionEndpoint.GetBySystemName(region));
         var services = await ecs.DescribeServicesAsync(
                 new DescribeServicesRequest

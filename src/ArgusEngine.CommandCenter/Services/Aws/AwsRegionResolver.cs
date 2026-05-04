@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ArgusEngine.Infrastructure.Configuration;
 
 namespace ArgusEngine.CommandCenter.Services.Aws;
 
@@ -6,9 +7,9 @@ public sealed class AwsRegionResolver(IConfiguration configuration)
 {
     public async Task<string?> ResolveAsync(CancellationToken ct)
     {
-        var configured = configuration["AWS_REGION"]
-            ?? configuration["AWS_DEFAULT_REGION"]
-            ?? configuration["AWS:Region"];
+        var configured = configuration.GetArgusValue("Aws:Region")
+            ?? configuration["AWS_REGION"]
+            ?? configuration["AWS_DEFAULT_REGION"];
         if (!string.IsNullOrWhiteSpace(configured))
             return configured.Trim();
 

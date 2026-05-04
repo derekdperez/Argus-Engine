@@ -11,42 +11,50 @@ using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
 using ArgusEngine.Gatekeeper;
 
-var builder = Host.CreateApplicationBuilder(args);
+try
+{
+    var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddArgusObservability(builder.Configuration, "argus-gatekeeper");
-builder.Services.AddArgusInfrastructure(builder.Configuration);
-builder.Services.AddScoped<GatekeeperOrchestrator>();
+    builder.Services.AddArgusObservability(builder.Configuration, "argus-gatekeeper");
+    builder.Services.AddArgusInfrastructure(builder.Configuration);
+    builder.Services.AddScoped<GatekeeperOrchestrator>();
 
-builder.Services.AddArgusRabbitMq(
-    builder.Configuration,
-    x =>
+    builder.Services.AddArgusRabbitMq(
+        builder.Configuration,
+        x =>
+        {
+            x.AddConsumer<AssetDiscoveredConsumer>();
+            x.AddConsumer<AssetRelationshipDiscoveredConsumer>();
+        });
+
+    var host = builder.Build();
+    var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    var configuration = host.Services.GetRequiredService<IConfiguration>();
+    var environment = host.Services.GetRequiredService<IHostEnvironment>();
+    var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
+
+    if (!ShouldSkipStartupDatabase(configuration))
     {
-        x.AddConsumer<AssetDiscoveredConsumer>();
-        x.AddConsumer<AssetRelationshipDiscoveredConsumer>();
-    });
+        await InitializeGatekeeperDatabaseAsync(
+            host.Services,
+            configuration,
+            environment,
+            startupLog,
+            lifetime.ApplicationStopping)
+            .ConfigureAwait(false);
+    }
+    else
+    {
+        GatekeeperLogMessages.DatabaseBootstrapSkipped(startupLog);
+    }
 
-var host = builder.Build();
-var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-var configuration = host.Services.GetRequiredService<IConfiguration>();
-var environment = host.Services.GetRequiredService<IHostEnvironment>();
-var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
-
-if (!ShouldSkipStartupDatabase(configuration))
-{
-    await InitializeGatekeeperDatabaseAsync(
-        host.Services,
-        configuration,
-        environment,
-        startupLog,
-        lifetime.ApplicationStopping)
-        .ConfigureAwait(false);
+    await host.RunAsync().ConfigureAwait(false);
 }
-else
+catch (Exception ex)
 {
-    GatekeeperLogMessages.DatabaseBootstrapSkipped(startupLog);
+    Console.Error.WriteLine($"CRITICAL: Gatekeeper failed to start. {ex}");
+    throw;
 }
-
-await host.RunAsync().ConfigureAwait(false);
 
 static async Task InitializeGatekeeperDatabaseAsync(
     IServiceProvider services,

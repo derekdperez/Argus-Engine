@@ -255,11 +255,6 @@
       "binary": false
     },
     {
-      "old": "src/NightmareV2.CommandCenter/Endpoints/CommandCenterInlineEndpoints.cs",
-      "new": "src/ArgusEngine.CommandCenter/Endpoints/CommandCenterInlineEndpoints.cs",
-      "binary": false
-    },
-    {
       "old": "src/NightmareV2.CommandCenter/Endpoints/Ec2WorkerEndpoints.cs",
       "new": "src/ArgusEngine.CommandCenter/Endpoints/Ec2WorkerEndpoints.cs",
       "binary": false

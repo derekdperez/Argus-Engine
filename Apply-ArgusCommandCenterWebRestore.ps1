@@ -211,7 +211,6 @@ public static class CommandCenterEndpointRegistration
         app.MapAssetEndpoints();
         app.MapAssetGraphEndpoints();
         app.MapBusJournalEndpoints();
-        app.MapCommandCenterInlineEndpoints();
         app.MapDataMaintenanceEndpoints();
         app.MapDiagnosticsEndpoints();
         app.MapEc2WorkerEndpoints();

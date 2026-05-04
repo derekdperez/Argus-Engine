@@ -205,7 +205,7 @@ public sealed class CommandCenterStatusSnapshotService(
     {
         return workerDefinitions.WorkerScaleDefinitions
             .Select(definition => new CommandCenterWorkerStatus(
-                Key: definition.WorkerKey,
+                Key: definition.ScaleKey,
                 DisplayName: definition.DisplayName,
                 DesiredCount: 0,
                 RunningCount: 0,
@@ -243,7 +243,7 @@ public sealed class CommandCenterStatusSnapshotService(
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var httpAgeSeconds = oldestHttpItem is null ? null : Math.Max(0, (now - oldestHttpItem.Value).TotalSeconds);
+        var httpAgeSeconds = oldestHttpItem is null ? (double?)null : Math.Max(0, (now - oldestHttpItem.Value).TotalSeconds);
         var failedLast24Hours = await db.HttpRequestQueue
             .AsNoTracking()
             .LongCountAsync(

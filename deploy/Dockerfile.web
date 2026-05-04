@@ -47,8 +47,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 # Npgsql can dlopen Kerberos for Postgres auth negotiation; slim runtime image omits it by default.
 # curl: Docker HEALTHCHECK + manual probes.
 # docker.io: CLI used by /api/ops/docker-status for runtime container/image/log inspection.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgssapi-krb5-2 curl docker.io \
+RUN sed -i 's/archive.ubuntu.com/mirrors.edge.kernel.org/g' /etc/apt/sources.list 2>/dev/null || true \
+    && sed -i 's/archive.ubuntu.com/mirrors.edge.kernel.org/g' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true \
+    && apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends libgssapi-krb5-2 curl docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

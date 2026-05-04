@@ -75,8 +75,10 @@ argus_ensure_curl() {
   source /etc/os-release
   case "${ID:-}" in
     ubuntu | debian)
-      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get update -qq
-      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates
+      argus_run_privileged sed -i 's/archive.ubuntu.com/mirrors.edge.kernel.org/g' /etc/apt/sources.list 2>/dev/null || true
+      argus_run_privileged sed -i 's/archive.ubuntu.com/mirrors.edge.kernel.org/g' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 update -qq
+      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y curl ca-certificates
       ;;
     amzn | rhel | centos | fedora | rocky | almalinux)
       if command -v dnf >/dev/null 2>&1; then
@@ -99,8 +101,8 @@ argus_ensure_git() {
   source /etc/os-release
   case "${ID:-}" in
     ubuntu | debian)
-      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get update -qq
-      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y git
+      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 update -qq
+      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y git
       ;;
     amzn | rhel | centos | fedora | rocky | almalinux)
       if command -v dnf >/dev/null 2>&1; then
@@ -119,8 +121,8 @@ argus_ensure_unzip() {
   source /etc/os-release
   case "${ID:-}" in
     ubuntu | debian)
-      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get update -qq
-      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y unzip
+      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 update -qq
+      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y unzip
       ;;
     amzn | rhel | centos | fedora | rocky | almalinux)
       if command -v dnf >/dev/null 2>&1; then
@@ -139,8 +141,8 @@ argus_ensure_python3() {
   source /etc/os-release
   case "${ID:-}" in
     ubuntu | debian)
-      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get update -qq
-      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y python3
+      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 update -qq
+      argus_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y python3
       ;;
     amzn | rhel | centos | fedora | rocky | almalinux)
       if command -v dnf >/dev/null 2>&1; then

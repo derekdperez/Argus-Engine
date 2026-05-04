@@ -169,11 +169,12 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
         {
             e.ToTable("bus_journal");
             e.HasKey(x => x.Id);
-            e.Property(x => x.Id).UseIdentityAlwaysColumn();
-            e.Property(x => x.Direction).HasMaxLength(16).IsRequired();
-            e.Property(x => x.MessageType).HasMaxLength(256).IsRequired();
-            e.Property(x => x.ConsumerType).HasMaxLength(512);
-            e.Property(x => x.PayloadJson).IsRequired();
+            e.Property(x => x.Id).HasColumnName("id").UseIdentityAlwaysColumn();
+            e.Property(x => x.Direction).HasColumnName("direction").HasMaxLength(16).IsRequired();
+            e.Property(x => x.MessageType).HasColumnName("message_type").HasMaxLength(256).IsRequired();
+            e.Property(x => x.ConsumerType).HasColumnName("consumer_type").HasMaxLength(512);
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").IsRequired();
+            e.Property(x => x.OccurredAtUtc).HasColumnName("occurred_at_utc");
             e.Property(x => x.HostName).HasMaxLength(256).IsRequired().HasColumnName("host_name");
             e.HasIndex(x => x.OccurredAtUtc);
         });

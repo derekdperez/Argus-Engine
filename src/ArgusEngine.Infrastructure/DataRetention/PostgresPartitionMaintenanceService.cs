@@ -44,7 +44,7 @@ public sealed class PostgresPartitionMaintenanceService(
             var end = start.AddMonths(1);
             var name = $"bus_journal_{start:yyyy_MM}";
 
-            await db.Database.ExecuteSqlRawAsync(
+            await db.Database.ExecuteSqlAsync(
                 $"""
                 CREATE TABLE IF NOT EXISTS {name}
                 PARTITION OF bus_journal

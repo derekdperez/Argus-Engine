@@ -43,7 +43,7 @@ public static class ArgusConfiguration
                 return (T)(object)boolValue;
             }
 
-            return (T)Convert.ChangeType(value, typeof(T));
+            return (T)Convert.ChangeType(value, typeof(T), System.Globalization.CultureInfo.InvariantCulture);
         }
         catch
         {

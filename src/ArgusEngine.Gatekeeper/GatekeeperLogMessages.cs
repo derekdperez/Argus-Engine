@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ArgusEngine.Gatekeeper;
 
-internal static partial class GatekeeperLogMessages
+public static partial class GatekeeperLogMessages
 {
     [LoggerMessage(
         EventId = 1,

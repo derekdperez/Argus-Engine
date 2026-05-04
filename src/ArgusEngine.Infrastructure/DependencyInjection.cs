@@ -34,6 +34,10 @@ public static class DependencyInjection
         "Host=localhost;Port=5432;Database=argus_engine;Username=argus;Password=argus";
 
     private const string DevelopmentRedisConnectionString = "localhost:6379";
+    private static readonly string[] ReadyPostgresTags = ["ready", "postgres"];
+    private static readonly string[] ReadyPostgresFilestoreTags = ["ready", "postgres", "filestore"];
+    private static readonly string[] ReadyRedisTags = ["ready", "redis"];
+    private static readonly string[] ReadyRabbitMqTags = ["ready", "rabbitmq"];
 
     public static IServiceCollection AddArgusInfrastructure(this IServiceCollection services, IConfiguration configuration) =>
         services.AddNightmareInfrastructure(configuration);
@@ -64,20 +68,20 @@ public static class DependencyInjection
                 "postgres",
                 new PostgresConnectionHealthCheck(pgConn),
                 failureStatus: HealthStatus.Unhealthy,
-                tags: new[] { "ready", "postgres" })
+                tags: ReadyPostgresTags)
             .AddCheck(
                 "file-store-postgres",
                 new PostgresConnectionHealthCheck(fileStoreConn),
                 failureStatus: HealthStatus.Unhealthy,
-                tags: new[] { "ready", "postgres", "filestore" })
+                tags: ReadyPostgresFilestoreTags)
             .AddCheck<RedisConnectionHealthCheck>(
                 "redis",
                 failureStatus: HealthStatus.Unhealthy,
-                tags: new[] { "ready", "redis" })
+                tags: ReadyRedisTags)
             .AddCheck<RabbitMqTcpHealthCheck>(
                 "rabbitmq",
                 failureStatus: HealthStatus.Unhealthy,
-                tags: new[] { "ready", "rabbitmq" });
+                tags: ReadyRabbitMqTags);
 
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConn));
         services.AddSingleton<DistributedScanLock>();

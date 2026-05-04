@@ -16,9 +16,9 @@ public static class OutboxMessageTypeRegistry
         .OrderBy(type => type.FullName, StringComparer.Ordinal)
         .ToArray();
 
-    private static readonly IReadOnlyDictionary<string, Type> TypesByMessageKey = BuildMessageKeyMap();
+    private static readonly Dictionary<string, Type> TypesByMessageKey = BuildMessageKeyMap();
 
-    private static readonly IReadOnlyDictionary<string, Type> LegacyTypesByName = BuildLegacyTypeNameMap();
+    private static readonly Dictionary<string, Type> LegacyTypesByName = BuildLegacyTypeNameMap();
 
     public static string GetMessageKey(Type messageType)
     {
@@ -64,7 +64,7 @@ public static class OutboxMessageTypeRegistry
         return false;
     }
 
-    private static IReadOnlyDictionary<string, Type> BuildMessageKeyMap()
+    private static Dictionary<string, Type> BuildMessageKeyMap()
     {
         var map = new Dictionary<string, Type>(StringComparer.Ordinal);
 
@@ -81,7 +81,7 @@ public static class OutboxMessageTypeRegistry
         return map;
     }
 
-    private static IReadOnlyDictionary<string, Type> BuildLegacyTypeNameMap()
+    private static Dictionary<string, Type> BuildLegacyTypeNameMap()
     {
         var map = new Dictionary<string, Type>(StringComparer.Ordinal);
 
@@ -95,7 +95,7 @@ public static class OutboxMessageTypeRegistry
         return map;
     }
 
-    private static void AddIfPresent(IDictionary<string, Type> map, string? key, Type eventType)
+    private static void AddIfPresent(Dictionary<string, Type> map, string? key, Type eventType)
     {
         if (!string.IsNullOrWhiteSpace(key) && !map.ContainsKey(key))
         {

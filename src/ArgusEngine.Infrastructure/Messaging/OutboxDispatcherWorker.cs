@@ -285,7 +285,7 @@ public sealed class OutboxDispatcherWorker(
             return false;
         }
 
-        payload = JsonSerializer.Deserialize(message.PayloadJson, messageType);
+        payload = JsonSerializer.Deserialize(message.PayloadJson, messageType!);
         return payload is not null;
     }
 

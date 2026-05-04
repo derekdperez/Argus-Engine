@@ -1,5 +1,0 @@
-End Goals For Argus Engine Application - 
-
-The Argus Engine can run autonomously 24/7 scanning the entire bug bounty attack surface multiple times per day. It features a fast, highly responsive and performant web application interface that gives the user full observability into the state of the application as well as the ability to quickly and effectively issue commands to the application when necessary. 
-
-The application provides a "High Value" feature that has a 0% false positive rate, with the intent that every asset labeled high value is an actionable bug bounty issue that can be reported for a financial reward. The high value asset feature should regularly find these issues so the user can report a steady stream of valid, paying bug bounty issues.

@@ -11,49 +11,57 @@ using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
 using ArgusEngine.Workers.Enum.Consumers;
 
-var builder = Host.CreateApplicationBuilder(args);
+try
+{
+    var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-enum");
-builder.Services.AddArgusInfrastructure(builder.Configuration);
+    builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-enum");
+    builder.Services.AddArgusInfrastructure(builder.Configuration);
 
-builder.Services.AddArgusRabbitMq(
-    builder.Configuration,
-    x =>
+    builder.Services.AddArgusRabbitMq(
+        builder.Configuration,
+        x =>
+        {
+            x.AddConsumer<TargetCreatedConsumer>();
+            x.AddConsumer<SubdomainEnumerationRequestedConsumer>(typeof(SubdomainEnumerationRequestedConsumerDefinition));
+        });
+
+    var host = builder.Build();
+
+    var startupLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    var options = host.Services.GetRequiredService<IOptions<SubdomainEnumerationOptions>>().Value;
+
+    var subfinderFound = IsToolAvailable(options.Subfinder.BinaryPath);
+    var amassFound = IsToolAvailable(options.Amass.BinaryPath);
+    var resolvedWordlistPath = Path.IsPathRooted(options.Amass.WordlistPath)
+        ? options.Amass.WordlistPath
+        : Path.Combine(AppContext.BaseDirectory, options.Amass.WordlistPath);
+    var wordlistFound = File.Exists(resolvedWordlistPath);
+
+    StartupLog.LogToolProbe(startupLogger, subfinderFound, amassFound, wordlistFound, resolvedWordlistPath, null);
+
+    if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
     {
-        x.AddConsumer<TargetCreatedConsumer>();
-        x.AddConsumer<SubdomainEnumerationRequestedConsumer>(typeof(SubdomainEnumerationRequestedConsumerDefinition));
-    });
+        await ArgusDbBootstrap.InitializeAsync(
+                host.Services,
+                host.Services.GetRequiredService<IConfiguration>(),
+                startupLogger,
+                includeFileStore: false,
+                host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping)
+            .ConfigureAwait(false);
+    }
+    else
+    {
+        StartupLog.LogSkippingBootstrap(startupLogger, null);
+    }
 
-var host = builder.Build();
-
-var startupLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-var options = host.Services.GetRequiredService<IOptions<SubdomainEnumerationOptions>>().Value;
-
-var subfinderFound = IsToolAvailable(options.Subfinder.BinaryPath);
-var amassFound = IsToolAvailable(options.Amass.BinaryPath);
-var resolvedWordlistPath = Path.IsPathRooted(options.Amass.WordlistPath)
-    ? options.Amass.WordlistPath
-    : Path.Combine(AppContext.BaseDirectory, options.Amass.WordlistPath);
-var wordlistFound = File.Exists(resolvedWordlistPath);
-
-StartupLog.LogToolProbe(startupLogger, subfinderFound, amassFound, wordlistFound, resolvedWordlistPath, null);
-
-if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
-{
-    await ArgusDbBootstrap.InitializeAsync(
-            host.Services,
-            host.Services.GetRequiredService<IConfiguration>(),
-            startupLogger,
-            includeFileStore: false,
-            host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping)
-        .ConfigureAwait(false);
+    await host.RunAsync().ConfigureAwait(false);
 }
-else
+catch (Exception ex)
 {
-    StartupLog.LogSkippingBootstrap(startupLogger, null);
+    Console.Error.WriteLine($"CRITICAL: Enum worker failed to start. {ex}");
+    throw;
 }
-
-await host.RunAsync().ConfigureAwait(false);
 
 static bool ShouldSkipStartupDatabase(IConfiguration configuration) =>
     configuration.GetArgusValue("SkipStartupDatabase", false)

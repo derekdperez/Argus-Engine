@@ -9,40 +9,48 @@ using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
 using ArgusEngine.Workers.PortScan.Consumers;
 
-var builder = Host.CreateApplicationBuilder(args);
+try
+{
+    var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-portscan");
-builder.Services.AddArgusInfrastructure(builder.Configuration);
+    builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-portscan");
+    builder.Services.AddArgusInfrastructure(builder.Configuration);
 
-builder.Services.AddArgusRabbitMq(
-    builder.Configuration,
-    x =>
-    {
-        x.AddConsumer<PortScanRequestedConsumer>();
-    });
+    builder.Services.AddArgusRabbitMq(
+        builder.Configuration,
+        x =>
+        {
+            x.AddConsumer<PortScanRequestedConsumer>();
+        });
 
-var host = builder.Build();
+    var host = builder.Build();
 
 #pragma warning disable CA1848
-var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
 
-if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
-{
-    await ArgusDbBootstrap.InitializeAsync(
-            host.Services,
-            host.Services.GetRequiredService<IConfiguration>(),
-            startupLog,
-            includeFileStore: false,
-            host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping)
-        .ConfigureAwait(false);
-}
-else
-{
-    startupLog.LogInformation("Skipping startup database bootstrap for port scan worker.");
-}
+    if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
+    {
+        await ArgusDbBootstrap.InitializeAsync(
+                host.Services,
+                host.Services.GetRequiredService<IConfiguration>(),
+                startupLog,
+                includeFileStore: false,
+                host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping)
+            .ConfigureAwait(false);
+    }
+    else
+    {
+        startupLog.LogInformation("Skipping startup database bootstrap for port scan worker.");
+    }
 #pragma warning restore CA1848
 
-await host.RunAsync().ConfigureAwait(false);
+    await host.RunAsync().ConfigureAwait(false);
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"CRITICAL: PortScan worker failed to start. {ex}");
+    throw;
+}
 
 static bool ShouldSkipStartupDatabase(IConfiguration configuration) =>
     configuration.GetArgusValue("SkipStartupDatabase", false)

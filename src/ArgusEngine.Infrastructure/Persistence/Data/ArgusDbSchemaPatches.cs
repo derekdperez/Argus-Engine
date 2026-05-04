@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using ArgusEngine.Domain.Entities;
 
 namespace ArgusEngine.Infrastructure.Data;
@@ -8,15 +9,23 @@ namespace ArgusEngine.Infrastructure.Data;
 /// </summary>
 public static class ArgusDbSchemaPatches
 {
-    public static async Task ApplyAfterEnsureCreatedAsync(ArgusDbContext db, CancellationToken cancellationToken = default)
+    public static async Task ApplyAfterEnsureCreatedAsync(ArgusDbContext db, ILogger logger, CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("Applying database schema patches after EnsureCreated...");
+
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        
+        logger.LogDebug("Acquiring advisory lock for schema patches...");
         await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(542017296183746291);", cancellationToken)
             .ConfigureAwait(false);
 
-        await NormalizeStoredAssetIdColumnAsync(db, cancellationToken).ConfigureAwait(false);
-        await NormalizeColumnCasingAsync(db, cancellationToken).ConfigureAwait(false);
+        logger.LogDebug("Normalizing stored asset ID columns...");
+        await NormalizeStoredAssetIdColumnAsync(db, logger, cancellationToken).ConfigureAwait(false);
 
+        logger.LogDebug("Normalizing column casing...");
+        await NormalizeColumnCasingAsync(db, logger, cancellationToken).ConfigureAwait(false);
+
+        logger.LogDebug("Ensuring pgcrypto extension...");
         await db.Database.ExecuteSqlRawAsync(
                 """
                 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -24,6 +33,7 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
+        logger.LogDebug("Patching bus_journal schema...");
         await db.Database.ExecuteSqlRawAsync(
                 """
                 ALTER TABLE bus_journal ADD COLUMN IF NOT EXISTS host_name character varying(256) NOT NULL DEFAULT '';
@@ -52,6 +62,7 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
+        logger.LogDebug("Patching stored_assets schema...");
         await db.Database.ExecuteSqlRawAsync(
                 """
                 ALTER TABLE stored_assets ADD COLUMN IF NOT EXISTS asset_category smallint NOT NULL DEFAULT 0;
@@ -68,6 +79,7 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
+        logger.LogDebug("Ensuring asset_relationships table and constraints...");
         await db.Database.ExecuteSqlRawAsync(
                 """
                 CREATE TABLE IF NOT EXISTS asset_relationships (
@@ -110,7 +122,7 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
-
+        logger.LogDebug("Ensuring tags and detections tables...");
         await db.Database.ExecuteSqlRawAsync(
                 """
                 CREATE TABLE IF NOT EXISTS tags (
@@ -172,7 +184,7 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
-
+        logger.LogDebug("Ensuring high_value_findings and outbox tables...");
         await db.Database.ExecuteSqlRawAsync(
                 """
                 CREATE TABLE IF NOT EXISTS high_value_findings (
@@ -237,15 +249,17 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
-        await BackfillAssetCategoriesAndRootsAsync(db, cancellationToken).ConfigureAwait(false);
-        await BackfillAssetRelationshipsAsync(db, cancellationToken).ConfigureAwait(false);
-        await BackfillHttpRequestQueueAsync(db, cancellationToken).ConfigureAwait(false);
-        await BackfillLegacyDiscoveredAssetsAsync(db, cancellationToken).ConfigureAwait(false);
+        logger.LogDebug("Executing backfill tasks...");
+        await BackfillAssetCategoriesAndRootsAsync(db, logger, cancellationToken).ConfigureAwait(false);
+        await BackfillAssetRelationshipsAsync(db, logger, cancellationToken).ConfigureAwait(false);
+        await BackfillHttpRequestQueueAsync(db, logger, cancellationToken).ConfigureAwait(false);
+        await BackfillLegacyDiscoveredAssetsAsync(db, logger, cancellationToken).ConfigureAwait(false);
 
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+        logger.LogInformation("Database schema patches applied successfully.");
     }
 
-    private static async Task NormalizeStoredAssetIdColumnAsync(ArgusDbContext db, CancellationToken cancellationToken)
+    private static async Task NormalizeStoredAssetIdColumnAsync(ArgusDbContext db, ILogger logger, CancellationToken cancellationToken)
     {
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -271,7 +285,7 @@ public static class ArgusDbSchemaPatches
             .ConfigureAwait(false);
     }
 
-    private static async Task NormalizeColumnCasingAsync(ArgusDbContext db, CancellationToken cancellationToken)
+    private static async Task NormalizeColumnCasingAsync(ArgusDbContext db, ILogger logger, CancellationToken cancellationToken)
     {
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -316,7 +330,7 @@ public static class ArgusDbSchemaPatches
             .ConfigureAwait(false);
     }
 
-    private static async Task BackfillAssetCategoriesAndRootsAsync(ArgusDbContext db, CancellationToken cancellationToken)
+    private static async Task BackfillAssetCategoriesAndRootsAsync(ArgusDbContext db, ILogger logger, CancellationToken cancellationToken)
     {
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -380,7 +394,7 @@ public static class ArgusDbSchemaPatches
             .ConfigureAwait(false);
     }
 
-    private static async Task BackfillAssetRelationshipsAsync(ArgusDbContext db, CancellationToken cancellationToken)
+    private static async Task BackfillAssetRelationshipsAsync(ArgusDbContext db, ILogger logger, CancellationToken cancellationToken)
     {
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -431,7 +445,7 @@ public static class ArgusDbSchemaPatches
             .ConfigureAwait(false);
     }
 
-    private static async Task BackfillHttpRequestQueueAsync(ArgusDbContext db, CancellationToken cancellationToken)
+    private static async Task BackfillHttpRequestQueueAsync(ArgusDbContext db, ILogger logger, CancellationToken cancellationToken)
     {
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -497,7 +511,7 @@ public static class ArgusDbSchemaPatches
     }
 
     /// <summary>Normalize legacy statuses after introducing Queued as the default initial status.</summary>
-    private static async Task BackfillLegacyDiscoveredAssetsAsync(ArgusDbContext db, CancellationToken cancellationToken)
+    private static async Task BackfillLegacyDiscoveredAssetsAsync(ArgusDbContext db, ILogger logger, CancellationToken cancellationToken)
     {
         await db.Assets
             .Where(a => a.LifecycleStatus == "Discovered")

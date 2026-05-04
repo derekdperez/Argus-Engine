@@ -57,7 +57,7 @@ public static class ArgusDbBootstrap
         }
 
         await db.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
-        await ArgusDbSchemaPatches.ApplyAfterEnsureCreatedAsync(db, cancellationToken).ConfigureAwait(false);
+        await ArgusDbSchemaPatches.ApplyAfterEnsureCreatedAsync(db, logger, cancellationToken).ConfigureAwait(false);
         await ArgusDbSeeder.SeedWorkerSwitchesAsync(db, cancellationToken).ConfigureAwait(false);
         if (includeFileStore)
         {

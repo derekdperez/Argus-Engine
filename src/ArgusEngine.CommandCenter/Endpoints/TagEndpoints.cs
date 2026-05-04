@@ -8,7 +8,7 @@ namespace ArgusEngine.CommandCenter.Endpoints;
 
 public static class TagEndpoints
 {
-    public static void Map(WebApplication app)
+    public static IEndpointRouteBuilder MapTagEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet(
                 "/api/tags",

@@ -1,8 +1,0 @@
-{
-  "curated_files_written_by_script": [
-    "src/ArgusEngine.CommandCenter/Program.cs",
-    "src/ArgusEngine.CommandCenter/Endpoints/CommandCenterEndpointRegistration.cs",
-    "src/ArgusEngine.CommandCenter/Startup/CommandCenterMiddleware.cs"
-  ],
-  "reason": "These need both old web app routing/protection and current post-deletion endpoint/health/static-asset behavior."
-}

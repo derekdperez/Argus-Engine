@@ -78,8 +78,6 @@ public static class CommandCenterServiceRegistration
         services.AddScoped<HttpQueueArtifactBackfillService>();
 
         services.AddSingleton<WorkerScaleDefinitionProvider>();
-        services.AddScoped<WorkerScalingSettingsService>();
-        services.AddScoped<WorkerSwitchService>();
 
         services.AddScoped<AwsRegionResolver>();
         services.AddScoped<EcsWorkerServiceManager>();

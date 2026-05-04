@@ -22,7 +22,7 @@ public static class Ec2WorkerEndpoints
 {
     private const int MaxEc2WorkerMachines = 2;
 
-    public static void Map(IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapEc2WorkerEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/ec2-workers")
             .WithTags("EC2 Workers");
@@ -180,6 +180,7 @@ public static class Ec2WorkerEndpoints
                     return Results.Ok(new Ec2WorkerMachineMutationResult(ToDto(machine), machine.StatusMessage));
                 })
             .WithName("RemoveEc2WorkerMachine");
+        return app;
     }
 
     private static async Task<Instance> LaunchMachineAsync(

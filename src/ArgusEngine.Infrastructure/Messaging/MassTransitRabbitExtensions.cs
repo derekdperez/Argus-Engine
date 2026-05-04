@@ -91,8 +91,8 @@ public static class MassTransitRabbitExtensions
         string.Equals(options.Host, "localhost", StringComparison.OrdinalIgnoreCase)
         || string.Equals(options.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)
         || string.Equals(options.Host, "::1", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(options.Username, "argus", StringComparison.Ordinal)
-        || string.Equals(options.Password, "argus", StringComparison.Ordinal);
+        || string.Equals(options.Username, "guest", StringComparison.Ordinal)
+        || string.Equals(options.Password, "guest", StringComparison.Ordinal);
 
     private static string GetString(IConfiguration section, string key, string fallback)
     {

@@ -9,6 +9,7 @@ using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
+using ArgusEngine.Gatekeeper;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -42,7 +43,7 @@ if (!ShouldSkipStartupDatabase(configuration))
 }
 else
 {
-    startupLog.LogInformation("Skipping startup database bootstrap for gatekeeper.");
+    GatekeeperLogMessages.DatabaseBootstrapSkipped(startupLog);
 }
 
 await host.RunAsync().ConfigureAwait(false);

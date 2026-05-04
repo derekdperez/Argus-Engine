@@ -21,4 +21,10 @@ internal static partial class GatekeeperLogMessages
         Level = LogLevel.Information,
         Message = "Gatekeeper startup database bootstrap completed.")]
     public static partial void DatabaseBootstrapCompleted(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 4,
+        Level = LogLevel.Information,
+        Message = "Skipping startup database bootstrap for gatekeeper.")]
+    public static partial void DatabaseBootstrapSkipped(ILogger logger);
 }

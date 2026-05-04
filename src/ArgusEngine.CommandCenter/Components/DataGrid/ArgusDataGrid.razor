@@ -3,19 +3,19 @@
 @using ArgusEngine.CommandCenter
 
 <div @attributes="AdditionalAttributes"
-     class="nightmare-dg @DensityCssClass @CssClass"
+     class="argus-dg @DensityCssClass @CssClass"
      aria-busy="@IsLoading"
      data-grid-key="@PersistKey">
     @if (ToolbarVisible)
     {
-        <div class="nightmare-dg-toolbar">
-            <div class="nightmare-dg-toolbar-main">
+        <div class="argus-dg-toolbar">
+            <div class="argus-dg-toolbar-main">
                 @if (ShowSearch)
                 {
-                    <label class="nightmare-dg-search-wrap">
+                    <label class="argus-dg-search-wrap">
                         <span class="sr-only">@SearchPlaceholder</span>
                         <input type="search"
-                               class="nightmare-dg-search ops-filter"
+                               class="argus-dg-search ops-filter"
                                placeholder="@SearchPlaceholder"
                                value="@_searchInputText"
                                @oninput="OnSearchInput" />
@@ -24,7 +24,7 @@
 
                 @if (ShowPageSizePicker && CanPage)
                 {
-                    <label class="nightmare-dg-page-size">
+                    <label class="argus-dg-page-size">
                         <span>Rows</span>
                         <select value="@ActivePagination.ItemsPerPage" @onchange="OnPageSizeChanged">
                             @foreach (var option in NormalizedPageSizeOptions)
@@ -37,12 +37,12 @@
 
                 @if (ShowDensityPicker)
                 {
-                    <label class="nightmare-dg-page-size">
+                    <label class="argus-dg-page-size">
                         <span>Density</span>
                         <select value="@Density.ToString()" @onchange="OnDensityChanged">
-                            <option value="@nameof(NightmareDataGridDensity.Compact)">Compact</option>
-                            <option value="@nameof(NightmareDataGridDensity.Comfortable)">Comfortable</option>
-                            <option value="@nameof(NightmareDataGridDensity.Relaxed)">Relaxed</option>
+                            <option value="@nameof(ArgusDataGridDensity.Compact)">Compact</option>
+                            <option value="@nameof(ArgusDataGridDensity.Comfortable)">Comfortable</option>
+                            <option value="@nameof(ArgusDataGridDensity.Relaxed)">Relaxed</option>
                         </select>
                     </label>
                 }
@@ -51,15 +51,15 @@
 
                 @if (HasConfiguration)
                 {
-                    <details class="nightmare-dg-config">
+                    <details class="argus-dg-config">
                         <summary>
                             Configure
                             @if (ActiveFilterCount > 0)
                             {
-                                <span class="nightmare-dg-badge">@ActiveFilterCount</span>
+                                <span class="argus-dg-badge">@ActiveFilterCount</span>
                             }
                         </summary>
-                        <div class="nightmare-dg-config-body">
+                        <div class="argus-dg-config-body">
                             @ConfigurationTemplate
                         </div>
                     </details>
@@ -73,10 +73,10 @@
                 }
             </div>
 
-            <div class="nightmare-dg-toolbar-actions">
+            <div class="argus-dg-toolbar-actions">
                 @if (LastUpdatedUtc is not null)
                 {
-                    <span class="nightmare-dg-updated muted small">Updated @AppTimeFormat.Format(LastUpdatedUtc)</span>
+                    <span class="argus-dg-updated muted small">Updated @AppTimeFormat.Format(LastUpdatedUtc)</span>
                 }
 
                 @if (EnableCsvExport)
@@ -88,7 +88,7 @@
 
                 @if (CanPage)
                 {
-                    <div class="nightmare-dg-pager">
+                    <div class="argus-dg-pager">
                         <Paginator State="ActivePagination" />
                     </div>
                 }
@@ -98,7 +98,7 @@
 
     @if (ShowRowCount)
     {
-        <div class="nightmare-dg-rowcount muted small" aria-live="polite">
+        <div class="argus-dg-rowcount muted small" aria-live="polite">
             @if (_searchInputText != SearchText)
             {
                 <span>Filtering…</span>
@@ -114,33 +114,33 @@
 
             @if (HasAnyActiveFilter)
             {
-                <span class="nightmare-dg-mode">@EffectiveActiveFilterCount active filter@(EffectiveActiveFilterCount == 1 ? "" : "s")</span>
+                <span class="argus-dg-mode">@EffectiveActiveFilterCount active filter@(EffectiveActiveFilterCount == 1 ? "" : "s")</span>
             }
             @if (EffectiveVirtualize)
             {
-                <span class="nightmare-dg-mode">virtualized</span>
+                <span class="argus-dg-mode">virtualized</span>
             }
             else if (Pagination is not null && GroupKeySelector is null)
             {
-                <span class="nightmare-dg-mode">paged</span>
+                <span class="argus-dg-mode">paged</span>
             }
             @if (GroupKeySelector is not null)
             {
-                <span class="nightmare-dg-mode">grouped</span>
+                <span class="argus-dg-mode">grouped</span>
             }
             @if (EnableCsvExport && _visibleRowCount > MaxExportRows)
             {
-                <span class="nightmare-dg-mode">export caps at @MaxExportRows.ToString("N0")</span>
+                <span class="argus-dg-mode">export caps at @MaxExportRows.ToString("N0")</span>
             }
         </div>
     }
 
     @if (IsLoading)
     {
-        <div class="nightmare-dg-loading" role="status">
+        <div class="argus-dg-loading" role="status">
             @if (LoadingTemplate is null)
             {
-                <span class="nightmare-dg-spinner" aria-hidden="true"></span>
+                <span class="argus-dg-spinner" aria-hidden="true"></span>
                 <span>@LoadingText</span>
             }
             else
@@ -152,7 +152,7 @@
 
     @if (_visibleRowCount == 0 && !IsLoading)
     {
-        <div class="@HostCssClasses nightmare-dg-empty" style="@EffectiveHostStyle" tabindex="@HostTabIndex">
+        <div class="@HostCssClasses argus-dg-empty" style="@EffectiveHostStyle" tabindex="@HostTabIndex">
             @if (EmptyTemplate is null)
             {
                 @EmptyText
@@ -180,11 +180,11 @@
     }
     else if (_groups is { Count: > 0 })
     {
-        <div class="nightmare-dg-groups">
+        <div class="argus-dg-groups">
             @foreach (var group in _groups)
             {
-                <details @key="group.Key" class="nightmare-dg-group" open="@GroupsInitiallyExpanded">
-                    <summary class="nightmare-dg-group-summary">
+                <details @key="group.Key" class="argus-dg-group" open="@GroupsInitiallyExpanded">
+                    <summary class="argus-dg-group-summary">
                         <span>@group.Key</span>
                         <span class="muted">(@group.Items.Count.ToString("N0"))</span>
                     </summary>
@@ -206,7 +206,7 @@
 
     @if (CanPage && ShowBottomPager)
     {
-        <div class="nightmare-dg-bottom-pager">
+        <div class="argus-dg-bottom-pager">
             <Paginator State="ActivePagination" />
         </div>
     }

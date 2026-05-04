@@ -1,5 +1,5 @@
 /* Shared scroll host + QuickGrid table (sticky thead). ::deep crosses this component’s scope boundary. */
-.nightmare-dg {
+.argus-dg {
     --dg-border: rgba(15, 23, 42, 0.10);
     --dg-soft: #f8fafc;
     --dg-soft-2: #eef2f7;
@@ -11,7 +11,7 @@
     min-width: 0;
 }
 
-.nightmare-dg-rowcount {
+.argus-dg-rowcount {
     display: flex;
     align-items: center;
     gap: 0.45rem;
@@ -20,8 +20,8 @@
     font-size: 12px;
 }
 
-.nightmare-dg-mode,
-.nightmare-dg-badge {
+.argus-dg-mode,
+.argus-dg-badge {
     display: inline-flex;
     align-items: center;
     border: 1px solid var(--dg-border);
@@ -35,7 +35,7 @@
     white-space: nowrap;
 }
 
-.nightmare-dg-badge {
+.argus-dg-badge {
     margin-left: 0.35rem;
     min-width: 1.35rem;
     justify-content: center;
@@ -43,7 +43,7 @@
     color: var(--dg-accent);
 }
 
-.nightmare-dg-toolbar {
+.argus-dg-toolbar {
     display: flex;
     gap: 0.75rem;
     align-items: center;
@@ -52,8 +52,8 @@
     margin: 0.25rem 0 0.7rem;
 }
 
-.nightmare-dg-toolbar-main,
-.nightmare-dg-toolbar-actions {
+.argus-dg-toolbar-main,
+.argus-dg-toolbar-actions {
     display: flex;
     gap: 0.55rem;
     align-items: center;
@@ -61,18 +61,18 @@
     min-width: min(100%, 36rem);
 }
 
-.nightmare-dg-toolbar-actions {
+.argus-dg-toolbar-actions {
     justify-content: flex-end;
     min-width: min(100%, 18rem);
     margin-left: auto;
 }
 
-.nightmare-dg-search-wrap {
+.argus-dg-search-wrap {
     margin: 0;
 }
 
-.nightmare-dg-toolbar input[type="search"],
-.nightmare-dg-search {
+.argus-dg-toolbar input[type="search"],
+.argus-dg-search {
     width: clamp(14rem, 30vw, 32rem);
     min-height: 2.15rem;
     font-size: 0.88rem;
@@ -83,14 +83,14 @@
     color: var(--dg-text);
 }
 
-.nightmare-dg-toolbar input[type="search"]:focus,
-.nightmare-dg-search:focus,
-.nightmare-dg-page-size select:focus {
+.argus-dg-toolbar input[type="search"]:focus,
+.argus-dg-search:focus,
+.argus-dg-page-size select:focus {
     outline: 3px solid rgba(37, 99, 235, 0.16);
     border-color: rgba(37, 99, 235, 0.55);
 }
 
-.nightmare-dg-page-size {
+.argus-dg-page-size {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
@@ -99,7 +99,7 @@
     font-size: 0.82rem;
 }
 
-.nightmare-dg-page-size select {
+.argus-dg-page-size select {
     min-height: 2rem;
     border: 1px solid var(--dg-border);
     border-radius: 0.55rem;
@@ -107,22 +107,22 @@
     padding: 0.25rem 0.5rem;
 }
 
-.nightmare-dg-pager,
-.nightmare-dg-bottom-pager {
+.argus-dg-pager,
+.argus-dg-bottom-pager {
     display: flex;
     align-items: center;
     justify-content: flex-end;
 }
 
-.nightmare-dg-bottom-pager {
+.argus-dg-bottom-pager {
     margin-top: 0.65rem;
 }
 
-.nightmare-dg-config {
+.argus-dg-config {
     position: relative;
 }
 
-.nightmare-dg-config > summary {
+.argus-dg-config > summary {
     display: inline-flex;
     align-items: center;
     min-height: 2.05rem;
@@ -135,12 +135,12 @@
     user-select: none;
 }
 
-.nightmare-dg-config[open] > summary {
+.argus-dg-config[open] > summary {
     border-color: rgba(37, 99, 235, 0.30);
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
 }
 
-.nightmare-dg-config-body {
+.argus-dg-config-body {
     position: absolute;
     z-index: 8;
     top: calc(100% + 0.45rem);
@@ -155,7 +155,7 @@
     box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
 }
 
-.nightmare-dg-loading {
+.argus-dg-loading {
     display: inline-flex;
     align-items: center;
     gap: 0.55rem;
@@ -168,22 +168,22 @@
     font-size: 0.85rem;
 }
 
-.nightmare-dg-spinner {
+.argus-dg-spinner {
     width: 0.9rem;
     height: 0.9rem;
     border: 2px solid rgba(37, 99, 235, 0.22);
     border-top-color: #1d4ed8;
     border-radius: 999px;
-    animation: nightmare-dg-spin 800ms linear infinite;
+    animation: argus-dg-spin 800ms linear infinite;
 }
 
-@keyframes nightmare-dg-spin {
+@keyframes argus-dg-spin {
     to {
         transform: rotate(360deg);
     }
 }
 
-.nightmare-dg-host {
+.argus-dg-host {
     overflow: auto;
     border: 1px solid var(--dg-border);
     border-radius: 0.9rem;
@@ -192,25 +192,25 @@
     scrollbar-gutter: stable both-edges;
 }
 
-.nightmare-dg-host.short {
+.argus-dg-host.short {
     max-height: var(--dg-max-height, 240px);
 }
 
-.nightmare-dg-host.mid {
+.argus-dg-host.mid {
     max-height: var(--dg-max-height, 330px);
 }
 
-.nightmare-dg-host.tall {
+.argus-dg-host.tall {
     max-height: var(--dg-max-height, 520px);
 }
 
-.nightmare-dg-host.vq {
+.argus-dg-host.vq {
     height: var(--dg-virtualized-height, 860px);
     max-height: var(--dg-virtualized-height, 860px);
     overflow-y: auto;
 }
 
-.nightmare-dg-empty {
+.argus-dg-empty {
     display: grid;
     place-items: center;
     min-height: 8rem;
@@ -222,19 +222,19 @@
     padding: 1rem;
 }
 
-.nightmare-dg-groups {
+.argus-dg-groups {
     display: grid;
     gap: 0.85rem;
 }
 
-.nightmare-dg-group {
+.argus-dg-group {
     border: 1px solid var(--dg-border);
     border-radius: 0.9rem;
     padding: 0.35rem 0.6rem 0.65rem;
     background: var(--dg-soft);
 }
 
-.nightmare-dg-group-summary {
+.argus-dg-group-summary {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -245,7 +245,7 @@
     padding: 0.35rem 0;
 }
 
-::deep table.nightmare-qg {
+::deep table.argus-qg {
     width: 100%;
     font-size: 12px;
     border-collapse: separate;
@@ -253,26 +253,26 @@
     color: var(--dg-text);
 }
 
-::deep table.nightmare-qg th,
-::deep table.nightmare-qg td {
+::deep table.argus-qg th,
+::deep table.argus-qg td {
     border-bottom: 1px solid rgba(15, 23, 42, 0.08);
     padding: 0.48rem 0.62rem;
     vertical-align: middle;
 }
 
-.density-comfortable ::deep table.nightmare-qg th,
-.density-comfortable ::deep table.nightmare-qg td {
+.density-comfortable ::deep table.argus-qg th,
+.density-comfortable ::deep table.argus-qg td {
     padding: 0.62rem 0.74rem;
     font-size: 0.82rem;
 }
 
-.density-relaxed ::deep table.nightmare-qg th,
-.density-relaxed ::deep table.nightmare-qg td {
+.density-relaxed ::deep table.argus-qg th,
+.density-relaxed ::deep table.argus-qg td {
     padding: 0.78rem 0.86rem;
     font-size: 0.88rem;
 }
 
-::deep table.nightmare-qg thead th {
+::deep table.argus-qg thead th {
     position: sticky;
     top: 0;
     z-index: 2;
@@ -285,15 +285,15 @@
     white-space: nowrap;
 }
 
-::deep table.nightmare-qg tbody tr {
+::deep table.argus-qg tbody tr {
     transition: background 120ms ease;
 }
 
-::deep table.nightmare-qg tbody tr:hover {
+::deep table.argus-qg tbody tr:hover {
     background: rgba(37, 99, 235, 0.045);
 }
 
-.nightmare-dg-host.vq ::deep table.nightmare-qg tbody td {
+.argus-dg-host.vq ::deep table.argus-qg tbody td {
     height: var(--dg-item-size);
     max-height: var(--dg-item-size);
     line-height: 1.2;
@@ -302,25 +302,25 @@
     white-space: nowrap;
 }
 
-.nightmare-dg-host.sticky-first ::deep table.nightmare-qg th:first-child,
-.nightmare-dg-host.sticky-first ::deep table.nightmare-qg td:first-child {
+.argus-dg-host.sticky-first ::deep table.argus-qg th:first-child,
+.argus-dg-host.sticky-first ::deep table.argus-qg td:first-child {
     position: sticky;
     left: 0;
     z-index: 1;
     background: #fff;
 }
 
-.nightmare-dg-host.sticky-first ::deep table.nightmare-qg thead th:first-child {
+.argus-dg-host.sticky-first ::deep table.argus-qg thead th:first-child {
     z-index: 3;
     background: linear-gradient(#f8fafc, #eef2f7);
 }
 
-::deep table.nightmare-qg td.mono,
-::deep table.nightmare-qg .mono {
+::deep table.argus-qg td.mono,
+::deep table.argus-qg .mono {
     font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
-::deep .nightmare-dg-clip {
+::deep .argus-dg-clip {
     display: inline-block;
     max-width: min(46rem, 58vw);
     overflow: hidden;
@@ -342,29 +342,29 @@
 }
 
 @media (max-width: 760px) {
-    .nightmare-dg-toolbar {
+    .argus-dg-toolbar {
         align-items: stretch;
     }
 
-    .nightmare-dg-toolbar-main,
-    .nightmare-dg-toolbar-actions,
-    .nightmare-dg-pager,
-    .nightmare-dg-toolbar input[type="search"],
-    .nightmare-dg-search {
+    .argus-dg-toolbar-main,
+    .argus-dg-toolbar-actions,
+    .argus-dg-pager,
+    .argus-dg-toolbar input[type="search"],
+    .argus-dg-search {
         width: 100%;
         min-width: 0;
     }
 
-    .nightmare-dg-toolbar-actions {
+    .argus-dg-toolbar-actions {
         justify-content: flex-start;
         margin-left: 0;
     }
 
-    .nightmare-dg-config {
+    .argus-dg-config {
         position: static;
     }
 
-    .nightmare-dg-config-body {
+    .argus-dg-config-body {
         position: fixed;
         left: 1rem;
         right: 1rem;

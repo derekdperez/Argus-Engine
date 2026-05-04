@@ -120,11 +120,11 @@ else if (_rows.Count == 0)
 else
 {
     <section class="panel">
-        <NightmareDataGrid TGridItem="TargetSummary"
+        <ArgusDataGrid TGridItem="TargetSummary"
                            Items="FilteredTargets"
                            @bind-SearchText="_targetSearch"
                            SearchPlaceholder="Search root domain or id…"
-                           ScrollPreset="NightmareDataGridScrollPreset.Virtualized"
+                           ScrollPreset="ArgusDataGridScrollPreset.Virtualized"
                            Virtualize="true"
                            VirtualizedHeightPixels="860"
                            ItemSize="44"
@@ -138,7 +138,7 @@ else
                            ClearFiltersRequested="ClearTargetFilters"
                            ActiveFilterCount="@TargetActiveFilterCount"
                            EnableCsvExport="true"
-                           ExportFileName="nightmare-targets.csv"
+                           ExportFileName="argus-targets.csv"
                            PersistKey="targets"
                            StickyFirstColumn="true">
             <ConfigurationTemplate>
@@ -159,7 +159,7 @@ else
                     <button type="button" @onclick="@(() => DeleteAsync(row))">Delete</button>
                 </TemplateColumn>
             </ChildContent>
-        </NightmareDataGrid>
+        </ArgusDataGrid>
     </section>
 }
 

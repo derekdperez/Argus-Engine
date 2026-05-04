@@ -1,7 +1,7 @@
 namespace ArgusEngine.CommandCenter.Components.DataGrid;
 
 /// <summary>Scroll host height presets for sticky-header grids.</summary>
-public enum NightmareDataGridScrollPreset
+public enum ArgusDataGridScrollPreset
 {
     /// <summary>No max-height (table grows with content).</summary>
     None,

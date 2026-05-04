@@ -1,6 +1,6 @@
 namespace ArgusEngine.CommandCenter.Components.DataGrid;
 
-public enum NightmareDataGridDensity
+public enum ArgusDataGridDensity
 {
     Compact,
     Comfortable,

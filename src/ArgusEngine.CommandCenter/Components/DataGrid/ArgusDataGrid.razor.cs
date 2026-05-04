@@ -15,7 +15,7 @@ namespace ArgusEngine.CommandCenter.Components.DataGrid;
 /// persistent grid preferences, CSV export, refresh hooks, and common empty/loading states.
 /// </summary>
 [CascadingTypeParameter(nameof(TGridItem))]
-public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
+public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly SearchValues<char> CsvEscapeChars = SearchValues.Create(['"', ',', '\r', '\n']);
@@ -80,13 +80,13 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
 
     [Parameter] public string Theme { get; set; } = "default";
 
-    [Parameter] public string GridTableClass { get; set; } = "nightmare-qg";
+    [Parameter] public string GridTableClass { get; set; } = "argus-qg";
 
-    [Parameter] public NightmareDataGridScrollPreset ScrollPreset { get; set; } = NightmareDataGridScrollPreset.Virtualized;
+    [Parameter] public ArgusDataGridScrollPreset ScrollPreset { get; set; } = ArgusDataGridScrollPreset.Virtualized;
 
-    [Parameter] public NightmareDataGridDensity Density { get; set; } = NightmareDataGridDensity.Compact;
+    [Parameter] public ArgusDataGridDensity Density { get; set; } = ArgusDataGridDensity.Compact;
 
-    [Parameter] public EventCallback<NightmareDataGridDensity> DensityChanged { get; set; }
+    [Parameter] public EventCallback<ArgusDataGridDensity> DensityChanged { get; set; }
 
     [Parameter] public bool ShowDensityPicker { get; set; }
 
@@ -174,15 +174,15 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
     private int EffectiveItemSize =>
         Density switch
         {
-            NightmareDataGridDensity.Relaxed => Math.Max(ItemSize, 52),
-            NightmareDataGridDensity.Comfortable => Math.Max(ItemSize, 44),
+            ArgusDataGridDensity.Relaxed => Math.Max(ItemSize, 52),
+            ArgusDataGridDensity.Comfortable => Math.Max(ItemSize, 44),
             _ => ItemSize > 0 ? ItemSize : 38,
         };
 
     private string DensityCssClass => Density switch
     {
-        NightmareDataGridDensity.Relaxed => "density-relaxed",
-        NightmareDataGridDensity.Comfortable => "density-comfortable",
+        ArgusDataGridDensity.Relaxed => "density-relaxed",
+        ArgusDataGridDensity.Comfortable => "density-comfortable",
         _ => "density-compact",
     };
 
@@ -196,14 +196,14 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
         {
             var scroll = ScrollPreset switch
             {
-                NightmareDataGridScrollPreset.Compact => "nightmare-dg-host short",
-                NightmareDataGridScrollPreset.Medium => "nightmare-dg-host mid",
-                NightmareDataGridScrollPreset.Tall => "nightmare-dg-host tall",
-                NightmareDataGridScrollPreset.Virtualized => "nightmare-dg-host vq",
-                _ => "nightmare-dg-host",
+                ArgusDataGridScrollPreset.Compact => "argus-dg-host short",
+                ArgusDataGridScrollPreset.Medium => "argus-dg-host mid",
+                ArgusDataGridScrollPreset.Tall => "argus-dg-host tall",
+                ArgusDataGridScrollPreset.Virtualized => "argus-dg-host vq",
+                _ => "argus-dg-host",
             };
 
-            if (EffectiveVirtualize && ScrollPreset != NightmareDataGridScrollPreset.Virtualized)
+            if (EffectiveVirtualize && ScrollPreset != ArgusDataGridScrollPreset.Virtualized)
                 scroll += " vq";
 
             if (StickyFirstColumn)
@@ -358,7 +358,7 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
 
     private async Task OnDensityChanged(ChangeEventArgs e)
     {
-        if (!Enum.TryParse<NightmareDataGridDensity>(e.Value?.ToString(), ignoreCase: true, out var density))
+        if (!Enum.TryParse<ArgusDataGridDensity>(e.Value?.ToString(), ignoreCase: true, out var density))
             return;
 
         Density = density;
@@ -501,7 +501,7 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
                 Pagination.ItemsPerPage = prefs.PageSize.Value;
 
             if (PersistDensity && !string.IsNullOrWhiteSpace(prefs.Density)
-                && Enum.TryParse<NightmareDataGridDensity>(prefs.Density, ignoreCase: true, out var density))
+                && Enum.TryParse<ArgusDataGridDensity>(prefs.Density, ignoreCase: true, out var density))
             {
                 Density = density;
                 await DensityChanged.InvokeAsync(density);
@@ -561,7 +561,7 @@ public partial class NightmareDataGrid<TGridItem> : IAsyncDisposable
         }
     }
 
-    private string StorageKey => $"nightmare:v2:grid:{PersistKey}";
+    private string StorageKey => $"argus:v2:grid:{PersistKey}";
 
     public async ValueTask DisposeAsync()
     {

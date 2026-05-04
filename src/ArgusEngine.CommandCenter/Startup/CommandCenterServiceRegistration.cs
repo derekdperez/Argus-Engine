@@ -86,7 +86,7 @@ public static class CommandCenterServiceRegistration
 
     private static IServiceCollection AddCommandCenterOptions(this IServiceCollection services)
     {
-        services.AddOptions<NightmareRuntimeOptions>()
+        services.AddOptions<ArgusRuntimeOptions>()
             .Configure<IConfiguration>((options, cfg) =>
             {
                 cfg.GetSection("Nightmare").Bind(options);

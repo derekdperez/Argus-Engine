@@ -1,6 +1,6 @@
 namespace ArgusEngine.CommandCenter;
 
-public sealed class NightmareRuntimeOptions
+public sealed class ArgusRuntimeOptions
 {
     public bool ListenPlainHttp { get; set; }
     public bool SkipStartupDatabase { get; set; }

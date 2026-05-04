@@ -2,31 +2,33 @@
 
 <PageTitle>Argus Engine Command Center</PageTitle>
 
-<div class="shell">
-    <aside class="sidebar">
-        <a class="brand" href="">
-            <span class="brand-mark">AE</span>
-            <span>Argus Engine</span>
-        </a>
+<header class="app-header">
+    <a class="brand" href="" aria-label="Argus Engine Command Center home">
+        <span class="brand-mark">AE</span>
+        <span>
+            <strong>Argus Engine</strong>
+            <small>Command Center</small>
+        </span>
+    </a>
 
-        <nav>
-            <a href="/">Operations</a>
-            <a href="/targets">Targets</a>
-            <a href="/asset-admission">Asset Admission</a>
-            <a href="/high-value-findings">High Value</a>
-            <a href="/technologies">Technologies</a>
-            <a href="/asset-graph">Asset Graph</a>
-            <a href="/status">System Status</a>
-            <a href="/admin">Admin</a>
-        </nav>
-    </aside>
+    <nav class="app-nav" aria-label="Primary navigation">
+        <NavLink class="nav-button" href="" Match="NavLinkMatch.All">Operations</NavLink>
+        <NavLink class="nav-button" href="targets">Targets</NavLink>
+        <NavLink class="nav-button" href="asset-admission">Asset Admission</NavLink>
+        <NavLink class="nav-button" href="high-value">High Value</NavLink>
+        <NavLink class="nav-button" href="technologies">Technologies</NavLink>
+        <NavLink class="nav-button" href="asset-graph">Asset Graph</NavLink>
+        <NavLink class="nav-button" href="status">System Status</NavLink>
+        <NavLink class="nav-button" href="admin">Admin</NavLink>
+    </nav>
+</header>
 
-    <main class="content">
-        @Body
-    </main>
-</div>
+<main class="app-main">
+    @Body
+</main>
 
 <div id="blazor-error-ui">
     An unhandled error has occurred.
     <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
 </div>

@@ -13,12 +13,12 @@ public static class CommandCenterEndpointRegistration
         app.MapDataRetentionAdminEndpoints();
         app.MapHttpArtifactBackfillEndpoints();
 
-        // Restored deleted web-application endpoints from 717c1c5.
+        // Restored deleted web-application endpoints from 717c1c5 plus current operational status.
         app.MapAdminUsageEndpoints();
         app.MapAssetEndpoints();
         app.MapAssetGraphEndpoints();
         app.MapBusJournalEndpoints();
-
+        app.MapCommandCenterStatusEndpoints();
         app.MapDataMaintenanceEndpoints();
         app.MapDiagnosticsEndpoints();
         app.MapEc2WorkerEndpoints();

@@ -15,5 +15,7 @@
   <Folder Name="/tests/">
     <Project Path="src/tests/ArgusEngine.CommandCenter.Tests/ArgusEngine.CommandCenter.Tests.csproj" Type="Classic C#" />
     <Project Path="src/tests/ArgusEngine.Infrastructure.Tests/ArgusEngine.Infrastructure.Tests.csproj" Type="Classic C#" />
+    <Project Path="src/tests/ArgusEngine.UnitTests/ArgusEngine.UnitTests.csproj" Type="Classic C#" />
+    <Project Path="src/tests/ArgusEngine.IntegrationTests/ArgusEngine.IntegrationTests.csproj" Type="Classic C#" />
   </Folder>
 </Solution>

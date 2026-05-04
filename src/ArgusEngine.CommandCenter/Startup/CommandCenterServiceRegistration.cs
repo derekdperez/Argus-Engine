@@ -1,11 +1,10 @@
 using MassTransit;
-
 using Microsoft.AspNetCore.Components;
 using ArgusEngine.CommandCenter.DataMaintenance;
-
 using ArgusEngine.Application.Sagas;
 using ArgusEngine.CommandCenter.Realtime;
 using ArgusEngine.CommandCenter.Services.Aws;
+using ArgusEngine.CommandCenter.Services.Status;
 using ArgusEngine.CommandCenter.Services.Targets;
 using ArgusEngine.CommandCenter.Services.Workers;
 using ArgusEngine.Infrastructure;
@@ -13,7 +12,6 @@ using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
-
 using Radzen;
 
 namespace ArgusEngine.CommandCenter.Startup;
@@ -28,7 +26,6 @@ public static class CommandCenterServiceRegistration
         _ = environment;
 
         services.AddArgusObservability(configuration, "argus-command-center");
-
         OpsSnapshotBuilder.RegisterHttpClient(services);
 
         services.AddRazorComponents()
@@ -43,9 +40,10 @@ public static class CommandCenterServiceRegistration
         });
 
         services.AddArgusInfrastructure(configuration);
-        services.AddSignalR();
 
+        services.AddSignalR();
         services.AddScoped<DiscoveryRealtimeClient>();
+        services.AddScoped<IRealtimeUpdatePublisher, SignalRRealtimeUpdatePublisher>();
 
         services.AddCommandCenterApplicationServices();
         services.AddCommandCenterOptions();
@@ -74,6 +72,7 @@ public static class CommandCenterServiceRegistration
     {
         services.AddScoped<RootSpiderSeedService>();
         services.AddScoped<HttpQueueArtifactBackfillService>();
+        services.AddScoped<ICommandCenterStatusSnapshotService, CommandCenterStatusSnapshotService>();
 
         services.AddSingleton<WorkerScaleDefinitionProvider>();
 

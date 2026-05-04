@@ -102,7 +102,7 @@ public static class AssetGraphEndpoints
 
         app.MapDelete(
                 "/api/targets/{targetId:guid}/asset-relationships/{relationshipId:guid}",
-                async (Guid targetId, Guid relationshipId, NightmareDbContext db, CancellationToken ct) =>
+                async (Guid targetId, Guid relationshipId, ArgusDbContext db, CancellationToken ct) =>
                 {
                     var deleted = await db.AssetRelationships
                         .Where(r => r.TargetId == targetId && r.Id == relationshipId)
@@ -114,7 +114,7 @@ public static class AssetGraphEndpoints
 
         app.MapGet(
                 "/api/targets/{targetId:guid}/asset-graph/metrics",
-                async (Guid targetId, NightmareDbContext db, CancellationToken ct) =>
+                async (Guid targetId, ArgusDbContext db, CancellationToken ct) =>
                 {
                     var byKind = await db.Assets.AsNoTracking()
                         .Where(a => a.TargetId == targetId)

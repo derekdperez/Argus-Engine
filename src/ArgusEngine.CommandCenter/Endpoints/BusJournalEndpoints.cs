@@ -10,7 +10,7 @@ public static class BusJournalEndpoints
     {
         app.MapGet(
                 "/api/bus/live",
-                async (NightmareDbContext db, int? minutes, int? take, CancellationToken ct) =>
+                async (ArgusDbContext db, int? minutes, int? take, CancellationToken ct) =>
                 {
                     var window = TimeSpan.FromMinutes(Math.Clamp(minutes ?? 3, 1, 60));
                     var limit = Math.Clamp(take ?? 150, 1, 500);
@@ -28,7 +28,7 @@ public static class BusJournalEndpoints
 
         app.MapGet(
                 "/api/bus/history",
-                async (NightmareDbContext db, int? take, CancellationToken ct) =>
+                async (ArgusDbContext db, int? take, CancellationToken ct) =>
                 {
                     var limit = Math.Clamp(take ?? 400, 1, 2000);
                     var rows = await db.BusJournal.AsNoTracking()

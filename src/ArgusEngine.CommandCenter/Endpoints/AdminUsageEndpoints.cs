@@ -19,7 +19,7 @@ public static class AdminUsageEndpoints
     {
         app.MapGet(
                 "/api/admin/usage",
-                async (NightmareDbContext db, IConfiguration configuration, CancellationToken ct) =>
+                async (ArgusDbContext db, IConfiguration configuration, CancellationToken ct) =>
                 {
                     var now = DateTimeOffset.UtcNow;
                     var monthStart = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
@@ -246,7 +246,7 @@ public static class AdminUsageEndpoints
         }
     }
 
-    private static async Task<TrafficStats> LoadTrafficAsync(NightmareDbContext db, DateTimeOffset monthStart, CancellationToken ct)
+    private static async Task<TrafficStats> LoadTrafficAsync(ArgusDbContext db, DateTimeOffset monthStart, CancellationToken ct)
     {
         var connection = db.Database.GetDbConnection();
         if (connection.State != ConnectionState.Open)

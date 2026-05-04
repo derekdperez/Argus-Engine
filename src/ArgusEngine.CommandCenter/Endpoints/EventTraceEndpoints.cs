@@ -12,7 +12,7 @@ public static class EventTraceEndpoints
     {
         app.MapGet(
                 "/api/events/live",
-                async (NightmareDbContext db, int? minutes, int? take, CancellationToken ct) =>
+                async (ArgusDbContext db, int? minutes, int? take, CancellationToken ct) =>
                 {
                     var window = TimeSpan.FromMinutes(Math.Clamp(minutes ?? 15, 1, 240));
                     var publishLimit = Math.Clamp(take ?? 250, 25, 1000);

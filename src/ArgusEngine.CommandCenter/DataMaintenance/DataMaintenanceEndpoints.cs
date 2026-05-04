@@ -38,7 +38,7 @@ public static class DataMaintenanceEndpoints
                     MaintenancePhraseBody body,
                     HttpRequest http,
                     IConfiguration config,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IAssetDeduplicator dedup,
                     CancellationToken ct) =>
                 {
@@ -62,7 +62,7 @@ public static class DataMaintenanceEndpoints
                     MaintenancePhraseBody body,
                     HttpRequest http,
                     IConfiguration config,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IAssetDeduplicator dedup,
                     CancellationToken ct) =>
                 {
@@ -87,7 +87,7 @@ public static class DataMaintenanceEndpoints
                     MaintenanceClearDomainBody body,
                     HttpRequest http,
                     IConfiguration config,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IAssetDeduplicator dedup,
                     CancellationToken ct) =>
                 {
@@ -128,7 +128,7 @@ public static class DataMaintenanceEndpoints
                     MaintenanceClearAssetsFilteredBody body,
                     HttpRequest http,
                     IConfiguration config,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IAssetDeduplicator dedup,
                     CancellationToken ct) =>
                 {
@@ -195,7 +195,7 @@ public static class DataMaintenanceEndpoints
                     MaintenanceQueueEnumerationJobBody body,
                     HttpRequest http,
                     IConfiguration config,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IEventOutbox outbox,
                     CancellationToken ct) =>
                 {

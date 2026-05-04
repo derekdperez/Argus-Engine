@@ -14,7 +14,7 @@ public static class HttpRequestQueueEndpoints
     {
         app.MapGet(
                 "/api/http-request-queue/settings",
-                async (NightmareDbContext db, CancellationToken ct) =>
+                async (ArgusDbContext db, CancellationToken ct) =>
                 {
                     var row = await db.HttpRequestQueueSettings.AsNoTracking()
                         .FirstOrDefaultAsync(s => s.Id == 1, ct)
@@ -34,7 +34,7 @@ public static class HttpRequestQueueEndpoints
 
         app.MapPut(
                 "/api/http-request-queue/settings",
-                async (HttpRequestQueueSettingsPatch body, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (HttpRequestQueueSettingsPatch body, ArgusDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
                 {
                     var row = await db.HttpRequestQueueSettings.FirstOrDefaultAsync(s => s.Id == 1, ct).ConfigureAwait(false);
                     if (row is null)
@@ -68,7 +68,7 @@ public static class HttpRequestQueueEndpoints
 
         app.MapGet(
                 "/api/http-request-queue",
-                async (NightmareDbContext db, Guid? targetId, string? state, int? take, CancellationToken ct) =>
+                async (ArgusDbContext db, Guid? targetId, string? state, int? take, CancellationToken ct) =>
                 {
                     var q = db.HttpRequestQueue.AsNoTracking().AsQueryable();
                     if (targetId is { } tid)
@@ -124,7 +124,7 @@ public static class HttpRequestQueueEndpoints
 
         app.MapGet(
                 "/api/http-request-queue/metrics",
-                async (NightmareDbContext db, CancellationToken ct) =>
+                async (ArgusDbContext db, CancellationToken ct) =>
                 {
                     var now = DateTimeOffset.UtcNow;
                     var oneMinuteAgo = now.AddMinutes(-1);

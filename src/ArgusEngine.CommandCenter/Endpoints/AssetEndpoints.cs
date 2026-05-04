@@ -11,7 +11,7 @@ public static class AssetEndpoints
     {
         app.MapGet(
                 "/api/assets",
-                async (NightmareDbContext db, Guid? targetId, int? take, string? tag, CancellationToken ct) =>
+                async (ArgusDbContext db, Guid? targetId, int? take, string? tag, CancellationToken ct) =>
                 {
                     var q = db.Assets.AsNoTracking()
                         .Where(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed)

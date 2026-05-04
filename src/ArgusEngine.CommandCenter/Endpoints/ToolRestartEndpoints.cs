@@ -17,7 +17,7 @@ public static class ToolRestartEndpoints
     {
         app.MapPost(
                 "/api/ops/subdomain-enum/restart",
-                async (RestartToolRequest body, NightmareDbContext db, IEventOutbox outbox, IOptions<SubdomainEnumerationOptions> options, CancellationToken ct) =>
+                async (RestartToolRequest body, ArgusDbContext db, IEventOutbox outbox, IOptions<SubdomainEnumerationOptions> options, CancellationToken ct) =>
                 {
                     var targetsQuery = db.Targets.AsNoTracking();
                     if (!body.AllTargets)
@@ -76,7 +76,7 @@ public static class ToolRestartEndpoints
                 "/api/ops/spider/restart",
                 async (
                     RestartToolRequest body,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     RootSpiderSeedService rootSpiderSeedService,
                     CancellationToken ct) =>
                 {

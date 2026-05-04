@@ -63,7 +63,7 @@ public static class CommandCenterServiceRegistration
                 .EntityFrameworkRepository(r =>
                 {
                     r.ConcurrencyMode = ConcurrencyMode.Pessimistic;
-                    r.ExistingDbContext<NightmareDbContext>();
+                    r.ExistingDbContext<ArgusDbContext>();
                 });
         });
 

@@ -21,7 +21,7 @@ public static class DiagnosticsEndpoints
 
         app.MapGet(
                 "/health/ready",
-                async (NightmareDbContext db, CancellationToken ct) =>
+                async (ArgusDbContext db, CancellationToken ct) =>
                 {
                     try
                     {
@@ -42,7 +42,7 @@ public static class DiagnosticsEndpoints
                 async (
                     HttpContext http,
                     IConfiguration config,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IDbContextFactory<FileStoreDbContext> fileStoreFactory,
                     CancellationToken ct) =>
                 {
@@ -90,7 +90,7 @@ public static class DiagnosticsEndpoints
                 async (
                     HttpContext http,
                     IConfiguration config,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IDbContextFactory<FileStoreDbContext> fileStoreFactory,
                     IConnectionMultiplexer redis,
                     CancellationToken ct) =>
@@ -160,7 +160,7 @@ public static class DiagnosticsEndpoints
         return true;
     }
 
-    private static async Task<DependencyCheck> CheckPostgresAsync(NightmareDbContext db, CancellationToken ct)
+    private static async Task<DependencyCheck> CheckPostgresAsync(ArgusDbContext db, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         try

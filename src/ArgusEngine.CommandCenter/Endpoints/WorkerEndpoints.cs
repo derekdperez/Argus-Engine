@@ -20,7 +20,7 @@ public static class WorkerEndpoints
     {
         app.MapGet(
                 "/api/workers",
-                async (NightmareDbContext db, WorkerScaleDefinitionProvider workerDefinitions, CancellationToken ct) =>
+                async (ArgusDbContext db, WorkerScaleDefinitionProvider workerDefinitions, CancellationToken ct) =>
                 {
                     var now = DateTimeOffset.UtcNow;
                     var persisted = await db.WorkerSwitches.AsNoTracking()
@@ -56,7 +56,7 @@ public static class WorkerEndpoints
 
         app.MapGet(
                 "/api/workers/health",
-                async (NightmareDbContext db, CancellationToken ct) =>
+                async (ArgusDbContext db, CancellationToken ct) =>
                 {
                     var now = DateTimeOffset.UtcNow;
                     var since1 = now.AddHours(-1);
@@ -136,7 +136,7 @@ public static class WorkerEndpoints
 
         app.MapGet(
                 "/api/workers/activity",
-                async (NightmareDbContext db, CancellationToken ct) =>
+                async (ArgusDbContext db, CancellationToken ct) =>
                 {
                     var snap = await WorkerActivityQuery.BuildSnapshotAsync(db, ct).ConfigureAwait(false);
                     return Results.Ok(snap);
@@ -145,7 +145,7 @@ public static class WorkerEndpoints
 
         app.MapGet(
                 "/api/workers/scale-overrides",
-                async (NightmareDbContext db, CancellationToken ct) =>
+                async (ArgusDbContext db, CancellationToken ct) =>
                 {
                     var rows = await db.WorkerScaleTargets.AsNoTracking()
                         .OrderBy(t => t.ScaleKey)
@@ -159,7 +159,7 @@ public static class WorkerEndpoints
         app.MapGet(
                 "/api/workers/scale",
                 async (
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     WorkerScaleDefinitionProvider workerDefinitions,
                     AwsRegionResolver regionResolver,
                     EcsServiceNameResolver serviceNameResolver,
@@ -268,7 +268,7 @@ public static class WorkerEndpoints
 
         app.MapGet(
                 "/api/workers/scaling-settings",
-                async (NightmareDbContext db, WorkerScaleDefinitionProvider workerDefinitions, CancellationToken ct) =>
+                async (ArgusDbContext db, WorkerScaleDefinitionProvider workerDefinitions, CancellationToken ct) =>
                 {
                     var persisted = await db.WorkerScalingSettings.AsNoTracking()
                         .ToDictionaryAsync(s => s.ScaleKey, StringComparer.Ordinal, ct)
@@ -300,7 +300,7 @@ public static class WorkerEndpoints
                 async (
                     string scaleKey,
                     WorkerScalingSettingsPatchDto body,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     WorkerScaleDefinitionProvider workerDefinitions,
                     IHubContext<DiscoveryHub> hub,
                     CancellationToken ct) =>
@@ -440,7 +440,7 @@ public static class WorkerEndpoints
 
         app.MapPut(
                 "/api/workers/{key}",
-                async (string key, WorkerPatchRequest body, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (string key, WorkerPatchRequest body, ArgusDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
                 {
                     var row = await db.WorkerSwitches.FirstOrDefaultAsync(w => w.WorkerKey == key, ct).ConfigureAwait(false);
                     if (row is null)
@@ -471,7 +471,7 @@ public static class WorkerEndpoints
                 async (
                     string key,
                     WorkerScalePatchRequest body,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IConfiguration configuration,
                     WorkerScaleDefinitionProvider workerDefinitions,
                     AwsRegionResolver regionResolver,

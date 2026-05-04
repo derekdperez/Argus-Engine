@@ -20,7 +20,7 @@ public static class TargetEndpoints
     {
         app.MapGet(
                 "/api/targets",
-                async (NightmareDbContext db, CancellationToken ct) =>
+                async (ArgusDbContext db, CancellationToken ct) =>
                 {
                     var targets = await db.Targets.AsNoTracking()
                         .OrderByDescending(t => t.CreatedAtUtc)
@@ -98,7 +98,7 @@ public static class TargetEndpoints
                 "/api/targets",
                 async (
                     CreateTargetRequest dto,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IEventOutbox outbox,
                     RootSpiderSeedService rootSpiderSeedService,
                     IHubContext<DiscoveryHub> hub,
@@ -162,7 +162,7 @@ public static class TargetEndpoints
 
         app.MapPut(
                 "/api/targets/{id:guid}",
-                async (Guid id, UpdateTargetRequest dto, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (Guid id, UpdateTargetRequest dto, ArgusDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
                 {
                     if (!TargetRootNormalization.TryNormalize(dto.RootDomain, out var root))
                         return Results.BadRequest("root domain required");
@@ -200,7 +200,7 @@ public static class TargetEndpoints
 
         app.MapPut(
                 "/api/targets/max-depth",
-                async (UpdateTargetMaxDepthRequest dto, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (UpdateTargetMaxDepthRequest dto, ArgusDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
                 {
                     if (dto.GlobalMaxDepth <= 0)
                         return Results.BadRequest("globalMaxDepth must be greater than zero");
@@ -241,7 +241,7 @@ public static class TargetEndpoints
 
         app.MapDelete(
                 "/api/targets/{id:guid}",
-                async (Guid id, NightmareDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (Guid id, ArgusDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
                 {
                     var target = await db.Targets.FirstOrDefaultAsync(t => t.Id == id, ct).ConfigureAwait(false);
                     if (target is null)
@@ -268,7 +268,7 @@ public static class TargetEndpoints
                 "/api/targets/bulk",
                 async (
                     HttpRequest httpRequest,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IEventOutbox outbox,
                     RootSpiderSeedService rootSpiderSeedService,
                     IHubContext<DiscoveryHub> hub,

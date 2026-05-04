@@ -12,7 +12,7 @@ public static class TagEndpoints
     {
         app.MapGet(
                 "/api/tags",
-                async (NightmareDbContext db, string? type, CancellationToken ct) =>
+                async (ArgusDbContext db, string? type, CancellationToken ct) =>
                 {
                     var q = db.Tags.AsNoTracking().Where(t => t.IsActive);
                     if (!string.IsNullOrWhiteSpace(type))
@@ -42,7 +42,7 @@ public static class TagEndpoints
 
         app.MapGet(
                 "/api/assets/{assetId:guid}/tags",
-                async (Guid assetId, NightmareDbContext db, CancellationToken ct) =>
+                async (Guid assetId, ArgusDbContext db, CancellationToken ct) =>
                 {
                     var rows = await db.AssetTags.AsNoTracking()
                         .Where(at => at.AssetId == assetId)
@@ -70,7 +70,7 @@ public static class TagEndpoints
 
         app.MapGet(
                 "/api/targets/{targetId:guid}/technologies",
-                async (Guid targetId, NightmareDbContext db, CancellationToken ct) =>
+                async (Guid targetId, ArgusDbContext db, CancellationToken ct) =>
                 {
                     var rows = await db.AssetTags.AsNoTracking()
                         .Where(at => at.TargetId == targetId)
@@ -99,7 +99,7 @@ public static class TagEndpoints
 
         app.MapGet(
                 "/api/technologies",
-                async (NightmareDbContext db, int? take, CancellationToken ct) =>
+                async (ArgusDbContext db, int? take, CancellationToken ct) =>
                 {
                     var maxRows = take ?? 10000;
                     var q = from d in db.TechnologyDetections.AsNoTracking()

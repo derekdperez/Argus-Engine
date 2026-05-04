@@ -43,7 +43,7 @@ internal static class OpsSnapshotBuilder
     }
 
     public static async Task<OpsSnapshotDto> BuildAsync(
-        NightmareDbContext db,
+        ArgusDbContext db,
         IHttpClientFactory httpFactory,
         IConfiguration configuration,
         CancellationToken cancellationToken)
@@ -52,7 +52,7 @@ internal static class OpsSnapshotBuilder
         var h1 = now.AddHours(-1);
         var h24 = now.AddHours(-24);
 
-        // Same NightmareDbContext must not run concurrent async queries (EF Core is not thread-safe).
+        // Same ArgusDbContext must not run concurrent async queries (EF Core is not thread-safe).
         var rabbitTask = TryLoadRabbitQueuesAsync(httpFactory, configuration, cancellationToken);
 
         var workers = await db.WorkerSwitches.AsNoTracking()
@@ -97,7 +97,7 @@ internal static class OpsSnapshotBuilder
     }
 
     private static async Task<AssetOpsSummaryDto> LoadAssetSummaryAsync(
-        NightmareDbContext db,
+        ArgusDbContext db,
         DateTimeOffset h1,
         DateTimeOffset h24,
         CancellationToken ct)
@@ -208,7 +208,7 @@ internal static class OpsSnapshotBuilder
     }
 
     private static async Task<BusTrafficSummaryDto> LoadBusTrafficAsync(
-        NightmareDbContext db,
+        ArgusDbContext db,
         DateTimeOffset h1,
         DateTimeOffset h24,
         CancellationToken ct)
@@ -229,7 +229,7 @@ internal static class OpsSnapshotBuilder
     }
 
     private static async Task<WorkerDetailStatsDto> BuildOneWorkerDetailAsync(
-        NightmareDbContext db,
+        ArgusDbContext db,
         string workerKey,
         DateTimeOffset h1,
         DateTimeOffset h24,
@@ -274,7 +274,7 @@ internal static class OpsSnapshotBuilder
     }
 
     private static async Task<(long H1, long H24)> LoadAttributedAssetsAsync(
-        NightmareDbContext db,
+        ArgusDbContext db,
         string workerKey,
         DateTimeOffset h1,
         DateTimeOffset h24,

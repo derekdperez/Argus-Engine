@@ -10,7 +10,7 @@ public static class HighValueFindingEndpoints
     {
         app.MapGet(
                 "/api/high-value-findings",
-                async (NightmareDbContext db, bool? criticalOnly, int? take, CancellationToken ct) =>
+                async (ArgusDbContext db, bool? criticalOnly, int? take, CancellationToken ct) =>
                 {
                     var q =
                         from f in db.HighValueFindings.AsNoTracking()

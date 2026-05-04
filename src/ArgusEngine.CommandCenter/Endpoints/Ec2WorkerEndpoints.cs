@@ -29,7 +29,7 @@ public static class Ec2WorkerEndpoints
 
         group.MapGet(
                 "/machines",
-                async (NightmareDbContext db, IConfiguration configuration, CancellationToken ct) =>
+                async (ArgusDbContext db, IConfiguration configuration, CancellationToken ct) =>
                 {
                     await RefreshMachineStateAsync(db, configuration, ct).ConfigureAwait(false);
                     var rows = await db.Ec2WorkerMachines.AsNoTracking()
@@ -44,7 +44,7 @@ public static class Ec2WorkerEndpoints
                 "/machines",
                 async (
                     Ec2WorkerMachineCreateRequest body,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IConfiguration configuration,
                     IHubContext<DiscoveryHub> hub,
                     CancellationToken ct) =>
@@ -105,7 +105,7 @@ public static class Ec2WorkerEndpoints
                 async (
                     Guid id,
                     Ec2WorkerMachineScaleRequest body,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IConfiguration configuration,
                     IHubContext<DiscoveryHub> hub,
                     CancellationToken ct) =>
@@ -145,7 +145,7 @@ public static class Ec2WorkerEndpoints
                 "/machines/{id:guid}",
                 async (
                     Guid id,
-                    NightmareDbContext db,
+                    ArgusDbContext db,
                     IConfiguration configuration,
                     IHubContext<DiscoveryHub> hub,
                     CancellationToken ct) =>
@@ -239,7 +239,7 @@ public static class Ec2WorkerEndpoints
         return response.Reservation.Instances.Single();
     }
 
-    private static async Task RefreshMachineStateAsync(NightmareDbContext db, IConfiguration configuration, CancellationToken ct)
+    private static async Task RefreshMachineStateAsync(ArgusDbContext db, IConfiguration configuration, CancellationToken ct)
     {
         var rows = await db.Ec2WorkerMachines
             .Where(m => m.InstanceId != null)

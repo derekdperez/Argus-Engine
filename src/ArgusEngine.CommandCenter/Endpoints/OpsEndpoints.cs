@@ -12,7 +12,7 @@ public static class OpsEndpoints
     {
         app.MapGet(
                 "/api/ops/snapshot",
-                async (NightmareDbContext db, IHttpClientFactory httpFactory, IConfiguration configuration, CancellationToken ct) =>
+                async (ArgusDbContext db, IHttpClientFactory httpFactory, IConfiguration configuration, CancellationToken ct) =>
                 {
                     var snap = await OpsSnapshotBuilder.BuildAsync(db, httpFactory, configuration, ct).ConfigureAwait(false);
                     return Results.Ok(snap);
@@ -30,7 +30,7 @@ public static class OpsEndpoints
 
         app.MapGet(
                 "/api/ops/overview",
-                async (NightmareDbContext db, CancellationToken ct) =>
+                async (ArgusDbContext db, CancellationToken ct) =>
                 {
                     var totalTargets = await db.Targets.AsNoTracking().LongCountAsync(ct).ConfigureAwait(false);
                     var totalAssetsConfirmed = await db.Assets.AsNoTracking()
@@ -117,7 +117,7 @@ public static class OpsEndpoints
 
         app.MapGet(
                 "/api/ops/reliability-slo",
-                async (NightmareDbContext db, CancellationToken ct) =>
+                async (ArgusDbContext db, CancellationToken ct) =>
                 {
                     var now = DateTimeOffset.UtcNow;
                     var since = now.AddHours(-1);

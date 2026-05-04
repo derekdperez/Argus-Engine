@@ -1,0 +1,49 @@
+5. Add cloud-native high-value asset detection
+
+If the engine supports AWS, Azure, or GCP scanning, add cloud-specific logic.
+
+AWS
+
+Detect and prioritize:
+
+IAM users with AdministratorAccess
+IAM roles assumable by external accounts
+Public S3 buckets
+Public EBS snapshots
+Public RDS snapshots
+Security groups exposing admin/database ports
+EC2 instances with high-privilege instance profiles
+Lambda functions with secrets in env vars
+EKS clusters with public API endpoints
+CloudTrail disabled or misconfigured
+KMS keys with broad access
+
+High-value AWS rules:
+
+IAM role with AdministratorAccess + assumable by EC2 = critical
+Public S3 bucket + sensitive object names = critical
+Internet-facing EC2 + instance profile with admin permissions = critical
+Public EKS API + weak RBAC indicators = critical
+Azure
+
+Detect:
+
+Global Administrator accounts
+Privileged role assignments
+Public storage containers
+Key Vaults with broad access
+Public AKS API servers
+VMs with public IPs and admin ports
+Managed identities with subscription-level privileges
+App registrations with dangerous permissions
+GCP
+
+Detect:
+
+Project Owner bindings
+Public buckets
+Service account keys
+Cloud SQL public IPs
+GKE public control planes
+Compute instances with broad service account scopes
+Secrets accessible by overly broad principals

@@ -19,7 +19,7 @@ public static class DataMaintenanceEndpoints
     public const string PhraseClearAssetsForDomain = "DELETE ASSETS FOR DOMAIN";
     public const string PhraseClearAssetsFiltered = "DELETE FILTERED ASSETS";
 
-    public static void Map(WebApplication app)
+    public static IEndpointRouteBuilder MapDataMaintenanceEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet(
                 "/api/maintenance/status",
@@ -240,6 +240,7 @@ public static class DataMaintenanceEndpoints
             .WithName("MaintenanceQueueEnumerationJob")
             .DisableAntiforgery()
             .AllowAnonymous();
+        return app;
     }
 
     private static bool TryParseAssetKind(string raw, out AssetKind kind)

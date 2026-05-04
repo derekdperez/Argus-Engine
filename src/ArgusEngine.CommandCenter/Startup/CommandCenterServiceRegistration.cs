@@ -72,8 +72,6 @@ public static class CommandCenterServiceRegistration
 
     private static IServiceCollection AddCommandCenterApplicationServices(this IServiceCollection services)
     {
-        services.AddScoped<TargetManagementService>();
-        services.AddScoped<TargetSummaryQueryService>();
         services.AddScoped<RootSpiderSeedService>();
         services.AddScoped<HttpQueueArtifactBackfillService>();
 

@@ -1,0 +1,32 @@
+@inherits LayoutComponentBase
+
+<PageTitle>Argus Engine Command Center</PageTitle>
+
+<div class="shell">
+    <aside class="sidebar">
+        <a class="brand" href="">
+            <span class="brand-mark">AE</span>
+            <span>Argus Engine</span>
+        </a>
+
+        <nav>
+            <a href="/">Operations</a>
+            <a href="/targets">Targets</a>
+            <a href="/asset-admission">Asset Admission</a>
+            <a href="/high-value-findings">High Value</a>
+            <a href="/technologies">Technologies</a>
+            <a href="/asset-graph">Asset Graph</a>
+            <a href="/status">System Status</a>
+            <a href="/admin">Admin</a>
+        </nav>
+    </aside>
+
+    <main class="content">
+        @Body
+    </main>
+</div>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+</div>

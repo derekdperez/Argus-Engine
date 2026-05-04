@@ -1,0 +1,373 @@
+/* Shared scroll host + QuickGrid table (sticky thead). ::deep crosses this component’s scope boundary. */
+.nightmare-dg {
+    --dg-border: rgba(15, 23, 42, 0.10);
+    --dg-soft: #f8fafc;
+    --dg-soft-2: #eef2f7;
+    --dg-text: #0f172a;
+    --dg-muted: #64748b;
+    --dg-accent: #2563eb;
+    --dg-danger: #dc2626;
+    --dg-item-size: 38px;
+    min-width: 0;
+}
+
+.nightmare-dg-rowcount {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    margin: 0 0 0.45rem;
+    font-size: 12px;
+}
+
+.nightmare-dg-mode,
+.nightmare-dg-badge {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--dg-border);
+    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+    background: var(--dg-soft);
+    color: var(--dg-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.nightmare-dg-badge {
+    margin-left: 0.35rem;
+    min-width: 1.35rem;
+    justify-content: center;
+    background: rgba(37, 99, 235, 0.10);
+    color: var(--dg-accent);
+}
+
+.nightmare-dg-toolbar {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    margin: 0.25rem 0 0.7rem;
+}
+
+.nightmare-dg-toolbar-main,
+.nightmare-dg-toolbar-actions {
+    display: flex;
+    gap: 0.55rem;
+    align-items: center;
+    flex-wrap: wrap;
+    min-width: min(100%, 36rem);
+}
+
+.nightmare-dg-toolbar-actions {
+    justify-content: flex-end;
+    min-width: min(100%, 18rem);
+    margin-left: auto;
+}
+
+.nightmare-dg-search-wrap {
+    margin: 0;
+}
+
+.nightmare-dg-toolbar input[type="search"],
+.nightmare-dg-search {
+    width: clamp(14rem, 30vw, 32rem);
+    min-height: 2.15rem;
+    font-size: 0.88rem;
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--dg-border);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--dg-text);
+}
+
+.nightmare-dg-toolbar input[type="search"]:focus,
+.nightmare-dg-search:focus,
+.nightmare-dg-page-size select:focus {
+    outline: 3px solid rgba(37, 99, 235, 0.16);
+    border-color: rgba(37, 99, 235, 0.55);
+}
+
+.nightmare-dg-page-size {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    color: var(--dg-muted);
+    font-size: 0.82rem;
+}
+
+.nightmare-dg-page-size select {
+    min-height: 2rem;
+    border: 1px solid var(--dg-border);
+    border-radius: 0.55rem;
+    background: #fff;
+    padding: 0.25rem 0.5rem;
+}
+
+.nightmare-dg-pager,
+.nightmare-dg-bottom-pager {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.nightmare-dg-bottom-pager {
+    margin-top: 0.65rem;
+}
+
+.nightmare-dg-config {
+    position: relative;
+}
+
+.nightmare-dg-config > summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.05rem;
+    padding: 0.35rem 0.65rem;
+    border: 1px solid var(--dg-border);
+    border-radius: 999px;
+    background: var(--dg-soft);
+    color: var(--dg-text);
+    cursor: pointer;
+    user-select: none;
+}
+
+.nightmare-dg-config[open] > summary {
+    border-color: rgba(37, 99, 235, 0.30);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+}
+
+.nightmare-dg-config-body {
+    position: absolute;
+    z-index: 8;
+    top: calc(100% + 0.45rem);
+    left: 0;
+    width: min(42rem, calc(100vw - 2rem));
+    max-height: min(32rem, calc(100vh - 12rem));
+    overflow: auto;
+    padding: 0.85rem;
+    border: 1px solid var(--dg-border);
+    border-radius: 0.9rem;
+    background: #fff;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+}
+
+.nightmare-dg-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin-bottom: 0.55rem;
+    padding: 0.45rem 0.65rem;
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    border-radius: 0.65rem;
+    background: rgba(37, 99, 235, 0.07);
+    color: #1d4ed8;
+    font-size: 0.85rem;
+}
+
+.nightmare-dg-spinner {
+    width: 0.9rem;
+    height: 0.9rem;
+    border: 2px solid rgba(37, 99, 235, 0.22);
+    border-top-color: #1d4ed8;
+    border-radius: 999px;
+    animation: nightmare-dg-spin 800ms linear infinite;
+}
+
+@keyframes nightmare-dg-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.nightmare-dg-host {
+    overflow: auto;
+    border: 1px solid var(--dg-border);
+    border-radius: 0.9rem;
+    background: #fff;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    scrollbar-gutter: stable both-edges;
+}
+
+.nightmare-dg-host.short {
+    max-height: var(--dg-max-height, 240px);
+}
+
+.nightmare-dg-host.mid {
+    max-height: var(--dg-max-height, 330px);
+}
+
+.nightmare-dg-host.tall {
+    max-height: var(--dg-max-height, 520px);
+}
+
+.nightmare-dg-host.vq {
+    height: var(--dg-virtualized-height, 860px);
+    max-height: var(--dg-virtualized-height, 860px);
+    overflow-y: auto;
+}
+
+.nightmare-dg-empty {
+    display: grid;
+    place-items: center;
+    min-height: 8rem;
+    color: var(--dg-muted);
+    background:
+        linear-gradient(135deg, rgba(37, 99, 235, 0.04), transparent 48%),
+        var(--dg-soft);
+    text-align: center;
+    padding: 1rem;
+}
+
+.nightmare-dg-groups {
+    display: grid;
+    gap: 0.85rem;
+}
+
+.nightmare-dg-group {
+    border: 1px solid var(--dg-border);
+    border-radius: 0.9rem;
+    padding: 0.35rem 0.6rem 0.65rem;
+    background: var(--dg-soft);
+}
+
+.nightmare-dg-group-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    cursor: pointer;
+    font-weight: 800;
+    font-size: 0.9rem;
+    padding: 0.35rem 0;
+}
+
+::deep table.nightmare-qg {
+    width: 100%;
+    font-size: 12px;
+    border-collapse: separate;
+    border-spacing: 0;
+    color: var(--dg-text);
+}
+
+::deep table.nightmare-qg th,
+::deep table.nightmare-qg td {
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    padding: 0.48rem 0.62rem;
+    vertical-align: middle;
+}
+
+.density-comfortable ::deep table.nightmare-qg th,
+.density-comfortable ::deep table.nightmare-qg td {
+    padding: 0.62rem 0.74rem;
+    font-size: 0.82rem;
+}
+
+.density-relaxed ::deep table.nightmare-qg th,
+.density-relaxed ::deep table.nightmare-qg td {
+    padding: 0.78rem 0.86rem;
+    font-size: 0.88rem;
+}
+
+::deep table.nightmare-qg thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: linear-gradient(#f8fafc, #eef2f7);
+    box-shadow: 0 1px 0 rgba(15, 23, 42, 0.10);
+    color: #334155;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.045em;
+    white-space: nowrap;
+}
+
+::deep table.nightmare-qg tbody tr {
+    transition: background 120ms ease;
+}
+
+::deep table.nightmare-qg tbody tr:hover {
+    background: rgba(37, 99, 235, 0.045);
+}
+
+.nightmare-dg-host.vq ::deep table.nightmare-qg tbody td {
+    height: var(--dg-item-size);
+    max-height: var(--dg-item-size);
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nightmare-dg-host.sticky-first ::deep table.nightmare-qg th:first-child,
+.nightmare-dg-host.sticky-first ::deep table.nightmare-qg td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #fff;
+}
+
+.nightmare-dg-host.sticky-first ::deep table.nightmare-qg thead th:first-child {
+    z-index: 3;
+    background: linear-gradient(#f8fafc, #eef2f7);
+}
+
+::deep table.nightmare-qg td.mono,
+::deep table.nightmare-qg .mono {
+    font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+::deep .nightmare-dg-clip {
+    display: inline-block;
+    max-width: min(46rem, 58vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+@media (max-width: 760px) {
+    .nightmare-dg-toolbar {
+        align-items: stretch;
+    }
+
+    .nightmare-dg-toolbar-main,
+    .nightmare-dg-toolbar-actions,
+    .nightmare-dg-pager,
+    .nightmare-dg-toolbar input[type="search"],
+    .nightmare-dg-search {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .nightmare-dg-toolbar-actions {
+        justify-content: flex-start;
+        margin-left: 0;
+    }
+
+    .nightmare-dg-config {
+        position: static;
+    }
+
+    .nightmare-dg-config-body {
+        position: fixed;
+        left: 1rem;
+        right: 1rem;
+        width: auto;
+    }
+}

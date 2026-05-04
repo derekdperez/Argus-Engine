@@ -1,0 +1,8 @@
+.nightmare-dg-clip {
+    display: inline-block;
+    max-width: min(420px, 36vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+}

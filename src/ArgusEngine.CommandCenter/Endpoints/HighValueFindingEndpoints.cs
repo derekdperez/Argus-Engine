@@ -10,7 +10,7 @@ public static class HighValueFindingEndpoints
     {
         app.MapGet(
                 "/api/high-value-findings",
-                async (ArgusDbContext db, bool? criticalOnly, int? take, CancellationToken ct) =>
+                async (NightmareDbContext db, bool? criticalOnly, int? take, CancellationToken ct) =>
                 {
                     var q =
                         from f in db.HighValueFindings.AsNoTracking()
@@ -21,15 +21,23 @@ public static class HighValueFindingEndpoints
                         {
                             f,
                             t.RootDomain,
-                            SourceUrl = a != null ? a.CanonicalKey : null
+                            AssetLifecycleStatus = a == null ? null : a.LifecycleStatus,
+                            TypeDetailsJson = a == null ? null : a.TypeDetailsJson,
+                            AssetRawValue = a == null ? null : a.RawValue,
+                            AssetFinalUrl = a == null ? null : a.FinalUrl,
+                            AssetRedirectCount = a == null ? 0 : a.RedirectCount,
+                            AssetRedirectChainJson = a == null ? null : a.RedirectChainJson,
                         };
 
                     if (criticalOnly == true)
                         q = q.Where(x => x.f.Severity == "Critical");
 
-                    var list = await q
-                        .OrderByDescending(x => x.f.DiscoveredAtUtc)
-                        .Take(take ?? 100)
+                    var ordered = q.OrderByDescending(x => x.f.DiscoveredAtUtc);
+                    var rowQuery = take is > 0
+                        ? ordered.Take(Math.Clamp(take.Value, 1, 1_000_000))
+                        : ordered;
+
+                    var rows = await rowQuery
                         .Select(x => new HighValueFindingRowDto(
                             x.f.Id,
                             x.f.TargetId,
@@ -37,10 +45,13 @@ public static class HighValueFindingEndpoints
                             x.f.FindingType,
                             x.f.Severity,
                             x.f.PatternName,
-                            x.f.Category,
-                            x.f.MatchedText,
-                            x.SourceUrl ?? "(unknown)",
-                            null, null, 0, null,
+                            x.f.Category ?? "",
+                            x.f.MatchedText ?? "",
+                            string.IsNullOrWhiteSpace(x.AssetFinalUrl) ? x.f.SourceUrl : x.AssetFinalUrl,
+                            x.AssetRawValue,
+                            x.AssetFinalUrl,
+                            x.AssetRedirectCount,
+                            x.AssetRedirectChainJson,
                             x.f.WorkerName,
                             x.f.ImportanceScore,
                             x.f.DiscoveredAtUtc,
@@ -48,10 +59,12 @@ public static class HighValueFindingEndpoints
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
 
-                    return Results.Ok(list);
+                    return Results.Ok(rows);
                 })
-            .WithName("GetHighValueFindings");
+            .WithName("ListHighValueFindings");
 
         return app;
     }
+
+    public static void Map(WebApplication app) => app.MapHighValueFindingEndpoints();
 }

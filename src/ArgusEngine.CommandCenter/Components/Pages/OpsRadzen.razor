@@ -1,0 +1,2373 @@
+@using ArgusEngine.CommandCenter.Models
+@using ArgusEngine.CommandCenter
+@page "/"
+@page "/ops"
+@rendermode InteractiveServer
+@using System.Globalization
+@using System.Net
+@using System.Net.Http.Json
+@using ArgusEngine.CommandCenter.DataMaintenance
+@using ArgusEngine.CommandCenter.Realtime
+@using ArgusEngine.CommandCenter.Components.DataGrid.Cells
+@using static Microsoft.AspNetCore.Components.QuickGrid.SortDirection
+@implements IDisposable
+@inject HttpClient Http
+@inject IJSRuntime Js
+@inject DiscoveryRealtimeClient Realtime
+
+<PageTitle>Operations - Nightmare v2</PageTitle>
+
+<div class="page-shell ops-page">
+    <section class="page-hero ops-hero">
+        <div>
+            <p class="eyebrow">Command center</p>
+            <h1>Operations</h1>
+            <p class="hero-copy">Command-center workspace for target scope, asset inventory, HTTP request queue, and worker activity.</p>
+            <div class="hero-meta">
+                <span class="live-pill @LiveStateCss">@Realtime.State</span>
+                <span>@LiveStatusText</span>
+                @if (_lastLiveEventUtc is not null)
+                {
+                    <span>Last event @FormatOpsTime(_lastLiveEventUtc)</span>
+                }
+            </div>
+        </div>
+        <div class="hero-actions">
+            <span class="muted">@(_loadingAll ? "Refreshing workspace..." : "Live event updates enabled")</span>
+        </div>
+    </section>
+
+    <section class="stat-grid ops-stat-grid compact-stats" aria-label="Operations summary">
+        @if (_overview is null)
+        {
+            <div class="stat-card wide">
+                <div class="stat-label">Summary</div>
+                <div class="stat-value small">Loading operational snapshot…</div>
+            </div>
+        }
+        else
+        {
+            <div class="stat-card">
+                <div class="stat-label">Targets</div>
+                <div class="stat-value">@_overview.TotalTargets.ToString("N0")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Confirmed assets</div>
+                <div class="stat-value">@_overview.TotalAssetsConfirmed.ToString("N0")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Subdomains discovered</div>
+                <div class="stat-value">@_overview.SubdomainsDiscovered.ToString("N0")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">HTTP Queue</div>
+                <div class="stat-value">@_overview.HttpQueueQueuedAssetCount.ToString("N0")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Last asset created</div>
+                <div class="stat-value small">@FormatOpsTime(_overview.LastAssetCreatedAtUtc)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Last worker event</div>
+                <div class="stat-value small">@FormatOpsTime(_overview.LastWorkerEventPublishedAtUtc)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">HTTP failed 1m / 1h / 24h</div>
+                <div class="stat-value small">@FormatMetricTriple(_queueMetrics?.FailedLastMinuteCount, _queueMetrics?.FailedLastHourCount, _queueMetrics?.FailedLast24HoursCount)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">HTTP sent 1m / 1h / 24h</div>
+                <div class="stat-value small">@FormatMetricTriple(_queueMetrics?.SentLastMinuteCount, _queueMetrics?.SentLastHourCount, _queueMetrics?.SentLast24HoursCount)</div>
+            </div>
+            <div class="stat-card wide">
+                <div class="stat-label">Top domain</div>
+                <div class="stat-value small">@(_overview.TopDomainByAssets ?? "-") (@_overview.TopDomainAssetCount.ToString("N0") assets)</div>
+            </div>
+        }
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <div class="alert">@_statusMessage</div>
+    }
+
+    @if (!HasLoadedAnyWorkspaceData)
+    {
+        <section class="panel ops-tool-actions">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Loading workspace</p>
+                    <h2>Preparing operations data</h2>
+                </div>
+                <span class="muted">Initial load</span>
+            </div>
+            <div class="stat-grid compact-stats" aria-label="Operations loading state">
+                <div class="stat-card">
+                    <div class="stat-label">Targets</div>
+                    <div class="stat-value small">Loading...</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Asset inventory</div>
+                    <div class="stat-value small">Loading...</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">HTTP queue</div>
+                    <div class="stat-value small">Loading...</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Workers</div>
+                    <div class="stat-value small">Loading...</div>
+                </div>
+            </div>
+        </section>
+    }
+    else
+    {
+    <section class="panel ops-tool-actions">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Tool controls</p>
+                <h2>Restart enumeration or spidering</h2>
+            </div>
+            <span class="muted">@SelectedToolTargetCount.ToString("N0") selected</span>
+        </div>
+        <p class="muted">Use the checkboxes in the Targets grid to restart tools for selected targets, or queue the restart globally for every active target.</p>
+        <div class="ops-rz-toolbar">
+            <button type="button" class="btn primary" disabled="@_toolRestartBusy" @onclick="@(() => RestartEnumAsync(true))">Restart enum for all targets</button>
+            <button type="button" class="btn danger" disabled="@_toolRestartBusy" @onclick="@(() => RestartSpiderAsync(true))">Restart spidering for all targets</button>
+            <button type="button" class="btn" disabled="@(_toolRestartBusy || SelectedToolTargetCount == 0)" @onclick="@(() => RestartEnumAsync(false))">Restart enum for selected (@SelectedToolTargetCount)</button>
+            <button type="button" class="btn" disabled="@(_toolRestartBusy || SelectedToolTargetCount == 0)" @onclick="@(() => RestartSpiderAsync(false))">Restart spidering for selected (@SelectedToolTargetCount)</button>
+            <button type="button" class="btn ghost" disabled="@(SelectedToolTargetCount == 0)" @onclick="ClearToolTargetSelection">Clear selection</button>
+        </div>
+    </section>
+    <section class="ops-layout-grid">
+        <section class="panel ops-primary-panel target-control-panel">
+            <div class="target-control-header">
+                <div class="target-metrics">
+                    <strong>Targets</strong>
+                    <span>Total Targets: @TargetTotalCount.ToString("N0", CultureInfo.InvariantCulture)</span>
+                    <span>Confirmed Subdomains: @ConfirmedSubdomainTotal.ToString("N0", CultureInfo.InvariantCulture)</span>
+                    <span>Confirmed URLs: @ConfirmedUrlTotal.ToString("N0", CultureInfo.InvariantCulture)</span>
+                </div>
+                <EditForm Model="TargetCreateForm" OnValidSubmit="CreateTargetAsync" FormName="@OpsTargetCreateFormName" method="post" class="target-add-form">
+                    <strong>Add New Target:</strong>
+                    <InputText @bind-Value="TargetCreateForm.RootDomain" placeholder="Domain" />
+                    <button type="submit" class="btn primary" disabled="@_targetCreateBusy">@(_targetCreateBusy ? "Adding..." : "Add")</button>
+                </EditForm>
+            </div>
+
+            <div class="target-control-grid">
+                <label>
+                    <span>Active target filter</span>
+                    <select @bind="_targetFilter" @bind:after="ReloadTargetScopedAsync">
+                        <option value="">All targets</option>
+                        @foreach (var t in _targets.OrderBy(t => t.RootDomain, StringComparer.OrdinalIgnoreCase))
+                        {
+                            <option value="@t.Id.ToString()">@t.RootDomain</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    <span>Search</span>
+                    <input type="search" class="ops-filter" @bind="_targetSearch" placeholder="Domain, id, depth..." />
+                </label>
+                <details class="ops-rz-column-toggles column-title-editor">
+                    <summary>Display names</summary>
+                    @foreach (var col in TargetColumnTitleOptions)
+                    {
+                        <label>
+                            <span>@col.Label</span>
+                            <input type="text"
+                                   class="ops-filter"
+                                   value="@ColumnTitle(col.Key, col.DefaultTitle)"
+                                   @oninput="@((ChangeEventArgs e) => SetColumnTitle(col.Key, e.Value?.ToString()))" />
+                        </label>
+                    }
+                </details>
+                <button type="button" class="btn ghost" @onclick="ClearTargetFilters">Clear filters</button>
+                <button type="button" class="btn" @onclick="ExportTargetsCsvAsync">Export CSV</button>
+                <label class="short-field">
+                    <span>Set max depth</span>
+                    <InputNumber @bind-Value="_targetBulkMaxDepth" />
+                </label>
+                <button type="button" class="btn" disabled="@(_targetDepthBusy || SelectedToolTargetCount == 0)" @onclick="@(() => UpdateTargetMaxDepthAsync(false))">Apply to selected (@SelectedToolTargetCount)</button>
+                <button type="button" class="btn danger" disabled="@(_targetDepthBusy || _targets.Count == 0)" @onclick="@(() => UpdateTargetMaxDepthAsync(true))">Apply to all (@_targets.Count)</button>
+            </div>
+
+            @if (_targetEditing is not null)
+            {
+                <div class="edit-drawer">
+                    <EditForm Model="_targetEditing" OnValidSubmit="SaveTargetEditAsync" FormName="@OpsTargetEditFormName" method="post" class="inline-form">
+                        <label>
+                            <span>Edit root domain</span>
+                            <InputText @bind-Value="_targetEditing.RootDomain" />
+                        </label>
+                        <label class="short-field">
+                            <span>Depth</span>
+                            <InputNumber @bind-Value="_targetEditing.GlobalMaxDepth" />
+                        </label>
+                        <button type="submit" class="btn primary">Save target</button>
+                        <button type="button" class="btn ghost" @onclick="CancelTargetEdit">Cancel</button>
+                    </EditForm>
+                </div>
+            }
+
+            <RadzenDataGrid TItem="TargetSummary"
+                            Data="@RadzenTargets"
+                            IsLoading="@_targetsLoading"
+                            AllowFiltering="true"
+                            FilterMode="FilterMode.Advanced"
+                            FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                            AllowPaging="false"
+                            AllowSorting="true"
+                            AllowMultiColumnSorting="true"
+                            AllowColumnResize="true"
+                            AllowColumnReorder="true"
+                            AllowColumnPicking="true"
+                            AllowGrouping="true"
+                            GroupPanelText="Drag a column header here to group targets"
+                            AllowVirtualization="true"
+                            VirtualizationOverscanCount="24"
+                            Density="@_radzenDensity"
+                            EmptyText="No targets match the current filters."
+                            Style="height: 860px"
+                            class="ops-rz-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="TargetSummary" Title="Select" Width="90px" Filterable="false" Sortable="false" Groupable="false">
+                        <Template Context="row">
+                            <input @key="row.Id" type="checkbox" checked="@_selectedToolTargetIds.Contains(row.Id)" @onchange="@((ChangeEventArgs e) => ToggleToolTarget(row.Id, e))" />
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="Id" Title='@ColumnTitle("target.Id", "Id")' Width="280px" Visible="false" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="CreatedAtUtc" Title='@ColumnTitle("target.CreatedAtUtc", "Created")' Width="180px" SortOrder="SortOrder.Descending">
+                        <Template Context="row">@FormatOpsTime(row.CreatedAtUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="RootDomain" Title='@ColumnTitle("target.RootDomain", "Root Domain")' Width="260px" Frozen="true">
+                        <Template Context="row">
+                            <a class="mono" href="@RootDomainHref(row.RootDomain)" target="_blank" rel="noopener noreferrer">@row.RootDomain</a>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="SubdomainCount" Title='@ColumnTitle("target.SubdomainCount", "Subdomains")' Width="150px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="ConfirmedUrlCount" Title='@ColumnTitle("target.ConfirmedUrlCount", "URLs")' Width="130px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="ConfirmedAssetCount" Title='@ColumnTitle("target.ConfirmedAssetCount", "Asset Count")' Width="150px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="QueuedAssetCount" Title='@ColumnTitle("target.QueuedAssetCount", "Queued Requests")' Width="170px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="GlobalMaxDepth" Title='@ColumnTitle("target.GlobalMaxDepth", "Max Depth")' Width="130px" />
+                    <RadzenDataGridColumn TItem="TargetSummary" Property="LastRunAtUtc" Title='@ColumnTitle("target.LastRunAtUtc", "Last Run Time")' Width="180px">
+                        <Template Context="row">@FormatOpsTime(row.LastRunAtUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TargetSummary" Title="Actions" Width="150px" Filterable="false" Sortable="false" Groupable="false">
+                        <Template Context="row">
+                            <div class="row-actions">
+                                <button type="button" class="btn small" @onclick="@(() => StartTargetEdit(row))">Edit</button>
+                                <button type="button" class="btn small danger" @onclick="@(() => DeleteTargetAsync(row))">Delete</button>
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </section>
+</section>
+
+    <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Inventory</p>
+                    <h2>Assets</h2>
+                </div>
+                <span class="muted">Updated by live events</span>
+            </div>
+
+        @if (_maintenanceStatus is { Enabled: true })
+        {
+            <details class="danger-zone">
+                <summary>Maintenance danger zone</summary>
+                <div class="danger-zone-body">
+                    @if (_maintenanceStatus.ApiKeyConfigured)
+                    {
+                        <label>
+                            <span>Maintenance API key</span>
+                            <input type="password" class="ops-filter" @bind="_maintenanceApiKey" autocomplete="off" />
+                        </label>
+                    }
+                    <label>
+                        <span>Confirm all-target delete phrase</span>
+                        <input type="text" class="ops-filter" @bind="_phraseClearTargets" placeholder="@DataMaintenanceEndpoints.PhraseClearAllTargets" />
+                    </label>
+                    <button type="button" class="btn danger" disabled="@_maintenanceBusy" @onclick="ClearAllTargetsAsync">Delete all targets</button>
+                    <label>
+                        <span>Confirm all-assets delete phrase</span>
+                        <input type="text" class="ops-filter" @bind="_phraseClearAssets" placeholder="@DataMaintenanceEndpoints.PhraseClearAllAssets" />
+                    </label>
+                    <button type="button" class="btn danger" disabled="@_maintenanceBusy" @onclick="ClearAllAssetsAsync">Delete all assets</button>
+                    <label>
+                        <span>Domain root</span>
+                        <input type="text" class="ops-filter" @bind="_phraseClearDomainRoot" placeholder="example.com" />
+                    </label>
+                    <label>
+                        <span>Confirm domain delete phrase</span>
+                        <input type="text" class="ops-filter" @bind="_phraseClearDomain" placeholder="@DataMaintenanceEndpoints.PhraseClearAssetsForDomain" />
+                    </label>
+                    <button type="button" class="btn danger" disabled="@_maintenanceBusy" @onclick="ClearAssetsForDomainAsync">Delete domain assets</button>
+                    <label>
+                        <span>Delete kind</span>
+                        <input type="text" class="ops-filter" @bind="_filterDeleteKind" placeholder="Url" />
+                    </label>
+                    <label>
+                        <span>Delete status</span>
+                        <input type="text" class="ops-filter" @bind="_filterDeleteStatus" placeholder="Queued/Confirmed/NonExistent" />
+                    </label>
+                    <label>
+                        <span>Found by contains</span>
+                        <input type="text" class="ops-filter" @bind="_filterDeleteDiscoveredBy" />
+                    </label>
+                    <label>
+                        <span>Confirm filtered delete phrase</span>
+                        <input type="text" class="ops-filter" @bind="_phraseClearFiltered" placeholder="@DataMaintenanceEndpoints.PhraseClearAssetsFiltered" />
+                    </label>
+                    <button type="button" class="btn danger" disabled="@_maintenanceBusy" @onclick="ClearAssetsFilteredAsync">Delete filtered assets</button>
+                    @if (!string.IsNullOrWhiteSpace(_maintenanceMessage))
+                    {
+                        <p class="muted full-row">@_maintenanceMessage</p>
+                    }
+                </div>
+            </details>
+        }
+
+        <div class="ops-rz-toolbar">
+            <label>
+                <span>Search</span>
+                <input type="search" class="ops-filter" @bind="_filterAssets" placeholder="Kind, status, URL, pipeline, canonical key…" />
+            </label>
+            <label>
+                <span>Kind</span>
+                <input type="text" class="ops-filter" @bind="_filterKindCol" />
+            </label>
+            <label>
+                <span>Status</span>
+                <input type="text" class="ops-filter" @bind="_filterStatusCol" />
+            </label>
+            <label>
+                <span>Raw/canonical</span>
+                <input type="text" class="ops-filter" @bind="_filterRawCol" />
+            </label>
+            <details class="ops-rz-column-toggles">
+                <summary>Columns</summary>
+                <label class="switch-row"><input type="checkbox" @bind="_showAssetDepth" /><span>Depth</span></label>
+                <label class="switch-row"><input type="checkbox" @bind="_showAssetCanonical" /><span>Canonical key</span></label>
+                <label class="switch-row"><input type="checkbox" @bind="_showAssetPipeline" /><span>Pipeline</span></label>
+                <label class="switch-row"><input type="checkbox" @bind="_showAssetHowFound" /><span>How found</span></label>
+            </details>
+            <details class="ops-rz-column-toggles column-title-editor">
+                <summary>Display names</summary>
+                @foreach (var col in AssetColumnTitleOptions)
+                {
+                    <label>
+                        <span>@col.Label</span>
+                        <input type="text"
+                               class="ops-filter"
+                               value="@ColumnTitle(col.Key, col.DefaultTitle)"
+                               @oninput="@((ChangeEventArgs e) => SetColumnTitle(col.Key, e.Value?.ToString()))" />
+                    </label>
+                }
+            </details>
+            <button type="button" class="btn ghost" @onclick="ClearAssetFilters">Clear filters</button>
+            <button type="button" class="btn" @onclick="ExportAssetsCsvAsync">Export CSV</button>
+        </div>
+
+        <RadzenDataGrid @ref="_assetGrid"
+                        @key="_assetGridVersion"
+                        TItem="AssetGridRowDto"
+                        Data="@RadzenAssets"
+                        IsLoading="@_assetsLoading"
+                        AllowFiltering="true"
+                        FilterMode="FilterMode.Advanced"
+                        FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                        AllowPaging="false"
+                        AllowSorting="true"
+                        AllowMultiColumnSorting="true"
+                        AllowColumnResize="true"
+                        AllowColumnReorder="true"
+                        AllowColumnPicking="true"
+                        AllowGrouping="true"
+                        GroupPanelText="Drag a column header here to group assets"
+                        AllowVirtualization="true"
+                        VirtualizationOverscanCount="24"
+                        Density="@_radzenDensity"
+                        EmptyText="No assets match the current filters."
+                        Style="height: 860px"
+                        class="ops-rz-grid">
+            <Columns>
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="Id" Title='@ColumnTitle("asset.Id", "Id")' Width="280px" Visible="false" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="TargetId" Title='@ColumnTitle("asset.TargetId", "Target Id")' Width="280px" Visible="false" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="DiscoveredAtUtc" Title='@ColumnTitle("asset.DiscoveredAtUtc", "Discovered")' Width="180px">
+                    <Template Context="a">@FormatOpsTime(a.DiscoveredAtUtc)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="LastSeenAtUtc" Title='@ColumnTitle("asset.LastSeenAtUtc", "Last Seen")' Width="180px" Visible="false">
+                    <Template Context="a">@FormatOpsTime(a.LastSeenAtUtc)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="Kind" Title='@ColumnTitle("asset.Kind", "Kind")' Width="130px" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="Category" Title='@ColumnTitle("asset.Category", "Category")' Width="150px" Visible="false" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="LifecycleStatus" Title='@ColumnTitle("asset.LifecycleStatus", "Status")' Width="150px" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="Depth" Title='@ColumnTitle("asset.Depth", "Depth")' Width="110px" Visible="@_showAssetDepth" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="Confidence" Title='@ColumnTitle("asset.Confidence", "Confidence")' Width="130px" Visible="false" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="DisplayName" Title='@ColumnTitle("asset.DisplayName", "Display Name")' Width="220px" Visible="false" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="RawValue" Title='@ColumnTitle("asset.RawValue", "Raw")' Width="380px" Frozen="true">
+                    <Template Context="a">
+                        @{
+                            var href = ToLiveHref(a);
+                        }
+                        @if (string.IsNullOrEmpty(href))
+                        {
+                            <span class="ops-rz-clip" title="@a.RawValue">@a.RawValue</span>
+                        }
+                        else
+                        {
+                            <a href="@href" target="_blank" rel="noopener noreferrer"><span class="ops-rz-clip" title="@a.RawValue">@a.RawValue</span></a>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="FinalUrl" Title='@ColumnTitle("asset.FinalUrl", "Final URL")' Width="380px">
+                    <Template Context="a"><span class="ops-rz-clip" title="@a.FinalUrl">@a.FinalUrl</span></Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="RedirectCount" Title='@ColumnTitle("asset.RedirectCount", "Redirects")' Width="120px" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="CanonicalKey" Title='@ColumnTitle("asset.CanonicalKey", "Canonical")' Width="320px" Visible="@_showAssetCanonical">
+                    <Template Context="a"><span class="mono ops-rz-clip" title="@a.CanonicalKey">@a.CanonicalKey</span></Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="DiscoveredBy" Title='@ColumnTitle("asset.DiscoveredBy", "Pipeline")' Width="180px" Visible="@_showAssetPipeline" />
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="DiscoveryContext" Title='@ColumnTitle("asset.DiscoveryContext", "How found")' Width="360px" Visible="@_showAssetHowFound">
+                    <Template Context="a"><span class="ops-rz-clip" title="@a.DiscoveryContext">@a.DiscoveryContext</span></Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="AssetGridRowDto" Property="TypeDetailsJson" Title='@ColumnTitle("asset.TypeDetailsJson", "Type Details JSON")' Width="420px" Visible="false">
+                    <Template Context="a"><span class="ops-rz-clip" title="@a.TypeDetailsJson">@a.TypeDetailsJson</span></Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </section>
+
+    <section class="ops-stack-grid">
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">HTTP</p>
+                    <h2>Request queue</h2>
+                </div>
+                <span class="muted">Updated by live events</span>
+            </div>
+
+            @if (_queueSettings is not null)
+            {
+                <div class="settings-strip">
+                    <button type="button" class="@QueueToggleButtonClass" disabled="@_queueSettingsBusy" @onclick="ToggleHttpQueueAsync">
+                        @(_queueSettings.Enabled ? "Pause new requests" : "Resume new requests")
+                    </button>
+                    <label>
+                        <span>Global req/min</span>
+                        <input type="number" min="1" @bind="_queueGlobalRequestsPerMinute" />
+                    </label>
+                    <label>
+                        <span>Per-domain req/min</span>
+                        <input type="number" min="1" @bind="_queuePerDomainRequestsPerMinute" />
+                    </label>
+                    <label>
+                        <span>Max concurrency</span>
+                        <input type="number" min="1" @bind="_queueMaxConcurrency" />
+                    </label>
+                    <label>
+                        <span>Timeout sec</span>
+                        <input type="number" min="5" max="300" @bind="_queueRequestTimeoutSeconds" />
+                    </label>
+                    <button type="button" class="btn primary" disabled="@_queueSettingsBusy" @onclick="SaveHttpQueueSettingsAsync">Save</button>
+                </div>
+                <p class="muted">Queue is @(_queueSettings.Enabled ? "enabled" : "disabled"); updated @FormatOpsTime(_queueSettings.UpdatedAtUtc). @_queueSettingsMessage</p>
+            }
+
+            <div class="mini-metrics">
+                <span>Backlog <strong>@(_queueMetrics?.BacklogCount.ToString("N0") ?? "-")</strong></span>
+                <span>In flight <strong>@(_queueMetrics?.InFlightCount.ToString("N0") ?? "-")</strong></span>
+                <span>Failed <strong>@(_queueMetrics?.FailedCount.ToString("N0") ?? "-")</strong></span>
+                <span>Completed/hour <strong>@(_queueMetrics?.CompletedLastHourCount.ToString("N0") ?? "-")</strong></span>
+            </div>
+
+            <div class="ops-rz-toolbar">
+                <label>
+                    <span>Search</span>
+                    <input type="search" class="ops-filter" @bind="_filterQueueSearch" placeholder="URL, domain, state, HTTP status, error…" />
+                </label>
+                <label>
+                    <span>Kind</span>
+                    <input type="text" class="ops-filter" @bind="_filterQueueKindCol" />
+                </label>
+                <label>
+                    <span>URL/domain</span>
+                    <input type="text" class="ops-filter" @bind="_filterQueueRawCol" />
+                </label>
+                <label>
+                    <span>State</span>
+                    <input type="text" class="ops-filter" @bind="_filterQueuePipelineCol" />
+                </label>
+                <details class="ops-rz-column-toggles">
+                    <summary>Columns</summary>
+                    <label class="switch-row"><input type="checkbox" @bind="_showQueueDomain" /><span>Domain</span></label>
+                    <label class="switch-row"><input type="checkbox" @bind="_showQueueAttempts" /><span>Attempts</span></label>
+                    <label class="switch-row"><input type="checkbox" @bind="_showQueueTiming" /><span>Timing</span></label>
+                    <label class="switch-row"><input type="checkbox" @bind="_showQueueErrors" /><span>Errors</span></label>
+                </details>
+                <details class="ops-rz-column-toggles column-title-editor">
+                    <summary>Display names</summary>
+                    @foreach (var col in QueueColumnTitleOptions)
+                    {
+                        <label>
+                            <span>@col.Label</span>
+                            <input type="text"
+                                   class="ops-filter"
+                                   value="@ColumnTitle(col.Key, col.DefaultTitle)"
+                                   @oninput="@((ChangeEventArgs e) => SetColumnTitle(col.Key, e.Value?.ToString()))" />
+                        </label>
+                    }
+                </details>
+                <button type="button" class="btn ghost" @onclick="ClearQueueFilters">Clear filters</button>
+                <button type="button" class="btn" @onclick="ExportQueueCsvAsync">Export CSV</button>
+            </div>
+
+            <RadzenDataGrid @ref="_queueGrid"
+                            @key="_queueGridVersion"
+                            TItem="HttpRequestQueueRowDto"
+                            Data="@RadzenRequestQueue"
+                            IsLoading="@_queueLoading"
+                            AllowFiltering="true"
+                            FilterMode="FilterMode.Advanced"
+                            FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                            AllowPaging="false"
+                            AllowSorting="true"
+                            AllowMultiColumnSorting="true"
+                            AllowColumnResize="true"
+                            AllowColumnReorder="true"
+                            AllowColumnPicking="true"
+                            AllowGrouping="true"
+                            GroupPanelText="Drag a column header here to group queue rows"
+                            AllowVirtualization="true"
+                            VirtualizationOverscanCount="24"
+                            Density="@_radzenDensity"
+                            EmptyText="No queue rows match the current filters."
+                            Style="height: 860px"
+                            class="ops-rz-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="Id" Title='@ColumnTitle("queue.Id", "Id")' Width="280px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="AssetId" Title='@ColumnTitle("queue.AssetId", "Asset Id")' Width="280px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="TargetId" Title='@ColumnTitle("queue.TargetId", "Target Id")' Width="280px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="CreatedAtUtc" Title='@ColumnTitle("queue.CreatedAtUtc", "Created")' Width="180px">
+                        <Template Context="q">@FormatOpsTime(q.CreatedAtUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="UpdatedAtUtc" Title='@ColumnTitle("queue.UpdatedAtUtc", "Updated")' Width="180px" Visible="@_showQueueTiming">
+                        <Template Context="q">@FormatOpsTime(q.UpdatedAtUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="State" Title='@ColumnTitle("queue.State", "State")' Width="130px" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="AssetKind" Title='@ColumnTitle("queue.AssetKind", "Kind")' Width="130px" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="Method" Title='@ColumnTitle("queue.Method", "Method")' Width="100px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="RequestUrl" Title='@ColumnTitle("queue.RequestUrl", "Request URL")' Width="420px" Frozen="true">
+                        <Template Context="q">
+                            @{
+                                var href = ToLiveHref(q);
+                            }
+                            @if (string.IsNullOrEmpty(href))
+                            {
+                                <span class="ops-rz-clip" title="@q.RequestUrl">@q.RequestUrl</span>
+                            }
+                            else
+                            {
+                                <a href="@href" target="_blank" rel="noopener noreferrer"><span class="ops-rz-clip" title="@q.RequestUrl">@q.RequestUrl</span></a>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="DomainKey" Title='@ColumnTitle("queue.DomainKey", "Domain")' Width="220px" Visible="@_showQueueDomain" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="AttemptCount" Title='@ColumnTitle("queue.AttemptCount", "Attempts")' Width="120px" Visible="@_showQueueAttempts" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="MaxAttempts" Title='@ColumnTitle("queue.MaxAttempts", "Max Attempts")' Width="140px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="Priority" Title='@ColumnTitle("queue.Priority", "Priority")' Width="110px" Visible="@_showQueueAttempts" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="NextAttemptAtUtc" Title='@ColumnTitle("queue.NextAttemptAtUtc", "Next Attempt")' Width="180px" Visible="false">
+                        <Template Context="q">@FormatOpsTime(q.NextAttemptAtUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="StartedAtUtc" Title='@ColumnTitle("queue.StartedAtUtc", "Started")' Width="180px" Visible="false">
+                        <Template Context="q">@FormatOpsTime(q.StartedAtUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="CompletedAtUtc" Title='@ColumnTitle("queue.CompletedAtUtc", "Completed")' Width="180px" Visible="false">
+                        <Template Context="q">@FormatOpsTime(q.CompletedAtUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="LockedBy" Title='@ColumnTitle("queue.LockedBy", "Locked By")' Width="220px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="LockedUntilUtc" Title='@ColumnTitle("queue.LockedUntilUtc", "Locked Until")' Width="180px" Visible="false">
+                        <Template Context="q">@FormatOpsTime(q.LockedUntilUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="LastHttpStatus" Title='@ColumnTitle("queue.LastHttpStatus", "HTTP")' Width="110px" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="DurationMs" Title='@ColumnTitle("queue.DurationMs", "Duration ms")' Width="140px" Visible="@_showQueueTiming" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="RequestHeadersJson" Title='@ColumnTitle("queue.RequestHeadersJson", "Request Headers JSON")' Width="420px" Visible="false">
+                        <Template Context="q"><GridEllipsisCell Text="@q.RequestHeadersJson" Title="@q.RequestHeadersJson" /></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="RequestBody" Title='@ColumnTitle("queue.RequestBody", "Request Body")' Width="360px" Visible="false">
+                        <Template Context="q"><GridEllipsisCell Text="@q.RequestBody" Title="@q.RequestBody" /></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="ResponseHeadersJson" Title='@ColumnTitle("queue.ResponseHeadersJson", "Response Headers JSON")' Width="420px" Visible="false">
+                        <Template Context="q"><GridEllipsisCell Text="@q.ResponseHeadersJson" Title="@q.ResponseHeadersJson" /></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="ResponseBody" Title='@ColumnTitle("queue.ResponseBody", "Response Body")' Width="420px" Visible="false">
+                        <Template Context="q"><GridEllipsisCell Text="@q.ResponseBody" Title="@q.ResponseBody" /></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="ResponseContentType" Title='@ColumnTitle("queue.ResponseContentType", "Response Content Type")' Width="220px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="ResponseContentLength" Title='@ColumnTitle("queue.ResponseContentLength", "Response Length")' Width="150px" Visible="false" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="FinalUrl" Title='@ColumnTitle("queue.FinalUrl", "Final URL")' Width="420px">
+                        <Template Context="q"><span class="ops-rz-clip" title="@q.FinalUrl">@q.FinalUrl</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="RedirectCount" Title='@ColumnTitle("queue.RedirectCount", "Redirects")' Width="120px" />
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="LastError" Title='@ColumnTitle("queue.LastError", "Last error")' Width="360px" Visible="@_showQueueErrors">
+                        <Template Context="q"><span class="ops-rz-clip" title="@q.LastError">@q.LastError</span></Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">EC2 Workers</p>
+                    <h2>Manual machine scaling</h2>
+                </div>
+                <span class="muted">@ActiveEc2WorkerMachineCount.ToString(CultureInfo.InvariantCulture) / 2 machines active</span>
+            </div>
+
+            <div class="ops-rz-toolbar">
+                <label>
+                    <span>Name</span>
+                    <input type="text" class="ops-filter" @bind="_ec2WorkerName" placeholder="ec2-worker-a" />
+                </label>
+                <label>
+                    <span>Spider</span>
+                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreateSpider" />
+                </label>
+                <label>
+                    <span>Enum</span>
+                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreateEnum" />
+                </label>
+                <label>
+                    <span>Port scan</span>
+                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreatePortScan" />
+                </label>
+                <label>
+                    <span>High value</span>
+                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreateHighValue" />
+                </label>
+                <label>
+                    <span>Tech ID</span>
+                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreateTechId" />
+                </label>
+                <button type="button" class="btn primary" disabled="@(!CanCreateEc2WorkerMachine)" @onclick="CreateEc2WorkerMachineAsync">Add machine</button>
+                <button type="button" class="btn" disabled="@_ec2WorkerBusy" @onclick="ReloadEc2WorkerMachinesAsync">Refresh</button>
+            </div>
+
+            <RadzenDataGrid TItem="Ec2WorkerMachineDto"
+                            Data="@_ec2WorkerMachines"
+                            IsLoading="@_ec2WorkerBusy"
+                            AllowFiltering="true"
+                            FilterMode="FilterMode.Advanced"
+                            FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                            AllowPaging="false"
+                            AllowSorting="true"
+                            AllowColumnResize="true"
+                            AllowColumnReorder="true"
+                            Density="@_radzenDensity"
+                            EmptyText="No EC2 worker machines have been created."
+                            class="ops-rz-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Title="Selected" Width="110px" Filterable="false" Sortable="false">
+                        <Template Context="m">
+                            <button type="button" class="btn small" @onclick="@(() => SelectEc2WorkerMachine(m))">
+                                @(m.Id == _selectedEc2WorkerMachineId ? "Selected" : "Select")
+                            </button>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="Name" Title="Name" Width="180px">
+                        <Template Context="m"><strong>@m.Name</strong></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="AwsState" Title="State" Width="130px">
+                        <Template Context="m"><span class="@Ec2WorkerStateBadgeClass(m)">@m.AwsState</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="InstanceId" Title="Instance" Width="190px" />
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="PublicIpAddress" Title="Public IP" Width="140px" />
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="PrivateIpAddress" Title="Private IP" Width="140px" />
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="InstanceType" Title="Type" Width="130px" />
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Title="Workers" Width="300px" Filterable="false" Sortable="false">
+                        <Template Context="m"><span class="ops-rz-clip" title="@Ec2WorkerCountsSummary(m.Workers)">@Ec2WorkerCountsSummary(m.Workers)</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="LastCommandStatus" Title="SSM" Width="150px" />
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="StatusMessage" Title="Message" Width="320px">
+                        <Template Context="m"><span class="ops-rz-clip" title="@m.StatusMessage">@m.StatusMessage</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="UpdatedAtUtc" Title="Updated" Width="180px">
+                        <Template Context="m">@FormatOpsTime(m.UpdatedAtUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Title="Actions" Width="130px" Filterable="false" Sortable="false">
+                        <Template Context="m">
+                            <button type="button" class="btn small danger" disabled="@_ec2WorkerBusy" @onclick="@(() => RemoveEc2WorkerMachineAsync(m))">Remove</button>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+
+            @if (SelectedEc2WorkerMachine is { } selectedEc2Worker)
+            {
+                <div class="ops-rz-toolbar">
+                    <strong>Scale @selectedEc2Worker.Name</strong>
+                    <label>
+                        <span>Spider</span>
+                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScaleSpider" />
+                    </label>
+                    <label>
+                        <span>Enum</span>
+                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScaleEnum" />
+                    </label>
+                    <label>
+                        <span>Port scan</span>
+                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScalePortScan" />
+                    </label>
+                    <label>
+                        <span>High value</span>
+                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScaleHighValue" />
+                    </label>
+                    <label>
+                        <span>Tech ID</span>
+                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScaleTechId" />
+                    </label>
+                    <button type="button" class="btn primary" disabled="@_ec2WorkerBusy" @onclick="ScaleSelectedEc2WorkerMachineAsync">Apply scale</button>
+                    <button type="button" class="btn danger" disabled="@_ec2WorkerBusy" @onclick="@(() => RemoveEc2WorkerMachineAsync(selectedEc2Worker))">Remove machine</button>
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Workers</p>
+                    <h2>Activity + controls</h2>
+                </div>
+                <span class="muted">Updated by live events</span>
+            </div>
+
+            <div class="ops-rz-toolbar">
+                <label>
+                    <span>Search</span>
+                    <input type="search" class="ops-filter" @bind="_workerSearch" placeholder="Worker, rollup, timestamp…" />
+                </label>
+                <details class="ops-rz-column-toggles column-title-editor">
+                    <summary>Display names</summary>
+                    @foreach (var col in WorkerColumnTitleOptions)
+                    {
+                        <label>
+                            <span>@col.Label</span>
+                            <input type="text"
+                                   class="ops-filter"
+                                   value="@ColumnTitle(col.Key, col.DefaultTitle)"
+                                   @oninput="@((ChangeEventArgs e) => SetColumnTitle(col.Key, e.Value?.ToString()))" />
+                        </label>
+                    }
+                </details>
+                <button type="button" class="btn" @onclick="ExportWorkersCsvAsync">Export CSV</button>
+            </div>
+
+            <RadzenDataGrid TItem="WorkerKindSummaryDto"
+                            Data="@RadzenWorkers"
+                            IsLoading="@_snapshotLoading"
+                            AllowFiltering="true"
+                            FilterMode="FilterMode.Advanced"
+                            FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                            AllowPaging="false"
+                            AllowVirtualization="true"
+                            VirtualizationOverscanCount="24"
+                            Style="height: 860px"
+                            AllowSorting="true"
+                            AllowMultiColumnSorting="true"
+                            AllowColumnResize="true"
+                            AllowColumnReorder="true"
+                            AllowColumnPicking="true"
+                            AllowGrouping="true"
+                            GroupPanelText="Drag a column header here to group workers"
+                            Density="@_radzenDensity"
+                            EmptyText="Worker activity has not loaded yet."
+                            class="ops-rz-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="WorkerKey" Title='@ColumnTitle("worker.WorkerKey", "Worker")' Width="180px">
+                        <Template Context="w"><strong>@w.WorkerKey</strong></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="ToggleEnabled" Title='@ColumnTitle("worker.ToggleEnabled", "Enabled")' Width="130px">
+                        <Template Context="w"><span class="@WorkerBadgeClass(w)">@(w.ToggleEnabled ? "Enabled" : "Paused")</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="InstanceCount" Title='@ColumnTitle("worker.InstanceCount", "Instances")' Width="120px" />
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Title='@ColumnTitle("worker.DesiredCount", "Desired")' Width="260px" Filterable="false" Sortable="false" Groupable="false">
+                        <Template Context="w">
+                            @if (WorkerScaleFor(w.WorkerKey) is { } scale)
+                            {
+                                <div class="worker-scale-control">
+                                    <button type="button" class="btn small" disabled="@WorkerScaleBusy(w.WorkerKey)" @onclick="@(() => ChangeWorkerScaleAsync(w.WorkerKey, -1))">-1</button>
+                                    <input type="number"
+                                           min="0"
+                                           class="ops-filter worker-scale-input"
+                                           value="@WorkerScaleInput(w.WorkerKey)"
+                                           @oninput="@((ChangeEventArgs e) => SetWorkerScaleInput(w.WorkerKey, e.Value?.ToString()))" />
+                                    <button type="button" class="btn small" disabled="@WorkerScaleBusy(w.WorkerKey)" @onclick="@(() => ApplyWorkerScaleInputAsync(w.WorkerKey))">Set</button>
+                                    <button type="button" class="btn small" disabled="@WorkerScaleBusy(w.WorkerKey)" @onclick="@(() => ChangeWorkerScaleAsync(w.WorkerKey, 1))">+1</button>
+                                </div>
+                                <small class="muted">@WorkerScaleSummary(scale)</small>
+                            }
+                            else
+                            {
+                                <span class="muted">Not scalable</span>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="LastActivityUtc" Title='@ColumnTitle("worker.LastActivityUtc", "Last activity")' Width="180px">
+                        <Template Context="w">@FormatOpsTime(w.LastActivityUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="RollupActivityLabel" Title='@ColumnTitle("worker.RollupActivityLabel", "Rollup")' Width="280px">
+                        <Template Context="w"><span class="ops-rz-clip" title="@w.RollupActivityLabel">@w.RollupActivityLabel</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Title="Actions" Width="120px" Filterable="false" Sortable="false" Groupable="false">
+                        <Template Context="w">
+                            <button type="button" class="btn small" disabled="@(_workerBusyKey == w.WorkerKey)" @onclick="@(() => SetWorkerEnabledAsync(w.WorkerKey, !w.ToggleEnabled))">
+                                @(w.ToggleEnabled ? "Pause" : "Resume")
+                            </button>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+
+
+        </section>
+    </section>
+    }
+</div>
+
+@code {
+    private const string OpsTargetCreateFormName = "ops-target-create";
+    private const string OpsTargetEditFormName = "ops-target-edit";
+
+    private readonly CancellationTokenSource _pollCts = new();
+    private CancellationTokenSource? _liveReloadCts;
+    private readonly HashSet<string> _dirtyScopes = new(StringComparer.Ordinal);
+    private DateTimeOffset? _firstDirtyAtUtc;
+    private bool _initialLoadStarted;
+
+    private readonly List<TargetSummary> _targets = [];
+    private readonly List<AssetGridRowDto> _assets = [];
+    private readonly List<HttpRequestQueueRowDto> _requestQueue = [];
+    private readonly List<WorkerKindSummaryDto> _workerSummaries = [];
+    private readonly List<WorkerScaleTargetDto> _workerScaleTargets = [];
+    private readonly List<Ec2WorkerMachineDto> _ec2WorkerMachines = [];
+    private readonly HashSet<Guid> _selectedToolTargetIds = [];
+    private int SelectedToolTargetCount => _selectedToolTargetIds.Count;
+    private int TargetTotalCount => _targets.Count;
+    private long ConfirmedSubdomainTotal => _targets.Sum(t => t.SubdomainCount);
+    private long ConfirmedUrlTotal => _targets.Sum(t => t.ConfirmedUrlCount);
+    private readonly Dictionary<string, int> _workerScaleInputs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _columnTitles = new(StringComparer.Ordinal);
+    private static readonly (string Key, string Label, string DefaultTitle)[] TargetColumnTitleOptions =
+    [
+        ("target.Id", "Id", "Id"),
+        ("target.CreatedAtUtc", "Created", "Created"),
+        ("target.RootDomain", "Root Domain", "Root Domain"),
+        ("target.SubdomainCount", "Subdomains", "Subdomains"),
+        ("target.ConfirmedUrlCount", "URLs", "URLs"),
+        ("target.ConfirmedAssetCount", "Asset Count", "Asset Count"),
+        ("target.QueuedAssetCount", "Queued Requests", "Queued Requests"),
+        ("target.GlobalMaxDepth", "Max Depth", "Max Depth"),
+        ("target.LastRunAtUtc", "Last Run Time", "Last Run Time"),
+    ];
+
+    private static readonly (string Key, string Label, string DefaultTitle)[] AssetColumnTitleOptions =
+    [
+        ("asset.Id", "Id", "Id"),
+        ("asset.TargetId", "Target Id", "Target Id"),
+        ("asset.DiscoveredAtUtc", "Discovered", "Discovered"),
+        ("asset.LastSeenAtUtc", "Last Seen", "Last Seen"),
+        ("asset.Kind", "Kind", "Kind"),
+        ("asset.Category", "Category", "Category"),
+        ("asset.LifecycleStatus", "Status", "Status"),
+        ("asset.Depth", "Depth", "Depth"),
+        ("asset.Confidence", "Confidence", "Confidence"),
+        ("asset.DisplayName", "Display Name", "Display Name"),
+        ("asset.RawValue", "Raw", "Raw"),
+        ("asset.FinalUrl", "Final URL", "Final URL"),
+        ("asset.RedirectCount", "Redirects", "Redirects"),
+        ("asset.CanonicalKey", "Canonical", "Canonical"),
+        ("asset.DiscoveredBy", "Pipeline", "Pipeline"),
+        ("asset.DiscoveryContext", "How found", "How found"),
+        ("asset.TypeDetailsJson", "Type Details JSON", "Type Details JSON"),
+    ];
+    private static readonly (string Key, string Label, string DefaultTitle)[] QueueColumnTitleOptions =
+    [
+        ("queue.Id", "Id", "Id"),
+        ("queue.AssetId", "Asset Id", "Asset Id"),
+        ("queue.TargetId", "Target Id", "Target Id"),
+        ("queue.CreatedAtUtc", "Created", "Created"),
+        ("queue.UpdatedAtUtc", "Updated", "Updated"),
+        ("queue.State", "State", "State"),
+        ("queue.AssetKind", "Kind", "Kind"),
+        ("queue.Method", "Method", "Method"),
+        ("queue.RequestUrl", "Request URL", "Request URL"),
+        ("queue.DomainKey", "Domain", "Domain"),
+        ("queue.AttemptCount", "Attempts", "Attempts"),
+        ("queue.MaxAttempts", "Max Attempts", "Max Attempts"),
+        ("queue.Priority", "Priority", "Priority"),
+        ("queue.NextAttemptAtUtc", "Next Attempt", "Next Attempt"),
+        ("queue.StartedAtUtc", "Started", "Started"),
+        ("queue.CompletedAtUtc", "Completed", "Completed"),
+        ("queue.LockedBy", "Locked By", "Locked By"),
+        ("queue.LockedUntilUtc", "Locked Until", "Locked Until"),
+        ("queue.LastHttpStatus", "HTTP", "HTTP"),
+        ("queue.DurationMs", "Duration ms", "Duration ms"),
+        ("queue.RequestHeadersJson", "Request Headers JSON", "Request Headers JSON"),
+        ("queue.RequestBody", "Request Body", "Request Body"),
+        ("queue.ResponseHeadersJson", "Response Headers JSON", "Response Headers JSON"),
+        ("queue.ResponseBody", "Response Body", "Response Body"),
+        ("queue.ResponseContentType", "Response Content Type", "Response Content Type"),
+        ("queue.ResponseContentLength", "Response Length", "Response Length"),
+        ("queue.FinalUrl", "Final URL", "Final URL"),
+        ("queue.RedirectCount", "Redirects", "Redirects"),
+        ("queue.LastError", "Last error", "Last error"),
+    ];
+
+
+    private static readonly (string Key, string Label, string DefaultTitle)[] WorkerColumnTitleOptions =
+    [
+        ("worker.WorkerKey", "Worker", "Worker"),
+        ("worker.ToggleEnabled", "Enabled", "Enabled"),
+        ("worker.InstanceCount", "Instances", "Instances"),
+        ("worker.DesiredCount", "Desired", "Desired"),
+        ("worker.LastActivityUtc", "Last activity", "Last activity"),
+        ("worker.RollupActivityLabel", "Rollup", "Rollup"),
+    ];
+
+    private RadzenDataGrid<AssetGridRowDto>? _assetGrid;
+    private RadzenDataGrid<HttpRequestQueueRowDto>? _queueGrid;
+    private int _assetGridVersion;
+    private int _queueGridVersion;
+
+    private OpsOverviewDto? _overview;
+    private OpsSnapshotDto? _snapshot;
+    private HttpRequestQueueMetricsDto? _queueMetrics;
+    private HttpRequestQueueSettingsDto? _queueSettings;
+    private MaintenanceStatusDto? _maintenanceStatus;
+
+    [SupplyParameterFromForm(FormName = OpsTargetCreateFormName)]
+    private TargetForm? _targetCreateForm { get; set; }
+    private TargetForm TargetCreateForm => _targetCreateForm ??= new();
+
+    private TargetEditForm? _targetEditing;
+    private string _targetSearch = "";
+    private string _targetFilter = "";
+
+    private string _filterAssets = "";
+    private string _filterKindCol = "";
+    private string _filterStatusCol = "";
+    private string _filterRawCol = "";
+    private string _filterPipelineCol = "";
+    private string _filterHowFoundCol = "";
+    private bool _showAssetDepth = true;
+    private bool _showAssetCanonical;
+    private bool _showAssetPipeline = true;
+    private bool _showAssetHowFound = true;
+
+    private string _filterQueueSearch = "";
+    private string _filterQueueKindCol = "";
+    private string _filterQueueRawCol = "";
+    private string _filterQueuePipelineCol = "";
+    private bool _showQueueDomain = true;
+    private bool _showQueueAttempts = true;
+    private bool _showQueueTiming;
+    private bool _showQueueErrors = true;
+
+    private string _workerSearch = "";
+    private string? _workerBusyKey;
+    private string? _workerScaleBusyKey;
+    private Guid? _selectedEc2WorkerMachineId;
+    private string _ec2WorkerName = "";
+    private int _ec2CreateSpider;
+    private int _ec2CreateEnum;
+    private int _ec2CreatePortScan;
+    private int _ec2CreateHighValue;
+    private int _ec2CreateTechId;
+    private int _ec2ScaleSpider;
+    private int _ec2ScaleEnum;
+    private int _ec2ScalePortScan;
+    private int _ec2ScaleHighValue;
+    private int _ec2ScaleTechId;
+    private bool _ec2WorkerBusy = true;
+
+    private string _maintenanceApiKey = "";
+    private string _phraseClearTargets = "";
+    private string _phraseClearAssets = "";
+    private string _phraseClearDomain = "";
+    private string _phraseClearDomainRoot = "";
+    private string _phraseClearFiltered = "";
+    private string _filterDeleteKind = "";
+    private string _filterDeleteStatus = "";
+    private string _filterDeleteDiscoveredBy = "";
+    private string _maintenanceMessage = "";
+    private bool _maintenanceBusy;
+
+    private bool _loadingAll = true;
+    private bool _targetsLoading = true;
+    private bool _assetsLoading = true;
+    private bool _queueLoading = true;
+    private bool _snapshotLoading = true;
+    private bool _targetCreateBusy;
+    private bool _targetDepthBusy;
+    private bool _toolRestartBusy;
+    private bool _queueSettingsBusy;
+    private string _statusMessage = "";
+    private string _queueSettingsMessage = "";
+    private DateTimeOffset? _lastLiveEventUtc;
+    private DateTimeOffset? _targetsLoadedAtUtc;
+    private DateTimeOffset? _assetsLoadedAtUtc;
+    private DateTimeOffset? _queueLoadedAtUtc;
+    private DateTimeOffset? _snapshotLoadedAtUtc;
+
+    private int _queueGlobalRequestsPerMinute = 120;
+    private int _queuePerDomainRequestsPerMinute = 6;
+    private int _queueMaxConcurrency = 8;
+    private int _queueRequestTimeoutSeconds = 30;
+    private int _targetBulkMaxDepth = 12;
+
+    private Density _radzenDensity = Density.Compact;
+
+    private IEnumerable<TargetSummary> RadzenTargets =>
+        _targets.Where(t =>
+            GridTextFilter.Matches(t.RootDomain, _targetSearch)
+            || GridTextFilter.Matches(t.Id.ToString(), _targetSearch)
+            || GridTextFilter.Matches(t.GlobalMaxDepth.ToString(CultureInfo.InvariantCulture), _targetSearch)
+            || GridTextFilter.Matches(t.SubdomainCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
+            || GridTextFilter.Matches(t.ConfirmedUrlCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
+            || GridTextFilter.Matches(t.ConfirmedAssetCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
+            || GridTextFilter.Matches(t.QueuedAssetCount.ToString(CultureInfo.InvariantCulture), _targetSearch)
+            || GridTextFilter.Matches(FormatOpsTime(t.LastRunAtUtc), _targetSearch));
+
+    private IEnumerable<AssetGridRowDto> RadzenAssets =>
+        _assets.Where(a =>
+            GridTextFilter.Matches(a.Kind, _filterAssets)
+            || GridTextFilter.Matches(a.LifecycleStatus, _filterAssets)
+            || GridTextFilter.Matches(a.RawValue, _filterAssets)
+            || GridTextFilter.Matches(a.FinalUrl, _filterAssets)
+            || GridTextFilter.Matches(a.CanonicalKey, _filterAssets)
+            || GridTextFilter.Matches(a.DisplayName, _filterAssets)
+            || GridTextFilter.Matches(a.Category, _filterAssets)
+            || GridTextFilter.Matches(a.DiscoveredBy, _filterAssets)
+            || GridTextFilter.Matches(a.DiscoveryContext, _filterAssets))
+        .Where(a => GridTextFilter.Matches(a.Kind, _filterKindCol))
+        .Where(a => GridTextFilter.Matches(a.LifecycleStatus, _filterStatusCol))
+        .Where(a => GridTextFilter.Matches(a.RawValue, _filterRawCol) || GridTextFilter.Matches(a.FinalUrl, _filterRawCol) || GridTextFilter.Matches(a.CanonicalKey, _filterRawCol))
+        .Where(a => GridTextFilter.Matches(a.DiscoveredBy, _filterPipelineCol))
+        .Where(a => GridTextFilter.Matches(a.DiscoveryContext, _filterHowFoundCol));
+
+    private IEnumerable<HttpRequestQueueRowDto> RadzenRequestQueue =>
+        _requestQueue.Where(q =>
+            GridTextFilter.Matches(q.RequestUrl, _filterQueueSearch)
+            || GridTextFilter.Matches(q.DomainKey, _filterQueueSearch)
+            || GridTextFilter.Matches(q.State, _filterQueueSearch)
+            || GridTextFilter.Matches(q.FinalUrl, _filterQueueSearch)
+            || GridTextFilter.Matches(q.LockedBy, _filterQueueSearch)
+            || GridTextFilter.Matches(q.RequestHeadersJson, _filterQueueSearch)
+            || GridTextFilter.Matches(q.RequestBody, _filterQueueSearch)
+            || GridTextFilter.Matches(q.ResponseHeadersJson, _filterQueueSearch)
+            || GridTextFilter.Matches(q.ResponseBody, _filterQueueSearch)
+            || GridTextFilter.Matches(q.LastHttpStatus?.ToString(CultureInfo.InvariantCulture), _filterQueueSearch)
+            || GridTextFilter.Matches(q.LastError, _filterQueueSearch))
+        .Where(q => GridTextFilter.Matches(q.AssetKind, _filterQueueKindCol))
+        .Where(q => GridTextFilter.Matches(q.RequestUrl, _filterQueueRawCol) || GridTextFilter.Matches(q.DomainKey, _filterQueueRawCol))
+        .Where(q => GridTextFilter.Matches(q.State, _filterQueuePipelineCol));
+
+    private IEnumerable<WorkerKindSummaryDto> RadzenWorkers =>
+        _workerSummaries
+            .Where(w =>
+                GridTextFilter.Matches(w.WorkerKey, _workerSearch)
+                || GridTextFilter.Matches(w.RollupActivityLabel, _workerSearch)
+                || GridTextFilter.Matches(FormatOpsTime(w.LastActivityUtc), _workerSearch));
+
+    private int ActiveEc2WorkerMachineCount =>
+        _ec2WorkerMachines.Count(m => Ec2WorkerMachineIsActive(m.AwsState));
+
+    private bool CanCreateEc2WorkerMachine =>
+        !_ec2WorkerBusy && ActiveEc2WorkerMachineCount < 2;
+
+    private Ec2WorkerMachineDto? SelectedEc2WorkerMachine =>
+        _selectedEc2WorkerMachineId is null
+            ? null
+            : _ec2WorkerMachines.FirstOrDefault(m => m.Id == _selectedEc2WorkerMachineId.Value);
+
+    private string LiveStateCss => Realtime.IsConnected ? "connected" : "disconnected";
+    private string LiveStatusText => Realtime.IsConnected
+        ? "Subscribed to command-center events"
+        : "Live updates disconnected";
+
+    private string QueueToggleButtonClass => _queueSettings?.Enabled == true ? "btn danger" : "btn primary";
+
+    private string ColumnTitle(string key, string defaultTitle) =>
+        _columnTitles.TryGetValue(key, out var title) && !string.IsNullOrWhiteSpace(title)
+            ? title
+            : defaultTitle;
+
+    private void SetColumnTitle(string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            _columnTitles.Remove(key);
+        else
+            _columnTitles[key] = value.Trim();
+
+        StateHasChanged();
+    }
+
+    private static string WorkerBadgeClass(WorkerKindSummaryDto worker) =>
+        worker.ToggleEnabled ? "badge badge-green" : "badge badge-gray";
+
+    private WorkerScaleTargetDto? WorkerScaleFor(string workerKey) =>
+        _workerScaleTargets.FirstOrDefault(s => string.Equals(s.WorkerKey, workerKey, StringComparison.Ordinal));
+
+    private int WorkerScaleInput(string workerKey)
+    {
+        if (_workerScaleInputs.TryGetValue(workerKey, out var value))
+            return value;
+
+        var scale = WorkerScaleFor(workerKey);
+        return Math.Max(0, scale?.ManualDesiredCount ?? scale?.DesiredCount ?? scale?.RunningCount ?? 0);
+    }
+
+    private bool WorkerScaleBusy(string workerKey)
+    {
+        var scale = WorkerScaleFor(workerKey);
+        return string.Equals(_workerScaleBusyKey, workerKey, StringComparison.Ordinal)
+            || (scale is not null && string.Equals(_workerScaleBusyKey, scale.ScaleKey, StringComparison.Ordinal));
+    }
+
+    private static string WorkerScaleSummary(WorkerScaleTargetDto scale)
+    {
+        var desired = scale.DesiredCount?.ToString(CultureInfo.InvariantCulture) ?? "?";
+        var running = scale.RunningCount?.ToString(CultureInfo.InvariantCulture) ?? "?";
+        var pending = scale.PendingCount?.ToString(CultureInfo.InvariantCulture) ?? "?";
+        var manual = scale.ManualDesiredCount is null
+            ? "auto"
+            : $"manual {scale.ManualDesiredCount.Value.ToString(CultureInfo.InvariantCulture)}";
+        return $"{manual}; ECS desired {desired}, running {running}, pending {pending}";
+    }
+
+    private static string Ec2WorkerCountsSummary(Ec2WorkerCountsDto counts) =>
+        $"spider {counts.Spider.ToString(CultureInfo.InvariantCulture)}, enum {counts.Enum.ToString(CultureInfo.InvariantCulture)}, port {counts.PortScan.ToString(CultureInfo.InvariantCulture)}, high {counts.HighValue.ToString(CultureInfo.InvariantCulture)}, tech {counts.TechnologyIdentification.ToString(CultureInfo.InvariantCulture)}";
+
+    private bool HasLoadedAnyWorkspaceData =>
+        _targetsLoadedAtUtc is not null
+        || _assetsLoadedAtUtc is not null
+        || _queueLoadedAtUtc is not null
+        || _snapshotLoadedAtUtc is not null;
+
+    private static bool Ec2WorkerMachineIsActive(string? state) =>
+        !string.Equals(state, "terminated", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(state, "terminating", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(state, "shutting-down", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(state, "error", StringComparison.OrdinalIgnoreCase);
+
+    private static string Ec2WorkerStateBadgeClass(Ec2WorkerMachineDto machine) =>
+        string.Equals(machine.AwsState, "running", StringComparison.OrdinalIgnoreCase)
+            ? "badge badge-green"
+            : Ec2WorkerMachineIsActive(machine.AwsState)
+                ? "badge badge-gray"
+                : "badge badge-red";
+
+    protected override Task OnInitializedAsync()
+    {
+        Realtime.DomainEventReceived += OnRealtimeEvent;
+        Realtime.ConnectionStateChanged += OnRealtimeConnectionChanged;
+
+        return Task.CompletedTask;
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialLoadStarted)
+        {
+            _initialLoadStarted = true;
+            _ = InvokeAsync(LoadInitialWorkspaceAsync);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadInitialWorkspaceAsync()
+    {
+        try
+        {
+            await ReloadAllAsync();
+            if (!_pollCts.IsCancellationRequested)
+                await StartRealtimeAsync();
+        }
+        catch (OperationCanceledException) when (_pollCts.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Could not load operations workspace: {ex.Message}";
+        }
+        finally
+        {
+            if (!_pollCts.IsCancellationRequested)
+                await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task StartRealtimeAsync()
+    {
+        try
+        {
+            await Realtime.EnsureStartedAsync(_pollCts.Token);
+            if (Guid.TryParse(_targetFilter, out var targetId))
+                await Realtime.SubscribeTargetAsync(targetId, _pollCts.Token);
+            _statusMessage = "";
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Live updates are unavailable: {ex.Message}";
+        }
+    }
+
+    private void OnRealtimeConnectionChanged(object? sender, EventArgs e)
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _lastLiveEventUtc = DateTimeOffset.UtcNow;
+            ScheduleLiveReload(evt);
+            StateHasChanged();
+        });
+    }
+
+    private void ScheduleLiveReload(LiveUiEventDto evt)
+    {
+        // Accumulate which data scopes have changed.
+        _dirtyScopes.Add(evt.Scope);
+        _firstDirtyAtUtc ??= DateTimeOffset.UtcNow;
+
+        _liveReloadCts?.Cancel();
+        _liveReloadCts?.Dispose();
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(_pollCts.Token);
+        _liveReloadCts = cts;
+
+        // Use a short debounce, but force-fire if we've been accumulating for too long (2s max).
+        var age = DateTimeOffset.UtcNow - _firstDirtyAtUtc.Value;
+        var delay = age.TotalMilliseconds > 2000 ? 0 : 250;
+
+        _ = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    if (delay > 0)
+                        await Task.Delay(delay, cts.Token);
+                    await InvokeAsync(async () =>
+                    {
+                        await FlushDirtyScopesAsync();
+                        StateHasChanged();
+                    });
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            },
+            CancellationToken.None);
+    }
+
+    private async Task FlushDirtyScopesAsync()
+    {
+        // Snapshot and clear the dirty set so new events can accumulate fresh.
+        var scopes = _dirtyScopes.ToArray();
+        _dirtyScopes.Clear();
+        _firstDirtyAtUtc = null;
+
+        var needTargets = scopes.Contains("targets");
+        var needAssets = scopes.Contains("assets") || needTargets;
+        var needHttp = scopes.Contains("http") || needTargets;
+
+        if (needTargets)
+            await ReloadTargetsAsync();
+
+        if (needAssets)
+            await ReloadAssetsAsync();
+
+        if (needHttp)
+        {
+            await ReloadHttpQueueAsync();
+            await ReloadHttpQueueMetricsAsync();
+        }
+
+        // Always refresh overview/metrics on any event.
+        await ReloadVolatileAsync();
+    }
+
+    private async Task ReloadAllAsync()
+    {
+        _loadingAll = true;
+        _statusMessage = "";
+        try
+        {
+            await ReloadTargetsAsync();
+            await NotifyLoadProgressAsync();
+            await ReloadTargetScopedAsync();
+            await NotifyLoadProgressAsync();
+            await ReloadHttpQueueSettingsAsync();
+            await NotifyLoadProgressAsync();
+            await ReloadVolatileAsync();
+            await NotifyLoadProgressAsync();
+            await ReloadMaintenanceStatusAsync();
+            await NotifyLoadProgressAsync();
+        }
+        finally
+        {
+            _loadingAll = false;
+        }
+    }
+
+    private Task NotifyLoadProgressAsync() =>
+        _pollCts.IsCancellationRequested ? Task.CompletedTask : InvokeAsync(StateHasChanged);
+
+    private async Task ReloadVolatileAsync()
+    {
+        _snapshotLoading = true;
+        try
+        {
+            try
+            {
+                var overview = await Http.GetFromJsonAsync<OpsOverviewDto>("/api/ops/overview");
+                if (overview is not null)
+                    _overview = overview;
+            }
+            catch
+            {
+                // keep last good overview
+            }
+
+            try
+            {
+                _snapshot = await Http.GetFromJsonAsync<OpsSnapshotDto>("/api/ops/snapshot");
+                ApplySnapshotRows();
+            }
+            catch
+            {
+                // Keep the last good snapshot and fall back to focused endpoints.
+            }
+
+            await ReloadWorkerRowsAsync();
+            await ReloadWorkerScaleAsync();
+            await ReloadEc2WorkerMachinesAsync();
+            await ReloadHttpQueueMetricsAsync();
+            _snapshotLoadedAtUtc = DateTimeOffset.UtcNow;
+        }
+        finally
+        {
+            _snapshotLoading = false;
+        }
+    }
+
+    private void ApplySnapshotRows()
+    {
+        if (_snapshot is null)
+            return;
+
+        _workerSummaries.Clear();
+        _workerSummaries.AddRange(_snapshot.Activity.WorkerSummaries);
+
+    }
+
+    private async Task ReloadWorkerRowsAsync()
+    {
+        if (_workerSummaries.Count > 0)
+            return;
+
+        try
+        {
+            var activity = await Http.GetFromJsonAsync<WorkerActivitySnapshotDto>("/api/workers/activity");
+            if (activity is not null)
+            {
+                _workerSummaries.Clear();
+                _workerSummaries.AddRange(activity.WorkerSummaries);
+                return;
+            }
+        }
+        catch
+        {
+            // Fall back to configured worker switches below.
+        }
+
+        try
+        {
+            var switches = await Http.GetFromJsonAsync<List<WorkerSwitchDto>>("/api/workers");
+            if (switches is not null)
+            {
+                _workerSummaries.Clear();
+                _workerSummaries.AddRange(
+                    switches.Select(w => new WorkerKindSummaryDto(
+                        w.WorkerKey,
+                        w.IsEnabled,
+                        0,
+                        null,
+                        "No journal data loaded")));
+            }
+        }
+        catch
+        {
+            // Keep last good rows.
+        }
+    }
+
+    private async Task ReloadWorkerScaleAsync()
+    {
+        try
+        {
+            var scale = await Http.GetFromJsonAsync<List<WorkerScaleTargetDto>>("/api/workers/scale").ConfigureAwait(false);
+            _workerScaleTargets.Clear();
+            if (scale is not null)
+            {
+                _workerScaleTargets.AddRange(scale);
+                foreach (var row in scale)
+                    _workerScaleInputs[row.WorkerKey] = Math.Max(0, row.ManualDesiredCount ?? row.DesiredCount ?? row.RunningCount ?? 0);
+            }
+        }
+        catch
+        {
+            _workerScaleTargets.Clear();
+        }
+    }
+
+    private async Task ReloadEc2WorkerMachinesAsync()
+    {
+        _ec2WorkerBusy = true;
+        try
+        {
+            var machines = await Http.GetFromJsonAsync<List<Ec2WorkerMachineDto>>("/api/ec2-workers/machines").ConfigureAwait(false);
+            _ec2WorkerMachines.Clear();
+            if (machines is null)
+                return;
+
+            _ec2WorkerMachines.AddRange(machines);
+            if (_selectedEc2WorkerMachineId is null || _ec2WorkerMachines.All(m => m.Id != _selectedEc2WorkerMachineId.Value))
+                _selectedEc2WorkerMachineId = _ec2WorkerMachines.FirstOrDefault(m => Ec2WorkerMachineIsActive(m.AwsState))?.Id
+                    ?? _ec2WorkerMachines.FirstOrDefault()?.Id;
+
+            if (SelectedEc2WorkerMachine is { } selected)
+                ApplyEc2ScaleInputs(selected.Workers);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Could not load EC2 worker machines: {ex.Message}";
+            _ec2WorkerMachines.Clear();
+        }
+        finally
+        {
+            _ec2WorkerBusy = false;
+        }
+    }
+
+    private async Task CreateEc2WorkerMachineAsync()
+    {
+        if (!CanCreateEc2WorkerMachine)
+        {
+            _statusMessage = "EC2 workers are limited to two active machines.";
+            return;
+        }
+
+        _ec2WorkerBusy = true;
+        _statusMessage = "";
+        try
+        {
+            var request = new Ec2WorkerMachineCreateRequest(
+                _ec2WorkerName,
+                CreateEc2WorkerCounts(_ec2CreateSpider, _ec2CreateEnum, _ec2CreatePortScan, _ec2CreateHighValue, _ec2CreateTechId));
+            var response = await Http.PostAsJsonAsync("/api/ec2-workers/machines", request).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "EC2 worker machine could not be created.").ConfigureAwait(false);
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<Ec2WorkerMachineMutationResult>().ConfigureAwait(false);
+            if (result is not null)
+            {
+                _selectedEc2WorkerMachineId = result.Machine.Id;
+                ApplyEc2ScaleInputs(result.Machine.Workers);
+                _statusMessage = result.Message;
+            }
+            else
+            {
+                _statusMessage = "EC2 worker machine requested.";
+            }
+
+            _ec2WorkerName = "";
+            await ReloadEc2WorkerMachinesAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"EC2 worker create failed: {ex.Message}";
+        }
+        finally
+        {
+            _ec2WorkerBusy = false;
+        }
+    }
+
+    private void SelectEc2WorkerMachine(Ec2WorkerMachineDto machine)
+    {
+        _selectedEc2WorkerMachineId = machine.Id;
+        ApplyEc2ScaleInputs(machine.Workers);
+        _statusMessage = "";
+    }
+
+    private void ApplyEc2ScaleInputs(Ec2WorkerCountsDto counts)
+    {
+        _ec2ScaleSpider = Math.Max(0, counts.Spider);
+        _ec2ScaleEnum = Math.Max(0, counts.Enum);
+        _ec2ScalePortScan = Math.Max(0, counts.PortScan);
+        _ec2ScaleHighValue = Math.Max(0, counts.HighValue);
+        _ec2ScaleTechId = Math.Max(0, counts.TechnologyIdentification);
+    }
+
+    private static Ec2WorkerCountsDto CreateEc2WorkerCounts(
+        int spider,
+        int enumWorkers,
+        int portScan,
+        int highValue,
+        int technologyIdentification) =>
+        new(
+            Math.Max(0, spider),
+            Math.Max(0, enumWorkers),
+            Math.Max(0, portScan),
+            Math.Max(0, highValue),
+            Math.Max(0, technologyIdentification));
+
+    private async Task ScaleSelectedEc2WorkerMachineAsync()
+    {
+        var machine = SelectedEc2WorkerMachine;
+        if (machine is null)
+        {
+            _statusMessage = "Select an EC2 worker machine first.";
+            return;
+        }
+
+        _ec2WorkerBusy = true;
+        _statusMessage = "";
+        try
+        {
+            var request = new Ec2WorkerMachineScaleRequest(
+                CreateEc2WorkerCounts(_ec2ScaleSpider, _ec2ScaleEnum, _ec2ScalePortScan, _ec2ScaleHighValue, _ec2ScaleTechId));
+            var response = await Http.PutAsJsonAsync($"/api/ec2-workers/machines/{machine.Id}/scale", request).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "EC2 worker machine could not be scaled.").ConfigureAwait(false);
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<Ec2WorkerMachineMutationResult>().ConfigureAwait(false);
+            _statusMessage = result?.Message ?? "EC2 worker scale command sent.";
+            await ReloadEc2WorkerMachinesAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"EC2 worker scale failed: {ex.Message}";
+        }
+        finally
+        {
+            _ec2WorkerBusy = false;
+        }
+    }
+
+    private async Task RemoveEc2WorkerMachineAsync(Ec2WorkerMachineDto machine)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", $"Terminate EC2 worker machine {machine.Name}?");
+        if (!ok)
+            return;
+
+        _ec2WorkerBusy = true;
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/ec2-workers/machines/{machine.Id}").ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "EC2 worker machine could not be removed.").ConfigureAwait(false);
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<Ec2WorkerMachineMutationResult>().ConfigureAwait(false);
+            _statusMessage = result?.Message ?? "EC2 worker machine termination requested.";
+            if (_selectedEc2WorkerMachineId == machine.Id)
+                _selectedEc2WorkerMachineId = null;
+            await ReloadEc2WorkerMachinesAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"EC2 worker remove failed: {ex.Message}";
+        }
+        finally
+        {
+            _ec2WorkerBusy = false;
+        }
+    }
+
+    private async Task ReloadTargetsAsync()
+    {
+        _targetsLoading = true;
+        try
+        {
+            var targets = await Http.GetFromJsonAsync<List<TargetSummary>>("/api/targets");
+            _targets.Clear();
+            if (targets is not null)
+                _targets.AddRange(targets);
+
+            _targetsLoadedAtUtc = DateTimeOffset.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Could not load targets: {ex.Message}";
+            _targets.Clear();
+        }
+        finally
+        {
+            _targetsLoading = false;
+        }
+    }
+
+    private async Task ReloadMaintenanceStatusAsync()
+    {
+        try
+        {
+            _maintenanceStatus = await Http.GetFromJsonAsync<MaintenanceStatusDto>("/api/maintenance/status");
+        }
+        catch
+        {
+            _maintenanceStatus = null;
+        }
+    }
+
+    private async Task ReloadTargetScopedAsync()
+    {
+        if (Guid.TryParse(_targetFilter, out var targetId))
+        {
+            try
+            {
+                await Realtime.SubscribeTargetAsync(targetId, _pollCts.Token);
+            }
+            catch
+            {
+            }
+        }
+
+        await ReloadAssetsAsync();
+        await ReloadHttpQueueAsync();
+    }
+
+    private async Task ReloadAssetsAsync()
+    {
+        _assetsLoading = true;
+        try
+        {
+            var endpoint = string.IsNullOrEmpty(_targetFilter)
+                ? "/api/assets"
+                : $"/api/assets?targetId={Uri.EscapeDataString(_targetFilter)}";
+            var list = await Http.GetFromJsonAsync<List<AssetGridRowDto>>(endpoint);
+            _assets.Clear();
+            if (list is not null)
+                _assets.AddRange(list);
+
+            _assetGridVersion++;
+            if (_assetGrid is not null)
+                await _assetGrid.Reload();
+
+            _assetsLoadedAtUtc = DateTimeOffset.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Could not load assets: {ex.Message}";
+            _assets.Clear();
+        }
+        finally
+        {
+            _assetsLoading = false;
+        }
+    }
+
+    private async Task ReloadHttpQueueAsync()
+    {
+        _queueLoading = true;
+        try
+        {
+            var qs = string.IsNullOrEmpty(_targetFilter)
+                ? "?state=Queued"
+                : $"?targetId={Uri.EscapeDataString(_targetFilter)}&state=Queued";
+            var list = await Http.GetFromJsonAsync<List<HttpRequestQueueRowDto>>($"/api/http-request-queue{qs}");
+            _requestQueue.Clear();
+            if (list is not null)
+                _requestQueue.AddRange(list);
+
+            _queueGridVersion++;
+            if (_queueGrid is not null)
+                await _queueGrid.Reload();
+
+            _queueLoadedAtUtc = DateTimeOffset.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Could not load HTTP queue: {ex.Message}";
+            _requestQueue.Clear();
+        }
+        finally
+        {
+            _queueLoading = false;
+        }
+    }
+
+    private async Task ReloadHttpQueueMetricsAsync()
+    {
+        try
+        {
+            _queueMetrics = await Http.GetFromJsonAsync<HttpRequestQueueMetricsDto>("/api/http-request-queue/metrics");
+        }
+        catch
+        {
+            _queueMetrics = null;
+        }
+    }
+
+    private async Task ReloadHttpQueueSettingsAsync()
+    {
+        try
+        {
+            _queueSettings = await Http.GetFromJsonAsync<HttpRequestQueueSettingsDto>("/api/http-request-queue/settings");
+            if (_queueSettings is not null)
+            {
+                _queueGlobalRequestsPerMinute = _queueSettings.GlobalRequestsPerMinute;
+                _queuePerDomainRequestsPerMinute = _queueSettings.PerDomainRequestsPerMinute;
+                _queueMaxConcurrency = _queueSettings.MaxConcurrency;
+                _queueRequestTimeoutSeconds = _queueSettings.RequestTimeoutSeconds;
+            }
+        }
+        catch
+        {
+            _queueSettings = null;
+        }
+    }
+
+    private void ToggleToolTarget(Guid id, ChangeEventArgs e)
+    {
+        if (e.Value is bool selected && selected)
+            _selectedToolTargetIds.Add(id);
+        else
+            _selectedToolTargetIds.Remove(id);
+
+        StateHasChanged();
+    }
+
+    private void ClearToolTargetSelection()
+    {
+        _selectedToolTargetIds.Clear();
+        StateHasChanged();
+    }
+
+    private async Task UpdateTargetMaxDepthAsync(bool allTargets)
+    {
+        if (_targetBulkMaxDepth <= 0)
+        {
+            _statusMessage = "Max depth must be greater than zero.";
+            return;
+        }
+
+        if (!allTargets && SelectedToolTargetCount == 0)
+        {
+            _statusMessage = "Select at least one target first.";
+            return;
+        }
+
+        var targetCount = allTargets ? _targets.Count : SelectedToolTargetCount;
+        var scope = allTargets ? "all targets" : $"{targetCount} selected targets";
+        var ok = await Js.InvokeAsync<bool>("confirm", $"Set max depth to {_targetBulkMaxDepth} for {scope}?");
+        if (!ok)
+            return;
+
+        _targetDepthBusy = true;
+        _statusMessage = "";
+        try
+        {
+            var ids = allTargets ? null : _selectedToolTargetIds.ToArray();
+            var response = await Http.PutAsJsonAsync(
+                    "/api/targets/max-depth",
+                    new UpdateTargetMaxDepthRequest(_targetBulkMaxDepth, ids, allTargets))
+                .ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.BadRequest)
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "Max depth could not be updated.").ConfigureAwait(false);
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var result = await response.Content.ReadFromJsonAsync<UpdateTargetMaxDepthResult>().ConfigureAwait(false);
+            if (!allTargets)
+                _selectedToolTargetIds.Clear();
+            _statusMessage = result is null
+                ? "Max depth updated."
+                : $"Updated {result.Updated} targets to max depth {result.GlobalMaxDepth}.";
+            await ReloadTargetsAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Max depth update failed: {ex.Message}";
+        }
+        finally
+        {
+            _targetDepthBusy = false;
+        }
+    }
+
+    private async Task RestartEnumAsync(bool allTargets)
+    {
+        await RestartToolAsync("/api/ops/subdomain-enum/restart", allTargets, "Subdomain enumeration restart queued.").ConfigureAwait(false);
+    }
+
+    private async Task RestartSpiderAsync(bool allTargets)
+    {
+        await RestartToolAsync("/api/ops/spider/restart", allTargets, "Spider restart queued.").ConfigureAwait(false);
+    }
+
+    private async Task RestartToolAsync(string endpoint, bool allTargets, string successMessage)
+    {
+        if (_toolRestartBusy)
+            return;
+        if (!allTargets && SelectedToolTargetCount == 0)
+            return;
+
+        _toolRestartBusy = true;
+        try
+        {
+            var ids = allTargets ? null : _selectedToolTargetIds.Select(id => id.ToString()).ToArray();
+            var response = await Http.PostAsJsonAsync(endpoint, new RestartToolRequest(ids, allTargets)).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+            {
+                if (!allTargets)
+                    _selectedToolTargetIds.Clear();
+                _statusMessage = successMessage;
+                await ReloadVolatileAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                _statusMessage = $"Tool restart failed: {(int)response.StatusCode} {response.ReasonPhrase}";
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Tool restart failed: {ex.Message}";
+        }
+        finally
+        {
+            _toolRestartBusy = false;
+        }
+    }
+
+    private async Task CreateTargetAsync()
+    {
+        if (_targetCreateBusy)
+            return;
+
+        _targetCreateBusy = true;
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.PostAsJsonAsync("/api/targets", new CreateTargetRequest(TargetCreateForm.RootDomain, TargetCreateForm.GlobalMaxDepth));
+            if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict)
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "Target could not be created.");
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            _statusMessage = "Target queued.";
+            _targetCreateForm = new TargetForm { GlobalMaxDepth = TargetCreateForm.GlobalMaxDepth > 0 ? TargetCreateForm.GlobalMaxDepth : 12 };
+            await ReloadTargetsAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = ex.Message;
+        }
+        finally
+        {
+            _targetCreateBusy = false;
+        }
+    }
+
+    private void StartTargetEdit(TargetSummary row)
+    {
+        _targetEditing = new TargetEditForm(row.Id, row.RootDomain, row.GlobalMaxDepth);
+        _statusMessage = "";
+    }
+
+    private void CancelTargetEdit() => _targetEditing = null;
+
+    private async Task SaveTargetEditAsync()
+    {
+        if (_targetEditing is null)
+            return;
+
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.PutAsJsonAsync($"/api/targets/{_targetEditing.Id}", new UpdateTargetRequest(_targetEditing.RootDomain, _targetEditing.GlobalMaxDepth));
+            if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "Root domain is already in use.");
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            _targetEditing = null;
+            _statusMessage = "Target updated.";
+            await ReloadTargetsAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = ex.Message;
+        }
+    }
+
+    private async Task DeleteTargetAsync(TargetSummary row)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", $"Delete target {row.RootDomain}? Related assets and findings are removed with the target.");
+        if (!ok)
+            return;
+
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/targets/{row.Id}");
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                _statusMessage = "Target was already removed.";
+                await ReloadTargetsAsync();
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+            if (_targetEditing?.Id == row.Id)
+                _targetEditing = null;
+            if (_targetFilter == row.Id.ToString())
+                _targetFilter = "";
+            _statusMessage = "Target deleted.";
+            await ReloadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = ex.Message;
+        }
+    }
+
+    private async Task SetWorkerEnabledAsync(string workerKey, bool enabled)
+    {
+        _workerBusyKey = workerKey;
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.PutAsJsonAsync($"/api/workers/{Uri.EscapeDataString(workerKey)}", new WorkerPatchRequest(enabled));
+            response.EnsureSuccessStatusCode();
+            await ReloadVolatileAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = ex.Message;
+        }
+        finally
+        {
+            _workerBusyKey = null;
+        }
+    }
+
+    private void SetWorkerScaleInput(string workerKey, string? raw)
+    {
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var desired))
+            return;
+
+        _workerScaleInputs[workerKey] = Math.Max(0, desired);
+    }
+
+    private Task ChangeWorkerScaleAsync(string workerKey, int delta)
+    {
+        var desired = Math.Max(0, WorkerScaleInput(workerKey) + delta);
+        _workerScaleInputs[workerKey] = desired;
+        return SetWorkerScaleAsync(workerKey, desired);
+    }
+
+    private Task ApplyWorkerScaleInputAsync(string workerKey) =>
+        SetWorkerScaleAsync(workerKey, WorkerScaleInput(workerKey));
+
+    private async Task SetWorkerScaleAsync(string workerKey, int desiredCount)
+    {
+        var scale = WorkerScaleFor(workerKey);
+        if (scale is null)
+        {
+            _statusMessage = $"{workerKey} does not map to a scalable ECS worker service.";
+            return;
+        }
+
+        _workerScaleBusyKey = scale.ScaleKey;
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.PutAsJsonAsync(
+                    $"/api/workers/{Uri.EscapeDataString(workerKey)}/scale",
+                    new WorkerScalePatchRequest(Math.Max(0, desiredCount)))
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            var result = await response.Content.ReadFromJsonAsync<WorkerScaleUpdateResult>().ConfigureAwait(false);
+            _statusMessage = result?.Message ?? $"{scale.ScaleKey} desired count updated.";
+            await ReloadWorkerScaleAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = ex.Message;
+        }
+        finally
+        {
+            _workerScaleBusyKey = null;
+        }
+    }
+
+    private async Task ToggleHttpQueueAsync()
+    {
+        if (_queueSettings is null)
+            return;
+
+        _queueSettingsBusy = true;
+        try
+        {
+            await SaveHttpQueueSettingsCoreAsync(!_queueSettings.Enabled);
+        }
+        finally
+        {
+            _queueSettingsBusy = false;
+        }
+    }
+
+    private async Task SaveHttpQueueSettingsAsync()
+    {
+        if (_queueSettings is null)
+            return;
+
+        _queueSettingsBusy = true;
+        try
+        {
+            await SaveHttpQueueSettingsCoreAsync(_queueSettings.Enabled);
+        }
+        finally
+        {
+            _queueSettingsBusy = false;
+        }
+    }
+
+    private async Task SaveHttpQueueSettingsCoreAsync(bool enabled)
+    {
+        _queueSettingsMessage = "";
+        var body = new HttpRequestQueueSettingsPatch(
+            enabled,
+            _queueGlobalRequestsPerMinute,
+            _queuePerDomainRequestsPerMinute,
+            _queueMaxConcurrency,
+            _queueRequestTimeoutSeconds);
+        var resp = await Http.PutAsJsonAsync("/api/http-request-queue/settings", body);
+        if (resp.IsSuccessStatusCode)
+        {
+            _queueSettingsMessage = "Saved.";
+            await ReloadHttpQueueSettingsAsync();
+        }
+        else
+        {
+            var txt = await resp.Content.ReadAsStringAsync();
+            _queueSettingsMessage = $"Save failed ({(int)resp.StatusCode}): {txt}";
+        }
+    }
+
+    private void ClearTargetFilters()
+    {
+        _targetSearch = "";
+    }
+
+    private void ClearAssetFilters()
+    {
+        _filterAssets = "";
+        _filterKindCol = "";
+        _filterStatusCol = "";
+        _filterRawCol = "";
+        _filterPipelineCol = "";
+        _filterHowFoundCol = "";
+    }
+
+    private void ClearQueueFilters()
+    {
+        _filterQueueSearch = "";
+        _filterQueueKindCol = "";
+        _filterQueueRawCol = "";
+        _filterQueuePipelineCol = "";
+    }
+
+    private async Task<HttpResponseMessage> MaintenancePostAsync<T>(string relativeUri, T body)
+    {
+        using var msg = new HttpRequestMessage(HttpMethod.Post, relativeUri);
+        var key = _maintenanceApiKey.Trim();
+        if (!string.IsNullOrEmpty(key))
+            msg.Headers.TryAddWithoutValidation("X-Nightmare-Maintenance-Key", key);
+        msg.Content = JsonContent.Create(body);
+        return await Http.SendAsync(msg);
+    }
+
+    private async Task ClearAllTargetsAsync()
+    {
+        _maintenanceBusy = true;
+        _maintenanceMessage = "";
+        try
+        {
+            var resp = await MaintenancePostAsync(
+                "/api/maintenance/clear-all-targets",
+                new MaintenancePhraseBody(_phraseClearTargets.Trim()));
+            var txt = await resp.Content.ReadAsStringAsync();
+            _maintenanceMessage = resp.IsSuccessStatusCode ? $"Deleted targets: {txt}" : $"Delete targets failed ({(int)resp.StatusCode}): {txt}";
+            if (resp.IsSuccessStatusCode)
+                await ReloadAllAsync();
+        }
+        finally
+        {
+            _maintenanceBusy = false;
+        }
+    }
+
+    private async Task ClearAllAssetsAsync()
+    {
+        _maintenanceBusy = true;
+        _maintenanceMessage = "";
+        try
+        {
+            var resp = await MaintenancePostAsync(
+                "/api/maintenance/clear-all-assets",
+                new MaintenancePhraseBody(_phraseClearAssets.Trim()));
+            var txt = await resp.Content.ReadAsStringAsync();
+            _maintenanceMessage = resp.IsSuccessStatusCode ? $"Deleted assets: {txt}" : $"Delete assets failed ({(int)resp.StatusCode}): {txt}";
+            if (resp.IsSuccessStatusCode)
+                await ReloadAllAsync();
+        }
+        finally
+        {
+            _maintenanceBusy = false;
+        }
+    }
+
+    private async Task ClearAssetsForDomainAsync()
+    {
+        _maintenanceBusy = true;
+        _maintenanceMessage = "";
+        try
+        {
+            var resp = await MaintenancePostAsync(
+                "/api/maintenance/clear-assets-for-domain",
+                new MaintenanceClearDomainBody(_phraseClearDomainRoot.Trim(), _phraseClearDomain.Trim()));
+            var txt = await resp.Content.ReadAsStringAsync();
+            _maintenanceMessage = resp.IsSuccessStatusCode ? $"Deleted domain assets: {txt}" : $"Delete domain assets failed ({(int)resp.StatusCode}): {txt}";
+            if (resp.IsSuccessStatusCode)
+                await ReloadAllAsync();
+        }
+        finally
+        {
+            _maintenanceBusy = false;
+        }
+    }
+
+    private async Task ClearAssetsFilteredAsync()
+    {
+        _maintenanceBusy = true;
+        _maintenanceMessage = "";
+        try
+        {
+            var body = new MaintenanceClearAssetsFilteredBody(
+                _phraseClearFiltered.Trim(),
+                string.IsNullOrWhiteSpace(_filterDeleteKind) ? null : _filterDeleteKind.Trim(),
+                string.IsNullOrWhiteSpace(_filterDeleteStatus) ? null : _filterDeleteStatus.Trim(),
+                string.IsNullOrWhiteSpace(_filterDeleteDiscoveredBy) ? null : _filterDeleteDiscoveredBy.Trim());
+            var resp = await MaintenancePostAsync("/api/maintenance/clear-assets-filtered", body);
+            var txt = await resp.Content.ReadAsStringAsync();
+            _maintenanceMessage = resp.IsSuccessStatusCode ? $"Deleted filtered assets: {txt}" : $"Delete filtered assets failed ({(int)resp.StatusCode}): {txt}";
+            if (resp.IsSuccessStatusCode)
+                await ReloadAllAsync();
+        }
+        finally
+        {
+            _maintenanceBusy = false;
+        }
+    }
+
+    private static async Task<string> ReadResponseMessageAsync(HttpResponseMessage response, string fallback)
+    {
+        var message = await response.Content.ReadAsStringAsync();
+        return string.IsNullOrWhiteSpace(message) ? fallback : message;
+    }
+
+    private async Task ExportTargetsCsvAsync() =>
+        await ExportCsvAsync(
+            "nightmare-targets.csv",
+            ["Created", "RootDomain", "ConfirmedSubdomainCount", "ConfirmedUrlCount", "ConfirmedAssetCount", "QueuedRequestCount", "GlobalMaxDepth", "LastRunTime"],
+            RadzenTargets.Select(t => new[]
+            {
+                FormatOpsTime(t.CreatedAtUtc),
+                t.RootDomain,
+                t.SubdomainCount.ToString(CultureInfo.InvariantCulture),
+                t.ConfirmedUrlCount.ToString(CultureInfo.InvariantCulture),
+                t.ConfirmedAssetCount.ToString(CultureInfo.InvariantCulture),
+                t.QueuedAssetCount.ToString(CultureInfo.InvariantCulture),
+                t.GlobalMaxDepth.ToString(CultureInfo.InvariantCulture),
+                FormatOpsTime(t.LastRunAtUtc),
+            }));
+
+    private async Task ExportAssetsCsvAsync() =>
+        await ExportCsvAsync(
+            "nightmare-assets-radzen.csv",
+            ["Id", "TargetId", "Kind", "LifecycleStatus", "Depth", "RawValue", "CanonicalKey", "DiscoveredBy", "DiscoveryContext", "Discovered"],
+            RadzenAssets.Select(a => new[]
+            {
+                a.Id.ToString(),
+                a.TargetId.ToString(),
+                a.Kind,
+                a.LifecycleStatus,
+                a.Depth.ToString(CultureInfo.InvariantCulture),
+                a.RawValue,
+                a.CanonicalKey,
+                a.DiscoveredBy,
+                a.DiscoveryContext,
+                FormatOpsTime(a.DiscoveredAtUtc),
+            }));
+
+    private async Task ExportQueueCsvAsync() =>
+        await ExportCsvAsync(
+            "nightmare-http-queue-radzen.csv",
+            ["Id", "AssetId", "TargetId", "State", "Method", "RequestUrl", "DomainKey", "AttemptCount", "LastHttpStatus", "DurationMs", "LastError", "Created", "Updated"],
+            RadzenRequestQueue.Select(q => new[]
+            {
+                q.Id.ToString(),
+                q.AssetId.ToString(),
+                q.TargetId.ToString(),
+                q.State,
+                q.Method,
+                q.RequestUrl,
+                q.DomainKey,
+                q.AttemptCount.ToString(CultureInfo.InvariantCulture),
+                q.LastHttpStatus?.ToString(CultureInfo.InvariantCulture),
+                q.DurationMs?.ToString(CultureInfo.InvariantCulture),
+                q.LastError,
+                FormatOpsTime(q.CreatedAtUtc),
+                FormatOpsTime(q.UpdatedAtUtc),
+            }));
+
+    private async Task ExportWorkersCsvAsync() =>
+        await ExportCsvAsync(
+            "nightmare-workers-radzen.csv",
+            ["WorkerKey", "ToggleEnabled", "InstanceCount", "LastActivity", "RollupActivityLabel"],
+            RadzenWorkers.Select(w => new[]
+            {
+                w.WorkerKey,
+                w.ToggleEnabled.ToString(),
+                w.InstanceCount.ToString(CultureInfo.InvariantCulture),
+                FormatOpsTime(w.LastActivityUtc),
+                w.RollupActivityLabel,
+            }));
+
+    private async Task ExportCsvAsync(string fileName, string[] headers, IEnumerable<string?[]> rows)
+    {
+        var csv = BuildCsv(headers, rows);
+        await Js.InvokeVoidAsync("argusUi.downloadTextFile", fileName, csv, "text/csv;charset=utf-8");
+    }
+
+    private static string BuildCsv(string[] headers, IEnumerable<string?[]> rows)
+    {
+        var builder = new System.Text.StringBuilder();
+        builder.AppendLine(string.Join(",", headers.Select(CsvEscape)));
+        foreach (var row in rows)
+            builder.AppendLine(string.Join(",", row.Select(CsvEscape)));
+        return builder.ToString();
+    }
+
+    private static string CsvEscape(string? value)
+    {
+        var s = value ?? "";
+        return s.IndexOfAny([',', '"', '\r', '\n']) < 0
+            ? s
+            : "\"" + s.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    }
+
+    private static string FormatOpsTime(DateTimeOffset? value) =>
+        AppTimeFormat.Format(value);
+
+    private static string FormatOpsTime(DateTimeOffset value) =>
+        AppTimeFormat.Format(value);
+
+    private static string FormatMetricTriple(long? oneMinute, long? oneHour, long? oneDay) =>
+        oneMinute is null || oneHour is null || oneDay is null
+            ? "- / - / -"
+            : $"{oneMinute.Value.ToString("N0", CultureInfo.InvariantCulture)} / {oneHour.Value.ToString("N0", CultureInfo.InvariantCulture)} / {oneDay.Value.ToString("N0", CultureInfo.InvariantCulture)}";
+
+    private static string RootDomainHref(string rootDomain)
+    {
+        var host = rootDomain.Trim();
+        return host.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || host.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? host
+            : $"https://{host}";
+    }
+
+    private static string? ToLiveHref(AssetGridRowDto asset) =>
+        TryHttpHref(asset.FinalUrl) ?? TryHttpHref(asset.RawValue) ?? TryHttpHref(asset.CanonicalKey);
+
+    private static string? ToLiveHref(HttpRequestQueueRowDto row) =>
+        TryHttpHref(row.FinalUrl) ?? TryHttpHref(row.RequestUrl);
+
+    private static string? TryHttpHref(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        return Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
+            ? uri.ToString()
+            : null;
+    }
+
+    public sealed class TargetForm
+    {
+        public string RootDomain { get; set; } = "example.com";
+        public int GlobalMaxDepth { get; set; } = 12;
+    }
+
+    private sealed class TargetEditForm
+    {
+        public TargetEditForm(Guid id, string rootDomain, int globalMaxDepth)
+        {
+            Id = id;
+            RootDomain = rootDomain;
+            GlobalMaxDepth = globalMaxDepth;
+        }
+
+        public Guid Id { get; }
+        public string RootDomain { get; set; }
+        public int GlobalMaxDepth { get; set; }
+    }
+
+    public void Dispose()
+    {
+        Realtime.DomainEventReceived -= OnRealtimeEvent;
+        Realtime.ConnectionStateChanged -= OnRealtimeConnectionChanged;
+        _pollCts.Cancel();
+        _pollCts.Dispose();
+        _liveReloadCts?.Cancel();
+        _liveReloadCts?.Dispose();
+    }
+}

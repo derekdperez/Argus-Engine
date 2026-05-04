@@ -1,7 +1,108 @@
 namespace ArgusEngine.CommandCenter.Models;
 
-public sealed record OpsSummaryDto(
-    DateTimeOffset AtUtc,
+public record RestartToolRequest(string[]? TargetIds, bool AllTargets);
+
+public sealed record WorkerSwitchDto(string WorkerKey, bool IsEnabled, DateTimeOffset UpdatedAtUtc);
+
+public sealed record WorkerPatchRequest(bool Enabled);
+
+public sealed record WorkerScalePatchRequest(int DesiredCount);
+
+public sealed record WorkerScaleTargetDto(
+    string WorkerKey,
+    string ScaleKey,
+    string? EcsServiceName,
+    int? DesiredCount,
+    int? RunningCount,
+    int? PendingCount,
+    int? ManualDesiredCount,
+    bool EcsConfigured,
+    string Status);
+
+public sealed record WorkerScaleUpdateResult(
+    string WorkerKey,
+    string ScaleKey,
+    int DesiredCount,
+    bool EcsUpdated,
+    string Message);
+
+public sealed record WorkerScaleOverrideDto(string ScaleKey, int DesiredCount);
+
+public sealed record Ec2WorkerCountsDto(
+    int Spider,
+    int Enum,
+    int PortScan,
+    int HighValue,
+    int TechnologyIdentification);
+
+public sealed record Ec2WorkerMachineDto(
+    Guid Id,
+    string Name,
+    string? InstanceId,
+    string AwsState,
+    string? PublicIpAddress,
+    string? PrivateIpAddress,
+    string? InstanceType,
+    string? LastCommandId,
+    string? LastCommandStatus,
+    string? StatusMessage,
+    Ec2WorkerCountsDto Workers,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc,
+    DateTimeOffset? LastAppliedAtUtc);
+
+public sealed record Ec2WorkerMachineCreateRequest(string? Name, Ec2WorkerCountsDto Workers);
+
+public sealed record Ec2WorkerMachineScaleRequest(Ec2WorkerCountsDto Workers);
+
+public sealed record Ec2WorkerMachineMutationResult(Ec2WorkerMachineDto Machine, string Message);
+
+public sealed record WorkerCapabilityDto(
+    string WorkerKey,
+    string DisplayName,
+    string Version,
+    bool SupportsTargetRestart,
+    bool SupportsPauseResume,
+    bool SupportsBacklogReplay,
+    bool RequiresPrivilegedRuntime);
+
+public sealed record WorkerHealthDto(
+    string WorkerKey,
+    bool Enabled,
+    DateTimeOffset? LastActivityUtc,
+    long ProcessedLastHour,
+    long ProcessedLast24Hours,
+    bool Healthy,
+    string Reason);
+
+public sealed record OpsOverviewDto(
+    long TotalTargets,
+    long TotalAssetsConfirmed,
+    long TotalUrlAssets,
+    long UrlsFromFetchedPages,
+    long UrlsFromScripts,
+    long UrlsGuessedWithWordlist,
+    string? TopDomainByAssets,
+    long TopDomainAssetCount,
+    long DomainsWithTenOrMoreAssets,
+    long DomainsWithFewerThanTenAssets,
+    long SubdomainsDiscovered,
+    DateTimeOffset? LastAssetCreatedAtUtc,
+    DateTimeOffset? LastWorkerEventPublishedAtUtc,
+    long HttpQueueQueuedAssetCount);
+
+public sealed record OpsSnapshotDto(
+    IReadOnlyList<WorkerSwitchDto> Workers,
+    WorkerActivitySnapshotDto Activity,
+    AssetOpsSummaryDto AssetSummary,
+    BusTrafficSummaryDto BusTraffic,
+    IReadOnlyList<WorkerDetailStatsDto> WorkerStats,
+    IReadOnlyList<RabbitQueueBriefDto> RabbitQueues,
+    bool RabbitManagementAvailable);
+
+public sealed record AssetOpsSummaryDto(
+    long TotalAssets,
+    long TotalTargets,
     long AssetsDiscoveredLastHour,
     long AssetsDiscoveredLast24Hours,
     DateTimeOffset? LastAssetDiscoveredAtUtc,

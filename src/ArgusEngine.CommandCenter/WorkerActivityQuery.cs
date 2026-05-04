@@ -22,7 +22,7 @@ internal static class WorkerActivityQuery
         WorkerKeys.TechnologyIdentification,
     ];
 
-    public static async Task<WorkerActivitySnapshotDto> BuildSnapshotAsync(ArgusDbContext db, CancellationToken ct)
+    public static async Task<WorkerActivitySnapshotDto> BuildSnapshotAsync(NightmareDbContext db, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
         var since = now - Lookback;

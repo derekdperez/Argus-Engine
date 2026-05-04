@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.Domain.Entities;
@@ -12,29 +11,24 @@ public static class AssetEndpoints
     {
         app.MapGet(
                 "/api/assets",
-                async (
-                    [FromQuery] Guid? targetId,
-                    [FromQuery] string? kind,
-                    [FromQuery] string? status,
-                    [FromQuery] int limit,
-                    ArgusDbContext db,
-                    CancellationToken ct) =>
+                async (NightmareDbContext db, Guid? targetId, int? take, string? tag, CancellationToken ct) =>
                 {
-                    var query = db.Assets.AsNoTracking();
-
-                    if (targetId.HasValue)
-                        query = query.Where(a => a.TargetId == targetId.Value);
-                    
-                    // Simple string comparison for the demo/placeholder restoration
-                    if (!string.IsNullOrWhiteSpace(kind))
-                        query = query.Where(a => a.Kind.ToString() == kind);
-                    
-                    if (!string.IsNullOrWhiteSpace(status))
-                        query = query.Where(a => a.LifecycleStatus.ToString() == status);
-
-                    var rows = await query
+                    var q = db.Assets.AsNoTracking()
+                        .Where(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed)
                         .OrderByDescending(a => a.DiscoveredAtUtc)
-                        .Take(limit > 0 ? Math.Min(limit, 1000) : 100)
+                        .AsQueryable();
+                    if (targetId is { } tid)
+                        q = q.Where(a => a.TargetId == tid);
+                    if (!string.IsNullOrWhiteSpace(tag))
+                    {
+                        var tagSlug = tag.Trim();
+                        q = q.Where(a => db.AssetTags.Any(at => at.AssetId == a.Id && db.Tags.Any(t => t.Id == at.TagId && t.Slug == tagSlug)));
+                    }
+
+                    if (take is > 0)
+                        q = q.Take(Math.Clamp(take.Value, 1, 1_000_000));
+
+                    var rows = await q
                         .Select(a => new AssetGridRowDto(
                             a.Id,
                             a.TargetId,
@@ -49,7 +43,7 @@ public static class AssetEndpoints
                             a.DiscoveredAtUtc,
                             a.LastSeenAtUtc,
                             a.Confidence,
-                            a.LifecycleStatus.ToString(),
+                            a.LifecycleStatus,
                             a.TypeDetailsJson,
                             a.FinalUrl,
                             a.RedirectCount,
@@ -62,4 +56,6 @@ public static class AssetEndpoints
 
         return app;
     }
+
+    public static void Map(WebApplication app) => app.MapAssetEndpoints();
 }

@@ -1,3 +1,4 @@
+using ArgusEngine.CommandCenter.Components;
 using ArgusEngine.CommandCenter.Endpoints;
 using ArgusEngine.CommandCenter.Startup;
 
@@ -11,5 +12,7 @@ await app.InitializeCommandCenterDatabasesAsync().ConfigureAwait(false);
 
 app.UseCommandCenterMiddleware();
 app.MapCommandCenterEndpoints();
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode();
 
-app.Run();
+await app.RunAsync().ConfigureAwait(false);

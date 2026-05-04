@@ -12,6 +12,7 @@ using NetworkConfiguration = Amazon.ECS.Model.NetworkConfiguration;
 using SortOrder = Amazon.ECS.SortOrder;
 using TaskDefinitionStatus = Amazon.ECS.TaskDefinitionStatus;
 using UpdateServiceRequest = Amazon.ECS.Model.UpdateServiceRequest;
+using ArgusEngine.Infrastructure.Configuration;
 
 namespace ArgusEngine.CommandCenter.Services.Aws;
 
@@ -122,10 +123,10 @@ public sealed class EcsWorkerServiceManager(
         if (string.IsNullOrWhiteSpace(taskDefinition))
             throw new InvalidOperationException($"No active ECS task definition was found for family {family}. Run deploy/aws/deploy-ecs-services.sh or ./deploy/deploy.sh --ecs-workers once to register it.");
 
-        var subnets = SplitCsvConfiguration(configuration["ECS_SUBNETS"]);
-        var securityGroups = SplitCsvConfiguration(configuration["ECS_SECURITY_GROUPS"]);
+        var subnets = SplitCsvConfiguration(configuration.GetArgusValue("Ecs:Subnets") ?? configuration["ECS_SUBNETS"]);
+        var securityGroups = SplitCsvConfiguration(configuration.GetArgusValue("Ecs:SecurityGroups") ?? configuration["ECS_SECURITY_GROUPS"]);
         if (subnets.Count == 0 || securityGroups.Count == 0)
-            throw new InvalidOperationException("ECS_SUBNETS and ECS_SECURITY_GROUPS must be configured before Command Center can create worker services.");
+            throw new InvalidOperationException("ECS_SUBNETS (Argus:Ecs:Subnets) and ECS_SECURITY_GROUPS (Argus:Ecs:SecurityGroups) must be configured before Command Center can create worker services.");
 
         var request = new CreateServiceRequest
         {
@@ -133,11 +134,11 @@ public sealed class EcsWorkerServiceManager(
             ServiceName = serviceName,
             TaskDefinition = taskDefinition,
             DesiredCount = desiredCount,
-            LaunchType = LaunchType.FindValue(configuration["ECS_LAUNCH_TYPE"] ?? "FARGATE"),
+            LaunchType = LaunchType.FindValue(configuration.GetArgusValue("Ecs:LaunchType") ?? configuration["ECS_LAUNCH_TYPE"] ?? "FARGATE"),
             DeploymentConfiguration = new DeploymentConfiguration
             {
-                MinimumHealthyPercent = configuration.GetValue<int?>("ECS_MIN_HEALTHY_PERCENT") ?? 100,
-                MaximumPercent = configuration.GetValue<int?>("ECS_MAX_PERCENT") ?? 200,
+                MinimumHealthyPercent = configuration.GetArgusValue<int?>("Ecs:MinHealthyPercent", null) ?? configuration.GetValue<int?>("ECS_MIN_HEALTHY_PERCENT") ?? 100,
+                MaximumPercent = configuration.GetArgusValue<int?>("Ecs:MaxPercent", null) ?? configuration.GetValue<int?>("ECS_MAX_PERCENT") ?? 200,
             },
             NetworkConfiguration = new NetworkConfiguration
             {
@@ -145,12 +146,13 @@ public sealed class EcsWorkerServiceManager(
                 {
                     Subnets = subnets,
                     SecurityGroups = securityGroups,
-                    AssignPublicIp = AssignPublicIp.FindValue(configuration["ECS_ASSIGN_PUBLIC_IP"] ?? "DISABLED"),
+                    AssignPublicIp = AssignPublicIp.FindValue(configuration.GetArgusValue("Ecs:AssignPublicIp") ?? configuration["ECS_ASSIGN_PUBLIC_IP"] ?? "DISABLED"),
                 },
             },
         };
 
-        if (bool.TryParse(configuration["ECS_ENABLE_EXECUTE_COMMAND"], out var enableExecuteCommand) && enableExecuteCommand)
+        if ((bool.TryParse(configuration.GetArgusValue("Ecs:EnableExecuteCommand"), out var enableArgus) && enableArgus)
+            || (bool.TryParse(configuration["ECS_ENABLE_EXECUTE_COMMAND"], out var enableExecuteCommand) && enableExecuteCommand))
             request.EnableExecuteCommand = true;
 
         await ecs.CreateServiceAsync(request, ct).ConfigureAwait(false);

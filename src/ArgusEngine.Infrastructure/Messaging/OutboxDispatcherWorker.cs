@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Buffers;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
@@ -17,6 +18,7 @@ public sealed class OutboxDispatcherWorker(
     ILogger<OutboxDispatcherWorker> logger) : BackgroundService
 {
     private const int MaxAttemptsBeforeDeadLetter = 10;
+    private static readonly SearchValues<char> TypeSeparatorSearchValues = SearchValues.Create(['.', '/']);
 
     private static readonly Action<ILogger, string, Exception?> LogOutboxDispatcherStarting =
         LoggerMessage.Define<string>(
@@ -291,7 +293,7 @@ public sealed class OutboxDispatcherWorker(
     {
         var comma = messageType.IndexOf(',');
         var typeName = comma >= 0 ? messageType[..comma] : messageType;
-        var separator = typeName.LastIndexOfAny(new[] { '.', '/' });
+        var separator = typeName.LastIndexOfAny(TypeSeparatorSearchValues);
 
         return separator >= 0 ? typeName[(separator + 1)..] : typeName;
     }

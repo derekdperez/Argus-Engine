@@ -79,24 +79,18 @@ static async Task InitializeGatekeeperDatabaseAsync(
                 stoppingToken)
                 .ConfigureAwait(false);
 
-            startupLog.LogInformation("Gatekeeper startup database bootstrap completed.");
+            GatekeeperLogMessages.DatabaseBootstrapCompleted(startupLog);
             return;
         }
         catch (Exception ex) when (attempt <= retryDelays.Length && !stoppingToken.IsCancellationRequested)
         {
-            startupLog.LogWarning(
-                ex,
-                "Gatekeeper startup database bootstrap failed on attempt {Attempt}; retrying.",
-                attempt);
+            GatekeeperLogMessages.DatabaseBootstrapRetry(startupLog, ex, attempt);
 
             await Task.Delay(retryDelays[attempt - 1], stoppingToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
         {
-            startupLog.LogCritical(
-                ex,
-                "Gatekeeper startup database bootstrap failed. ContinueOnStartupDatabaseFailure={ContinueOnStartupDatabaseFailure}.",
-                continueOnFailure);
+            GatekeeperLogMessages.DatabaseBootstrapFailed(startupLog, ex, continueOnFailure);
 
             if (!continueOnFailure)
             {

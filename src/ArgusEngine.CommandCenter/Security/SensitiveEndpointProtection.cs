@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using System.Globalization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -75,7 +76,7 @@ public static class SensitiveEndpointProtection
                     DateTimeOffset.UtcNow,
                     out var retryAfter))
             {
-                context.Response.Headers["Retry-After"] = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+                context.Response.Headers["Retry-After"] = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
                 Audit(auditLogger, context, endpointKind.Value, "rate_limited", StatusCodes.Status429TooManyRequests, suppliedKey);
                 context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 await context.Response.WriteAsJsonAsync(
@@ -181,7 +182,7 @@ public static class SensitiveEndpointProtection
             context.Request.Method,
             context.Request.Path.Value,
             outcome,
-            statusCode?.ToString() ?? "pass",
+            statusCode?.ToString(CultureInfo.InvariantCulture) ?? "pass",
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             Fingerprint(suppliedKey),
             context.Request.Headers["User-Agent"].ToString());
@@ -205,7 +206,7 @@ public sealed record SensitiveEndpointPolicy(
     public static SensitiveEndpointPolicy FromConfiguration(IConfiguration configuration, SensitiveEndpointKind kind)
     {
         var sectionName = kind == SensitiveEndpointKind.Diagnostics ? "Diagnostics" : "DataMaintenance";
-        var prefix = $"Nightmare:{sectionName}";
+        var prefix = $"Argus:{sectionName}";
 
         return new SensitiveEndpointPolicy(
             kind,

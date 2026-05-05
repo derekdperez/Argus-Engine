@@ -104,8 +104,8 @@ public static class DependencyInjection
         services.AddTransient(sp => new BulkAssetImporter(pgConn));
 
         void ConfigureNpgsql(DbContextOptionsBuilder options) => options.UseNpgsql(pgConn);
-        services.AddDbContext<ArgusDbContext>(ConfigureNpgsql);
         services.AddDbContextFactory<ArgusDbContext>(ConfigureNpgsql);
+        services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<ArgusDbContext>>().CreateDbContext());
 
         void ConfigureFileStore(DbContextOptionsBuilder options) => options.UseNpgsql(fileStoreConn);
         services.AddDbContextFactory<FileStoreDbContext>(ConfigureFileStore);

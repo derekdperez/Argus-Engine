@@ -14,7 +14,7 @@ namespace ArgusEngine.Infrastructure.Messaging;
 
 public sealed class OutboxDispatcherWorker(
     IDbContextFactory<ArgusDbContext> dbFactory,
-    IPublishEndpoint publish,
+    IServiceScopeFactory scopeFactory,
     ILogger<OutboxDispatcherWorker> logger) : BackgroundService
 {
     private const int MaxAttemptsBeforeDeadLetter = 10;
@@ -152,6 +152,8 @@ public sealed class OutboxDispatcherWorker(
                 return;
             }
 
+            using var scope = scopeFactory.CreateScope();
+            var publish = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
             await publish.Publish(payload!, messageClrType!, ct).ConfigureAwait(false);
             var markedSucceeded = await MarkSucceededAsync(message, ct).ConfigureAwait(false);
 

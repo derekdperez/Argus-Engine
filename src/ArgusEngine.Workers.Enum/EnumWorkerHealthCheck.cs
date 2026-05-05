@@ -26,7 +26,7 @@ public class EnumWorkerHealthCheck : IWorkerHealthCheck
         _logger.LogInformation("Running Enumeration health check...");
         
         var options = _options.Value;
-        if (string.IsNullOrEmpty(options.SubfinderPath) && string.IsNullOrEmpty(options.AmassPath))
+        if (string.IsNullOrEmpty(options.Subfinder.BinaryPath) && string.IsNullOrEmpty(options.Amass.BinaryPath))
         {
             return new WorkerHealthCheckResult(false, "No subdomain enumeration providers (Subfinder/Amass) configured.");
         }
@@ -34,6 +34,6 @@ public class EnumWorkerHealthCheck : IWorkerHealthCheck
         // We could run a "help" command to verify binary presence
         // But for now, just checking config and basic reachability
         
-        return new WorkerHealthCheckResult(true, $"Enumeration worker is ready. Configured providers: {(options.SubfinderPath != null ? "Subfinder " : "")}{(options.AmassPath != null ? "Amass" : "")}");
+        return new WorkerHealthCheckResult(true, $"Enumeration worker is ready. Configured providers: {(options.Subfinder.BinaryPath != null ? "Subfinder " : "")}{(options.Amass.BinaryPath != null ? "Amass" : "")}");
     }
 }

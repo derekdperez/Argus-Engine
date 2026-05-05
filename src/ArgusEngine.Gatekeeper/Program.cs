@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using ArgusEngine.Application.Workers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

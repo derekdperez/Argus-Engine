@@ -112,8 +112,9 @@ return await rootCommand.InvokeAsync(args);
 
 IHost CreateHarnessHost()
 {
-    var builder = Host.CreateApplicationBuilder();
+    var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = "Development" });
     
+    builder.Configuration["ASPNETCORE_ENVIRONMENT"] = "Development";
     builder.Configuration.AddJsonFile("appsettings.json", optional: true);
     builder.Configuration.AddEnvironmentVariables();
 

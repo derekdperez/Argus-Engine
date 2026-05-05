@@ -11,4 +11,6 @@ public sealed class WorkerHeartbeat
     public int ActiveConsumerCount { get; set; }
     public int ProcessId { get; set; }
     public string? Version { get; set; }
+    public bool IsHealthy { get; set; } = true;
+    public string? HealthMessage { get; set; }
 }

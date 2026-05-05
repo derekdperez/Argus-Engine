@@ -99,7 +99,12 @@ public static class DependencyInjection
                 failureStatus: HealthStatus.Unhealthy,
                 tags: ReadyRabbitMqTags);
 
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConn));
+        services.AddSingleton<IConnectionMultiplexer>(_ =>
+        {
+            var options = ConfigurationOptions.Parse(redisConn);
+            options.AbortOnConnectFail = false;
+            return ConnectionMultiplexer.Connect(options);
+        });
         services.AddSingleton<DistributedScanLock>();
         services.AddTransient(sp => new BulkAssetImporter(pgConn));
 

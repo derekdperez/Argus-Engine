@@ -11,6 +11,11 @@ using ArgusEngine.CommandCenter.Services.Targets;
 using ArgusEngine.CommandCenter.Services.Workers;
 using ArgusEngine.Workers.Enum.Consumers;
 using ArgusEngine.Workers.Spider;
+using ArgusEngine.Gatekeeper;
+using ArgusEngine.Workers.Enum;
+using ArgusEngine.Workers.PortScan;
+using ArgusEngine.Workers.HighValue;
+using ArgusEngine.Workers.TechnologyIdentification;
 using ArgusEngine.Infrastructure;
 using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Data;
@@ -50,7 +55,7 @@ public static class CommandCenterServiceRegistration
         services.AddScoped<IRealtimeUpdatePublisher, SignalRRealtimeUpdatePublisher>();
 
         services.AddCommandCenterApplicationServices();
-        services.AddCommandCenterOptions();
+        services.AddCommandCenterOptions(configuration);
 
         services.AddArgusRabbitMq(configuration, consumers =>
         {
@@ -86,10 +91,18 @@ public static class CommandCenterServiceRegistration
         
         services.AddScoped<HarnessRunner>();
 
+        // Register Worker Health Checks for the Harness
+        services.AddScoped<IWorkerHealthCheck, GatekeeperWorkerHealthCheck>();
+        services.AddScoped<IWorkerHealthCheck, EnumWorkerHealthCheck>();
+        services.AddScoped<IWorkerHealthCheck, SpiderWorkerHealthCheck>();
+        services.AddScoped<IWorkerHealthCheck, PortScanWorkerHealthCheck>();
+        services.AddScoped<IWorkerHealthCheck, HighValueWorkerHealthCheck>();
+        services.AddScoped<IWorkerHealthCheck, TechIdWorkerHealthCheck>();
+
         return services;
     }
 
-    private static IServiceCollection AddCommandCenterOptions(this IServiceCollection services)
+    private static IServiceCollection AddCommandCenterOptions(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<ArgusRuntimeOptions>()
             .Configure<IConfiguration>((options, cfg) =>

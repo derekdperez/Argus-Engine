@@ -20,6 +20,7 @@ try
     builder.Services.AddArgusInfrastructure(builder.Configuration);
     builder.Services.AddArgusWorkerHeartbeat(WorkerKeys.Gatekeeper);
     builder.Services.AddScoped<GatekeeperOrchestrator>();
+    builder.Services.AddScoped<IWorkerHealthCheck, GatekeeperWorkerHealthCheck>();
 
     builder.Services.AddArgusRabbitMq(
         builder.Configuration,

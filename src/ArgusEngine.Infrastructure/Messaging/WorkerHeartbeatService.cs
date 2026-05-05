@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ArgusEngine.Application.Workers;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 using System.Diagnostics;
@@ -38,10 +39,31 @@ public sealed class WorkerHeartbeatService(
 
     private async Task SendHeartbeatAsync(CancellationToken ct)
     {
+        using var scope = scopeFactory.CreateScope();
+        var healthCheck = scope.ServiceProvider.GetService<IWorkerHealthCheck>();
+        
+        bool isHealthy = true;
+        string? message = null;
+
+        if (healthCheck != null)
+        {
+            try
+            {
+                var result = await healthCheck.RunAsync(ct).ConfigureAwait(false);
+                isHealthy = result.Success;
+                message = result.Message;
+            }
+            catch (Exception ex)
+            {
+                isHealthy = false;
+                message = $"Health check failed: {ex.Message}";
+            }
+        }
+
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
 
         var existing = await db.WorkerHeartbeats
-            .FirstOrDefaultAsync(h => h.HostName == _hostName, ct)
+            .FirstOrDefaultAsync(h => h.HostName == _hostName && h.WorkerKey == workerKey, ct)
             .ConfigureAwait(false);
 
         if (existing is null)
@@ -58,7 +80,8 @@ public sealed class WorkerHeartbeatService(
         existing.LastHeartbeatUtc = DateTimeOffset.UtcNow;
         existing.WorkerKey = workerKey;
         existing.ProcessId = _pid;
-        // active count could be tracked via an Interlocked counter in BusJournalObservers if we wanted more accuracy
+        existing.IsHealthy = isHealthy;
+        existing.HealthMessage = message;
         
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }

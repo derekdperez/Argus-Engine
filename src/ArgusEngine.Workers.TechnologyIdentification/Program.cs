@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ArgusEngine.Application.Workers;
+using ArgusEngine.Workers.TechnologyIdentification;
 using Microsoft.Extensions.Configuration;
 using ArgusEngine.Application.TechnologyIdentification;
 using ArgusEngine.Infrastructure;
@@ -18,6 +20,7 @@ try
     builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-tech-id");
     builder.Services.AddArgusInfrastructure(builder.Configuration);
     builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.TechnologyIdentification);
+    builder.Services.AddScoped<IWorkerHealthCheck, TechIdWorkerHealthCheck>();
 
     builder.Services.AddSingleton<TechnologyCatalog>(sp =>
     {

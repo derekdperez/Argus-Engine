@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using ArgusEngine.Harness.Core.Workers;
+using ArgusEngine.Application.Workers;
 using Microsoft.Extensions.Logging;
 
 namespace ArgusEngine.Workers.TechnologyIdentification;

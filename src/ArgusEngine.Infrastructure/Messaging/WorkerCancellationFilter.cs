@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using MassTransit;
+using MassTransit.Context;
 
 namespace ArgusEngine.Infrastructure.Messaging;
 
@@ -19,7 +20,7 @@ public class WorkerCancellationFilter<T> : IFilter<ConsumeContext<T>> where T : 
             using var cts = _tracker.CreateLinkedCts(context.MessageId.Value, context.CancellationToken);
             try
             {
-                await next.Send(context.Proxy(cts.Token)).ConfigureAwait(false);
+                await next.Send(new CancellationConsumeContext(context, cts.Token)).ConfigureAwait(false);
             }
             finally
             {
@@ -30,6 +31,12 @@ public class WorkerCancellationFilter<T> : IFilter<ConsumeContext<T>> where T : 
         {
             await next.Send(context).ConfigureAwait(false);
         }
+    }
+
+    private sealed class CancellationConsumeContext(ConsumeContext<T> context, CancellationToken ct) 
+        : ConsumeContextProxy<T>(context)
+    {
+        public override CancellationToken CancellationToken => ct;
     }
 
     public void Probe(ProbeContext context)

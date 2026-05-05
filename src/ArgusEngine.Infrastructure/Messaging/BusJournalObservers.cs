@@ -30,13 +30,13 @@ public sealed class BusJournalPublishObserver(BusJournalBuffer buffer) : IPublis
 public sealed class BusJournalConsumeObserver(BusJournalBuffer buffer) : IConsumeObserver
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false };
-    private const string StartTimeHeader = "Argus-Consume-StartTime";
+    private sealed record ConsumeStartTime(DateTimeOffset Value);
 
     public Task PreConsume<T>(ConsumeContext<T> context)
         where T : class
     {
         var now = DateTimeOffset.UtcNow;
-        context.Headers.Set(StartTimeHeader, now.ToUnixTimeMilliseconds());
+        context.GetOrAddPayload(() => new ConsumeStartTime(now));
 
         buffer.TryEnqueue(
             direction: "Consume",
@@ -88,9 +88,9 @@ public sealed class BusJournalConsumeObserver(BusJournalBuffer buffer) : IConsum
 
     private static double? ResolveDuration(ConsumeContext context)
     {
-        if (context.Headers.TryGetHeader(StartTimeHeader, out var raw) && raw is long startTimeMs)
+        if (context.TryGetPayload<ConsumeStartTime>(out var startTime))
         {
-            return (DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(startTimeMs)).TotalMilliseconds;
+            return (DateTimeOffset.UtcNow - startTime.Value).TotalMilliseconds;
         }
         return null;
     }

@@ -4,7 +4,7 @@
     <PackageVersion Include="AWSSDK.EC2" Version="4.0.21" />
     <PackageVersion Include="AWSSDK.ECS" Version="4.0.20.1" />
     <PackageVersion Include="AWSSDK.SimpleSystemsManagement" Version="4.0.7.13" />
-    <PackageVersion Include="CliWrap" Version="3.9.0" />
+    <PackageVersion Include="CliWrap" Version="3.10.1" />
     <PackageVersion Include="FluentAssertions" Version="8.9.0" />
     <PackageVersion Include="Markdig" Version="1.1.3" />
     <PackageVersion Include="MassTransit" Version="8.5.4" />

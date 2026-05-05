@@ -13,6 +13,13 @@ COPY src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj src/ArgusEng
 COPY src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj src/ArgusEngine.Contracts/
 COPY src/ArgusEngine.Domain/ArgusEngine.Domain.csproj src/ArgusEngine.Domain/
 COPY src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj src/ArgusEngine.Infrastructure/
+COPY src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj src/ArgusEngine.Gatekeeper/
+COPY src/ArgusEngine.Workers.Enum/ArgusEngine.Workers.Enum.csproj src/ArgusEngine.Workers.Enum/
+COPY src/ArgusEngine.Workers.Spider/ArgusEngine.Workers.Spider.csproj src/ArgusEngine.Workers.Spider/
+COPY src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj src/ArgusEngine.Workers.PortScan/
+COPY src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj src/ArgusEngine.Workers.HighValue/
+COPY src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj src/ArgusEngine.Workers.TechnologyIdentification/
+COPY src/ArgusEngine.Harness.Core/ArgusEngine.Harness.Core.csproj src/ArgusEngine.Harness.Core/
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj"
@@ -24,6 +31,13 @@ COPY src/ArgusEngine.CommandCenter/ src/ArgusEngine.CommandCenter/
 COPY src/ArgusEngine.Contracts/ src/ArgusEngine.Contracts/
 COPY src/ArgusEngine.Domain/ src/ArgusEngine.Domain/
 COPY src/ArgusEngine.Infrastructure/ src/ArgusEngine.Infrastructure/
+COPY src/ArgusEngine.Gatekeeper/ src/ArgusEngine.Gatekeeper/
+COPY src/ArgusEngine.Workers.Enum/ src/ArgusEngine.Workers.Enum/
+COPY src/ArgusEngine.Workers.Spider/ src/ArgusEngine.Workers.Spider/
+COPY src/ArgusEngine.Workers.PortScan/ src/ArgusEngine.Workers.PortScan/
+COPY src/ArgusEngine.Workers.HighValue/ src/ArgusEngine.Workers.HighValue/
+COPY src/ArgusEngine.Workers.TechnologyIdentification/ src/ArgusEngine.Workers.TechnologyIdentification/
+COPY src/ArgusEngine.Harness.Core/ src/ArgusEngine.Harness.Core/
 COPY src/Resources/ src/Resources/
 
 ARG COMPONENT_VERSION=2.6.1

@@ -1,3 +1,5 @@
+using ArgusEngine.Application.Workers;
+using ArgusEngine.Workers.PortScan;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -16,6 +18,7 @@ try
     builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-portscan");
     builder.Services.AddArgusInfrastructure(builder.Configuration);
     builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.PortScan);
+    builder.Services.AddScoped<IWorkerHealthCheck, PortScanWorkerHealthCheck>();
 
     builder.Services.AddArgusRabbitMq(
         builder.Configuration,

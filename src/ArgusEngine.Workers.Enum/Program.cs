@@ -10,6 +10,7 @@ using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
 using ArgusEngine.Workers.Enum.Consumers;
+using ArgusEngine.Workers.Enum;
 
 try
 {
@@ -18,6 +19,7 @@ try
     builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-enum");
     builder.Services.AddArgusInfrastructure(builder.Configuration);
     builder.Services.AddArgusWorkerHeartbeat(WorkerKeys.Enumeration);
+    builder.Services.AddScoped<IWorkerHealthCheck, EnumWorkerHealthCheck>();
 
     builder.Services.AddArgusRabbitMq(
         builder.Configuration,

@@ -134,6 +134,15 @@ public sealed class CommandCenterStatusSnapshotService(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        var heartbeats = await db.WorkerHeartbeats
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var heartbeatLookup = heartbeats
+            .GroupBy(x => x.WorkerKey)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
         var switches = await db.WorkerSwitches
             .AsNoTracking()
             .ToDictionaryAsync(x => x.WorkerKey, x => x.IsEnabled, StringComparer.OrdinalIgnoreCase, cancellationToken)
@@ -149,12 +158,18 @@ public sealed class CommandCenterStatusSnapshotService(
         foreach (var definition in workerDefinitions.WorkerScaleDefinitions)
         {
             var desiredCount = ResolveDesiredCount(definition.ScaleKey, scaleTargets);
-            var runningCount = desiredCount;
+            
+            // Check heartbeats for this worker key (some scale keys match worker keys)
+            heartbeatLookup.TryGetValue(definition.ScaleKey, out var workerHeartbeats);
+            var runningCount = workerHeartbeats?.Count(h => (now - h.LastHeartbeatUtc).TotalMinutes < 2) ?? 0;
             var pendingCount = Math.Max(0, desiredCount - runningCount);
 
             string status;
             string color;
             string reason;
+
+            bool isHealthy = workerHeartbeats?.All(h => h.IsHealthy) ?? true;
+            var failedHealth = workerHeartbeats?.FirstOrDefault(h => !h.IsHealthy);
 
             if (desiredCount <= 0)
             {
@@ -162,11 +177,43 @@ public sealed class CommandCenterStatusSnapshotService(
                 color = "gray";
                 reason = "No desired workers are configured for this scale group.";
             }
+            else if (runningCount == 0)
+            {
+                status = "Offline";
+                color = "red";
+                reason = "No active heartbeats detected in the last 2 minutes.";
+                
+                alerts.Add(new CommandCenterAlert(
+                    Severity: "Critical",
+                    Scope: definition.DisplayName,
+                    Message: "No running instances detected for this worker group.",
+                    AtUtc: now,
+                    Color: "red"));
+            }
+            else if (!isHealthy)
+            {
+                status = "Unhealthy";
+                color = "red";
+                reason = failedHealth?.HealthMessage ?? "One or more instances reported a health check failure.";
+
+                alerts.Add(new CommandCenterAlert(
+                    Severity: "Critical",
+                    Scope: definition.DisplayName,
+                    Message: reason,
+                    AtUtc: now,
+                    Color: "red"));
+            }
+            else if (runningCount < desiredCount)
+            {
+                status = "Scaling";
+                color = "yellow";
+                reason = $"Running count ({runningCount}) is below desired ({desiredCount}).";
+            }
             else
             {
-                status = "Ready";
+                status = "Healthy";
                 color = "green";
-                reason = "Scale group has desired capacity configured.";
+                reason = "Scale group has desired capacity and all instances are healthy.";
             }
 
             result.Add(new CommandCenterWorkerStatus(
@@ -182,8 +229,43 @@ public sealed class CommandCenterStatusSnapshotService(
 
         foreach (var requiredWorkerKey in workerDefinitions.RequiredWorkerKeys)
         {
+            if (result.Any(r => string.Equals(r.Key, requiredWorkerKey, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
             if (!switches.TryGetValue(requiredWorkerKey, out var enabled) || enabled)
             {
+                // If it's enabled but not in the scale definitions, check if it's running as a singleton
+                heartbeatLookup.TryGetValue(requiredWorkerKey, out var workerHeartbeats);
+                var isRunning = workerHeartbeats?.Any(h => (now - h.LastHeartbeatUtc).TotalMinutes < 2) ?? false;
+                var isHealthy = workerHeartbeats?.All(h => h.IsHealthy) ?? true;
+                
+                if (!isRunning)
+                {
+                    result.Add(new CommandCenterWorkerStatus(
+                        Key: requiredWorkerKey,
+                        DisplayName: requiredWorkerKey,
+                        DesiredCount: 1,
+                        RunningCount: 0,
+                        PendingCount: 1,
+                        Status: "Offline",
+                        Color: "red",
+                        Reason: "No active heartbeat detected."));
+                }
+                else if (!isHealthy)
+                {
+                    result.Add(new CommandCenterWorkerStatus(
+                        Key: requiredWorkerKey,
+                        DisplayName: requiredWorkerKey,
+                        DesiredCount: 1,
+                        RunningCount: 1,
+                        PendingCount: 0,
+                        Status: "Unhealthy",
+                        Color: "red",
+                        Reason: workerHeartbeats?.FirstOrDefault(h => !h.IsHealthy)?.HealthMessage ?? "Health check failure."));
+                }
+                
                 continue;
             }
 

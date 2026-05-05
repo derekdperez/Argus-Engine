@@ -1,3 +1,4 @@
+using ArgusEngine.Application.Workers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,7 @@ try
     builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-highvalue");
     builder.Services.AddArgusInfrastructure(builder.Configuration);
     builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.HighValueRegex);
+    builder.Services.AddScoped<IWorkerHealthCheck, HighValueWorkerHealthCheck>();
 
     builder.Services.AddTransient<WorkerHttpClientHandler>();
     builder.Services.AddHttpClient(string.Empty)

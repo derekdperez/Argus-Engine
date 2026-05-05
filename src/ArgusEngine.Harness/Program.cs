@@ -12,6 +12,7 @@ using ArgusEngine.Application.Workers;
 using ArgusEngine.Workers.Enum.Consumers;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Application.Events;
+using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Workers.Spider;
 using Microsoft.EntityFrameworkCore;
@@ -93,10 +94,10 @@ var testHarnessCommand = new Command("test-harness", "Run health checks for all 
 testHarnessCommand.SetHandler(async () =>
 {
     var host = CreateHarnessHost();
-    var runner = ActivatorUtilities.CreateInstance<HarnessRunner>(host.Services);
+    using var scope = host.Services.CreateScope();
+    var runner = ActivatorUtilities.CreateInstance<HarnessRunner>(scope.ServiceProvider);
     Console.WriteLine("Executing Worker Test Harness...");
     var result = await runner.RunAllAsync(default);
-    
     Console.WriteLine($"\nResults ({result.WorkerResults.Count} workers):");
     foreach (var r in result.WorkerResults)
     {

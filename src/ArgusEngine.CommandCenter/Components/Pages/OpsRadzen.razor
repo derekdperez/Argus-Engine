@@ -770,67 +770,59 @@
                 <button type="button" class="btn" @onclick="ExportWorkersCsvAsync">Export CSV</button>
             </div>
 
-            <RadzenDataGrid TItem="WorkerKindSummaryDto"
-                            Data="@RadzenWorkers"
+            </RadzenDataGrid>
+
+            <div class="section-heading" style="margin-top: 2rem;">
+                <div>
+                    <p class="eyebrow">Worker monitoring</p>
+                    <h2>Live instances</h2>
+                </div>
+                <span class="muted">Updated by heartbeats + journal</span>
+            </div>
+
+            <RadzenDataGrid TItem="WorkerInstanceActivityDto"
+                            Data="@RadzenInstances"
                             IsLoading="@_snapshotLoading"
                             AllowFiltering="true"
                             FilterMode="FilterMode.Advanced"
-                            FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
                             AllowPaging="false"
                             AllowVirtualization="true"
                             VirtualizationOverscanCount="24"
-                            Style="height: 860px"
+                            Style="height: 600px"
                             AllowSorting="true"
-                            AllowMultiColumnSorting="true"
-                            AllowColumnResize="true"
-                            AllowColumnReorder="true"
-                            AllowColumnPicking="true"
-                            AllowGrouping="true"
-                            GroupPanelText="Drag a column header here to group workers"
                             Density="@_radzenDensity"
-                            EmptyText="Worker activity has not loaded yet."
+                            EmptyText="No live instances detected."
                             class="ops-rz-grid">
                 <Columns>
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="WorkerKey" Title='@ColumnTitle("worker.WorkerKey", "Worker")' Width="180px">
-                        <Template Context="w"><strong>@w.WorkerKey</strong></Template>
+                    <RadzenDataGridColumn TItem="WorkerInstanceActivityDto" Property="HostName" Title="Host" Width="180px">
+                        <Template Context="i"><strong>@i.HostName</strong></Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="ToggleEnabled" Title='@ColumnTitle("worker.ToggleEnabled", "Enabled")' Width="130px">
-                        <Template Context="w"><span class="@WorkerBadgeClass(w)">@(w.ToggleEnabled ? "Enabled" : "Paused")</span></Template>
-                    </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="InstanceCount" Title='@ColumnTitle("worker.InstanceCount", "Instances")' Width="120px" />
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Title='@ColumnTitle("worker.DesiredCount", "Desired")' Width="260px" Filterable="false" Sortable="false" Groupable="false">
-                        <Template Context="w">
-                            @if (WorkerScaleFor(w.WorkerKey) is { } scale)
-                            {
-                                <div class="worker-scale-control">
-                                    <button type="button" class="btn small" disabled="@WorkerScaleBusy(w.WorkerKey)" @onclick="@(() => ChangeWorkerScaleAsync(w.WorkerKey, -1))">-1</button>
-                                    <input type="number"
-                                           min="0"
-                                           class="ops-filter worker-scale-input"
-                                           value="@WorkerScaleInput(w.WorkerKey)"
-                                           @oninput="@((ChangeEventArgs e) => SetWorkerScaleInput(w.WorkerKey, e.Value?.ToString()))" />
-                                    <button type="button" class="btn small" disabled="@WorkerScaleBusy(w.WorkerKey)" @onclick="@(() => ApplyWorkerScaleInputAsync(w.WorkerKey))">Set</button>
-                                    <button type="button" class="btn small" disabled="@WorkerScaleBusy(w.WorkerKey)" @onclick="@(() => ChangeWorkerScaleAsync(w.WorkerKey, 1))">+1</button>
-                                </div>
-                                <small class="muted">@WorkerScaleSummary(scale)</small>
-                            }
-                            else
-                            {
-                                <span class="muted">Not scalable</span>
-                            }
+                    <RadzenDataGridColumn TItem="WorkerInstanceActivityDto" Property="WorkerKind" Title="Worker" Width="150px" />
+                    <RadzenDataGridColumn TItem="WorkerInstanceActivityDto" Property="ConsumerShortName" Title="Consumer" Width="180px" />
+                    <RadzenDataGridColumn TItem="WorkerInstanceActivityDto" Property="Status" Title="Status" Width="120px">
+                        <Template Context="i">
+                            <span class="@InstanceStatusBadgeClass(i)">@i.Status</span>
                         </Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="LastActivityUtc" Title='@ColumnTitle("worker.LastActivityUtc", "Last activity")' Width="180px">
-                        <Template Context="w">@FormatOpsTime(w.LastActivityUtc)</Template>
+                    <RadzenDataGridColumn TItem="WorkerInstanceActivityDto" Property="ActivityLabel" Title="Activity" Width="180px" />
+                    <RadzenDataGridColumn TItem="WorkerInstanceActivityDto" Property="LastCompletedAtUtc" Title="Last Active" Width="180px">
+                        <Template Context="i">@FormatOpsTime(i.LastCompletedAtUtc)</Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="RollupActivityLabel" Title='@ColumnTitle("worker.RollupActivityLabel", "Rollup")' Width="280px">
-                        <Template Context="w"><span class="ops-rz-clip" title="@w.RollupActivityLabel">@w.RollupActivityLabel</span></Template>
+                    <RadzenDataGridColumn TItem="WorkerInstanceActivityDto" Property="MessageType" Title="Message" Width="220px">
+                        <Template Context="i"><span class="ops-rz-clip" title="@i.MessageType">@i.MessageType</span></Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Title="Actions" Width="120px" Filterable="false" Sortable="false" Groupable="false">
-                        <Template Context="w">
-                            <button type="button" class="btn small" disabled="@(_workerBusyKey == w.WorkerKey)" @onclick="@(() => SetWorkerEnabledAsync(w.WorkerKey, !w.ToggleEnabled))">
-                                @(w.ToggleEnabled ? "Pause" : "Resume")
-                            </button>
+                    <RadzenDataGridColumn TItem="WorkerInstanceActivityDto" Property="PayloadPreview" Title="Payload" Width="300px">
+                        <Template Context="i"><span class="ops-rz-clip" title="@i.PayloadPreview">@i.PayloadPreview</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="WorkerInstanceActivityDto" Property="DurationMs" Title="Duration" Width="120px">
+                        <Template Context="i">@(i.DurationMs.HasValue ? $"{i.DurationMs.Value:N0}ms" : "-")</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="WorkerInstanceActivityDto" Title="Actions" Width="100px" Filterable="false" Sortable="false">
+                        <Template Context="i">
+                            @if (i.Status == "Started")
+                            {
+                                <button type="button" class="btn small danger" @onclick="@(() => CancelInstanceMessageAsync(i))">Cancel</button>
+                            }
                         </Template>
                     </RadzenDataGridColumn>
                 </Columns>
@@ -856,6 +848,7 @@
     private readonly List<AssetGridRowDto> _assets = [];
     private readonly List<HttpRequestQueueRowDto> _requestQueue = [];
     private readonly List<WorkerKindSummaryDto> _workerSummaries = [];
+    private readonly List<WorkerInstanceActivityDto> _workerInstances = [];
     private readonly List<WorkerScaleTargetDto> _workerScaleTargets = [];
     private readonly List<Ec2WorkerMachineDto> _ec2WorkerMachines = [];
     private readonly HashSet<Guid> _selectedToolTargetIds = [];
@@ -1087,6 +1080,17 @@
                 || GridTextFilter.Matches(w.RollupActivityLabel, _workerSearch)
                 || GridTextFilter.Matches(FormatOpsTime(w.LastActivityUtc), _workerSearch));
 
+    private IEnumerable<WorkerInstanceActivityDto> RadzenInstances =>
+        _workerInstances
+            .Where(i =>
+                GridTextFilter.Matches(i.HostName, _workerSearch)
+                || GridTextFilter.Matches(i.WorkerKind, _workerSearch)
+                || GridTextFilter.Matches(i.ConsumerShortName, _workerSearch)
+                || GridTextFilter.Matches(i.MessageType, _workerSearch)
+                || GridTextFilter.Matches(i.PayloadPreview, _workerSearch)
+                || GridTextFilter.Matches(i.ActivityLabel, _workerSearch)
+                || GridTextFilter.Matches(i.Status, _workerSearch));
+
     private int ActiveEc2WorkerMachineCount =>
         _ec2WorkerMachines.Count(m => Ec2WorkerMachineIsActive(m.AwsState));
 
@@ -1122,6 +1126,16 @@
 
     private static string WorkerBadgeClass(WorkerKindSummaryDto worker) =>
         worker.ToggleEnabled ? "badge badge-green" : "badge badge-gray";
+
+    private static string InstanceStatusBadgeClass(WorkerInstanceActivityDto instance) =>
+        instance.Status switch
+        {
+            "Started" => "badge badge-blue",
+            "Completed" => "badge badge-green",
+            "Failed" => "badge badge-red",
+            "Idle" => "badge badge-gray",
+            _ => "badge"
+        };
 
     private WorkerScaleTargetDto? WorkerScaleFor(string workerKey) =>
         _workerScaleTargets.FirstOrDefault(s => string.Equals(s.WorkerKey, workerKey, StringComparison.Ordinal));
@@ -1380,12 +1394,9 @@
         _workerSummaries.Clear();
         _workerSummaries.AddRange(_snapshot.Activity.WorkerSummaries);
 
+        _workerInstances.Clear();
+        _workerInstances.AddRange(_snapshot.Activity.Instances);
     }
-
-    private async Task ReloadWorkerRowsAsync()
-    {
-        if (_workerSummaries.Count > 0)
-            return;
 
         try
         {
@@ -1394,6 +1405,9 @@
             {
                 _workerSummaries.Clear();
                 _workerSummaries.AddRange(activity.WorkerSummaries);
+
+                _workerInstances.Clear();
+                _workerInstances.AddRange(activity.Instances);
                 return;
             }
         }
@@ -1580,6 +1594,63 @@
         finally
         {
             _ec2WorkerBusy = false;
+        }
+    }
+
+    private async Task RemoveEc2WorkerMachineAsync(Ec2WorkerMachineDto machine)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", $"Terminate EC2 worker machine {machine.Name}?");
+        if (!ok)
+            return;
+
+        _ec2WorkerBusy = true;
+        _statusMessage = "";
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/ec2-workers/machines/{machine.Id}").ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return;
+            }
+            await ReloadEc2WorkerMachinesAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"EC2 worker remove failed: {ex.Message}";
+        }
+        finally
+        {
+            _ec2WorkerBusy = false;
+        }
+    }
+
+    private async Task CancelInstanceMessageAsync(WorkerInstanceActivityDto instance)
+    {
+        if (instance.MessageId is null)
+        {
+            _statusMessage = "Cannot cancel: Message ID not tracked for this instance.";
+            return;
+        }
+
+        var ok = await Js.InvokeAsync<bool>("confirm", $"Request cancellation for message {instance.MessageId} on host {instance.HostName}?");
+        if (!ok) return;
+
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/workers/messages/{instance.MessageId}");
+            if (response.IsSuccessStatusCode)
+            {
+                _statusMessage = "Cancellation requested.";
+                await ReloadVolatileAsync();
+            }
+            else
+            {
+                _statusMessage = "Cancellation request failed.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Cancellation error: {ex.Message}";
         }
     }
 

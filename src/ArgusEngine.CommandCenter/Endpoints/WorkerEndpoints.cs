@@ -549,6 +549,35 @@ public static class WorkerEndpoints
                 })
             .WithName("ScaleWorker");
 
+        app.MapDelete(
+                "/api/workers/messages/{messageId}",
+                async (Guid messageId, ArgusDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                {
+                    var cancellation = new WorkerCancellation
+                    {
+                        MessageId = messageId,
+                        RequestedAtUtc = DateTimeOffset.UtcNow,
+                        Reason = "User requested via Command Center"
+                    };
+                    db.WorkerCancellations.Add(cancellation);
+                    await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+                    await hub.Clients.All.SendAsync(
+                            DiscoveryHubEvents.DomainEvent,
+                            new LiveUiEventDto(
+                                "MessageCancellationRequested",
+                                null,
+                                null,
+                                "workers",
+                                $"Cancellation requested for message {messageId}",
+                                cancellation.RequestedAtUtc),
+                            cancellationToken: ct)
+                        .ConfigureAwait(false);
+
+                    return Results.NoContent();
+                })
+            .WithName("CancelMessage");
+
         return app;
     }
 

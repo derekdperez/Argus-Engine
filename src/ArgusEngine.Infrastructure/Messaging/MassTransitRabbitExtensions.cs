@@ -80,6 +80,7 @@ public static class MassTransitRabbitExtensions
 
                 cfg.ConnectPublishObserver(context.GetRequiredService<BusJournalPublishObserver>());
                 cfg.ConnectConsumeObserver(context.GetRequiredService<BusJournalConsumeObserver>());
+                cfg.UseConsumeFilter(typeof(WorkerCancellationFilter<>), context);
                 cfg.ConfigureEndpoints(context);
             });
         });

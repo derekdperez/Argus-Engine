@@ -166,7 +166,8 @@ public sealed record WorkerInstanceActivityDto(
     string ActivityLabel,
     string Status,
     double? DurationMs,
-    string? Error);
+    string? Error,
+    Guid? MessageId);
 
 public sealed record RabbitQueueBriefDto(
     string Name,

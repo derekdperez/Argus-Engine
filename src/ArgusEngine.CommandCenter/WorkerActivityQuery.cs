@@ -94,7 +94,8 @@ internal static class WorkerActivityQuery
                     ActivityLabel(details.At, now, details.Status, isAlive),
                     details.Status,
                     details.DurationMs,
-                    details.Error));
+                    details.Error,
+                    details.MessageId));
         }
 
         // Add instances that haven't consumed anything but have heartbeats

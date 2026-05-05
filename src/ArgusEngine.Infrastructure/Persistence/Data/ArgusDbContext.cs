@@ -25,6 +25,7 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
     public DbSet<Ec2WorkerMachine> Ec2WorkerMachines => Set<Ec2WorkerMachine>();
     public DbSet<TargetScanState> TargetScanStates => Set<TargetScanState>();
     public DbSet<WorkerHeartbeat> WorkerHeartbeats => Set<WorkerHeartbeat>();
+    public DbSet<WorkerCancellation> WorkerCancellations => Set<WorkerCancellation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -388,6 +389,12 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.Property(x => x.Consumer).HasColumnName("consumer").HasMaxLength(256).IsRequired();
             e.Property(x => x.ProcessedAtUtc).HasColumnName("processed_at_utc");
             e.HasIndex(x => new { x.EventId, x.Consumer }).IsUnique();
+        });
+        modelBuilder.Entity<WorkerCancellation>(entity =>
+        {
+            entity.ToTable("worker_cancellations");
+            entity.HasKey(e => e.MessageId);
+            entity.Property(e => e.RequestedAtUtc).IsRequired();
         });
     }
 }

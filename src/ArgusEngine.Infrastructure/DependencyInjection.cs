@@ -47,6 +47,10 @@ public static class DependencyInjection
             workerKey,
             sp.GetRequiredService<ILogger<WorkerHeartbeatService>>()));
         services.AddHostedService(sp => sp.GetRequiredService<WorkerHeartbeatService>());
+
+        services.AddSingleton<WorkerCancellationTracker>();
+        services.AddHostedService(sp => sp.GetRequiredService<WorkerCancellationTracker>());
+        
         return services;
     }
 

@@ -1,0 +1,142 @@
+@page "/development"
+@using ArgusEngine.Application.Workers.Harness
+@inject HarnessRunner Harness
+@inject IJSRuntime Js
+
+<PageTitle>Development - Argus Engine</PageTitle>
+
+<div class="dev-page">
+    <div class="page-header">
+        <div class="header-content">
+            <p class="eyebrow">Diagnostic Suite</p>
+            <h1>Development & Diagnostics</h1>
+            <p class="description">Execute internal test harness to verify worker integrity and cross-component connectivity.</p>
+        </div>
+    </div>
+
+    <section class="panel">
+        <div class="section-heading">
+            <div class="title-group">
+                <h2>Worker Test Harness</h2>
+                <p class="muted">Executes "Health Check" logic within each worker project to exercise core functionality.</p>
+            </div>
+            <button type="button" class="btn primary glow" disabled="@_busy" @onclick="RunHarnessAsync">
+                @if (_busy)
+                {
+                    <span class="spinner"></span>
+                    <span>Running Diagnostics...</span>
+                }
+                else
+                {
+                    <i class="ms-Icon ms-Icon--TestBeaker"></i>
+                    <span>Run Test Harness</span>
+                }
+            </button>
+        </div>
+
+        @if (_result != null)
+        {
+            <div class="harness-summary-card">
+                <div class="summary-stat">
+                    <span class="label">Executed At</span>
+                    <span class="value">@_result.ExecutedAtUtc.ToLocalTime().ToString("HH:mm:ss")</span>
+                </div>
+                <div class="summary-stat">
+                    <span class="label">Overall Status</span>
+                    @if (_result.WorkerResults.All(r => r.Success))
+                    {
+                        <span class="value success">HEALTHY</span>
+                    }
+                    else
+                    {
+                        <span class="value danger">DEGRADED</span>
+                    }
+                </div>
+                <div class="summary-stat">
+                    <span class="label">Success Rate</span>
+                    <span class="value">@(_result.WorkerResults.Count(r => r.Success)) / @(_result.WorkerResults.Count)</span>
+                </div>
+            </div>
+
+            <div class="grid-container">
+                <RadzenDataGrid TItem="WorkerHealthCheckResultDto" 
+                                Data="@_result.WorkerResults" 
+                                AllowSorting="true"
+                                class="dev-grid">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="WorkerHealthCheckResultDto" Property="WorkerName" Title="Worker Component" Width="220px">
+                            <Template Context="r">
+                                <div class="worker-name-cell">
+                                    <span class="kind-indicator"></span>
+                                    <strong>@r.WorkerName</strong>
+                                </div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="WorkerHealthCheckResultDto" Property="Success" Title="Result" Width="120px">
+                            <Template Context="r">
+                                <span class="badge @(r.Success ? "badge-green" : "badge-red")">
+                                    @(r.Success ? "PASSED" : "FAILED")
+                                </span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="WorkerHealthCheckResultDto" Property="Message" Title="Diagnostic Message" />
+                        <RadzenDataGridColumn TItem="WorkerHealthCheckResultDto" Title="Detailed Log" Width="140px" TextAlign="TextAlign.Center">
+                            <Template Context="r">
+                                @if (!string.IsNullOrEmpty(r.Output))
+                                {
+                                    <button class="btn small outline" @onclick="@(() => ShowOutputAsync(r))">View Output</button>
+                                }
+                                else
+                                {
+                                    <span class="muted small">No log available</span>
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </div>
+        }
+        else if (!_busy)
+        {
+            <div class="harness-empty">
+                <div class="empty-icon">🧪</div>
+                <h3>Ready to test</h3>
+                <p>Click the button above to begin the automated worker health check suite.</p>
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private bool _busy;
+    private HarnessResultDto? _result;
+
+    private async Task RunHarnessAsync()
+    {
+        _busy = true;
+        _result = null;
+        StateHasChanged();
+
+        try
+        {
+            // Give the UI a moment to show the spinner
+            await Task.Delay(500);
+            _result = await Harness.RunAllAsync(default);
+        }
+        catch (Exception ex)
+        {
+            await Js.InvokeVoidAsync("alert", $"Harness Execution Error: {ex.Message}");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ShowOutputAsync(WorkerHealthCheckResultDto r)
+    {
+        // In a real premium app, this would be a Radzen Dialog.
+        // For now, let's use a simple confirm/alert or a dedicated section.
+        await Js.InvokeVoidAsync("alert", $"{r.WorkerName} Health Check Output:\n\n{r.Output}");
+    }
+}

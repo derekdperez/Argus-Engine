@@ -15,6 +15,7 @@ using ArgusEngine.Application.Events;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Workers.Spider;
 using Microsoft.EntityFrameworkCore;
+using ArgusEngine.Application.Workers.Harness;
 using System.Net;
 
 var rootCommand = new RootCommand("Argus Engine Worker Test Harness");
@@ -81,9 +82,31 @@ listTargetsCommand.SetHandler(async () =>
     }
 });
 
+// COMMAND: test-harness
+var testHarnessCommand = new Command("test-harness", "Run health checks for all worker components.");
+testHarnessCommand.SetHandler(async () =>
+{
+    var host = CreateHarnessHost();
+    var runner = ActivatorUtilities.CreateInstance<HarnessRunner>(host.Services);
+    Console.WriteLine("Executing Worker Test Harness...");
+    var result = await runner.RunAllAsync(default);
+    
+    Console.WriteLine($"\nResults ({result.WorkerResults.Count} workers):");
+    foreach (var r in result.WorkerResults)
+    {
+        var status = r.Success ? "PASS" : "FAIL";
+        Console.WriteLine($"[{status}] {r.WorkerName}: {r.Message}");
+        if (!string.IsNullOrEmpty(r.Output))
+        {
+            Console.WriteLine($"      Log: {r.Output}");
+        }
+    }
+});
+
 rootCommand.AddCommand(runEnumCommand);
 rootCommand.AddCommand(runSpiderCommand);
 rootCommand.AddCommand(listTargetsCommand);
+rootCommand.AddCommand(testHarnessCommand);
 
 return await rootCommand.InvokeAsync(args);
 

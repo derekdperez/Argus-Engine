@@ -2,11 +2,15 @@ using MassTransit;
 using Microsoft.AspNetCore.Components;
 using ArgusEngine.CommandCenter.DataMaintenance;
 using ArgusEngine.Application.Sagas;
+using ArgusEngine.Application.Workers.Harness;
 using ArgusEngine.CommandCenter.Realtime;
+using ArgusEngine.CommandCenter.Services;
 using ArgusEngine.CommandCenter.Services.Aws;
 using ArgusEngine.CommandCenter.Services.Status;
 using ArgusEngine.CommandCenter.Services.Targets;
 using ArgusEngine.CommandCenter.Services.Workers;
+using ArgusEngine.Workers.Enum.Consumers;
+using ArgusEngine.Workers.Spider;
 using ArgusEngine.Infrastructure;
 using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Data;
@@ -79,6 +83,8 @@ public static class CommandCenterServiceRegistration
         services.AddScoped<AwsRegionResolver>();
         services.AddScoped<EcsWorkerServiceManager>();
         services.AddScoped<EcsServiceNameResolver>();
+        
+        services.AddScoped<HarnessRunner>();
 
         return services;
     }
@@ -98,6 +104,9 @@ public static class CommandCenterServiceRegistration
                 o => !o.DataMaintenance.Enabled || !string.IsNullOrWhiteSpace(o.DataMaintenance.ApiKey),
                 "Argus/Nightmare DataMaintenance Enabled=true requires DataMaintenance ApiKey.")
             .ValidateOnStart();
+
+        services.Configure<SubdomainEnumerationOptions>(configuration.GetSection("Argus:SubdomainEnumeration"));
+        services.Configure<SpiderHttpOptions>(configuration.GetSection("Argus:Spider"));
 
         return services;
     }

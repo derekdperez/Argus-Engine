@@ -2217,7 +2217,7 @@
 
     private async Task ExportTargetsCsvAsync() =>
         await ExportCsvAsync(
-            "nightmare-targets.csv",
+            "argus-targets.csv",
             ["Created", "RootDomain", "ConfirmedSubdomainCount", "ConfirmedUrlCount", "ConfirmedAssetCount", "QueuedRequestCount", "GlobalMaxDepth", "LastRunTime"],
             RadzenTargets.Select(t => new[]
             {
@@ -2233,7 +2233,7 @@
 
     private async Task ExportAssetsCsvAsync() =>
         await ExportCsvAsync(
-            "nightmare-assets-radzen.csv",
+            "argus-assets.csv",
             ["Id", "TargetId", "Kind", "LifecycleStatus", "Depth", "RawValue", "CanonicalKey", "DiscoveredBy", "DiscoveryContext", "Discovered"],
             RadzenAssets.Select(a => new[]
             {
@@ -2251,7 +2251,7 @@
 
     private async Task ExportQueueCsvAsync() =>
         await ExportCsvAsync(
-            "nightmare-http-queue-radzen.csv",
+            "argus-http-queue.csv",
             ["Id", "AssetId", "TargetId", "State", "Method", "RequestUrl", "DomainKey", "AttemptCount", "LastHttpStatus", "DurationMs", "LastError", "Created", "Updated"],
             RadzenRequestQueue.Select(q => new[]
             {
@@ -2272,7 +2272,7 @@
 
     private async Task ExportWorkersCsvAsync() =>
         await ExportCsvAsync(
-            "nightmare-workers-radzen.csv",
+            "argus-workers.csv",
             ["WorkerKey", "ToggleEnabled", "InstanceCount", "LastActivity", "RollupActivityLabel"],
             RadzenWorkers.Select(w => new[]
             {

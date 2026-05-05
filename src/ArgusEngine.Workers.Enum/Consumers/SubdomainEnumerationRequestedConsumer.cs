@@ -116,6 +116,7 @@ public sealed class SubdomainEnumerationRequestedConsumer(
         var causation = message.EventId == Guid.Empty ? correlation : message.EventId;
         var rootAsset = await graph.GetRootAssetAsync(message.TargetId, context.CancellationToken).ConfigureAwait(false);
 
+        var assetsToEnqueue = new List<AssetDiscovered>();
         foreach (var raw in rawResults)
         {
             var normalized = SubdomainEnumerationNormalization.NormalizeHostname(raw.Hostname);
@@ -134,31 +135,35 @@ public sealed class SubdomainEnumerationRequestedConsumer(
             if (!dedupe.Add(normalized))
                 continue;
 
-            await outbox.EnqueueAsync(
-                    new AssetDiscovered(
-                        message.TargetId,
-                        target.RootDomain,
-                        target.GlobalMaxDepth,
-                        Depth: 1,
-                        Kind: AssetKind.Subdomain,
-                        RawValue: normalized,
-                        DiscoveredBy: $"enum-worker:{raw.Provider}",
-                        OccurredAt: DateTimeOffset.UtcNow,
-                        CorrelationId: correlation,
-                        AdmissionStage: AssetAdmissionStage.Raw,
-                        AssetId: null,
-                        DiscoveryContext: $"Subdomain enumeration provider={raw.Provider}; method={raw.Method}",
-                        ParentAssetId: rootAsset?.Id,
-                        RelationshipType: AssetRelationshipType.Contains,
-                        IsPrimaryRelationship: true,
-                        EventId: NewId.NextGuid(),
-                        CausationId: causation,
-                        Producer: "worker-enum"),
-                    context.CancellationToken)
-                .ConfigureAwait(false);
+            assetsToEnqueue.Add(
+                new AssetDiscovered(
+                    message.TargetId,
+                    target.RootDomain,
+                    target.GlobalMaxDepth,
+                    Depth: 1,
+                    Kind: AssetKind.Subdomain,
+                    RawValue: normalized,
+                    DiscoveredBy: $"enum-worker:{raw.Provider}",
+                    OccurredAt: DateTimeOffset.UtcNow,
+                    CorrelationId: correlation,
+                    AdmissionStage: AssetAdmissionStage.Raw,
+                    AssetId: null,
+                    DiscoveryContext: $"Subdomain enumeration provider={raw.Provider}; method={raw.Method}",
+                    ParentAssetId: rootAsset?.Id,
+                    RelationshipType: AssetRelationshipType.Contains,
+                    IsPrimaryRelationship: true,
+                    EventId: NewId.NextGuid(),
+                    CausationId: causation,
+                    Producer: "worker-enum"));
+            
             emittedCount++;
             if (emittedCount >= maxPerJob)
                 break;
+        }
+
+        if (assetsToEnqueue.Count > 0)
+        {
+            await outbox.EnqueueBatchAsync(assetsToEnqueue, context.CancellationToken).ConfigureAwait(false);
         }
 
         LogEnumerationCompleted(

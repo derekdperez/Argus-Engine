@@ -20,6 +20,7 @@ try
     builder.Services.AddHostedService<HttpRequestQueueWorker>();
 
     builder.Services.AddArgusInfrastructure(builder.Configuration);
+    builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.Spider);
     builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });
 
     builder.Services.AddHttpClient("spider")

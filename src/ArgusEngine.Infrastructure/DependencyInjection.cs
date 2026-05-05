@@ -39,6 +39,17 @@ public static class DependencyInjection
     private static readonly string[] ReadyRedisTags = ["ready", "redis"];
     private static readonly string[] ReadyRabbitMqTags = ["ready", "rabbitmq"];
 
+    public static IServiceCollection AddArgusWorkerHeartbeat(this IServiceCollection services, string workerKey)
+    {
+        services.AddSingleton(sp => new WorkerHeartbeatService(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<IDbContextFactory<ArgusDbContext>>(),
+            workerKey,
+            sp.GetRequiredService<ILogger<WorkerHeartbeatService>>()));
+        services.AddHostedService(sp => sp.GetRequiredService<WorkerHeartbeatService>());
+        return services;
+    }
+
     public static IServiceCollection AddArgusInfrastructure(this IServiceCollection services, IConfiguration configuration) =>
         services.AddNightmareInfrastructure(configuration);
 

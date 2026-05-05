@@ -30,47 +30,75 @@ public sealed class BusJournalPublishObserver(BusJournalBuffer buffer) : IPublis
 public sealed class BusJournalConsumeObserver(BusJournalBuffer buffer) : IConsumeObserver
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false };
+    private const string StartTimeHeader = "Argus-Consume-StartTime";
 
-    public Task ConsumeFault<T>(ConsumeContext<T> context, Exception exception)
-        where T : class =>
-        Task.CompletedTask;
-
-    public Task ConsumeFault(ConsumeContext context, Exception exception)
+    public Task PreConsume<T>(ConsumeContext<T> context)
+        where T : class
     {
-        GC.KeepAlive(buffer);
+        var now = DateTimeOffset.UtcNow;
+        context.Headers.Set(StartTimeHeader, now.ToUnixTimeMilliseconds());
+
+        buffer.TryEnqueue(
+            direction: "Consume",
+            messageType: typeof(T).Name,
+            payloadJson: JsonSerializer.Serialize(context.Message!, context.Message!.GetType(), JsonOpts),
+            consumerType: ResolveConsumerClrName(context),
+            status: "Started",
+            messageId: context.MessageId);
+        
         return Task.CompletedTask;
     }
 
     public Task PostConsume<T>(ConsumeContext<T> context)
         where T : class
     {
+        var duration = ResolveDuration(context);
+        
         buffer.TryEnqueue(
             direction: "Consume",
             messageType: typeof(T).Name,
             payloadJson: JsonSerializer.Serialize(context.Message!, context.Message!.GetType(), JsonOpts),
-            consumerType: ResolveConsumerClrName(context));
+            consumerType: ResolveConsumerClrName(context),
+            status: "Completed",
+            durationMs: duration,
+            messageId: context.MessageId);
         return Task.CompletedTask;
     }
 
-    public Task PostConsume(ConsumeContext context)
+    public Task ConsumeFault<T>(ConsumeContext<T> context, Exception exception)
+        where T : class
     {
-        GC.KeepAlive(buffer);
+        var duration = ResolveDuration(context);
+
+        buffer.TryEnqueue(
+            direction: "Consume",
+            messageType: typeof(T).Name,
+            payloadJson: JsonSerializer.Serialize(context.Message!, context.Message!.GetType(), JsonOpts),
+            consumerType: ResolveConsumerClrName(context),
+            status: "Failed",
+            durationMs: duration,
+            error: exception.Message,
+            messageId: context.MessageId);
         return Task.CompletedTask;
     }
 
-    public Task PreConsume<T>(ConsumeContext<T> context)
-        where T : class =>
-        Task.CompletedTask;
+    public Task ConsumeFault(ConsumeContext context, Exception exception) => Task.CompletedTask;
+    public Task PostConsume(ConsumeContext context) => Task.CompletedTask;
+    public Task PreConsume(ConsumeContext context) => Task.CompletedTask;
 
-    public Task PreConsume(ConsumeContext context)
+    private static double? ResolveDuration(ConsumeContext context)
     {
-        GC.KeepAlive(buffer);
-        return Task.CompletedTask;
+        if (context.Headers.TryGetHeader(StartTimeHeader, out var raw) && raw is long startTimeMs)
+        {
+            return (DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(startTimeMs)).TotalMilliseconds;
+        }
+        return null;
     }
 
     private static string? ResolveConsumerClrName<T>(ConsumeContext<T> context)
         where T : class
     {
+        // ... (rest of the method as is)
         foreach (var arg in context.GetType().GetGenericArguments())
         {
             if (typeof(IConsumer<T>).IsAssignableFrom(arg))

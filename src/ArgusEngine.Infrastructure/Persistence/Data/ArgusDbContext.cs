@@ -24,6 +24,7 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
     public DbSet<WorkerScalingSetting> WorkerScalingSettings => Set<WorkerScalingSetting>();
     public DbSet<Ec2WorkerMachine> Ec2WorkerMachines => Set<Ec2WorkerMachine>();
     public DbSet<TargetScanState> TargetScanStates => Set<TargetScanState>();
+    public DbSet<WorkerHeartbeat> WorkerHeartbeats => Set<WorkerHeartbeat>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -176,7 +177,20 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.Property(x => x.PayloadJson).HasColumnName("payload_json").IsRequired();
             e.Property(x => x.OccurredAtUtc).HasColumnName("occurred_at_utc");
             e.Property(x => x.HostName).HasMaxLength(256).IsRequired().HasColumnName("host_name");
+            e.Property(x => x.Status).HasMaxLength(32).IsRequired().HasDefaultValue("Completed");
+            e.Property(x => x.DurationMs);
+            e.Property(x => x.Error);
+            e.Property(x => x.MessageId);
             e.HasIndex(x => x.OccurredAtUtc);
+            e.HasIndex(x => x.MessageId);
+        });
+
+        modelBuilder.Entity<WorkerHeartbeat>(e =>
+        {
+            e.ToTable("worker_heartbeats");
+            e.HasKey(x => x.HostName);
+            e.Property(x => x.HostName).HasMaxLength(256);
+            e.Property(x => x.WorkerKey).HasMaxLength(64).IsRequired();
         });
 
         modelBuilder.Entity<WorkerSwitch>(e =>

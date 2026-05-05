@@ -49,7 +49,15 @@ public sealed class BusJournalBuffer(
 
     private long _droppedJournalEntries;
 
-    public void TryEnqueue(string direction, string messageType, string payloadJson, string? consumerType)
+    public void TryEnqueue(
+        string direction,
+        string messageType,
+        string payloadJson,
+        string? consumerType,
+        string status = "Completed",
+        double? durationMs = null,
+        string? error = null,
+        Guid? messageId = null)
     {
         if (!_enabled)
         {
@@ -64,6 +72,10 @@ public sealed class BusJournalBuffer(
             PayloadJson = Truncate(payloadJson, 24_000),
             OccurredAtUtc = DateTimeOffset.UtcNow,
             HostName = Environment.MachineName,
+            Status = status,
+            DurationMs = durationMs,
+            Error = error is null ? null : Truncate(error, 2048),
+            MessageId = messageId,
         };
 
         if (!_channel.Writer.TryWrite(entry))

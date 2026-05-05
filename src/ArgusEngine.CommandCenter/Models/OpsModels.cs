@@ -163,7 +163,10 @@ public sealed record WorkerInstanceActivityDto(
     DateTimeOffset LastCompletedAtUtc,
     string MessageType,
     string PayloadPreview,
-    string ActivityLabel);
+    string ActivityLabel,
+    string Status,
+    double? DurationMs,
+    string? Error);
 
 public sealed record RabbitQueueBriefDto(
     string Name,

@@ -10,4 +10,8 @@ public sealed class BusJournalEntry
     public DateTimeOffset OccurredAtUtc { get; set; }
     /// <summary>Process/container host name (e.g. Docker hostname) for correlating journal rows with a worker instance.</summary>
     public string HostName { get; set; } = "";
+    public string Status { get; set; } = "Completed";
+    public double? DurationMs { get; set; }
+    public string? Error { get; set; }
+    public Guid? MessageId { get; set; }
 }

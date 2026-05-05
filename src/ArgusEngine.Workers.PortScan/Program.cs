@@ -15,6 +15,7 @@ try
 
     builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-portscan");
     builder.Services.AddArgusInfrastructure(builder.Configuration);
+    builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.PortScan);
 
     builder.Services.AddArgusRabbitMq(
         builder.Configuration,

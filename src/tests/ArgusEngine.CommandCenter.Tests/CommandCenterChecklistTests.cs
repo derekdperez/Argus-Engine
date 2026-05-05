@@ -8,7 +8,7 @@ public sealed class CommandCenterChecklistTests
         var root = FindRepositoryRoot();
         var path = Path.Combine(root, "src", "ArgusEngine.CommandCenter", "Program.cs");
         var text = File.ReadAllText(path);
-        var lines = File.ReadAllLines(path).Where(line => !string.IsNullOrWhiteSpace(line)).Count();
+        var lines = File.ReadAllLines(path).Count(line => !string.IsNullOrWhiteSpace(line));
 
         Assert.True(lines < 75, $"Program.cs should be under 75 non-empty lines; actual {lines}.");
         Assert.Contains("AddCommandCenterServices", text);
@@ -34,10 +34,10 @@ public sealed class CommandCenterChecklistTests
     private static string FindRepositoryRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
+
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir.FullName, "ArgusEngine.slnx"))
-                || File.Exists(Path.Combine(dir.FullName, "ArgusEngine.slnx")))
+            if (File.Exists(Path.Combine(dir.FullName, "ArgusEngine.slnx")))
             {
                 return dir.FullName;
             }

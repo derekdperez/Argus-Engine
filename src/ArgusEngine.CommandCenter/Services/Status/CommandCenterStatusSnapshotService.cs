@@ -440,7 +440,7 @@ public sealed class CommandCenterStatusSnapshotService(
         try
         {
             using var client = new TcpClient();
-            var connectTask = client.ConnectAsync(host, port, ct);
+            var connectTask = client.ConnectAsync(host, port, ct).AsTask();
             var timeoutTask = Task.Delay(2000, ct);
 
             var completedTask = await Task.WhenAny(connectTask, timeoutTask).ConfigureAwait(false);

@@ -9,6 +9,11 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
+using System.Net.Sockets;
+using ArgusEngine.Infrastructure.Messaging;
+
 
 namespace ArgusEngine.CommandCenter.Services.Status;
 
@@ -17,6 +22,8 @@ public sealed class CommandCenterStatusSnapshotService(
     IConfiguration configuration,
     IWebHostEnvironment environment,
     WorkerScaleDefinitionProvider workerDefinitions,
+    IConnectionMultiplexer redis,
+    IOptions<RabbitMqOptions> rabbitOptions,
     ILogger<CommandCenterStatusSnapshotService> logger) : ICommandCenterStatusSnapshotService
 {
     private const double HttpQueueAgeWarningSeconds = 300;
@@ -35,7 +42,7 @@ public sealed class CommandCenterStatusSnapshotService(
 
         var databaseHealthy = await CanConnectToDatabaseAsync(alerts, now, cancellationToken).ConfigureAwait(false);
         var components = BuildComponents(version, databaseHealthy);
-        var dependencies = BuildDependencies(databaseHealthy);
+        var dependencies = await BuildDependenciesAsync(databaseHealthy, cancellationToken).ConfigureAwait(false);
         var workers = databaseHealthy
             ? await BuildWorkerStatusesAsync(alerts, now, cancellationToken).ConfigureAwait(false)
             : BuildUnavailableWorkerStatuses();
@@ -261,15 +268,27 @@ public sealed class CommandCenterStatusSnapshotService(
                 Color: "yellow"));
         }
 
-        var outboxDepth = await db.OutboxMessages
+        var outboxStats = await db.OutboxMessages
             .AsNoTracking()
-            .LongCountAsync(cancellationToken)
+            .GroupBy(x => x.State)
+            .Select(g => new { State = g.Key, Count = g.LongCount() })
+            .ToDictionaryAsync(x => x.State, x => x.Count, cancellationToken)
             .ConfigureAwait(false);
+
+        var outboxDepth = outboxStats.Values.Sum();
+        var pendingOutbox = outboxStats.GetValueOrDefault(OutboxMessageState.Pending, 0)
+                          + outboxStats.GetValueOrDefault(OutboxMessageState.Failed, 0)
+                          + outboxStats.GetValueOrDefault(OutboxMessageState.InFlight, 0);
+        var deadLetterOutbox = outboxStats.GetValueOrDefault(OutboxMessageState.DeadLetter, 0);
 
         var busJournalLast5Minutes = await db.BusJournal
             .AsNoTracking()
             .LongCountAsync(x => x.OccurredAtUtc >= now.AddMinutes(-5), cancellationToken)
             .ConfigureAwait(false);
+
+        var outboxReason = outboxDepth == 0
+            ? "No messages in outbox."
+            : $"Total: {outboxDepth:N0} (Pending/Failed: {pendingOutbox:N0}, DeadLetter: {deadLetterOutbox:N0}, Succeeded: {outboxStats.GetValueOrDefault(OutboxMessageState.Succeeded, 0):N0})";
 
         return
         [
@@ -282,15 +301,14 @@ public sealed class CommandCenterStatusSnapshotService(
                 criticalDepth: HttpQueueDepthCritical,
                 warningAgeSeconds: HttpQueueAgeWarningSeconds,
                 criticalAgeSeconds: HttpQueueAgeCriticalSeconds),
-            BuildQueueStatus(
-                key: "outbox",
-                displayName: "Outbox",
-                depth: outboxDepth,
-                oldestAgeSeconds: null,
-                warningDepth: OutboxDepthWarning,
-                criticalDepth: OutboxDepthCritical,
-                warningAgeSeconds: null,
-                criticalAgeSeconds: null),
+            new CommandCenterQueueStatus(
+                Key: "outbox",
+                DisplayName: "Outbox",
+                Depth: outboxDepth,
+                OldestAgeSeconds: null,
+                Status: deadLetterOutbox > 0 ? "Degraded" : (pendingOutbox > OutboxDepthWarning ? "Warning" : "Healthy"),
+                Color: deadLetterOutbox > 0 ? "red" : (pendingOutbox > OutboxDepthWarning ? "yellow" : "green"),
+                Reason: outboxReason),
             new CommandCenterQueueStatus(
                 Key: "bus-journal",
                 DisplayName: "Bus Journal",
@@ -380,17 +398,13 @@ public sealed class CommandCenterStatusSnapshotService(
             Reason: depth == 0 ? "No pending work." : "Backlog is within thresholds.");
     }
 
-    private IReadOnlyList<CommandCenterDependencyStatus> BuildDependencies(bool databaseHealthy)
+    private async Task<IReadOnlyList<CommandCenterDependencyStatus>> BuildDependenciesAsync(
+        bool databaseHealthy,
+        CancellationToken ct)
     {
-        var rabbitHost = configuration.GetArgusValue("RabbitMq:Host") ?? configuration["RABBITMQ_HOST"];
-        var redisConfiguration =
-            configuration.GetArgusValue("Redis:Configuration")
-            ?? configuration["ConnectionStrings:Redis"]
-            ?? configuration["REDIS_CONNECTION_STRING"];
-        var fileStore =
-            configuration.GetArgusValue("FileStore:ConnectionString")
-            ?? configuration["ConnectionStrings:FileStore"]
-            ?? configuration["FILESTORE_CONNECTION_STRING"];
+        var rabbit = rabbitOptions.Value;
+        var rabbitConnected = await CheckRabbitMqConnectivityAsync(rabbit.Host, rabbit.Port, ct).ConfigureAwait(false);
+        var redisConnected = await CheckRedisConnectivityAsync(ct).ConfigureAwait(false);
 
         return
         [
@@ -403,22 +417,58 @@ public sealed class CommandCenterStatusSnapshotService(
             new CommandCenterDependencyStatus(
                 Key: "rabbitmq",
                 DisplayName: "RabbitMQ",
-                Status: string.IsNullOrWhiteSpace(rabbitHost) ? "Unknown" : "Configured",
-                Color: string.IsNullOrWhiteSpace(rabbitHost) ? "gray" : "green",
-                Reason: string.IsNullOrWhiteSpace(rabbitHost) ? "No RabbitMQ host is configured." : $"Configured host: {rabbitHost}."),
+                Status: rabbitConnected ? "Healthy" : "Critical",
+                Color: rabbitConnected ? "green" : "red",
+                Reason: rabbitConnected ? $"Connected to {rabbit.Host}:{rabbit.Port}." : $"Failed to connect to {rabbit.Host}:{rabbit.Port}."),
             new CommandCenterDependencyStatus(
                 Key: "redis",
                 DisplayName: "Redis",
-                Status: string.IsNullOrWhiteSpace(redisConfiguration) ? "Unknown" : "Configured",
-                Color: string.IsNullOrWhiteSpace(redisConfiguration) ? "gray" : "green",
-                Reason: string.IsNullOrWhiteSpace(redisConfiguration) ? "No Redis configuration is present." : "Redis configuration is present."),
+                Status: redisConnected ? "Healthy" : "Critical",
+                Color: redisConnected ? "green" : "red",
+                Reason: redisConnected ? "Redis connection check succeeded." : "Redis connection check failed."),
             new CommandCenterDependencyStatus(
                 Key: "file-store",
                 DisplayName: "File Store",
-                Status: string.IsNullOrWhiteSpace(fileStore) ? "Unknown" : "Configured",
-                Color: string.IsNullOrWhiteSpace(fileStore) ? "gray" : "green",
-                Reason: string.IsNullOrWhiteSpace(fileStore) ? "No file-store connection string is present." : "File-store configuration is present.")
+                Status: databaseHealthy ? "Healthy" : "Unknown",
+                Color: databaseHealthy ? "green" : "gray",
+                Reason: databaseHealthy ? "File store database is reachable via Postgres connection." : "File store health check skipped due to Postgres failure.")
         ];
+    }
+
+    private async Task<bool> CheckRabbitMqConnectivityAsync(string host, int port, CancellationToken ct)
+    {
+        try
+        {
+            using var client = new TcpClient();
+            var connectTask = client.ConnectAsync(host, port, ct);
+            var timeoutTask = Task.Delay(2000, ct);
+
+            var completedTask = await Task.WhenAny(connectTask, timeoutTask).ConfigureAwait(false);
+            return completedTask == connectTask && client.Connected;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task<bool> CheckRedisConnectivityAsync(CancellationToken ct)
+    {
+        try
+        {
+            if (!redis.IsConnected)
+            {
+                return false;
+            }
+
+            var database = redis.GetDatabase();
+            await database.PingAsync().WaitAsync(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static IReadOnlyList<CommandCenterSloIndicator> BuildIndicators(

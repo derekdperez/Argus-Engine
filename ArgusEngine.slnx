@@ -11,6 +11,7 @@
     <Project Path="src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj" Type="Classic C#" />
     <Project Path="src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj" Type="Classic C#" />
     <Project Path="src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.Harness/ArgusEngine.Harness.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="src/tests/ArgusEngine.CommandCenter.Tests/ArgusEngine.CommandCenter.Tests.csproj" Type="Classic C#" />

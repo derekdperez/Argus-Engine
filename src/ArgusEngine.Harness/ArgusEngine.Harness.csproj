@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ArgusEngine.Application\ArgusEngine.Application.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Contracts\ArgusEngine.Contracts.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Domain\ArgusEngine.Domain.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Infrastructure\ArgusEngine.Infrastructure.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Workers.Enum\ArgusEngine.Workers.Enum.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Workers.Spider\ArgusEngine.Workers.Spider.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Workers.PortScan\ArgusEngine.Workers.PortScan.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Workers.HighValue\ArgusEngine.Workers.HighValue.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Workers.TechnologyIdentification\ArgusEngine.Workers.TechnologyIdentification.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="MassTransit" />
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+</Project>

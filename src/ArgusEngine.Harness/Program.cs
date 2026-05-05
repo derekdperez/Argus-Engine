@@ -16,6 +16,12 @@ using ArgusEngine.Domain.Entities;
 using ArgusEngine.Workers.Spider;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Harness.Core;
+using ArgusEngine.Gatekeeper;
+using ArgusEngine.Workers.Enum;
+using ArgusEngine.Workers.Spider;
+using ArgusEngine.Workers.PortScan;
+using ArgusEngine.Workers.HighValue;
+using ArgusEngine.Workers.TechnologyIdentification;
 using System.Net;
 
 var rootCommand = new RootCommand("Argus Engine Worker Test Harness");
@@ -119,13 +125,19 @@ IHost CreateHarnessHost()
     builder.Configuration.AddEnvironmentVariables();
 
     builder.Services.AddArgusInfrastructure(builder.Configuration);
+    builder.Services.AddScoped<GatekeeperOrchestrator>();
+    builder.Services.AddScoped<HarnessRunner>();
 
-    // Register Workers' Logic
+    // Register Health Checks
+    builder.Services.AddScoped<IWorkerHealthCheck, GatekeeperWorkerHealthCheck>();
+    builder.Services.AddScoped<IWorkerHealthCheck, EnumWorkerHealthCheck>();
+    builder.Services.AddScoped<IWorkerHealthCheck, SpiderWorkerHealthCheck>();
+    builder.Services.AddScoped<IWorkerHealthCheck, PortScanWorkerHealthCheck>();
+    builder.Services.AddScoped<IWorkerHealthCheck, HighValueWorkerHealthCheck>();
+    builder.Services.AddScoped<IWorkerHealthCheck, TechIdWorkerHealthCheck>();
+
     builder.Services.AddMassTransit(x =>
     {
-        x.AddConsumer<SubdomainEnumerationRequestedConsumer>();
-        x.AddConsumer<TargetCreatedConsumer>();
-        
         x.UsingInMemory((context, cfg) =>
         {
             cfg.ConfigureEndpoints(context);

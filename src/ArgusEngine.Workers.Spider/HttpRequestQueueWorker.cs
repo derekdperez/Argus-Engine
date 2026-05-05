@@ -21,7 +21,6 @@ public sealed class HttpRequestQueueWorker(
     IServiceScopeFactory scopeFactory,
     IDbContextFactory<ArgusDbContext> dbFactory,
     IHttpClientFactory httpClientFactory,
-    IAssetPersistence persistence,
     IOptions<SpiderHttpOptions> options,
     AdaptiveConcurrencyController concurrency,
     ILogger<HttpRequestQueueWorker> logger) : BackgroundService
@@ -132,7 +131,11 @@ public sealed class HttpRequestQueueWorker(
 
             var snapshot = await CreateSnapshotAsync(item, response, stopwatch.Elapsed, ct).ConfigureAwait(false);
             
-            await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, Guid.Empty, ct).ConfigureAwait(false);
+            using (var scope = scopeFactory.CreateScope())
+            {
+                var persistence = scope.ServiceProvider.GetRequiredService<IAssetPersistence>();
+                await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, Guid.Empty, ct).ConfigureAwait(false);
+            }
 
             await MarkSucceededAsync(item.Id, snapshot, ct).ConfigureAwait(false);
 
@@ -216,7 +219,11 @@ public sealed class HttpRequestQueueWorker(
                 RedirectChain: [],
                 ResponseBodyPreview: Truncate(error, Math.Min(error.Length, 4096)));
 
-            await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, Guid.Empty, ct).ConfigureAwait(false);
+            using (var scope = scopeFactory.CreateScope())
+            {
+                var persistence = scope.ServiceProvider.GetRequiredService<IAssetPersistence>();
+                await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, Guid.Empty, ct).ConfigureAwait(false);
+            }
             
             await MarkFailedAsync(item.Id, error, terminal: true, ct).ConfigureAwait(false);
             return;

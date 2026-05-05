@@ -45,27 +45,31 @@ public static class ToolRestartEndpoints
                         providers = ["subfinder", "amass"];
 
                     var queued = 0;
+                    var eventsToEnqueue = new List<SubdomainEnumerationRequested>();
                     foreach (var target in targets)
                     {
                         var correlation = NewId.NextGuid();
                         foreach (var provider in providers)
                         {
                             var eventId = NewId.NextGuid();
-                            await outbox.EnqueueAsync(
-                                    new SubdomainEnumerationRequested(
-                                        target.Id,
-                                        target.RootDomain,
-                                        provider,
-                                        "command-center-manual-restart",
-                                        DateTimeOffset.UtcNow,
-                                        correlation,
-                                        EventId: eventId,
-                                        CausationId: correlation,
-                                        Producer: "command-center"),
-                                    ct)
-                                .ConfigureAwait(false);
+                            eventsToEnqueue.Add(
+                                new SubdomainEnumerationRequested(
+                                    target.Id,
+                                    target.RootDomain,
+                                    provider,
+                                    "command-center-manual-restart",
+                                    DateTimeOffset.UtcNow,
+                                    correlation,
+                                    EventId: eventId,
+                                    CausationId: correlation,
+                                    Producer: "command-center"));
                             queued++;
                         }
+                    }
+
+                    if (eventsToEnqueue.Count > 0)
+                    {
+                        await outbox.EnqueueBatchAsync(eventsToEnqueue, ct).ConfigureAwait(false);
                     }
 
                     return Results.Ok(new { Targets = targets.Count, JobsQueued = queued });

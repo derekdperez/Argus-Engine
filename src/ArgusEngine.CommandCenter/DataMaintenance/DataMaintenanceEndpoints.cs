@@ -11,8 +11,8 @@ namespace ArgusEngine.CommandCenter.DataMaintenance;
 
 public static class DataMaintenanceEndpoints
 {
-    private const string ConfigEnabled = "Nightmare:DataMaintenance:Enabled";
-    private const string ConfigApiKey = "Nightmare:DataMaintenance:ApiKey";
+    private const string ConfigEnabled = "Argus:DataMaintenance:Enabled";
+    private const string ConfigApiKey = "Argus:DataMaintenance:ApiKey";
 
     public const string PhraseClearAllTargets = "DELETE ALL TARGETS";
     public const string PhraseClearAllAssets = "DELETE ALL ASSETS";
@@ -265,7 +265,7 @@ public static class DataMaintenanceEndpoints
         var required = config[ConfigApiKey]?.Trim();
         if (string.IsNullOrWhiteSpace(required))
             return false;
-        return string.Equals(http.Headers["X-Nightmare-Maintenance-Key"].ToString(), required, StringComparison.Ordinal);
+        return string.Equals(http.Headers["X-Argus-Maintenance-Key"].ToString(), required, StringComparison.Ordinal);
     }
 
     private static IResult MaintenanceDenied(IConfiguration config)
@@ -276,7 +276,7 @@ public static class DataMaintenanceEndpoints
         {
             return Results.Problem(
                 title: "Maintenance endpoints misconfigured",
-                detail: "Nightmare:DataMaintenance:Enabled=true requires Nightmare:DataMaintenance:ApiKey to be configured.",
+                detail: "Argus:DataMaintenance:Enabled=true requires Argus:DataMaintenance:ApiKey to be configured.",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 

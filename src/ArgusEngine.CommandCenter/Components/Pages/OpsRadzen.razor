@@ -2121,7 +2121,7 @@
         using var msg = new HttpRequestMessage(HttpMethod.Post, relativeUri);
         var key = _maintenanceApiKey.Trim();
         if (!string.IsNullOrEmpty(key))
-            msg.Headers.TryAddWithoutValidation("X-Nightmare-Maintenance-Key", key);
+            msg.Headers.TryAddWithoutValidation("X-Argus-Maintenance-Key", key);
         msg.Content = JsonContent.Create(body);
         return await Http.SendAsync(msg);
     }

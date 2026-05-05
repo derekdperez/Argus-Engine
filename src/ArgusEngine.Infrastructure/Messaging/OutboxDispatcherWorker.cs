@@ -54,15 +54,17 @@ public sealed class OutboxDispatcherWorker(
         {
             try
             {
-                var leased = await TryLeaseNextAsync(stoppingToken).ConfigureAwait(false);
+                var batch = await TryLeaseNextBatchAsync(20, stoppingToken).ConfigureAwait(false);
 
-                if (leased is null)
+                if (batch.Count == 0)
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(400), stoppingToken).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromMilliseconds(500), stoppingToken).ConfigureAwait(false);
                     continue;
                 }
 
-                await DispatchAsync(leased, stoppingToken).ConfigureAwait(false);
+                // Dispatch in parallel
+                var tasks = batch.Select(msg => DispatchAsync(msg, stoppingToken));
+                await Task.WhenAll(tasks).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -71,16 +73,16 @@ public sealed class OutboxDispatcherWorker(
             catch (Exception ex)
             {
                 LogOutboxDispatcherLoopFault(logger, ex);
-                await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken).ConfigureAwait(false);
             }
         }
     }
 
-    private async Task<OutboxMessage?> TryLeaseNextAsync(CancellationToken ct)
+    private async Task<List<OutboxMessage>> TryLeaseNextBatchAsync(int batchSize, CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
-        var lockUntil = now.AddMinutes(2);
+        var lockUntil = now.AddMinutes(5);
 
         var conn = db.Database.GetDbConnection();
         if (conn.State != System.Data.ConnectionState.Open)
@@ -89,18 +91,18 @@ public sealed class OutboxDispatcherWorker(
         }
 
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
+        cmd.CommandText = $"""
             WITH candidate AS (
-                SELECT o.*
-                FROM outbox_messages o
+                SELECT id
+                FROM outbox_messages
                 WHERE (
-                    (o.state IN ('Pending', 'Failed') AND o.next_attempt_at_utc <= @now)
-                    OR (o.state = 'InFlight' AND o.locked_until_utc < @now)
+                    (state IN ('Pending', 'Failed') AND next_attempt_at_utc <= @now)
+                    OR (state = 'InFlight' AND locked_until_utc < @now)
                 )
-                AND o.state <> 'DeadLetter'
-                ORDER BY o.next_attempt_at_utc ASC, o.created_at_utc ASC
+                AND state <> 'DeadLetter'
+                ORDER BY next_attempt_at_utc ASC, created_at_utc ASC
                 FOR UPDATE SKIP LOCKED
-                LIMIT 1
+                LIMIT {batchSize}
             )
             UPDATE outbox_messages o
             SET state = 'InFlight',
@@ -117,13 +119,14 @@ public sealed class OutboxDispatcherWorker(
         AddParameter(cmd, "lock_until", lockUntil);
         AddParameter(cmd, "worker_id", _workerId);
 
+        var results = new List<OutboxMessage>();
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            return null;
+            results.Add(MapOutboxMessage(reader));
         }
 
-        return MapOutboxMessage(reader);
+        return results;
     }
 
     private async Task DispatchAsync(OutboxMessage message, CancellationToken ct)

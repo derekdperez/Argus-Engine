@@ -2,7 +2,7 @@ using MassTransit;
 using Microsoft.AspNetCore.Components;
 using ArgusEngine.CommandCenter.DataMaintenance;
 using ArgusEngine.Application.Sagas;
-using ArgusEngine.Application.Workers.Harness;
+using ArgusEngine.Harness.Core;
 using ArgusEngine.CommandCenter.Realtime;
 using ArgusEngine.CommandCenter.Services;
 using ArgusEngine.CommandCenter.Services.Aws;

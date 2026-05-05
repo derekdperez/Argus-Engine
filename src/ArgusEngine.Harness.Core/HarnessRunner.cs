@@ -4,7 +4,8 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using ArgusEngine.Application.Workers;
+using ArgusEngine.Harness.Core.Workers;
+using ArgusEngine.Gatekeeper;
 using ArgusEngine.Workers.Enum;
 using ArgusEngine.Workers.Spider;
 using ArgusEngine.Workers.PortScan;
@@ -13,7 +14,7 @@ using ArgusEngine.Workers.TechnologyIdentification;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace ArgusEngine.Application.Workers.Harness;
+namespace ArgusEngine.Harness.Core;
 
 public record HarnessResultDto(DateTimeOffset ExecutedAtUtc, List<WorkerHealthCheckResultDto> WorkerResults);
 public record WorkerHealthCheckResultDto(string WorkerName, bool Success, string Message, string Output);
@@ -41,6 +42,7 @@ public class HarnessRunner
         
         var healthChecks = new List<IWorkerHealthCheck>
         {
+            ActivatorUtilities.CreateInstance<GatekeeperWorkerHealthCheck>(_serviceProvider),
             ActivatorUtilities.CreateInstance<EnumWorkerHealthCheck>(_serviceProvider),
             ActivatorUtilities.CreateInstance<SpiderWorkerHealthCheck>(_serviceProvider),
             ActivatorUtilities.CreateInstance<PortScanWorkerHealthCheck>(_serviceProvider),

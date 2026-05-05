@@ -15,7 +15,7 @@ using ArgusEngine.Application.Events;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Workers.Spider;
 using Microsoft.EntityFrameworkCore;
-using ArgusEngine.Application.Workers.Harness;
+using ArgusEngine.Harness.Core;
 using System.Net;
 
 var rootCommand = new RootCommand("Argus Engine Worker Test Harness");

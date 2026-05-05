@@ -2,7 +2,7 @@ using System;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using ArgusEngine.Application.Workers;
+using ArgusEngine.Harness.Core.Workers;
 using Microsoft.Extensions.Logging;
 
 namespace ArgusEngine.Workers.Spider;

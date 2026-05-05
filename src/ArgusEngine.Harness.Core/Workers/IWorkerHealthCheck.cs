@@ -1,7 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ArgusEngine.Application.Workers;
+namespace ArgusEngine.Harness.Core.Workers;
 
 public record WorkerHealthCheckResult(bool Success, string Message, string Output = "");
 

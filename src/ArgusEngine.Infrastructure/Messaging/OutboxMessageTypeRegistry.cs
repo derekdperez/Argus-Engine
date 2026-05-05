@@ -50,14 +50,39 @@ public static class OutboxMessageTypeRegistry
             return false;
         }
 
+        // 1. Direct match (current keys)
         if (TypesByMessageKey.TryGetValue(messageKeyOrLegacyTypeName, out messageType))
         {
             return true;
         }
 
+        // 2. Legacy prefix mapping (nightmare -> argus)
+        if (messageKeyOrLegacyTypeName.StartsWith("nightmare.events.", StringComparison.OrdinalIgnoreCase))
+        {
+            var mappedKey = "argus.events." + messageKeyOrLegacyTypeName["nightmare.events.".Length..];
+            if (TypesByMessageKey.TryGetValue(mappedKey, out messageType))
+            {
+                return true;
+            }
+        }
+
+        // 3. Exact match for legacy names (AssemblyQualifiedName, FullName, Name)
         if (LegacyTypesByName.TryGetValue(messageKeyOrLegacyTypeName, out messageType))
         {
             return true;
+        }
+
+        // 4. Fallback: try mapping Nightmare namespace to ArgusEngine in the type string
+        if (messageKeyOrLegacyTypeName.Contains("Nightmare", StringComparison.OrdinalIgnoreCase))
+        {
+            var mappedName = messageKeyOrLegacyTypeName
+                .Replace("Nightmare.Contracts", "ArgusEngine.Contracts", StringComparison.OrdinalIgnoreCase)
+                .Replace("Nightmare.Events", "ArgusEngine.Contracts.Events", StringComparison.OrdinalIgnoreCase);
+
+            if (LegacyTypesByName.TryGetValue(mappedName, out messageType))
+            {
+                return true;
+            }
         }
 
         messageType = null;

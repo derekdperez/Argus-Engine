@@ -141,7 +141,7 @@ public sealed class OutboxDispatcherWorker(
         {
             if (!TryDeserialize(message, out var payload, out var messageClrType))
             {
-                const string error = "Unable to resolve or deserialize message key/payload.";
+                var error = $"Unable to resolve or deserialize message key/payload. MessageType: {message.MessageType}";
                 activity?.SetStatus(ActivityStatusCode.Error, error);
                 activity?.SetTag("argus.outbox_state", OutboxMessageState.DeadLetter);
 

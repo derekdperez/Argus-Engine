@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Starts the full Nightmare v2 stack locally (Docker Compose) for development/debugging.
+  Starts the full Argus Engine stack locally (Docker Compose) for development/debugging.
 
 .DESCRIPTION
   Brings up Postgres, Redis, RabbitMQ, Command Center, Gatekeeper, Spider, Enum, and PortScan
@@ -14,8 +14,8 @@
   ps    Show container status.
 
   Optional environment:
-    NIGHTMARE_GIT_PULL=1   Run git pull --ff-only before build.
-    NIGHTMARE_NO_CACHE=1   docker compose build --no-cache
+    ARGUS_GIT_PULL=1   Run git pull --ff-only before build.
+    ARGUS_NO_CACHE=1   docker compose build --no-cache
 
 .EXAMPLE
   .\deploy\run-local.ps1
@@ -39,7 +39,7 @@ else {
   Write-Error "Docker is not on PATH. Install Docker Desktop for Windows."
 }
 
-# See deploy/lib-nightmare-compose.sh — bake can fail opaquely on some hosts; allow override with COMPOSE_BAKE=true.
+# See deploy/lib-argus-compose.sh — bake can fail opaquely on some hosts; allow override with COMPOSE_BAKE=true.
 if ([string]::IsNullOrWhiteSpace($env:COMPOSE_BAKE)) {
   $env:COMPOSE_BAKE = "false"
 }
@@ -51,9 +51,9 @@ $ComposeFile = Join-Path $ScriptRoot "docker-compose.yml"
 $Root = (Resolve-Path (Join-Path $ScriptRoot "..")).Path
 Set-Location $Root
 
-. (Join-Path $ScriptRoot "lib-nightmare-compose.ps1")
+. (Join-Path $ScriptRoot "lib-argus-compose.ps1")
 
-function Invoke-NightmareCompose {
+function Invoke-ArgusCompose {
   param(
     [Parameter(Mandatory = $true)]
     [string[]] $CommandArgs
@@ -91,28 +91,28 @@ function Invoke-NightmareCompose {
 switch ($Action) {
   "down" {
     Write-Host "Stopping stack in: $Root"
-    Invoke-NightmareCompose -CommandArgs @("down", "--remove-orphans")
+    Invoke-ArgusCompose -CommandArgs @("down", "--remove-orphans")
     Write-Host "Stopped."
   }
   "logs" {
     Write-Host "Following logs (Ctrl+C stops tail only). Project: $Root"
-    Invoke-NightmareCompose -CommandArgs @("logs", "-f")
+    Invoke-ArgusCompose -CommandArgs @("logs", "-f")
   }
   "ps" {
-    Invoke-NightmareCompose -CommandArgs @("ps")
+    Invoke-ArgusCompose -CommandArgs @("ps")
   }
   default {
-    Invoke-NightmareGitPullIfRequested -Root $Root
-    Export-NightmareBuildStamp -Root $Root
+    Invoke-ArgusGitPullIfRequested -Root $Root
+    Export-ArgusBuildStamp -Root $Root
     Write-Host "Building images (with --pull) and recreating containers from: $Root"
-    $noCache = ($env:NIGHTMARE_NO_CACHE -eq "1")
-    Invoke-NightmareComposeBuildPull -DockerExe $dockerExe -ComposeFile $ComposeFile -NoCache:$noCache
-    Invoke-NightmareComposeUpRecreate -DockerExe $dockerExe -ComposeFile $ComposeFile
+    $noCache = ($env:ARGUS_NO_CACHE -eq "1")
+    Invoke-ArgusComposeBuildPull -DockerExe $dockerExe -ComposeFile $ComposeFile -NoCache:$noCache
+    Invoke-ArgusComposeUpRecreate -DockerExe $dockerExe -ComposeFile $ComposeFile
     Write-Host ""
     Write-Host "Stack is up (images match current BUILD_SOURCE_STAMP). URLs:"
     Write-Host "  Command Center   http://localhost:8080/"
-    Write-Host "  RabbitMQ UI    http://localhost:15672/  (nightmare / nightmare)"
-    Write-Host "  Postgres       localhost:5432  db=nightmare_v2  user=nightmare"
+    Write-Host "  RabbitMQ UI    http://localhost:15672/  (argus / argus)"
+    Write-Host "  Postgres       localhost:5432  db=argus_engine  user=argus"
     Write-Host "  Redis          localhost:6379"
     Write-Host ""
     Write-Host "Debug:"

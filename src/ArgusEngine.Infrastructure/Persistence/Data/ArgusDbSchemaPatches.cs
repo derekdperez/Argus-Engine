@@ -346,7 +346,8 @@ public static class ArgusDbSchemaPatches
                     ELSE asset_category
                 END,
                 display_name = COALESCE(display_name, "RawValue"),
-                last_seen_at_utc = COALESCE(last_seen_at_utc, "DiscoveredAtUtc")
+                last_seen_at_utc = COALESCE(last_seen_at_utc, "DiscoveredAtUtc"),
+                redirect_count = COALESCE(redirect_count, 0)
                 WHERE "Kind" IS NOT NULL;
 
                 INSERT INTO stored_assets (
@@ -364,7 +365,10 @@ public static class ArgusDbSchemaPatches
                     asset_category,
                     display_name,
                     last_seen_at_utc,
-                    confidence
+                    confidence,
+                    redirect_count,
+                    final_url,
+                    redirect_chain_json
                 )
                 SELECT
                     gen_random_uuid(),
@@ -381,7 +385,10 @@ public static class ArgusDbSchemaPatches
                     0,
                     lower(trim(trailing '.' from t."RootDomain")),
                     now(),
-                    1.0
+                    1.0,
+                    0,
+                    NULL,
+                    NULL
                 FROM recon_targets t
                 WHERE NOT EXISTS (
                     SELECT 1

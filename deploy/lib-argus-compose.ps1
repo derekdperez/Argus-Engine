@@ -1,7 +1,7 @@
 # Dot-sourced by run-local.ps1. Expects $Root = DotNetSolution directory.
 # Re-runnable deploy: export BUILD_SOURCE_STAMP, then build --pull and up --force-recreate.
 
-function Export-NightmareBuildStamp {
+function Export-ArgusBuildStamp {
   param([Parameter(Mandatory = $true)][string] $Root)
   $env:BUILD_SOURCE_STAMP = "nogit-$(Get-Date -Format 'yyyyMMddTHHmmss')Z"
   $gitDir = Join-Path $Root ".git"
@@ -22,20 +22,20 @@ function Export-NightmareBuildStamp {
   Write-Host "BUILD_SOURCE_STAMP=$($env:BUILD_SOURCE_STAMP)"
 }
 
-function Invoke-NightmareGitPullIfRequested {
+function Invoke-ArgusGitPullIfRequested {
   param([Parameter(Mandatory = $true)][string] $Root)
-  if ($env:NIGHTMARE_GIT_PULL -ne "1") { return }
+  if ($env:ARGUS_GIT_PULL -ne "1") { return }
   $gitDir = Join-Path $Root ".git"
   if (-not (Test-Path $gitDir)) {
-    Write-Warning "NIGHTMARE_GIT_PULL=1 but $Root has no .git; skipping pull."
+    Write-Warning "ARGUS_GIT_PULL=1 but $Root has no .git; skipping pull."
     return
   }
-  Write-Host "NIGHTMARE_GIT_PULL=1: git pull --ff-only in $Root"
+  Write-Host "ARGUS_GIT_PULL=1: git pull --ff-only in $Root"
   & git -C $Root pull --ff-only
   if ($LASTEXITCODE -ne 0) { throw "git pull --ff-only failed (exit $LASTEXITCODE)." }
 }
 
-function Invoke-NightmareComposeBuildPull {
+function Invoke-ArgusComposeBuildPull {
   param(
     [Parameter(Mandatory = $true)][string] $DockerExe,
     [Parameter(Mandatory = $true)][string] $ComposeFile,
@@ -47,7 +47,7 @@ function Invoke-NightmareComposeBuildPull {
   if ($LASTEXITCODE -ne 0) { throw "docker compose build failed (exit $LASTEXITCODE)." }
 }
 
-function Invoke-NightmareComposeUpRecreate {
+function Invoke-ArgusComposeUpRecreate {
   param(
     [Parameter(Mandatory = $true)][string] $DockerExe,
     [Parameter(Mandatory = $true)][string] $ComposeFile

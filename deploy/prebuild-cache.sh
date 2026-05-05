@@ -9,27 +9,27 @@ cd "$ROOT"
 
 NIGHTMARE_DEPLOY_FRESH="${NIGHTMARE_DEPLOY_FRESH:-0}"
 NIGHTMARE_DEPLOY_MODE=image
-export NIGHTMARE_DEPLOY_FRESH NIGHTMARE_DEPLOY_MODE
+export ARGUS_DEPLOY_FRESH ARGUS_DEPLOY_MODE
 
-# shellcheck source=deploy/lib-nightmare-compose.sh
-source "$DEPLOY_DIR/lib-nightmare-compose.sh"
+# shellcheck source=deploy/lib-argus-compose.sh
+source "$DEPLOY_DIR/lib-argus-compose.sh"
 # shellcheck source=deploy/lib-install-deps.sh
 source "$DEPLOY_DIR/lib-install-deps.sh"
 
-nightmare_ensure_runtime_dependencies
-nightmare_export_build_stamp "$ROOT"
+argus_ensure_runtime_dependencies
+argus_export_build_stamp "$ROOT"
 
 # Build all service images once. Dockerfile cache mounts retain NuGet and Go package downloads.
-NIGHTMARE_CHANGED_SERVICES="$(nightmare_all_dotnet_services | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-export NIGHTMARE_CHANGED_SERVICES
+ARGUS_CHANGED_SERVICES="$(argus_all_dotnet_services | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+export ARGUS_CHANGED_SERVICES
 
-echo "Prebuilding all Nightmare v2 app images and warming NuGet/Go caches..."
-nightmare_compose_build
+echo "Prebuilding all Argus Engine app images and warming NuGet/Go caches..."
+argus_compose_build
 
 # Also warm the hot-swap NuGet cache outside docker build layers.
 mkdir -p "$ROOT/.nuget/packages"
 echo "Warming hot-swap NuGet cache..."
-nightmare_docker run --rm \
+argus_docker run --rm \
   --user "$(id -u):$(id -g)" \
   -v "$ROOT:/workspace" \
   -w /workspace \
@@ -40,9 +40,9 @@ nightmare_docker run --rm \
   mcr.microsoft.com/dotnet/sdk:10.0 \
   sh -lc 'for p in src/*/*.csproj; do dotnet restore "$p"; done'
 
-nightmare_detect_changed_services "$ROOT"
-nightmare_record_built_service_fingerprints
-nightmare_commit_current_fingerprints
-nightmare_write_last_deploy_stamp
+argus_detect_changed_services "$ROOT"
+argus_record_built_service_fingerprints
+argus_commit_current_fingerprints
+argus_write_last_deploy_stamp
 
 echo "Cache warm complete. Next source-only iteration can use: ./deploy/deploy.sh --hot"

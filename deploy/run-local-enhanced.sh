@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Enhanced local deployment script for NightmareV2 with comprehensive status reporting
+# Enhanced local deployment script for Argus Engine with comprehensive status reporting
 # and Codespace public URL generation.
 #
 # This script can be launched from VS Code debugger in GitHub Codespace.
@@ -238,7 +238,7 @@ show_commands() {
 
 # Main deployment flow
 deploy() {
-  log_section "NightmareV2 Local Deployment"
+  log_section "Argus Engine Local Deployment"
   
   # Source the main run-local script logic to handle all setup
   if [[ ! -f "$DEPLOY_DIR/run-local.sh" ]]; then
@@ -280,16 +280,16 @@ case "$CMD" in
   down)
     log_section "Stopping NightmareV2"
     cd "$ROOT"
-    # shellcheck source=deploy/lib-nightmare-compose.sh
-    source "$DEPLOY_DIR/lib-nightmare-compose.sh"
+    # shellcheck source=deploy/lib-argus-compose.sh
+    source "$DEPLOY_DIR/lib-argus-compose.sh"
     compose down --remove-orphans
     log_status "Deployment stopped"
     ;;
   logs)
     log_section "NightmareV2 Logs"
     cd "$ROOT"
-    # shellcheck source=deploy/lib-nightmare-compose.sh
-    source "$DEPLOY_DIR/lib-nightmare-compose.sh"
+    # shellcheck source=deploy/lib-argus-compose.sh
+    source "$DEPLOY_DIR/lib-argus-compose.sh"
     compose logs -f
     ;;
   status)
@@ -297,13 +297,13 @@ case "$CMD" in
     ;;
   ps)
     cd "$ROOT"
-    # shellcheck source=deploy/lib-nightmare-compose.sh
-    source "$DEPLOY_DIR/lib-nightmare-compose.sh"
+    # shellcheck source=deploy/lib-argus-compose.sh
+    source "$DEPLOY_DIR/lib-argus-compose.sh"
     compose ps
     ;;
   -h|--help)
     cat <<'EOF'
-Enhanced local deployment script for NightmareV2
+Enhanced local deployment script for Argus Engine
 
 Usage: ./deploy/run-local-enhanced.sh [COMMAND] [OPTIONS]
 

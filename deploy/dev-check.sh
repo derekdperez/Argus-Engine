@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full local development sanity check for Nightmare v2.
+# Full local development sanity check for Argus Engine.
 #
 # This is intentionally sequential:
 #   1. validate compose config
@@ -48,15 +48,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 export COMPOSE_BAKE="${COMPOSE_BAKE:-false}"
-export NIGHTMARE_SKIP_INSTALL="${NIGHTMARE_SKIP_INSTALL:-1}"
+export argus_SKIP_INSTALL="${argus_SKIP_INSTALL:-1}"
 
-# shellcheck source=deploy/lib-nightmare-compose.sh
-source "$DEPLOY_DIR/lib-nightmare-compose.sh"
+# shellcheck source=deploy/lib-argus-compose.sh
+source "$DEPLOY_DIR/lib-argus-compose.sh"
 # shellcheck source=deploy/lib-install-deps.sh
 source "$DEPLOY_DIR/lib-install-deps.sh"
 
-nightmare_ensure_runtime_dependencies
-nightmare_export_build_stamp "$ROOT"
+argus_ensure_runtime_dependencies
+argus_export_build_stamp "$ROOT"
 
 printf '\n== 1. Validate Docker Compose config ==\n'
 compose config >/tmp/nightmare-v2-compose-rendered.yml

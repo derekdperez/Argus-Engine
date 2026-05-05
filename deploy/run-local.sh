@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the full Nightmare v2 stack locally via Docker Compose (Postgres, Redis, RabbitMQ,
+# Start the full Argus Engine stack locally via Docker Compose (Postgres, Redis, RabbitMQ,
 # Command Center, Gatekeeper, Spider, Enum, PortScan) for development and debugging.
 #
 # Re-runnable: "up" uses the same incremental fingerprint as deploy.sh (see deploy/.last-deploy-stamp).
@@ -20,7 +20,7 @@
 #   NIGHTMARE_DEPLOY_FRESH=1   Same as -fresh
 #   SUBFINDER_PACKAGE=...  Optional go install package for the worker image subfinder binary.
 #   AMASS_PACKAGE=...      Optional go install package for the worker image amass binary.
-#   COMPOSE_BAKE=true|false   deploy/lib-nightmare-compose.sh defaults to false (see docker-compose.yml header).
+#   COMPOSE_BAKE=true|false   deploy/lib-argus-compose.sh defaults to false (see docker-compose.yml header).
 #
 # Requires: Docker Engine + Compose V2 ("docker compose") or V1 ("docker-compose").
 # On Linux, missing Docker/Compose is installed automatically (see deploy/lib-install-deps.sh).
@@ -30,22 +30,22 @@ DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 cd "$ROOT"
 
-NIGHTMARE_DEPLOY_FRESH="${NIGHTMARE_DEPLOY_FRESH:-0}"
-NIGHTMARE_DEPLOY_MODE="${NIGHTMARE_DEPLOY_MODE:-image}"
+argus_DEPLOY_FRESH="${argus_DEPLOY_FRESH:-0}"
+argus_DEPLOY_MODE="${argus_DEPLOY_MODE:-image}"
 CMD="up"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -fresh | --fresh)
-      NIGHTMARE_DEPLOY_FRESH=1
-      NIGHTMARE_DEPLOY_MODE=image
+      argus_DEPLOY_FRESH=1
+      argus_DEPLOY_MODE=image
       shift
       ;;
     --hot | -hot)
-      NIGHTMARE_DEPLOY_MODE=hot
+      argus_DEPLOY_MODE=hot
       shift
       ;;
     --image | -image)
-      NIGHTMARE_DEPLOY_MODE=image
+      argus_DEPLOY_MODE=image
       shift
       ;;
     -h | --help)
@@ -69,15 +69,15 @@ EOF
       ;;
   esac
 done
-export NIGHTMARE_DEPLOY_FRESH
-export NIGHTMARE_DEPLOY_MODE
+export argus_DEPLOY_FRESH
+export argus_DEPLOY_MODE
 
-# shellcheck source=deploy/lib-nightmare-compose.sh
-source "$DEPLOY_DIR/lib-nightmare-compose.sh"
+# shellcheck source=deploy/lib-argus-compose.sh
+source "$DEPLOY_DIR/lib-argus-compose.sh"
 # shellcheck source=deploy/lib-install-deps.sh
 source "$DEPLOY_DIR/lib-install-deps.sh"
 
-nightmare_ensure_runtime_dependencies
+argus_ensure_runtime_dependencies
 
 case "$CMD" in
   down)
@@ -93,11 +93,11 @@ case "$CMD" in
     compose ps
     ;;
   up)
-    nightmare_maybe_git_pull "$ROOT"
-    nightmare_export_build_stamp "$ROOT"
-    nightmare_decide_incremental_deploy
+    argus_maybe_git_pull "$ROOT"
+    argus_export_build_stamp "$ROOT"
+    argus_decide_incremental_deploy
     echo "Applying stack from: $ROOT"
-    nightmare_compose_full_redeploy
+    argus_compose_full_redeploy
     echo ""
     echo "Stack is up (images match current BUILD_SOURCE_STAMP). URLs:"
     echo "  Command Center   http://localhost:8080/"

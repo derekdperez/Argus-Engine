@@ -12,8 +12,8 @@ DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 cd "$ROOT"
 
-# shellcheck source=deploy/lib-nightmare-compose.sh
-source "$DEPLOY_DIR/lib-nightmare-compose.sh"
+# shellcheck source=deploy/lib-argus-compose.sh
+source "$DEPLOY_DIR/lib-argus-compose.sh"
 
 TAIL="${TAIL:-160}"
 FOLLOW=0

@@ -15,6 +15,7 @@
     <PackageReference Include="AngleSharp" />
 
     <PackageReference Include="MassTransit" />
+  <PackageReference Include="MassTransit.RabbitMQ" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" />

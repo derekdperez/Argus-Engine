@@ -231,6 +231,8 @@
                             Density="@_radzenDensity"
                             EmptyText="No targets match the current filters."
                             Style="height: 860px"
+                            SelectionMode="DataGridSelectionMode.Single"
+                            RowSelect="@((TargetSummary t) => SelectTargetAsync(t))"
                             class="ops-rz-grid">
                 <Columns>
                     <RadzenDataGridColumn TItem="TargetSummary" Title="Select" Width="90px" Filterable="false" Sortable="false" Groupable="false">
@@ -619,8 +621,62 @@
                     <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="LastError" Title='@ColumnTitle("queue.LastError", "Last error")' Width="360px" Visible="@_showQueueErrors">
                         <Template Context="q"><span class="ops-rz-clip" title="@q.LastError">@q.LastError</span></Template>
                     </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Title="Details" Width="100px" Frozen="true">
+                        <Template Context="q">
+                            <button type="button" class="btn small" @onclick="() => _selectedQueueItem = q">View</button>
+                        </Template>
+                    </RadzenDataGridColumn>
                 </Columns>
             </RadzenDataGrid>
+
+            @if (_selectedQueueItem is not null)
+            {
+                <div class="queue-detail-panel">
+                    <div class="detail-header">
+                        <h3>Request details</h3>
+                        <button type="button" class="btn small" @onclick="() => _selectedQueueItem = null">Close</button>
+                    </div>
+                    <div class="detail-scroll">
+                        <div class="detail-group">
+                            <label>URL</label>
+                            <code class="wrap">@_selectedQueueItem.RequestUrl</code>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_selectedQueueItem.RequestHeadersJson))
+                        {
+                            <div class="detail-group">
+                                <label>Request Headers</label>
+                                <pre>@FormatJson(_selectedQueueItem.RequestHeadersJson)</pre>
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(_selectedQueueItem.RequestBody))
+                        {
+                            <div class="detail-group">
+                                <label>Request Body</label>
+                                <pre>@_selectedQueueItem.RequestBody</pre>
+                            </div>
+                        }
+                        <div class="detail-divider"></div>
+                        <div class="detail-group">
+                            <label>HTTP status</label>
+                            <strong>@_selectedQueueItem.LastHttpStatus</strong>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_selectedQueueItem.ResponseHeadersJson))
+                        {
+                            <div class="detail-group">
+                                <label>Response Headers</label>
+                                <pre>@FormatJson(_selectedQueueItem.ResponseHeadersJson)</pre>
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(_selectedQueueItem.ResponseBody))
+                        {
+                            <div class="detail-group">
+                                <label>Response Body</label>
+                                <pre class="body-view">@_selectedQueueItem.ResponseBody</pre>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
         </section>
 
         <section class="panel">
@@ -995,6 +1051,7 @@
     private bool _showQueueAttempts = true;
     private bool _showQueueTiming;
     private bool _showQueueErrors = true;
+    private HttpRequestQueueRowDto? _selectedQueueItem;
 
     private string _workerSearch = "";
     private string? _workerBusyKey;
@@ -1720,6 +1777,8 @@
 
     private async Task ReloadTargetScopedAsync()
     {
+        _selectedQueueItem = null;
+
         if (Guid.TryParse(_targetFilter, out var targetId))
         {
             try
@@ -1731,8 +1790,16 @@
             }
         }
 
-        await ReloadAssetsAsync();
-        await ReloadHttpQueueAsync();
+        await Task.WhenAll(
+            ReloadAssetsAsync(),
+            ReloadHttpQueueAsync()
+        );
+    }
+
+    private async Task SelectTargetAsync(TargetSummary target)
+    {
+        _targetFilter = target.Id.ToString();
+        await ReloadTargetScopedAsync();
     }
 
     private async Task ReloadAssetsAsync()
@@ -2436,5 +2503,16 @@
         _pollCts.Dispose();
         _liveReloadCts?.Cancel();
         _liveReloadCts?.Dispose();
+    }
+
+    private string FormatJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return "";
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch { return json; }
     }
 }

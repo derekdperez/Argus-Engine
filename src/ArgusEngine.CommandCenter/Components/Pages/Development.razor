@@ -20,7 +20,11 @@
 @inject ILogger<Development> Logger
 @inject IConfiguration Configuration
 @inject IHostEnvironment HostEnvironment
+@using ArgusEngine.CommandCenter.Realtime
+@using ArgusEngine.CommandCenter.Models
+@inject DiscoveryRealtimeClient Realtime
 @inject NavigationManager Navigation
+@implements IDisposable
 
 <PageTitle>Development - Argus Engine</PageTitle>
 
@@ -129,6 +133,48 @@
                 <p>Click the button above to begin the automated worker health check suite.</p>
             </div>
         }
+    </section>
+
+    <section class="panel event-feed-panel">
+        <div class="section-heading">
+            <div class="title-group">
+                <h2>Real-Time System Events</h2>
+                <p class="muted">Live chronological feed of domain events as they occur across the engine.</p>
+            </div>
+            <div class="actions">
+                <div class="realtime-status @(Realtime.IsConnected ? "online" : "offline")">
+                    <span class="status-dot"></span>
+                    <span>@(Realtime.IsConnected ? "Live" : "Connecting...")</span>
+                </div>
+                <button type="button" class="btn small outline" @onclick="() => _liveEvents.Clear()">
+                    <i class="ms-Icon ms-Icon--Delete"></i>
+                    <span>Clear Feed</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="event-feed-container">
+            @if (_liveEvents.Count == 0)
+            {
+                <div class="feed-empty">
+                    <p>Waiting for system events...</p>
+                </div>
+            }
+            else
+            {
+                <div class="feed-scroll">
+                    @foreach (var evt in _liveEvents.OrderByDescending(e => e.OccurredAtUtc))
+                    {
+                        <div class="feed-item" @key="evt.OccurredAtUtc.Ticks + evt.Kind.GetHashCode()">
+                            <span class="event-time">@evt.OccurredAtUtc.ToLocalTime().ToString("HH:mm:ss")</span>
+                            <span class="badge badge-scope @evt.Scope">@evt.Scope</span>
+                            <span class="event-kind">@evt.Kind</span>
+                            <span class="event-summary">@evt.Summary</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
     </section>
 
     <section class="panel error-log-panel">
@@ -285,13 +331,30 @@
     private bool _generatingBugFixPrompt;
     private HarnessResultDto? _result;
     private List<SystemError> _errors = new();
+    private List<LiveUiEventDto> _liveEvents = new();
     private SystemError? _selectedError;
     private string? _bugFixPrompt;
     private DateTimeOffset? _bugFixPromptGeneratedAtUtc;
+    private readonly CancellationTokenSource _devPollCts = new();
 
     protected override async Task OnInitializedAsync()
     {
+        Realtime.DomainEventReceived += OnRealtimeEvent;
+        await Realtime.EnsureStartedAsync(_devPollCts.Token);
         await RefreshErrorsAsync();
+    }
+
+    private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _liveEvents.Insert(0, evt);
+            if (_liveEvents.Count > 100)
+            {
+                _liveEvents.RemoveAt(_liveEvents.Count - 1);
+            }
+            StateHasChanged();
+        });
     }
 
     private async Task RefreshErrorsAsync()
@@ -798,5 +861,12 @@
     private static string Fallback(string? value, string fallback)
     {
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    }
+
+    public void Dispose()
+    {
+        Realtime.DomainEventReceived -= OnRealtimeEvent;
+        _devPollCts.Cancel();
+        _devPollCts.Dispose();
     }
 }

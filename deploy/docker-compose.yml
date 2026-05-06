@@ -30,6 +30,7 @@ x-common-env: &common-env
   RabbitMq__VirtualHost: /
   RabbitMq__ManagementUrl: http://rabbitmq:15672
   ARGUS_COMPONENT_VERSION: *component-version
+  Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-local-dev-diagnostics-key-change-me}
 
 configs:
   filestore_db_init_sh:
@@ -115,7 +116,6 @@ services:
       ASPNETCORE_URLS: http://+:8080
       Argus__ListenPlainHttp: "true"
       Argus__Diagnostics__Enabled: "true"
-      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-local-dev-diagnostics-key-change-me}
       Argus__ComponentUpdater__Enabled: ${ARGUS_COMPONENT_UPDATER_ENABLED:-true}
       Argus__ComponentUpdater__RepositoryPath: /workspace
       Argus__ComponentUpdater__ComposeFilePath: /workspace/deploy/docker-compose.yml

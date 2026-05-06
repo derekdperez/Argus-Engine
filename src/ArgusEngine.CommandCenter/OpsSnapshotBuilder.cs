@@ -40,6 +40,7 @@ internal static class OpsSnapshotBuilder
     public static void RegisterHttpClient(IServiceCollection services)
     {
         services.AddHttpClient(HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(12));
+        services.AddHttpClient("spider");
     }
 
     public static async Task<OpsSnapshotDto> BuildAsync(

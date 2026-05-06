@@ -41,7 +41,8 @@ public static class CommandCenterServiceRegistration
         services.AddRazorComponents()
             .AddInteractiveServerComponents();
 
-        services.AddRadzenComponents();
+        services.AddHttpClient("ops-rabbit");
+        services.AddHttpClient("spider");
 
         services.AddScoped(sp =>
         {
@@ -99,6 +100,7 @@ public static class CommandCenterServiceRegistration
         services.AddScoped<IWorkerHealthCheck, PortScanWorkerHealthCheck>();
         services.AddScoped<IWorkerHealthCheck, HighValueWorkerHealthCheck>();
         services.AddScoped<IWorkerHealthCheck, TechIdWorkerHealthCheck>();
+        services.AddScoped<GatekeeperOrchestrator>();
 
         return services;
     }
@@ -120,6 +122,7 @@ public static class CommandCenterServiceRegistration
             .ValidateOnStart();
 
         services.Configure<SubdomainEnumerationOptions>(configuration.GetSection("Argus:SubdomainEnumeration"));
+        services.Configure<SpiderOptions>(configuration.GetSection("Argus:Spider"));
         services.Configure<SpiderHttpOptions>(configuration.GetSection("Argus:Spider"));
 
         return services;

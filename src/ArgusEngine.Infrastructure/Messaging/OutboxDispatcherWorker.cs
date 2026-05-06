@@ -46,6 +46,7 @@ public sealed class OutboxDispatcherWorker(
             "Outbox message {OutboxId} was not marked {TargetState} because worker {WorkerId} no longer owns the active lease.");
 
     private readonly string _workerId = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
+    private readonly TimeSpan _dispatchTimeout = TimeSpan.FromSeconds(30);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -55,6 +56,8 @@ public sealed class OutboxDispatcherWorker(
         {
             try
             {
+                await ReportHeartbeatAsync(stoppingToken).ConfigureAwait(false);
+
                 var batch = await TryLeaseNextBatchAsync(20, stoppingToken).ConfigureAwait(false);
 
                 if (batch.Count == 0)
@@ -63,9 +66,19 @@ public sealed class OutboxDispatcherWorker(
                     continue;
                 }
 
-                // Dispatch in parallel
-                var tasks = batch.Select(msg => DispatchAsync(msg, stoppingToken));
-                await Task.WhenAll(tasks).ConfigureAwait(false);
+                // Dispatch in parallel with timeout
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                timeoutCts.CancelAfter(_dispatchTimeout);
+
+                try
+                {
+                    var tasks = batch.Select(msg => DispatchAsync(msg, timeoutCts.Token));
+                    await Task.WhenAll(tasks).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
+                {
+                    logger.LogWarning("Outbox dispatch batch timed out after {Timeout}s. Some messages may be stuck InFlight until lease expires.", _dispatchTimeout.TotalSeconds);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -76,6 +89,45 @@ public sealed class OutboxDispatcherWorker(
                 LogOutboxDispatcherLoopFault(logger, ex);
                 await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken).ConfigureAwait(false);
             }
+        }
+    }
+
+    private async Task ReportHeartbeatAsync(CancellationToken ct)
+    {
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+            var now = DateTimeOffset.UtcNow;
+            
+            var heartbeat = await db.WorkerHeartbeats
+                .FirstOrDefaultAsync(h => h.WorkerKey == "outbox-dispatcher" && h.HostName == Environment.MachineName, ct)
+                .ConfigureAwait(false);
+
+            if (heartbeat == null)
+            {
+                heartbeat = new WorkerHeartbeat
+                {
+                    WorkerKey = "outbox-dispatcher",
+                    HostName = Environment.MachineName,
+                    StartedAtUtc = now,
+                    LastHeartbeatUtc = now,
+                    IsHealthy = true,
+                    HealthMessage = "Dispatcher active"
+                };
+                db.WorkerHeartbeats.Add(heartbeat);
+            }
+            else
+            {
+                heartbeat.LastHeartbeatUtc = now;
+                heartbeat.IsHealthy = true;
+                heartbeat.HealthMessage = "Dispatcher active";
+            }
+
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to report outbox dispatcher heartbeat.");
         }
     }
 

@@ -138,8 +138,9 @@ internal static class DockerRuntimeStatusBuilder
         var status = ClassifyContainerStatus(row.Names, row.Status, health);
         var color = StatusToColor(status);
 
+        var combinedLogs = (logs.StdOut ?? "") + (logs.StdErr ?? "");
         var logLines = logs.Success
-            ? EnumerateLines(logs.StdOut).TakeLast(LogTailLines).ToList()
+            ? EnumerateLines(combinedLogs).TakeLast(LogTailLines).ToList()
             : [ $"[log retrieval failed] {(string.IsNullOrWhiteSpace(logs.StdErr) ? logs.StdOut : logs.StdErr).Trim()}" ];
 
         return new DockerContainerStatusDto(

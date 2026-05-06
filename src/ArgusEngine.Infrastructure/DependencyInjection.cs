@@ -48,9 +48,6 @@ public static class DependencyInjection
             workerKey,
             sp.GetRequiredService<ILogger<WorkerHeartbeatService>>()));
         services.AddHostedService(sp => sp.GetRequiredService<WorkerHeartbeatService>());
-
-        services.AddSingleton<WorkerCancellationTracker>();
-        services.AddHostedService(sp => sp.GetRequiredService<WorkerCancellationTracker>());
         
         return services;
     }
@@ -159,6 +156,8 @@ public static class DependencyInjection
         services.AddSingleton<IPortScanService, DefaultPortScanService>();
         services.AddScoped<IEventOutbox, EfEventOutbox>();
         services.AddScoped<IInboxDeduplicator, EfInboxDeduplicator>();
+        services.AddSingleton<WorkerCancellationTracker>();
+        services.AddHostedService(sp => sp.GetRequiredService<WorkerCancellationTracker>());
         if (enableOutboxDispatcher)
         {
             services.AddHostedService<OutboxDispatcherWorker>();

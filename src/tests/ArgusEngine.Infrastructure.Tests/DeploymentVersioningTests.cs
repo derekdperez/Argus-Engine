@@ -133,6 +133,34 @@ public sealed class DeploymentVersioningTests
         Assert.Contains("CREATE INDEX IF NOT EXISTS ix_bus_journal_message_id", text);
     }
 
+    [Fact]
+    public void SharedInfrastructureRegistersWorkerCancellationTrackerForAllRabbitMqHosts()
+    {
+        var text = File.ReadAllText(ProjectRoot("src/ArgusEngine.Infrastructure/DependencyInjection.cs"));
+        var infrastructureIndex = text.IndexOf("public static IServiceCollection AddNightmareInfrastructure", StringComparison.Ordinal);
+        var trackerIndex = text.IndexOf("services.AddSingleton<WorkerCancellationTracker>();", StringComparison.Ordinal);
+        var hostedIndex = text.IndexOf("services.AddHostedService(sp => sp.GetRequiredService<WorkerCancellationTracker>());", StringComparison.Ordinal);
+
+        Assert.True(infrastructureIndex >= 0);
+        Assert.True(trackerIndex > infrastructureIndex, "Command Center uses AddArgusInfrastructure without AddArgusWorkerHeartbeat, so the cancellation tracker must be shared infrastructure.");
+        Assert.True(hostedIndex > trackerIndex);
+    }
+
+    [Theory]
+    [InlineData("deploy/aws/bootstrap-ecs-from-ec2.sh")]
+    [InlineData("deploy/aws/bootstrap-ecs-command-center-web.sh")]
+    [InlineData("deploy/aws/record-cloud-usage-sample.sh")]
+    [InlineData("deploy/aws/service-env.example")]
+    [InlineData("src/ArgusEngine.CommandCenter/Endpoints/Ec2WorkerEndpoints.cs")]
+    public void AwsAndEc2WorkerDefaultsUseCurrentArgusDatabaseNames(string relativePath)
+    {
+        var text = File.ReadAllText(ProjectRoot(relativePath));
+
+        Assert.Contains("argus_engine", text);
+        Assert.DoesNotContain("argus_v2", text);
+        Assert.DoesNotContain("nightmare_v2", text);
+    }
+
     private static string ProjectRoot(string relativePath)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

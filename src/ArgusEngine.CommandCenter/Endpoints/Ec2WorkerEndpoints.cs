@@ -436,13 +436,13 @@ public static class Ec2WorkerEndpoints
     private static string BuildWorkerEnvContent(Guid machineId, IConfiguration configuration, string coreHost)
     {
         var postgres = configuration["EC2_WORKER_POSTGRES"]
-            ?? $"Host={coreHost};Port=5432;Database=nightmare_v2;Username=nightmare;Password=nightmare";
+            ?? $"Host={coreHost};Port=5432;Database=argus_engine;Username=argus;Password=argus";
         var filestore = configuration["EC2_WORKER_FILESTORE"]
-            ?? $"Host={coreHost};Port=5432;Database=nightmare_v2_files;Username=nightmare;Password=nightmare";
+            ?? $"Host={coreHost};Port=5432;Database=argus_engine_files;Username=argus;Password=argus";
         var redis = configuration["EC2_WORKER_REDIS"] ?? $"{coreHost}:6379";
         var rabbitHost = configuration["EC2_WORKER_RABBITMQ_HOST"] ?? coreHost;
-        var rabbitUser = configuration["EC2_WORKER_RABBITMQ_USERNAME"] ?? configuration["RabbitMq:Username"] ?? "nightmare";
-        var rabbitPassword = configuration["EC2_WORKER_RABBITMQ_PASSWORD"] ?? configuration["RabbitMq:Password"] ?? "nightmare";
+        var rabbitUser = configuration["EC2_WORKER_RABBITMQ_USERNAME"] ?? configuration["RabbitMq:Username"] ?? "argus";
+        var rabbitPassword = configuration["EC2_WORKER_RABBITMQ_PASSWORD"] ?? configuration["RabbitMq:Password"] ?? "argus";
         var rabbitVhost = configuration["EC2_WORKER_RABBITMQ_VHOST"] ?? configuration["RabbitMq:VirtualHost"] ?? "/";
         var rabbitManagement = configuration["EC2_WORKER_RABBITMQ_MANAGEMENT_URL"] ?? $"http://{coreHost}:15672";
 

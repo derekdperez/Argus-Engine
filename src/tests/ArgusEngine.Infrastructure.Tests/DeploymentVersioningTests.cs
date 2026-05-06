@@ -46,6 +46,42 @@ public sealed class DeploymentVersioningTests
         Assert.DoesNotContain("nightmare-v2/", text);
     }
 
+    [Theory]
+    [InlineData("gatekeeper")]
+    [InlineData("worker-spider")]
+    [InlineData("worker-enum")]
+    [InlineData("worker-portscan")]
+    [InlineData("worker-highvalue")]
+    [InlineData("worker-techid")]
+    public void SkippedBootstrapWorkersWaitForCommandCenterSchemaAndRestartAfterTransientBootFailure(string service)
+    {
+        var text = File.ReadAllText(ProjectRoot("deploy/docker-compose.yml"));
+        var block = ServiceBlock(text, service);
+
+        Assert.Contains("restart: unless-stopped", block);
+        Assert.Contains("command-center:", block);
+        Assert.Contains("condition: service_healthy", block);
+    }
+
+    [Fact]
+    public void DeployHelperUsesCurrentEnumerationWorkerProjectName()
+    {
+        var text = File.ReadAllText(ProjectRoot("deploy/lib-argus-compose.sh"));
+
+        Assert.Contains("src/ArgusEngine.Workers.Enumeration", text);
+        Assert.Contains("ArgusEngine.Workers.Enumeration.dll", text);
+        Assert.DoesNotContain("\"src/ArgusEngine.Workers.Enum\"", text);
+        Assert.DoesNotContain("ArgusEngine.Workers.Enum.dll", text);
+    }
+
+    [Fact]
+    public void SpiderWorkerTreatsQueuedRowsWithoutNextAttemptAsReady()
+    {
+        var text = File.ReadAllText(ProjectRoot("src/ArgusEngine.Workers.Spider/HttpRequestQueueWorker.cs"));
+
+        Assert.Contains("next_attempt_at_utc IS NULL OR next_attempt_at_utc <=", text);
+    }
+
     private static string ProjectRoot(string relativePath)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -60,5 +96,15 @@ public sealed class DeploymentVersioningTests
         }
 
         throw new FileNotFoundException($"Could not locate {relativePath} from {AppContext.BaseDirectory}.");
+    }
+
+    private static string ServiceBlock(string composeText, string service)
+    {
+        var pattern = $@"(?ms)^  {Regex.Escape(service)}:\r?\n(?<block>.*?)(?=^  [a-zA-Z0-9_-]+:\r?\n|^volumes:)";
+        var match = Regex.Match(composeText, pattern);
+
+        Assert.True(match.Success, $"Could not find compose service block for {service}.");
+
+        return match.Groups["block"].Value;
     }
 }

@@ -121,7 +121,7 @@ argus_service_project_path() {
     command-center) echo "src/ArgusEngine.CommandCenter" ;;
     gatekeeper) echo "src/ArgusEngine.Gatekeeper" ;;
     worker-spider) echo "src/ArgusEngine.Workers.Spider" ;;
-    worker-enum) echo "src/ArgusEngine.Workers.Enum" ;;
+    worker-enum) echo "src/ArgusEngine.Workers.Enumeration" ;;
     worker-portscan) echo "src/ArgusEngine.Workers.PortScan" ;;
     worker-highvalue) echo "src/ArgusEngine.Workers.HighValue" ;;
     worker-techid) echo "src/ArgusEngine.Workers.TechnologyIdentification" ;;
@@ -134,7 +134,7 @@ argus_service_app_dll() {
     command-center) echo "ArgusEngine.CommandCenter.dll" ;;
     gatekeeper) echo "ArgusEngine.Gatekeeper.dll" ;;
     worker-spider) echo "ArgusEngine.Workers.Spider.dll" ;;
-    worker-enum) echo "ArgusEngine.Workers.Enum.dll" ;;
+    worker-enum) echo "ArgusEngine.Workers.Enumeration.dll" ;;
     worker-portscan) echo "ArgusEngine.Workers.PortScan.dll" ;;
     worker-highvalue) echo "ArgusEngine.Workers.HighValue.dll" ;;
     worker-techid) echo "ArgusEngine.Workers.TechnologyIdentification.dll" ;;
@@ -195,7 +195,7 @@ argus_service_specific_source_inputs() {
       inputs+=(
         "src/ArgusEngine.Harness.Core"
         "src/ArgusEngine.Gatekeeper"
-        "src/ArgusEngine.Workers.Enum"
+        "src/ArgusEngine.Workers.Enumeration"
         "src/ArgusEngine.Workers.Spider"
         "src/ArgusEngine.Workers.PortScan"
         "src/ArgusEngine.Workers.HighValue"

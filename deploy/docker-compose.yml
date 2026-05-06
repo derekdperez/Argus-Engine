@@ -158,6 +158,7 @@ services:
 
   gatekeeper:
     image: argus-engine/gatekeeper:${ARGUS_ENGINE_VERSION:-2.6.2}
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -169,6 +170,8 @@ services:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
     depends_on:
+      command-center:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -178,6 +181,7 @@ services:
 
   worker-spider:
     image: argus-engine/worker-spider:${ARGUS_ENGINE_VERSION:-2.6.2}
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -190,6 +194,8 @@ services:
       Argus__SkipStartupDatabase: "true"
       Spider__Http__AllowInsecureSsl: "false"
     depends_on:
+      command-center:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -201,6 +207,7 @@ services:
 
   worker-enum:
     image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.6.2}
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker-enum
@@ -225,6 +232,8 @@ services:
       Enumeration__DnsFallbackMaxCandidates: "300"
       Enumeration__SubdomainWordlistPath: /opt/argus/wordlists/subdomains.txt
     depends_on:
+      command-center:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -236,6 +245,7 @@ services:
 
   worker-portscan:
     image: argus-engine/worker-portscan:${ARGUS_ENGINE_VERSION:-2.6.2}
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -247,6 +257,8 @@ services:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
     depends_on:
+      command-center:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -256,6 +268,7 @@ services:
 
   worker-highvalue:
     image: argus-engine/worker-highvalue:${ARGUS_ENGINE_VERSION:-2.6.2}
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -267,6 +280,8 @@ services:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
     depends_on:
+      command-center:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -276,6 +291,7 @@ services:
 
   worker-techid:
     image: argus-engine/worker-techid:${ARGUS_ENGINE_VERSION:-2.6.2}
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker

@@ -102,7 +102,7 @@ public sealed class HttpRequestQueueWorker(
                     SELECT id
                     FROM http_request_queue
                     WHERE (state = 'Queued' OR state = 'Retry')
-                      AND next_attempt_at_utc <= {now}
+                      AND (next_attempt_at_utc IS NULL OR next_attempt_at_utc <= {now})
                       AND (locked_until_utc IS NULL OR locked_until_utc <= {now})
                     ORDER BY priority DESC, created_at_utc ASC
                     LIMIT {limit}

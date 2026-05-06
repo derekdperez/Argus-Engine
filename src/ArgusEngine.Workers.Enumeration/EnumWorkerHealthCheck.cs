@@ -6,9 +6,9 @@ using ArgusEngine.Workers.Enum.Consumers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ArgusEngine.Workers.Enum;
+namespace ArgusEngine.Workers.Enumeration;
 
-public class EnumWorkerHealthCheck : IWorkerHealthCheck
+public partial class EnumWorkerHealthCheck : IWorkerHealthCheck
 {
     private readonly IOptions<SubdomainEnumerationOptions> _options;
     private readonly ILogger<EnumWorkerHealthCheck> _logger;
@@ -21,6 +21,12 @@ public class EnumWorkerHealthCheck : IWorkerHealthCheck
 
     public string WorkerName => "Enumeration";
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Enumeration worker degraded: no external tools (subfinder/amass) found at configured paths. {Details}")]
+    private partial void LogWorkerDegraded(string details);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Enumeration worker health check: {Details}")]
+    private partial void LogHealthCheck(string details);
+
     public async Task<WorkerHealthCheckResult> RunAsync(CancellationToken ct)
     {
         var options = _options.Value;
@@ -32,11 +38,11 @@ public class EnumWorkerHealthCheck : IWorkerHealthCheck
         
         if (!subfinderExists && !amassExists)
         {
-            _logger.LogWarning("Enumeration worker degraded: no external tools (subfinder/amass) found at configured paths. {Details}", details);
+            LogWorkerDegraded(details);
             return new WorkerHealthCheckResult(true, "Degraded: No enumeration tools found. " + details);
         }
 
-        _logger.LogInformation("Enumeration worker health check: {Details}", details);
+        LogHealthCheck(details);
         return new WorkerHealthCheckResult(true, "Ready. " + details);
     }
 }

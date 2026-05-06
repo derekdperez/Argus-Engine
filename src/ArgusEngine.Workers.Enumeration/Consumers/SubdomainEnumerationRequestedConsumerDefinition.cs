@@ -1,6 +1,6 @@
 using MassTransit;
 
-namespace ArgusEngine.Workers.Enum.Consumers;
+namespace ArgusEngine.Workers.Enumeration.Consumers;
 
 public sealed class SubdomainEnumerationRequestedConsumerDefinition : ConsumerDefinition<SubdomainEnumerationRequestedConsumer>
 {

@@ -6,7 +6,7 @@ using ArgusEngine.Application.Workers;
 using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 
-namespace ArgusEngine.Workers.Enum.Consumers;
+namespace ArgusEngine.Workers.Enumeration.Consumers;
 
 public sealed class TargetCreatedConsumer(
     IWorkerToggleReader toggles,

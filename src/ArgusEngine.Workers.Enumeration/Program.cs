@@ -9,8 +9,8 @@ using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
-using ArgusEngine.Workers.Enum.Consumers;
-using ArgusEngine.Workers.Enum;
+using ArgusEngine.Workers.Enumeration.Consumers;
+using ArgusEngine.Workers.Enumeration;
 
 try
 {

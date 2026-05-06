@@ -190,6 +190,11 @@
                     <span>Refresh</span>
                 </button>
 
+                <button type="button" class="btn small outline" disabled="@(_errors.Count == 0)" @onclick="DownloadConcatenatedErrorsAsync">
+                    <i class="ms-Icon ms-Icon--Download"></i>
+                    <span>Concatenate All Errors</span>
+                </button>
+
                 <button type="button" class="btn small primary" disabled="@_generatingBugFixPrompt" @onclick="GenerateBugFixPromptAsync">
                     @if (_generatingBugFixPrompt)
                     {
@@ -423,6 +428,29 @@
         }
     }
 
+    private async Task DownloadConcatenatedErrorsAsync()
+    {
+        try
+        {
+            await RefreshErrorsAsync();
+
+            var generatedAtUtc = DateTimeOffset.UtcNow;
+            var contents = BuildConcatenatedErrorFile(_errors, generatedAtUtc);
+            var fileName = $"argus-errors-{generatedAtUtc:yyyyMMdd-HHmmss}.txt";
+
+            await Js.InvokeVoidAsync(
+                "argusUi.downloadTextFile",
+                fileName,
+                contents,
+                "text/plain;charset=utf-8");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to download concatenated system errors from the development diagnostics page.");
+            await Js.InvokeVoidAsync("alert", $"Failed to concatenate errors: {ex.Message}");
+        }
+    }
+
     private async Task GenerateBugFixPromptAsync()
     {
         _generatingBugFixPrompt = true;
@@ -468,6 +496,47 @@
     {
         _bugFixPrompt = null;
         _bugFixPromptGeneratedAtUtc = null;
+    }
+
+    private string BuildConcatenatedErrorFile(IReadOnlyCollection<SystemError> errors, DateTimeOffset generatedAtUtc)
+    {
+        var orderedErrors = errors
+            .OrderByDescending(error => error.Timestamp)
+            .ToList();
+
+        var sb = new StringBuilder();
+
+        sb.AppendLine("Argus Engine Concatenated Error Export");
+        sb.AppendLine("=====================================");
+        sb.AppendLine();
+        sb.AppendLine("This file contains every system error currently loaded on the Development page.");
+        sb.AppendLine("It is intended to be attached to an AI agent task or debugging ticket.");
+        sb.AppendLine();
+        sb.AppendLine($"Generated UTC: {generatedAtUtc:yyyy-MM-dd HH:mm:ss zzz}");
+        sb.AppendLine($"Generated local server time: {generatedAtUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}");
+        sb.AppendLine($"ASP.NET Core environment: {Fallback(HostEnvironment.EnvironmentName, "unknown")}");
+        sb.AppendLine($"Application: {Fallback(HostEnvironment.ApplicationName, "unknown")}");
+        sb.AppendLine($"Server machine: {Environment.MachineName}");
+        sb.AppendLine($"Command Center URL visible to this browser: {Fallback(Navigation.Uri, "unknown")}");
+        sb.AppendLine($"Error count: {orderedErrors.Count.ToString(CultureInfo.InvariantCulture)}");
+        sb.AppendLine();
+
+        if (orderedErrors.Count == 0)
+        {
+            sb.AppendLine("No errors were loaded when this export was generated.");
+            return sb.ToString();
+        }
+
+        var index = 1;
+        foreach (var error in orderedErrors)
+        {
+            sb.AppendLine($"--- Error {index.ToString(CultureInfo.InvariantCulture)} of {orderedErrors.Count.ToString(CultureInfo.InvariantCulture)} ---");
+            sb.AppendLine(BuildFullErrorDetail(error));
+            sb.AppendLine();
+            index++;
+        }
+
+        return sb.ToString();
     }
 
     private string BuildBugFixPrompt(IReadOnlyCollection<SystemError> errors, DateTimeOffset generatedAtUtc)

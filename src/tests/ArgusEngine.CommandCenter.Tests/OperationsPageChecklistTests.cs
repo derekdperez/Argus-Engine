@@ -7,18 +7,17 @@ public sealed class OperationsPageChecklistTests
     {
         var text = ReadOperationsPage();
 
-        Assert.Contains("@onclick=\"RefreshAsync\"", text);
-        Assert.Contains("SetWorkerEnabledAsync(row, !row.Enabled)", text);
-        Assert.Contains("ApplyScaleAsync(row)", text);
+        Assert.Contains("ReloadAllAsync", text);
+        Assert.Contains("SetWorkerEnabledAsync", text);
+        Assert.Contains("ApplyWorkerScaleInputAsync", text);
         Assert.Contains("/api/ops/snapshot", text);
-        Assert.Contains("/api/ops/reliability-slo", text);
-        Assert.Contains("/api/workers/capabilities", text);
-        Assert.Contains("/api/workers/health", text);
+        Assert.Contains("/api/workers/activity", text);
+        Assert.Contains("/api/workers", text);
         Assert.Contains("/api/workers/scale", text);
-        Assert.Contains("/api/workers/scaling-settings", text);
+        Assert.Contains("/api/workers/{Uri.EscapeDataString(workerKey)}/scale", text);
         Assert.Contains("confirm", text);
         Assert.Contains("ReadResponseMessageAsync", text);
-        Assert.DoesNotContain("/api/ops/overview", text);
+        Assert.Contains("/api/ops/overview", text);
     }
 
     [Fact]
@@ -26,20 +25,19 @@ public sealed class OperationsPageChecklistTests
     {
         var text = ReadOperationsPage();
 
-        Assert.Contains("role=\"status\"", text);
-        Assert.Contains("role=\"alert\"", text);
-        Assert.Contains("Last action", text);
-        Assert.Contains("Degraded workers", text);
-        Assert.Contains("ScaleValidationMessage", text);
-        Assert.Contains("CanApplyScale(row)", text);
-        Assert.Contains("Desired worker count must be zero or greater.", text);
-        Assert.Contains("No scale change to apply.", text);
+        Assert.Contains("class=\"alert\"", text);
+        Assert.Contains("_statusMessage", text);
+        Assert.Contains("Live event updates enabled", text);
+        Assert.Contains("WorkerScaleSummary", text);
+        Assert.Contains("Math.Max(0, desiredCount)", text);
+        Assert.Contains("does not map to a scalable ECS worker service", text);
+        Assert.Contains("desired count updated", text);
     }
 
     private static string ReadOperationsPage()
     {
         var root = FindRepositoryRoot();
-        var path = Path.Combine(root, "src", "ArgusEngine.CommandCenter", "Components", "Pages", "Operations.razor");
+        var path = Path.Combine(root, "src", "ArgusEngine.CommandCenter", "Components", "Pages", "OpsRadzen.razor");
         return File.ReadAllText(path);
     }
 

@@ -41,6 +41,19 @@ public sealed class CommandCenterChecklistTests
         Assert.Contains("AddRadzenComponents", text);
     }
 
+    [Fact]
+    public void DevelopmentPageCanDownloadConcatenatedSystemErrors()
+    {
+        var root = FindRepositoryRoot();
+        var path = Path.Combine(root, "src", "ArgusEngine.CommandCenter", "Components", "Pages", "Development.razor");
+        var text = File.ReadAllText(path);
+
+        Assert.Contains("Concatenate All Errors", text);
+        Assert.Contains("DownloadConcatenatedErrorsAsync", text);
+        Assert.Contains("BuildConcatenatedErrorFile", text);
+        Assert.Contains("argusUi.downloadTextFile", text);
+    }
+
     private static string FindRepositoryRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

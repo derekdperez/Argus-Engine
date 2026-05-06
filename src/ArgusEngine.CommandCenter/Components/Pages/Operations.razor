@@ -38,12 +38,24 @@
 
     @if (!string.IsNullOrWhiteSpace(_status))
     {
-        <div class="ops-alert ops-alert-info" role="status">@_status</div>
+        <div class="ops-alert ops-alert-info" role="status">
+            <strong>@_status</strong>
+            @if (_lastActionAtUtc is not null)
+            {
+                <span class="muted">Last action @FormatTime(_lastActionAtUtc)</span>
+            }
+        </div>
     }
 
     @if (!string.IsNullOrWhiteSpace(_error))
     {
-        <div class="ops-alert ops-alert-danger" role="alert">@_error</div>
+        <div class="ops-alert ops-alert-danger" role="alert">
+            <strong>@_error</strong>
+            @if (_lastActionAtUtc is not null)
+            {
+                <span class="muted">Last action @FormatTime(_lastActionAtUtc)</span>
+            }
+        </div>
     }
 
     @if (_loading && _snapshot is null)
@@ -102,6 +114,30 @@
                 <div class="muted">@Number(_snapshot.BusTraffic.ConsumedLast24Hours) in 24h</div>
             </div>
         </section>
+
+        @if (DegradedWorkerRows.Any())
+        {
+            <section class="panel ops-attention-panel" aria-labelledby="degraded-workers-heading">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Needs attention</p>
+                        <h2 id="degraded-workers-heading">Degraded workers</h2>
+                        <p class="muted">These enabled workers are reporting unhealthy or missing recent activity.</p>
+                    </div>
+                </div>
+                <div class="ops-attention-list">
+                    @foreach (var row in DegradedWorkerRows)
+                    {
+                        <div class="ops-attention-item">
+                            <strong>@row.DisplayName</strong>
+                            <span class="@WorkerHealthBadgeClass(row)">@WorkerHealthLabel(row)</span>
+                            <span class="muted">@WorkerHealthReason(row)</span>
+                            <span class="muted">Last activity @FormatTime(row.Stats?.LastConsumedAtUtc ?? row.Health?.LastActivityUtc)</span>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
 
         <section class="panel">
             <div class="section-heading">
@@ -173,6 +209,7 @@
                                             <div class="scale-control">
                                                 <input type="number"
                                                        min="0"
+                                                       max="@ScaleMax(row)"
                                                        @bind="row.DesiredCountDraft"
                                                        @bind:event="oninput"
                                                        disabled="@IsScaleBusy(row.WorkerKey)"
@@ -180,15 +217,17 @@
                                                 <button class="small"
                                                         type="button"
                                                         @onclick="() => ApplyScaleAsync(row)"
-                                                        disabled="@IsScaleBusy(row.WorkerKey)">
+                                                        disabled="@(!CanApplyScale(row) || IsScaleBusy(row.WorkerKey))">
                                                     @(IsScaleBusy(row.WorkerKey) ? "Applying..." : "Apply")
                                                 </button>
                                             </div>
+                                            <div class="@ScaleValidationClass(row)">@ScaleValidationMessage(row)</div>
                                             <div class="muted">
                                                 desired @(row.Scale.DesiredCount?.ToString(CultureInfo.InvariantCulture) ?? "-"),
                                                 running @(row.Scale.RunningCount?.ToString(CultureInfo.InvariantCulture) ?? "-"),
                                                 pending @(row.Scale.PendingCount?.ToString(CultureInfo.InvariantCulture) ?? "-")
                                             </div>
+                                            <div class="muted">@ScaleLimitText(row)</div>
                                             @if (!string.IsNullOrWhiteSpace(row.Scale.Status))
                                             {
                                                 <div class="muted">@row.Scale.Status</div>
@@ -390,11 +429,13 @@
     private string? _status;
     private string? _error;
     private DateTimeOffset? _lastLoadedAtUtc;
+    private DateTimeOffset? _lastActionAtUtc;
     private OpsSnapshotDto? _snapshot;
     private ReliabilitySloSnapshotDto? _slo;
     private List<WorkerCapabilityDto> _capabilities = new();
     private List<WorkerHealthDto> _health = new();
     private List<WorkerScaleTargetDto> _scaleTargets = new();
+    private List<WorkerScalingSettingsDto> _scalingSettings = new();
     private List<WorkerRowViewModel> _workerRows = new();
 
     protected override Task OnInitializedAsync()
@@ -494,12 +535,14 @@
             var capabilitiesTask = Http.GetFromJsonAsync<List<WorkerCapabilityDto>>("/api/workers/capabilities", _pollCts.Token);
             var healthTask = Http.GetFromJsonAsync<List<WorkerHealthDto>>("/api/workers/health", _pollCts.Token);
             var scaleTask = Http.GetFromJsonAsync<List<WorkerScaleTargetDto>>("/api/workers/scale", _pollCts.Token);
+            var scalingSettingsTask = Http.GetFromJsonAsync<List<WorkerScalingSettingsDto>>("/api/workers/scaling-settings", _pollCts.Token);
 
             _snapshot = await snapshotTask.ConfigureAwait(false);
             _slo = await sloTask.ConfigureAwait(false);
             _capabilities = await capabilitiesTask.ConfigureAwait(false) ?? new List<WorkerCapabilityDto>();
             _health = await healthTask.ConfigureAwait(false) ?? new List<WorkerHealthDto>();
             _scaleTargets = await scaleTask.ConfigureAwait(false) ?? new List<WorkerScaleTargetDto>();
+            _scalingSettings = await scalingSettingsTask.ConfigureAwait(false) ?? new List<WorkerScalingSettingsDto>();
 
             BuildWorkerRows();
             _lastLoadedAtUtc = DateTimeOffset.UtcNow;
@@ -549,8 +592,12 @@
         var health = _health.FirstOrDefault(w => string.Equals(w.WorkerKey, key, StringComparison.Ordinal));
         var stats = _snapshot?.WorkerStats.FirstOrDefault(w => string.Equals(w.WorkerKey, key, StringComparison.Ordinal));
         var scale = _scaleTargets.FirstOrDefault(w => string.Equals(w.WorkerKey, key, StringComparison.Ordinal));
+        var scalingSettings = scale is null
+            ? null
+            : _scalingSettings.FirstOrDefault(s => string.Equals(s.ScaleKey, scale.ScaleKey, StringComparison.Ordinal));
         var capability = _capabilities.FirstOrDefault(w => string.Equals(w.WorkerKey, key, StringComparison.Ordinal));
         var desired = scale?.DesiredCount ?? scale?.ManualDesiredCount ?? 0;
+        var desiredDraft = Math.Max(0, desired);
 
         return new WorkerRowViewModel
         {
@@ -561,8 +608,10 @@
             Health = health,
             Stats = stats,
             Scale = scale,
+            ScalingSettings = scalingSettings,
             Capability = capability,
-            DesiredCountDraft = Math.Max(0, desired)
+            DesiredCountDraft = desiredDraft,
+            OriginalDesiredCount = desiredDraft
         };
     }
 
@@ -598,16 +647,19 @@
 
             if (!response.IsSuccessStatusCode)
             {
+                _lastActionAtUtc = DateTimeOffset.UtcNow;
                 _error = await ReadResponseMessageAsync(response, $"Could not {(enabled ? "resume" : "pause")} {row.DisplayName}.").ConfigureAwait(false);
                 return;
             }
 
+            _lastActionAtUtc = DateTimeOffset.UtcNow;
             _status = $"{row.DisplayName} {(enabled ? "resumed" : "paused")}.";
             await ReloadAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            _lastActionAtUtc = DateTimeOffset.UtcNow;
+            _error = $"Could not {(enabled ? "resume" : "pause")} {row.DisplayName}: {ex.Message}";
         }
         finally
         {
@@ -622,9 +674,11 @@
             return;
         }
 
-        if (row.DesiredCountDraft < 0)
+        var validationMessage = ScaleValidationMessage(row, includeNoChange: true);
+        if (!string.IsNullOrWhiteSpace(validationMessage))
         {
-            _error = "Desired worker count must be zero or greater.";
+            _lastActionAtUtc = DateTimeOffset.UtcNow;
+            _error = validationMessage;
             return;
         }
 
@@ -650,6 +704,7 @@
 
             if (response.StatusCode == HttpStatusCode.BadRequest)
             {
+                _lastActionAtUtc = DateTimeOffset.UtcNow;
                 _error = await ReadResponseMessageAsync(response, "Worker scale could not be updated.").ConfigureAwait(false);
                 return;
             }
@@ -659,17 +714,69 @@
             var result = await response.Content.ReadFromJsonAsync<WorkerScaleUpdateResult>(cancellationToken: _pollCts.Token)
                 .ConfigureAwait(false);
 
+            _lastActionAtUtc = DateTimeOffset.UtcNow;
             _status = result?.Message ?? $"{row.DisplayName} desired worker count updated.";
             await ReloadAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            _lastActionAtUtc = DateTimeOffset.UtcNow;
+            _error = $"Could not scale {row.DisplayName}: {ex.Message}";
         }
         finally
         {
             _busyScaleKeys.Remove(row.WorkerKey);
         }
+    }
+
+    private IEnumerable<WorkerRowViewModel> DegradedWorkerRows =>
+        _workerRows.Where(row => row.Enabled && row.Health is not null && !row.Health.Healthy);
+
+    private static bool CanApplyScale(WorkerRowViewModel row) =>
+        row.Scale is not null && string.IsNullOrWhiteSpace(ScaleValidationMessage(row, includeNoChange: true));
+
+    private static int ScaleMax(WorkerRowViewModel row) => Math.Max(0, row.ScalingSettings?.MaxTasks ?? 100);
+
+    private static string ScaleLimitText(WorkerRowViewModel row)
+    {
+        if (row.ScalingSettings is null)
+        {
+            return "Allowed range 0-100; backend may enforce a tighter configured limit.";
+        }
+
+        return $"Allowed range 0-{ScaleMax(row).ToString(CultureInfo.InvariantCulture)} from {row.ScalingSettings.DisplayName} scaling settings.";
+    }
+
+    private static string ScaleValidationClass(WorkerRowViewModel row)
+    {
+        var message = ScaleValidationMessage(row);
+        return string.IsNullOrWhiteSpace(message) || message == "No scale change to apply." ? "muted" : "ops-inline-error";
+    }
+
+    private static string ScaleValidationMessage(WorkerRowViewModel row, bool includeNoChange = false)
+    {
+        if (row.Scale is null)
+        {
+            return string.Empty;
+        }
+
+        if (row.DesiredCountDraft < 0)
+        {
+            return "Desired worker count must be zero or greater.";
+        }
+
+        var max = ScaleMax(row);
+        if (row.DesiredCountDraft > max)
+        {
+            return $"Desired worker count must be {max.ToString(CultureInfo.InvariantCulture)} or less.";
+        }
+
+        if (includeNoChange && row.DesiredCountDraft == row.OriginalDesiredCount)
+        {
+            return "No scale change to apply.";
+        }
+
+        return string.Empty;
     }
 
     private bool IsWorkerBusy(string workerKey) => _busyWorkerKeys.Contains(workerKey);
@@ -802,10 +909,12 @@
         public string DisplayName { get; set; } = "";
         public bool Enabled { get; set; }
         public int DesiredCountDraft { get; set; }
+        public int OriginalDesiredCount { get; set; }
         public WorkerSwitchDto? Switch { get; set; }
         public WorkerHealthDto? Health { get; set; }
         public WorkerDetailStatsDto? Stats { get; set; }
         public WorkerScaleTargetDto? Scale { get; set; }
+        public WorkerScalingSettingsDto? ScalingSettings { get; set; }
         public WorkerCapabilityDto? Capability { get; set; }
     }
 }

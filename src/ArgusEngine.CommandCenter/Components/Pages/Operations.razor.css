@@ -105,3 +105,39 @@
         justify-content: flex-start;
     }
 }
+
+.ops-attention-panel {
+    border-color: rgba(202, 138, 4, 0.45);
+    background: rgba(202, 138, 4, 0.07);
+}
+
+.ops-attention-list {
+    display: grid;
+    gap: 0.6rem;
+}
+
+.ops-attention-item {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto minmax(12rem, 2fr) auto;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.65rem 0;
+    border-top: 1px solid rgba(202, 138, 4, 0.2);
+}
+
+.ops-inline-error {
+    color: #991b1b;
+    font-size: 0.85rem;
+    margin-top: 0.2rem;
+}
+
+.ops-alert > span {
+    display: block;
+    margin-top: 0.2rem;
+}
+
+@media (max-width: 900px) {
+    .ops-attention-item {
+        grid-template-columns: 1fr;
+    }
+}

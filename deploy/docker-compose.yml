@@ -1,14 +1,13 @@
 # Run from the repository root:
-#   docker compose -f deploy/docker-compose.yml up -d --build
+# docker compose -f deploy/docker-compose.yml up -d --build
 #
 # Project-specific deployment version rule:
-#   Bump ARGUS_ENGINE_VERSION before every deploy. The Command Center System Status
-#   screen reads container image labels/tags and will show stale versions if this
-#   stays unchanged.
-
+# Bump ARGUS_ENGINE_VERSION before every deploy. The Command Center System Status
+# screen reads container image labels/tags and will show stale versions if this
+# stays unchanged.
 name: argus-engine
 
-x-component-version: &component-version ${ARGUS_ENGINE_VERSION:-2.6.1}
+x-component-version: &component-version ${ARGUS_ENGINE_VERSION:-2.6.2}
 
 x-dotnet-build-args: &dotnet-build-args
   BUILD_SOURCE_STAMP: ${BUILD_SOURCE_STAMP:-unknown}
@@ -105,7 +104,7 @@ services:
       start_period: 30s
 
   command-center:
-    image: argus-engine/command-center:${ARGUS_ENGINE_VERSION:-2.6.1}
+    image: argus-engine/command-center:${ARGUS_ENGINE_VERSION:-2.6.2}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.web
@@ -117,6 +116,12 @@ services:
       Argus__ListenPlainHttp: "true"
       Argus__Diagnostics__Enabled: "true"
       Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-local-dev-diagnostics-key-change-me}
+      Argus__ComponentUpdater__Enabled: ${ARGUS_COMPONENT_UPDATER_ENABLED:-true}
+      Argus__ComponentUpdater__RepositoryPath: /workspace
+      Argus__ComponentUpdater__ComposeFilePath: /workspace/deploy/docker-compose.yml
+      Argus__ComponentUpdater__GitRemote: ${ARGUS_COMPONENT_UPDATER_GIT_REMOTE:-origin}
+      Argus__ComponentUpdater__MainBranch: ${ARGUS_COMPONENT_UPDATER_MAIN_BRANCH:-main}
+      Argus__ComponentUpdater__RequireCleanWorkingTree: ${ARGUS_COMPONENT_UPDATER_REQUIRE_CLEAN_TREE:-true}
       AWS_REGION: ${AWS_REGION:-}
       ECS_CLUSTER: ${ECS_CLUSTER:-argus-engine}
       ECS_SUBNETS: ${ECS_SUBNETS:-}
@@ -132,6 +137,7 @@ services:
       WORKER_TECHID_SERVICE: ${WORKER_TECHID_SERVICE:-argus-worker-techid}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ..:/workspace
     ports:
       - "8080:8080"
     healthcheck:
@@ -151,7 +157,7 @@ services:
         condition: service_healthy
 
   gatekeeper:
-    image: argus-engine/gatekeeper:${ARGUS_ENGINE_VERSION:-2.6.1}
+    image: argus-engine/gatekeeper:${ARGUS_ENGINE_VERSION:-2.6.2}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -171,7 +177,7 @@ services:
         condition: service_healthy
 
   worker-spider:
-    image: argus-engine/worker-spider:${ARGUS_ENGINE_VERSION:-2.6.1}
+    image: argus-engine/worker-spider:${ARGUS_ENGINE_VERSION:-2.6.2}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -194,7 +200,7 @@ services:
       replicas: 10
 
   worker-enum:
-    image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.6.1}
+    image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.6.2}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker-enum
@@ -229,7 +235,7 @@ services:
       replicas: 10
 
   worker-portscan:
-    image: argus-engine/worker-portscan:${ARGUS_ENGINE_VERSION:-2.6.1}
+    image: argus-engine/worker-portscan:${ARGUS_ENGINE_VERSION:-2.6.2}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -249,7 +255,7 @@ services:
         condition: service_healthy
 
   worker-highvalue:
-    image: argus-engine/worker-highvalue:${ARGUS_ENGINE_VERSION:-2.6.1}
+    image: argus-engine/worker-highvalue:${ARGUS_ENGINE_VERSION:-2.6.2}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -269,7 +275,7 @@ services:
         condition: service_healthy
 
   worker-techid:
-    image: argus-engine/worker-techid:${ARGUS_ENGINE_VERSION:-2.6.1}
+    image: argus-engine/worker-techid:${ARGUS_ENGINE_VERSION:-2.6.2}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker

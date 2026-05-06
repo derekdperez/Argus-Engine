@@ -21,6 +21,8 @@ using ArgusEngine.CommandCenter.Services.Status;
 
 using ArgusEngine.CommandCenter.Services.Targets;
 
+using ArgusEngine.CommandCenter.Services.Updates;
+
 using ArgusEngine.CommandCenter.Services.Workers;
 
 using ArgusEngine.Workers.Enum.Consumers;
@@ -51,126 +53,161 @@ using Radzen;
 namespace ArgusEngine.CommandCenter.Startup;
 
 public static class CommandCenterServiceRegistration
+
 {
-    public static IServiceCollection AddCommandCenterServices(
-        this IServiceCollection services,
-        IConfiguration configuration,
-        IWebHostEnvironment environment)
-    {
-        _ = environment;
+ public static IServiceCollection AddCommandCenterServices(
 
-        services.AddArgusObservability(configuration, "argus-command-center");
+ this IServiceCollection services,
 
-        OpsSnapshotBuilder.RegisterHttpClient(services);
+ IConfiguration configuration,
 
-        services.AddRazorComponents()
-            .AddInteractiveServerComponents();
+ IWebHostEnvironment environment)
 
-        services.AddRadzenComponents();
+ {
 
-        services.AddHttpClient("ops-rabbit");
-        services.AddHttpClient("spider");
+ _ = environment;
 
-        services.AddScoped(sp =>
-        {
-            var nav = sp.GetRequiredService<NavigationManager>();
+ services.AddArgusObservability(configuration, "argus-command-center");
 
-            return new HttpClient { BaseAddress = new Uri(nav.BaseUri) };
-        });
+ OpsSnapshotBuilder.RegisterHttpClient(services);
 
-        services.AddArgusInfrastructure(configuration);
+ services.AddRazorComponents()
 
-        services.AddSignalR();
+ .AddInteractiveServerComponents();
 
-        services.AddScoped<DiscoveryRealtimeClient>();
+ services.AddHttpClient("ops-rabbit");
 
-        services.AddScoped<IRealtimeUpdatePublisher, SignalRRealtimeUpdatePublisher>();
+ services.AddHttpClient("spider");
 
-        services.AddCommandCenterApplicationServices();
+ services.AddScoped(sp =>
 
-        services.AddCommandCenterOptions(configuration);
+ {
+ var nav = sp.GetRequiredService<NavigationManager>();
 
-        services.AddArgusRabbitMq(configuration, consumers =>
-        {
-            consumers.AddConsumer<TargetCreatedUiEventConsumer>();
+ return new HttpClient { BaseAddress = new Uri(nav.BaseUri) };
 
-            consumers.AddConsumer<AssetDiscoveredUiEventConsumer>();
+ });
 
-            consumers.AddConsumer<ScannableContentAvailableUiEventConsumer>();
+ services.AddArgusInfrastructure(configuration);
 
-            consumers.AddConsumer<CriticalHighValueFindingAlertUiEventConsumer>();
+ services.AddSignalR();
 
-            consumers.AddConsumer<PortScanRequestedUiEventConsumer>();
+ services.AddScoped<DiscoveryRealtimeClient>();
 
-            consumers.AddConsumer<SubdomainEnumerationRequestedUiEventConsumer>();
+ services.AddScoped<IRealtimeUpdatePublisher, SignalRRealtimeUpdatePublisher>();
 
-            consumers.AddSagaStateMachine<TargetScanStateMachine, TargetScanState>()
-                .EntityFrameworkRepository(r =>
-                {
-                    r.ConcurrencyMode = ConcurrencyMode.Pessimistic;
+ services.AddCommandCenterApplicationServices();
 
-                    r.ExistingDbContext<ArgusDbContext>();
-                });
-        });
+ services.AddCommandCenterOptions(configuration);
 
-        return services;
-    }
+ services.AddComponentUpdateServices(configuration);
 
-    private static IServiceCollection AddCommandCenterApplicationServices(this IServiceCollection services)
-    {
-        services.AddScoped<RootSpiderSeedService>();
+ services.AddArgusRabbitMq(configuration, consumers =>
 
-        services.AddScoped<HttpQueueArtifactBackfillService>();
+ {
+ consumers.AddConsumer<TargetCreatedUiEventConsumer>();
 
-        services.AddScoped<ICommandCenterStatusSnapshotService, CommandCenterStatusSnapshotService>();
+ consumers.AddConsumer<AssetDiscoveredUiEventConsumer>();
 
-        services.AddSingleton<WorkerScaleDefinitionProvider>();
-        services.AddScoped<AwsRegionResolver>();
+ consumers.AddConsumer<ScannableContentAvailableUiEventConsumer>();
 
-        services.AddScoped<EcsWorkerServiceManager>();
+ consumers.AddConsumer<CriticalHighValueFindingAlertUiEventConsumer>();
 
-        services.AddScoped<EcsServiceNameResolver>();
+ consumers.AddConsumer<PortScanRequestedUiEventConsumer>();
 
-        services.AddScoped<HarnessRunner>();
+ consumers.AddConsumer<SubdomainEnumerationRequestedUiEventConsumer>();
 
-        // Register Worker Health Checks for the Harness
-        services.AddScoped<IWorkerHealthCheck, GatekeeperWorkerHealthCheck>();
+ consumers.AddSagaStateMachine<TargetScanStateMachine, TargetScanState>()
 
-        services.AddScoped<IWorkerHealthCheck, EnumWorkerHealthCheck>();
+ .EntityFrameworkRepository(r =>
 
-        services.AddScoped<IWorkerHealthCheck, SpiderWorkerHealthCheck>();
+ {
+ r.ConcurrencyMode = ConcurrencyMode.Pessimistic;
 
-        services.AddScoped<IWorkerHealthCheck, PortScanWorkerHealthCheck>();
-        services.AddScoped<IWorkerHealthCheck, HighValueWorkerHealthCheck>();
+ r.ExistingDbContext<ArgusDbContext>();
 
-        services.AddScoped<IWorkerHealthCheck, TechIdWorkerHealthCheck>();
+ });
 
-        services.AddScoped<GatekeeperOrchestrator>();
+ });
 
-        return services;
-    }
+ return services;
 
-    private static IServiceCollection AddCommandCenterOptions(this IServiceCollection services, IConfiguration configuration)
-    {
-        services.AddOptions<ArgusRuntimeOptions>()
-            .Configure<IConfiguration>((options, cfg) =>
-            {
-                cfg.GetSection("Nightmare").Bind(options);
-                cfg.GetSection("Argus").Bind(options);
-            })
-            .Validate(
-                o => !o.Diagnostics.Enabled || !string.IsNullOrWhiteSpace(o.Diagnostics.ApiKey),
-                "Argus/Nightmare Diagnostics Enabled=true requires Diagnostics ApiKey.")
-            .Validate(
-                o => !o.DataMaintenance.Enabled || !string.IsNullOrWhiteSpace(o.DataMaintenance.ApiKey),
-                "Argus/Nightmare DataMaintenance Enabled=true requires DataMaintenance ApiKey.")
-            .ValidateOnStart();
+ }
 
-        // Bind worker options to their specific sections as defined in docker-compose/env vars
-        services.Configure<SubdomainEnumerationOptions>(configuration.GetSection("Enumeration"));
+ private static IServiceCollection AddCommandCenterApplicationServices(this IServiceCollection services)
 
-        services.Configure<SpiderHttpOptions>(configuration.GetSection("Spider"));
+ {
 
-        return services;
-    }
+ services.AddScoped<RootSpiderSeedService>();
+
+ services.AddScoped<HttpQueueArtifactBackfillService>();
+
+ services.AddScoped<ICommandCenterStatusSnapshotService, CommandCenterStatusSnapshotService>();
+
+ services.AddSingleton<WorkerScaleDefinitionProvider>();
+ services.AddScoped<AwsRegionResolver>();
+
+ services.AddScoped<EcsWorkerServiceManager>();
+
+ services.AddScoped<EcsServiceNameResolver>();
+
+ services.AddScoped<HarnessRunner>();
+
+ // Register Worker Health Checks for the Harness
+
+ services.AddScoped<IWorkerHealthCheck, GatekeeperWorkerHealthCheck>();
+
+ services.AddScoped<IWorkerHealthCheck, EnumWorkerHealthCheck>();
+
+ services.AddScoped<IWorkerHealthCheck, SpiderWorkerHealthCheck>();
+
+ services.AddScoped<IWorkerHealthCheck, PortScanWorkerHealthCheck>();
+ services.AddScoped<IWorkerHealthCheck, HighValueWorkerHealthCheck>();
+
+ services.AddScoped<IWorkerHealthCheck, TechIdWorkerHealthCheck>();
+
+ services.AddScoped<GatekeeperOrchestrator>();
+
+ return services;
+
+ }
+
+ private static IServiceCollection AddCommandCenterOptions(this IServiceCollection services, IConfiguration configuration)
+
+ {
+
+ services.AddOptions<ArgusRuntimeOptions>()
+
+ .Configure<IConfiguration>((options, cfg) =>
+
+ {
+
+ cfg.GetSection("Nightmare").Bind(options);
+ cfg.GetSection("Argus").Bind(options);
+
+ })
+
+ .Validate(
+
+ o => !o.Diagnostics.Enabled || !string.IsNullOrWhiteSpace(o.Diagnostics.ApiKey),
+
+ "Argus/Nightmare Diagnostics Enabled=true requires Diagnostics ApiKey.")
+
+ .Validate(
+
+ o => !o.DataMaintenance.Enabled || !string.IsNullOrWhiteSpace(o.DataMaintenance.ApiKey),
+
+ "Argus/Nightmare DataMaintenance Enabled=true requires DataMaintenance ApiKey.")
+
+ .ValidateOnStart();
+ // Bind worker options to their specific sections as defined in docker-compose/env vars
+
+ services.Configure<SubdomainEnumerationOptions>(configuration.GetSection("Enumeration"));
+
+ services.Configure<SpiderHttpOptions>(configuration.GetSection("Spider"));
+
+ return services;
+
+ }
+
 }

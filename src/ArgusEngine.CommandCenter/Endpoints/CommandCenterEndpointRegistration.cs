@@ -19,6 +19,7 @@ public static class CommandCenterEndpointRegistration
         app.MapAssetGraphEndpoints();
         app.MapBusJournalEndpoints();
         app.MapCommandCenterStatusEndpoints();
+        app.MapComponentUpdateEndpoints();
         app.MapDataMaintenanceEndpoints();
         app.MapDiagnosticsEndpoints();
         app.MapEc2WorkerEndpoints();
@@ -31,7 +32,6 @@ public static class CommandCenterEndpointRegistration
         app.MapTargetEndpoints();
         app.MapToolRestartEndpoints();
         app.MapWorkerEndpoints();
-
         app.MapHub<DiscoveryHub>("/hubs/discovery");
 
         return app;

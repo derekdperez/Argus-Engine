@@ -1,23 +1,14 @@
 using MassTransit;
+
 using Microsoft.AspNetCore.Components;
-using ArgusEngine.CommandCenter.DataMaintenance;
+
 using ArgusEngine.Application.Sagas;
-using ArgusEngine.Application.Gatekeeping;
-using ArgusEngine.Harness.Core;
-using ArgusEngine.Application.Workers;
+using ArgusEngine.CommandCenter.DataMaintenance;
 using ArgusEngine.CommandCenter.Realtime;
-using ArgusEngine.CommandCenter.Services;
 using ArgusEngine.CommandCenter.Services.Aws;
 using ArgusEngine.CommandCenter.Services.Status;
 using ArgusEngine.CommandCenter.Services.Targets;
 using ArgusEngine.CommandCenter.Services.Workers;
-using ArgusEngine.Workers.Enum.Consumers;
-using ArgusEngine.Workers.Spider;
-using ArgusEngine.Gatekeeper;
-using ArgusEngine.Workers.Enum;
-using ArgusEngine.Workers.PortScan;
-using ArgusEngine.Workers.HighValue;
-using ArgusEngine.Workers.TechnologyIdentification;
 using ArgusEngine.Infrastructure;
 using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Data;
@@ -42,8 +33,16 @@ public static class CommandCenterServiceRegistration
         services.AddRazorComponents()
             .AddInteractiveServerComponents();
 
-        services.AddHttpClient("ops-rabbit");
-        services.AddHttpClient("spider");
+        services.AddRadzenComponents();
+
+        // Defensive explicit registrations for the Radzen root components rendered by App.razor.
+        // AddRadzenComponents normally registers these, but explicit registrations keep the
+        // command-center shell stable across Radzen package/runtime differences.
+        services.AddScoped<ThemeService>();
+        services.AddScoped<DialogService>();
+        services.AddScoped<NotificationService>();
+        services.AddScoped<TooltipService>();
+        services.AddScoped<ContextMenuService>();
 
         services.AddScoped(sp =>
         {
@@ -52,13 +51,12 @@ public static class CommandCenterServiceRegistration
         });
 
         services.AddArgusInfrastructure(configuration);
-
         services.AddSignalR();
         services.AddScoped<DiscoveryRealtimeClient>();
         services.AddScoped<IRealtimeUpdatePublisher, SignalRRealtimeUpdatePublisher>();
 
         services.AddCommandCenterApplicationServices();
-        services.AddCommandCenterOptions(configuration);
+        services.AddCommandCenterOptions();
 
         services.AddArgusRabbitMq(configuration, consumers =>
         {
@@ -85,28 +83,15 @@ public static class CommandCenterServiceRegistration
         services.AddScoped<RootSpiderSeedService>();
         services.AddScoped<HttpQueueArtifactBackfillService>();
         services.AddScoped<ICommandCenterStatusSnapshotService, CommandCenterStatusSnapshotService>();
-
         services.AddSingleton<WorkerScaleDefinitionProvider>();
-
         services.AddScoped<AwsRegionResolver>();
         services.AddScoped<EcsWorkerServiceManager>();
         services.AddScoped<EcsServiceNameResolver>();
-        
-        services.AddScoped<HarnessRunner>();
-
-        // Register Worker Health Checks for the Harness
-        services.AddScoped<IWorkerHealthCheck, GatekeeperWorkerHealthCheck>();
-        services.AddScoped<IWorkerHealthCheck, EnumWorkerHealthCheck>();
-        services.AddScoped<IWorkerHealthCheck, SpiderWorkerHealthCheck>();
-        services.AddScoped<IWorkerHealthCheck, PortScanWorkerHealthCheck>();
-        services.AddScoped<IWorkerHealthCheck, HighValueWorkerHealthCheck>();
-        services.AddScoped<IWorkerHealthCheck, TechIdWorkerHealthCheck>();
-        services.AddScoped<GatekeeperOrchestrator>();
 
         return services;
     }
 
-    private static IServiceCollection AddCommandCenterOptions(this IServiceCollection services, IConfiguration configuration)
+    private static IServiceCollection AddCommandCenterOptions(this IServiceCollection services)
     {
         services.AddOptions<ArgusRuntimeOptions>()
             .Configure<IConfiguration>((options, cfg) =>
@@ -121,10 +106,6 @@ public static class CommandCenterServiceRegistration
                 o => !o.DataMaintenance.Enabled || !string.IsNullOrWhiteSpace(o.DataMaintenance.ApiKey),
                 "Argus/Nightmare DataMaintenance Enabled=true requires DataMaintenance ApiKey.")
             .ValidateOnStart();
-
-        // Bind worker options to their specific sections as defined in docker-compose/env vars
-        services.Configure<SubdomainEnumerationOptions>(configuration.GetSection("Enumeration"));
-        services.Configure<SpiderHttpOptions>(configuration.GetSection("Spider"));
 
         return services;
     }

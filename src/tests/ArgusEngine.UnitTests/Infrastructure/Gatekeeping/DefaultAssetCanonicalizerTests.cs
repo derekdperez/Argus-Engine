@@ -25,7 +25,7 @@ public class DefaultAssetCanonicalizerTests
             DiscoveredBy: "test",
             OccurredAt: DateTimeOffset.UtcNow,
             CorrelationId: Guid.NewGuid(),
-            AdmissionStage: AssetAdmissionStage.Candidate,
+            AdmissionStage: AssetAdmissionStage.Raw,
             AssetId: null);
         
         var result = _sut.Canonicalize(message);
@@ -51,7 +51,7 @@ public class DefaultAssetCanonicalizerTests
             DiscoveredBy: "test",
             OccurredAt: DateTimeOffset.UtcNow,
             CorrelationId: Guid.NewGuid(),
-            AdmissionStage: AssetAdmissionStage.Candidate,
+            AdmissionStage: AssetAdmissionStage.Raw,
             AssetId: null);
 
         var result = _sut.Canonicalize(message);
@@ -74,7 +74,7 @@ public class DefaultAssetCanonicalizerTests
             DiscoveredBy: "test",
             OccurredAt: DateTimeOffset.UtcNow,
             CorrelationId: Guid.NewGuid(),
-            AdmissionStage: AssetAdmissionStage.Candidate,
+            AdmissionStage: AssetAdmissionStage.Raw,
             AssetId: null);
 
         var result = _sut.Canonicalize(message);
@@ -95,7 +95,7 @@ public class DefaultAssetCanonicalizerTests
             DiscoveredBy: "test",
             OccurredAt: DateTimeOffset.UtcNow,
             CorrelationId: Guid.NewGuid(),
-            AdmissionStage: AssetAdmissionStage.Candidate,
+            AdmissionStage: AssetAdmissionStage.Raw,
             AssetId: null);
 
         var result = _sut.Canonicalize(message);

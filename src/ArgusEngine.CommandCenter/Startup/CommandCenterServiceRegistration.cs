@@ -75,6 +75,8 @@ public static class CommandCenterServiceRegistration
 
  .AddInteractiveServerComponents();
 
+ services.AddRadzenComponents();
+
  services.AddHttpClient("ops-rabbit");
 
  services.AddHttpClient("spider");

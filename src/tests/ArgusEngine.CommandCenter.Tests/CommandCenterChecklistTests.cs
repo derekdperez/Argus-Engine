@@ -31,6 +31,16 @@ public sealed class CommandCenterChecklistTests
         Assert.Contains("MapHub<DiscoveryHub>", text);
     }
 
+    [Fact]
+    public void ServiceRegistrationIncludesRadzenComponentServices()
+    {
+        var root = FindRepositoryRoot();
+        var path = Path.Combine(root, "src", "ArgusEngine.CommandCenter", "Startup", "CommandCenterServiceRegistration.cs");
+        var text = File.ReadAllText(path);
+
+        Assert.Contains("AddRadzenComponents", text);
+    }
+
     private static string FindRepositoryRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

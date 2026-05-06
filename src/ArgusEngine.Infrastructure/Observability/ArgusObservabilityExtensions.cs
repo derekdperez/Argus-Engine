@@ -19,8 +19,6 @@ public static class ArgusObservabilityExtensions
             ?? Environment.GetEnvironmentVariable("NIGHTMARE_BUILD_STAMP")
             ?? "unknown";
 
-        services.AddSingleton<ArgusMeters>();
-        services.AddSingleton<ArgusTracing>();
 
         services.AddOpenTelemetry()
             .ConfigureResource(resource =>

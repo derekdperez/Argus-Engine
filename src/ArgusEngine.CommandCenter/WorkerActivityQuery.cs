@@ -114,6 +114,7 @@ internal static class WorkerActivityQuery
                 "Idle (Alive)",
                 "Idle",
                 null,
+                null,
                 null));
         }
 

@@ -443,7 +443,6 @@
             </Columns>
         </RadzenDataGrid>
     </section>
-    </section>
 
     <section class="ops-stack-grid">
         <section class="panel">
@@ -771,6 +770,28 @@
                 <button type="button" class="btn" @onclick="ExportWorkersCsvAsync">Export CSV</button>
             </div>
 
+            <RadzenDataGrid TItem="WorkerKindSummaryDto"
+                            Data="@RadzenWorkers"
+                            AllowFiltering="true"
+                            FilterMode="FilterMode.Advanced"
+                            AllowPaging="false"
+                            AllowSorting="true"
+                            Density="@_radzenDensity"
+                            EmptyText="No worker summaries available."
+                            class="ops-rz-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="WorkerKey" Title="Worker" Width="200px" />
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="ToggleEnabled" Title="Enabled" Width="100px">
+                        <Template Context="w">
+                            <span class="@WorkerBadgeClass(w)">@(w.ToggleEnabled ? "Enabled" : "Disabled")</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="InstanceCount" Title="Instances" Width="100px" />
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="LastActivityUtc" Title="Last Activity" Width="180px">
+                        <Template Context="w">@FormatOpsTime(w.LastActivityUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="RollupActivityLabel" Title="Rollup" />
+                </Columns>
             </RadzenDataGrid>
 
             <div class="section-heading" style="margin-top: 2rem;">
@@ -1398,7 +1419,8 @@
         _workerInstances.Clear();
         _workerInstances.AddRange(_snapshot.Activity.Instances);
     }
-
+    private async Task ReloadWorkerRowsAsync()
+    {
         try
         {
             var activity = await Http.GetFromJsonAsync<WorkerActivitySnapshotDto>("/api/workers/activity");
@@ -1591,33 +1613,6 @@
         catch (Exception ex)
         {
             _statusMessage = $"EC2 worker scale failed: {ex.Message}";
-        }
-        finally
-        {
-            _ec2WorkerBusy = false;
-        }
-    }
-
-    private async Task RemoveEc2WorkerMachineAsync(Ec2WorkerMachineDto machine)
-    {
-        var ok = await Js.InvokeAsync<bool>("confirm", $"Terminate EC2 worker machine {machine.Name}?");
-        if (!ok)
-            return;
-
-        _ec2WorkerBusy = true;
-        _statusMessage = "";
-        try
-        {
-            var response = await Http.DeleteAsync($"/api/ec2-workers/machines/{machine.Id}").ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                return;
-            }
-            await ReloadEc2WorkerMachinesAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _statusMessage = $"EC2 worker remove failed: {ex.Message}";
         }
         finally
         {

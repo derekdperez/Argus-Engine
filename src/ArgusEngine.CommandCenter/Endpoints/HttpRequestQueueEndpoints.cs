@@ -44,7 +44,7 @@ public static class HttpRequestQueueEndpoints
                     }
 
                     row.Enabled = body.Enabled;
-                    row.GlobalRequestsPerMinute = Math.Clamp(body.GlobalRequestsPerMinute, 1, 100_000);
+                    row.GlobalRequestsPerMinute = Math.Clamp(body.GlobalRequestsPerMinute, 1, 120_000);
                     row.PerDomainRequestsPerMinute = Math.Clamp(body.PerDomainRequestsPerMinute, 1, 10_000);
                     row.MaxConcurrency = Math.Clamp(body.MaxConcurrency, 1, 1_000);
                     row.RequestTimeoutSeconds = Math.Clamp(body.RequestTimeoutSeconds, 5, 300);

@@ -64,22 +64,6 @@
                 <div class="stat-label">HTTP Queue</div>
                 <div class="stat-value">@_overview.HttpQueueQueuedAssetCount.ToString("N0")</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">Last asset created</div>
-                <div class="stat-value small">@FormatOpsTime(_overview.LastAssetCreatedAtUtc)</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Last worker event</div>
-                <div class="stat-value small">@FormatOpsTime(_overview.LastWorkerEventPublishedAtUtc)</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">HTTP failed 1m / 1h / 24h</div>
-                <div class="stat-value small">@FormatMetricTriple(_queueMetrics?.FailedLastMinuteCount, _queueMetrics?.FailedLastHourCount, _queueMetrics?.FailedLast24HoursCount)</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">HTTP sent 1m / 1h / 24h</div>
-                <div class="stat-value small">@FormatMetricTriple(_queueMetrics?.SentLastMinuteCount, _queueMetrics?.SentLastHourCount, _queueMetrics?.SentLast24HoursCount)</div>
-            </div>
             <div class="stat-card wide">
                 <div class="stat-label">Top domain</div>
                 <div class="stat-value small">@(_overview.TopDomainByAssets ?? "-") (@_overview.TopDomainAssetCount.ToString("N0") assets)</div>
@@ -124,23 +108,6 @@
     }
     else
     {
-    <section class="panel ops-tool-actions">
-        <div class="section-heading">
-            <div>
-                <p class="eyebrow">Tool controls</p>
-                <h2>Restart enumeration or spidering</h2>
-            </div>
-            <span class="muted">@SelectedToolTargetCount.ToString("N0") selected</span>
-        </div>
-        <p class="muted">Use the checkboxes in the Targets grid to restart tools for selected targets, or queue the restart globally for every active target.</p>
-        <div class="ops-rz-toolbar">
-            <button type="button" class="btn primary" disabled="@_toolRestartBusy" @onclick="@(() => RestartEnumAsync(true))">Restart enum for all targets</button>
-            <button type="button" class="btn danger" disabled="@_toolRestartBusy" @onclick="@(() => RestartSpiderAsync(true))">Restart spidering for all targets</button>
-            <button type="button" class="btn" disabled="@(_toolRestartBusy || SelectedToolTargetCount == 0)" @onclick="@(() => RestartEnumAsync(false))">Restart enum for selected (@SelectedToolTargetCount)</button>
-            <button type="button" class="btn" disabled="@(_toolRestartBusy || SelectedToolTargetCount == 0)" @onclick="@(() => RestartSpiderAsync(false))">Restart spidering for selected (@SelectedToolTargetCount)</button>
-            <button type="button" class="btn ghost" disabled="@(SelectedToolTargetCount == 0)" @onclick="ClearToolTargetSelection">Clear selection</button>
-        </div>
-    </section>
     <section class="ops-layout-grid">
         <section class="panel ops-primary-panel target-control-panel">
             <div class="target-control-header">
@@ -258,9 +225,11 @@
                     <RadzenDataGridColumn TItem="TargetSummary" Property="LastRunAtUtc" Title='@ColumnTitle("target.LastRunAtUtc", "Last Run Time")' Width="180px">
                         <Template Context="row">@FormatOpsTime(row.LastRunAtUtc)</Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="TargetSummary" Title="Actions" Width="150px" Filterable="false" Sortable="false" Groupable="false">
+                    <RadzenDataGridColumn TItem="TargetSummary" Title="Actions" Width="340px" Filterable="false" Sortable="false" Groupable="false">
                         <Template Context="row">
                             <div class="row-actions">
+                                <button type="button" class="btn small primary" disabled="@_toolRestartBusy" @onclick="@(() => QueueTargetEnumAsync(row))">Enum Subdomains</button>
+                                <button type="button" class="btn small" disabled="@_toolRestartBusy" @onclick="@(() => QueueTargetSpiderAsync(row))">Spider Asset</button>
                                 <button type="button" class="btn small" @onclick="@(() => StartTargetEdit(row))">Edit</button>
                                 <button type="button" class="btn small danger" @onclick="@(() => DeleteTargetAsync(row))">Delete</button>
                             </div>
@@ -463,25 +432,8 @@
                     <button type="button" class="@QueueToggleButtonClass" disabled="@_queueSettingsBusy" @onclick="ToggleHttpQueueAsync">
                         @(_queueSettings.Enabled ? "Pause new requests" : "Resume new requests")
                     </button>
-                    <label>
-                        <span>Global req/min</span>
-                        <input type="number" min="1" @bind="_queueGlobalRequestsPerMinute" />
-                    </label>
-                    <label>
-                        <span>Per-domain req/min</span>
-                        <input type="number" min="1" @bind="_queuePerDomainRequestsPerMinute" />
-                    </label>
-                    <label>
-                        <span>Max concurrency</span>
-                        <input type="number" min="1" @bind="_queueMaxConcurrency" />
-                    </label>
-                    <label>
-                        <span>Timeout sec</span>
-                        <input type="number" min="5" max="300" @bind="_queueRequestTimeoutSeconds" />
-                    </label>
-                    <button type="button" class="btn primary" disabled="@_queueSettingsBusy" @onclick="SaveHttpQueueSettingsAsync">Save</button>
+                    <span class="muted">Queue is @(_queueSettings.Enabled ? "enabled" : "disabled"); updated @FormatOpsTime(_queueSettings.UpdatedAtUtc). @_queueSettingsMessage</span>
                 </div>
-                <p class="muted">Queue is @(_queueSettings.Enabled ? "enabled" : "disabled"); updated @FormatOpsTime(_queueSettings.UpdatedAtUtc). @_queueSettingsMessage</p>
             }
 
             <div class="mini-metrics">
@@ -508,6 +460,9 @@
                     <span>State</span>
                     <input type="text" class="ops-filter" @bind="_filterQueuePipelineCol" />
                 </label>
+                <button type="button" class="btn" @onclick='@(() => SetQueueStateFilter("Failed"))'>Failed</button>
+                <button type="button" class="btn" @onclick='@(() => SetQueueStateFilter("Succeeded"))'>Completed</button>
+                <button type="button" class="btn ghost" @onclick='@(() => SetQueueStateFilter(""))'>All states</button>
                 <details class="ops-rz-column-toggles">
                     <summary>Columns</summary>
                     <label class="switch-row"><input type="checkbox" @bind="_showQueueDomain" /><span>Domain</span></label>
@@ -592,7 +547,7 @@
                     <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="StartedAtUtc" Title='@ColumnTitle("queue.StartedAtUtc", "Started")' Width="180px" Visible="false">
                         <Template Context="q">@FormatOpsTime(q.StartedAtUtc)</Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="CompletedAtUtc" Title='@ColumnTitle("queue.CompletedAtUtc", "Completed")' Width="180px" Visible="false">
+                    <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="CompletedAtUtc" Title='@ColumnTitle("queue.CompletedAtUtc", "Completed")' Width="180px" Visible="@_showQueueTiming">
                         <Template Context="q">@FormatOpsTime(q.CompletedAtUtc)</Template>
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="HttpRequestQueueRowDto" Property="LockedBy" Title='@ColumnTitle("queue.LockedBy", "Locked By")' Width="220px" Visible="false" />
@@ -683,123 +638,6 @@
         <section class="panel">
             <div class="section-heading">
                 <div>
-                    <p class="eyebrow">EC2 Workers</p>
-                    <h2>Manual machine scaling</h2>
-                </div>
-                <span class="muted">@ActiveEc2WorkerMachineCount.ToString(CultureInfo.InvariantCulture) / 2 machines active</span>
-            </div>
-
-            <div class="ops-rz-toolbar">
-                <label>
-                    <span>Name</span>
-                    <input type="text" class="ops-filter" @bind="_ec2WorkerName" placeholder="ec2-worker-a" />
-                </label>
-                <label>
-                    <span>Spider</span>
-                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreateSpider" />
-                </label>
-                <label>
-                    <span>Enum</span>
-                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreateEnum" />
-                </label>
-                <label>
-                    <span>Port scan</span>
-                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreatePortScan" />
-                </label>
-                <label>
-                    <span>High value</span>
-                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreateHighValue" />
-                </label>
-                <label>
-                    <span>Tech ID</span>
-                    <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2CreateTechId" />
-                </label>
-                <button type="button" class="btn primary" disabled="@(!CanCreateEc2WorkerMachine)" @onclick="CreateEc2WorkerMachineAsync">Add machine</button>
-                <button type="button" class="btn" disabled="@_ec2WorkerBusy" @onclick="ReloadEc2WorkerMachinesAsync">Refresh</button>
-            </div>
-
-            <RadzenDataGrid TItem="Ec2WorkerMachineDto"
-                            Data="@_ec2WorkerMachines"
-                            IsLoading="@_ec2WorkerBusy"
-                            AllowFiltering="true"
-                            FilterMode="FilterMode.Advanced"
-                            FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
-                            AllowPaging="false"
-                            AllowSorting="true"
-                            AllowColumnResize="true"
-                            AllowColumnReorder="true"
-                            Density="@_radzenDensity"
-                            EmptyText="No EC2 worker machines have been created."
-                            class="ops-rz-grid">
-                <Columns>
-                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Title="Selected" Width="110px" Filterable="false" Sortable="false">
-                        <Template Context="m">
-                            <button type="button" class="btn small" @onclick="@(() => SelectEc2WorkerMachine(m))">
-                                @(m.Id == _selectedEc2WorkerMachineId ? "Selected" : "Select")
-                            </button>
-                        </Template>
-                    </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="Name" Title="Name" Width="180px">
-                        <Template Context="m"><strong>@m.Name</strong></Template>
-                    </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="AwsState" Title="State" Width="130px">
-                        <Template Context="m"><span class="@Ec2WorkerStateBadgeClass(m)">@m.AwsState</span></Template>
-                    </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="InstanceId" Title="Instance" Width="190px" />
-                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="PublicIpAddress" Title="Public IP" Width="140px" />
-                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="PrivateIpAddress" Title="Private IP" Width="140px" />
-                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="InstanceType" Title="Type" Width="130px" />
-                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Title="Workers" Width="300px" Filterable="false" Sortable="false">
-                        <Template Context="m"><span class="ops-rz-clip" title="@Ec2WorkerCountsSummary(m.Workers)">@Ec2WorkerCountsSummary(m.Workers)</span></Template>
-                    </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="LastCommandStatus" Title="SSM" Width="150px" />
-                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="StatusMessage" Title="Message" Width="320px">
-                        <Template Context="m"><span class="ops-rz-clip" title="@m.StatusMessage">@m.StatusMessage</span></Template>
-                    </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Property="UpdatedAtUtc" Title="Updated" Width="180px">
-                        <Template Context="m">@FormatOpsTime(m.UpdatedAtUtc)</Template>
-                    </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="Ec2WorkerMachineDto" Title="Actions" Width="130px" Filterable="false" Sortable="false">
-                        <Template Context="m">
-                            <button type="button" class="btn small danger" disabled="@_ec2WorkerBusy" @onclick="@(() => RemoveEc2WorkerMachineAsync(m))">Remove</button>
-                        </Template>
-                    </RadzenDataGridColumn>
-                </Columns>
-            </RadzenDataGrid>
-
-            @if (SelectedEc2WorkerMachine is { } selectedEc2Worker)
-            {
-                <div class="ops-rz-toolbar">
-                    <strong>Scale @selectedEc2Worker.Name</strong>
-                    <label>
-                        <span>Spider</span>
-                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScaleSpider" />
-                    </label>
-                    <label>
-                        <span>Enum</span>
-                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScaleEnum" />
-                    </label>
-                    <label>
-                        <span>Port scan</span>
-                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScalePortScan" />
-                    </label>
-                    <label>
-                        <span>High value</span>
-                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScaleHighValue" />
-                    </label>
-                    <label>
-                        <span>Tech ID</span>
-                        <input type="number" min="0" class="ops-filter worker-scale-input" @bind="_ec2ScaleTechId" />
-                    </label>
-                    <button type="button" class="btn primary" disabled="@_ec2WorkerBusy" @onclick="ScaleSelectedEc2WorkerMachineAsync">Apply scale</button>
-                    <button type="button" class="btn danger" disabled="@_ec2WorkerBusy" @onclick="@(() => RemoveEc2WorkerMachineAsync(selectedEc2Worker))">Remove machine</button>
-                </div>
-            }
-        </section>
-
-        <section class="panel">
-            <div class="section-heading">
-                <div>
                     <p class="eyebrow">Workers</p>
                     <h2>Activity + controls</h2>
                 </div>
@@ -844,6 +682,37 @@
                         </Template>
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="InstanceCount" Title="Instances" Width="100px" />
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Title="Desired" Width="210px" Filterable="false" Sortable="false">
+                        <Template Context="w">
+                            @if (WorkerScaleFor(w.WorkerKey) is { } scale)
+                            {
+                                <div class="worker-scale-cell">
+                                    <input type="number"
+                                           min="0"
+                                           class="ops-filter worker-scale-input"
+                                           value="@WorkerScaleInput(w.WorkerKey)"
+                                           @oninput="@((ChangeEventArgs e) => SetWorkerScaleInput(w.WorkerKey, e.Value?.ToString()))" />
+                                    <button type="button" class="btn small" disabled="@WorkerScaleBusy(w.WorkerKey)" @onclick="@(() => ApplyWorkerScaleInputAsync(w.WorkerKey))">Apply</button>
+                                </div>
+                                <span class="muted">@WorkerScaleSummary(scale)</span>
+                            }
+                            else
+                            {
+                                <span class="muted">Fixed</span>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Title="Scale" Width="130px" Filterable="false" Sortable="false">
+                        <Template Context="w">
+                            @if (WorkerScaleFor(w.WorkerKey) is not null)
+                            {
+                                <div class="row-actions">
+                                    <button type="button" class="btn small" disabled="@WorkerScaleBusy(w.WorkerKey)" @onclick="@(() => ChangeWorkerScaleAsync(w.WorkerKey, -1))">-</button>
+                                    <button type="button" class="btn small" disabled="@WorkerScaleBusy(w.WorkerKey)" @onclick="@(() => ChangeWorkerScaleAsync(w.WorkerKey, 1))">+</button>
+                                </div>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="WorkerKindSummaryDto" Property="LastActivityUtc" Title="Last Activity" Width="180px">
                         <Template Context="w">@FormatOpsTime(w.LastActivityUtc)</Template>
                     </RadzenDataGridColumn>
@@ -929,7 +798,6 @@
     private readonly List<WorkerKindSummaryDto> _workerSummaries = [];
     private readonly List<WorkerInstanceActivityDto> _workerInstances = [];
     private readonly List<WorkerScaleTargetDto> _workerScaleTargets = [];
-    private readonly List<Ec2WorkerMachineDto> _ec2WorkerMachines = [];
     private readonly HashSet<Guid> _selectedToolTargetIds = [];
     private int SelectedToolTargetCount => _selectedToolTargetIds.Count;
     private int TargetTotalCount => _targets.Count;
@@ -1050,26 +918,13 @@
     private string _filterQueuePipelineCol = "";
     private bool _showQueueDomain = true;
     private bool _showQueueAttempts = true;
-    private bool _showQueueTiming;
+    private bool _showQueueTiming = true;
     private bool _showQueueErrors = true;
     private HttpRequestQueueRowDto? _selectedQueueItem;
 
     private string _workerSearch = "";
     private string? _workerBusyKey;
     private string? _workerScaleBusyKey;
-    private Guid? _selectedEc2WorkerMachineId;
-    private string _ec2WorkerName = "";
-    private int _ec2CreateSpider;
-    private int _ec2CreateEnum;
-    private int _ec2CreatePortScan;
-    private int _ec2CreateHighValue;
-    private int _ec2CreateTechId;
-    private int _ec2ScaleSpider;
-    private int _ec2ScaleEnum;
-    private int _ec2ScalePortScan;
-    private int _ec2ScaleHighValue;
-    private int _ec2ScaleTechId;
-    private bool _ec2WorkerBusy = true;
 
     private string _maintenanceApiKey = "";
     private string _phraseClearTargets = "";
@@ -1100,9 +955,9 @@
     private DateTimeOffset? _queueLoadedAtUtc;
     private DateTimeOffset? _snapshotLoadedAtUtc;
 
-    private int _queueGlobalRequestsPerMinute = 120;
-    private int _queuePerDomainRequestsPerMinute = 6;
-    private int _queueMaxConcurrency = 8;
+    private int _queueGlobalRequestsPerMinute = 120_000;
+    private int _queuePerDomainRequestsPerMinute = 120;
+    private int _queueMaxConcurrency = 10;
     private int _queueRequestTimeoutSeconds = 30;
     private int _targetBulkMaxDepth = 12;
 
@@ -1171,17 +1026,6 @@
                 || GridTextFilter.Matches(i.ActivityLabel, _workerSearch)
                 || GridTextFilter.Matches(i.Status, _workerSearch));
 
-    private int ActiveEc2WorkerMachineCount =>
-        _ec2WorkerMachines.Count(m => Ec2WorkerMachineIsActive(m.AwsState));
-
-    private bool CanCreateEc2WorkerMachine =>
-        !_ec2WorkerBusy && ActiveEc2WorkerMachineCount < 2;
-
-    private Ec2WorkerMachineDto? SelectedEc2WorkerMachine =>
-        _selectedEc2WorkerMachineId is null
-            ? null
-            : _ec2WorkerMachines.FirstOrDefault(m => m.Id == _selectedEc2WorkerMachineId.Value);
-
     private string LiveStateCss => Realtime.IsConnected ? "connected" : "disconnected";
     private string LiveStatusText => Realtime.IsConnected
         ? "Subscribed to command-center events"
@@ -1247,27 +1091,11 @@
         return $"{manual}; ECS desired {desired}, running {running}, pending {pending}";
     }
 
-    private static string Ec2WorkerCountsSummary(Ec2WorkerCountsDto counts) =>
-        $"spider {counts.Spider.ToString(CultureInfo.InvariantCulture)}, enum {counts.Enum.ToString(CultureInfo.InvariantCulture)}, port {counts.PortScan.ToString(CultureInfo.InvariantCulture)}, high {counts.HighValue.ToString(CultureInfo.InvariantCulture)}, tech {counts.TechnologyIdentification.ToString(CultureInfo.InvariantCulture)}";
-
     private bool HasLoadedAnyWorkspaceData =>
         _targetsLoadedAtUtc is not null
         || _assetsLoadedAtUtc is not null
         || _queueLoadedAtUtc is not null
         || _snapshotLoadedAtUtc is not null;
-
-    private static bool Ec2WorkerMachineIsActive(string? state) =>
-        !string.Equals(state, "terminated", StringComparison.OrdinalIgnoreCase)
-        && !string.Equals(state, "terminating", StringComparison.OrdinalIgnoreCase)
-        && !string.Equals(state, "shutting-down", StringComparison.OrdinalIgnoreCase)
-        && !string.Equals(state, "error", StringComparison.OrdinalIgnoreCase);
-
-    private static string Ec2WorkerStateBadgeClass(Ec2WorkerMachineDto machine) =>
-        string.Equals(machine.AwsState, "running", StringComparison.OrdinalIgnoreCase)
-            ? "badge badge-green"
-            : Ec2WorkerMachineIsActive(machine.AwsState)
-                ? "badge badge-gray"
-                : "badge badge-red";
 
     protected override Task OnInitializedAsync()
     {
@@ -1456,7 +1284,6 @@
 
             await ReloadWorkerRowsAsync();
             await ReloadWorkerScaleAsync();
-            await ReloadEc2WorkerMachinesAsync();
             await ReloadHttpQueueMetricsAsync();
             _snapshotLoadedAtUtc = DateTimeOffset.UtcNow;
         }
@@ -1537,147 +1364,6 @@
         }
     }
 
-    private async Task ReloadEc2WorkerMachinesAsync()
-    {
-        _ec2WorkerBusy = true;
-        try
-        {
-            var machines = await Http.GetFromJsonAsync<List<Ec2WorkerMachineDto>>("/api/ec2-workers/machines").ConfigureAwait(false);
-            _ec2WorkerMachines.Clear();
-            if (machines is null)
-                return;
-
-            _ec2WorkerMachines.AddRange(machines);
-            if (_selectedEc2WorkerMachineId is null || _ec2WorkerMachines.All(m => m.Id != _selectedEc2WorkerMachineId.Value))
-                _selectedEc2WorkerMachineId = _ec2WorkerMachines.FirstOrDefault(m => Ec2WorkerMachineIsActive(m.AwsState))?.Id
-                    ?? _ec2WorkerMachines.FirstOrDefault()?.Id;
-
-            if (SelectedEc2WorkerMachine is { } selected)
-                ApplyEc2ScaleInputs(selected.Workers);
-        }
-        catch (Exception ex)
-        {
-            _statusMessage = $"Could not load EC2 worker machines: {ex.Message}";
-            _ec2WorkerMachines.Clear();
-        }
-        finally
-        {
-            _ec2WorkerBusy = false;
-        }
-    }
-
-    private async Task CreateEc2WorkerMachineAsync()
-    {
-        if (!CanCreateEc2WorkerMachine)
-        {
-            _statusMessage = "EC2 workers are limited to two active machines.";
-            return;
-        }
-
-        _ec2WorkerBusy = true;
-        _statusMessage = "";
-        try
-        {
-            var request = new Ec2WorkerMachineCreateRequest(
-                _ec2WorkerName,
-                CreateEc2WorkerCounts(_ec2CreateSpider, _ec2CreateEnum, _ec2CreatePortScan, _ec2CreateHighValue, _ec2CreateTechId));
-            var response = await Http.PostAsJsonAsync("/api/ec2-workers/machines", request).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                _statusMessage = await ReadResponseMessageAsync(response, "EC2 worker machine could not be created.").ConfigureAwait(false);
-                return;
-            }
-
-            var result = await response.Content.ReadFromJsonAsync<Ec2WorkerMachineMutationResult>().ConfigureAwait(false);
-            if (result is not null)
-            {
-                _selectedEc2WorkerMachineId = result.Machine.Id;
-                ApplyEc2ScaleInputs(result.Machine.Workers);
-                _statusMessage = result.Message;
-            }
-            else
-            {
-                _statusMessage = "EC2 worker machine requested.";
-            }
-
-            _ec2WorkerName = "";
-            await ReloadEc2WorkerMachinesAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _statusMessage = $"EC2 worker create failed: {ex.Message}";
-        }
-        finally
-        {
-            _ec2WorkerBusy = false;
-        }
-    }
-
-    private void SelectEc2WorkerMachine(Ec2WorkerMachineDto machine)
-    {
-        _selectedEc2WorkerMachineId = machine.Id;
-        ApplyEc2ScaleInputs(machine.Workers);
-        _statusMessage = "";
-    }
-
-    private void ApplyEc2ScaleInputs(Ec2WorkerCountsDto counts)
-    {
-        _ec2ScaleSpider = Math.Max(0, counts.Spider);
-        _ec2ScaleEnum = Math.Max(0, counts.Enum);
-        _ec2ScalePortScan = Math.Max(0, counts.PortScan);
-        _ec2ScaleHighValue = Math.Max(0, counts.HighValue);
-        _ec2ScaleTechId = Math.Max(0, counts.TechnologyIdentification);
-    }
-
-    private static Ec2WorkerCountsDto CreateEc2WorkerCounts(
-        int spider,
-        int enumWorkers,
-        int portScan,
-        int highValue,
-        int technologyIdentification) =>
-        new(
-            Math.Max(0, spider),
-            Math.Max(0, enumWorkers),
-            Math.Max(0, portScan),
-            Math.Max(0, highValue),
-            Math.Max(0, technologyIdentification));
-
-    private async Task ScaleSelectedEc2WorkerMachineAsync()
-    {
-        var machine = SelectedEc2WorkerMachine;
-        if (machine is null)
-        {
-            _statusMessage = "Select an EC2 worker machine first.";
-            return;
-        }
-
-        _ec2WorkerBusy = true;
-        _statusMessage = "";
-        try
-        {
-            var request = new Ec2WorkerMachineScaleRequest(
-                CreateEc2WorkerCounts(_ec2ScaleSpider, _ec2ScaleEnum, _ec2ScalePortScan, _ec2ScaleHighValue, _ec2ScaleTechId));
-            var response = await Http.PutAsJsonAsync($"/api/ec2-workers/machines/{machine.Id}/scale", request).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                _statusMessage = await ReadResponseMessageAsync(response, "EC2 worker machine could not be scaled.").ConfigureAwait(false);
-                return;
-            }
-
-            var result = await response.Content.ReadFromJsonAsync<Ec2WorkerMachineMutationResult>().ConfigureAwait(false);
-            _statusMessage = result?.Message ?? "EC2 worker scale command sent.";
-            await ReloadEc2WorkerMachinesAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _statusMessage = $"EC2 worker scale failed: {ex.Message}";
-        }
-        finally
-        {
-            _ec2WorkerBusy = false;
-        }
-    }
-
     private async Task CancelInstanceMessageAsync(WorkerInstanceActivityDto instance)
     {
         if (instance.MessageId is null)
@@ -1705,39 +1391,6 @@
         catch (Exception ex)
         {
             _statusMessage = $"Cancellation error: {ex.Message}";
-        }
-    }
-
-    private async Task RemoveEc2WorkerMachineAsync(Ec2WorkerMachineDto machine)
-    {
-        var ok = await Js.InvokeAsync<bool>("confirm", $"Terminate EC2 worker machine {machine.Name}?");
-        if (!ok)
-            return;
-
-        _ec2WorkerBusy = true;
-        _statusMessage = "";
-        try
-        {
-            var response = await Http.DeleteAsync($"/api/ec2-workers/machines/{machine.Id}").ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                _statusMessage = await ReadResponseMessageAsync(response, "EC2 worker machine could not be removed.").ConfigureAwait(false);
-                return;
-            }
-
-            var result = await response.Content.ReadFromJsonAsync<Ec2WorkerMachineMutationResult>().ConfigureAwait(false);
-            _statusMessage = result?.Message ?? "EC2 worker machine termination requested.";
-            if (_selectedEc2WorkerMachineId == machine.Id)
-                _selectedEc2WorkerMachineId = null;
-            await ReloadEc2WorkerMachinesAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _statusMessage = $"EC2 worker remove failed: {ex.Message}";
-        }
-        finally
-        {
-            _ec2WorkerBusy = false;
         }
     }
 
@@ -1972,6 +1625,48 @@
     private async Task RestartSpiderAsync(bool allTargets)
     {
         await RestartToolAsync("/api/ops/spider/restart", allTargets, "Spider restart queued.").ConfigureAwait(false);
+    }
+
+    private Task QueueTargetEnumAsync(TargetSummary target) =>
+        RestartToolForTargetsAsync(
+            "/api/ops/subdomain-enum/restart",
+            [target.Id],
+            $"Subdomain enumeration queued for {target.RootDomain}.");
+
+    private Task QueueTargetSpiderAsync(TargetSummary target) =>
+        RestartToolForTargetsAsync(
+            "/api/ops/spider/restart",
+            [target.Id],
+            $"Spider queued for {target.RootDomain}.");
+
+    private async Task RestartToolForTargetsAsync(string endpoint, IReadOnlyList<Guid> targetIds, string successMessage)
+    {
+        if (_toolRestartBusy || targetIds.Count == 0)
+            return;
+
+        _toolRestartBusy = true;
+        try
+        {
+            var ids = targetIds.Select(id => id.ToString()).ToArray();
+            var response = await Http.PostAsJsonAsync(endpoint, new RestartToolRequest(ids, false)).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+            {
+                _statusMessage = successMessage;
+                await ReloadVolatileAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                _statusMessage = await ReadResponseMessageAsync(response, "Tool request failed.").ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Tool request failed: {ex.Message}";
+        }
+        finally
+        {
+            _toolRestartBusy = false;
+        }
     }
 
     private async Task RestartToolAsync(string endpoint, bool allTargets, string successMessage)
@@ -2249,6 +1944,12 @@
         _filterQueueKindCol = "";
         _filterQueueRawCol = "";
         _filterQueuePipelineCol = "";
+    }
+
+    private void SetQueueStateFilter(string state)
+    {
+        _filterQueuePipelineCol = state;
+        _queueGridVersion++;
     }
 
     private async Task<HttpResponseMessage> MaintenancePostAsync<T>(string relativeUri, T body)

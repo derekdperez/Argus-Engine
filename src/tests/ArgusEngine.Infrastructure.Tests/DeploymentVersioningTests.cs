@@ -108,6 +108,18 @@ public sealed class DeploymentVersioningTests
         Assert.Contains("services.AddHostedService<OutboxDispatcherWorker>();", infrastructure);
     }
 
+    [Fact]
+    public void HttpQueueDefaultsMatchOperationsThroughputDefaults()
+    {
+        var settings = File.ReadAllText(ProjectRoot("src/ArgusEngine.Domain/Entities/HttpRequestQueueSettings.cs"));
+        var endpoints = File.ReadAllText(ProjectRoot("src/ArgusEngine.CommandCenter/Endpoints/HttpRequestQueueEndpoints.cs"));
+
+        Assert.Contains("GlobalRequestsPerMinute { get; set; } = 120_000", settings);
+        Assert.Contains("PerDomainRequestsPerMinute { get; set; } = 120", settings);
+        Assert.Contains("RequestTimeoutSeconds { get; set; } = 30", settings);
+        Assert.Contains("Math.Clamp(body.GlobalRequestsPerMinute, 1, 120_000)", endpoints);
+    }
+
     private static string ProjectRoot(string relativePath)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

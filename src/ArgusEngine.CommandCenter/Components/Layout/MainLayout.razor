@@ -1,9 +1,7 @@
 @inherits LayoutComponentBase
 
-<PageTitle>Argus Engine Command Center</PageTitle>
-
 <header class="app-header">
-    <a class="brand" href="" aria-label="Argus Engine Command Center home">
+    <a class="brand" href="/operations">
         <span class="brand-mark">AE</span>
         <span>
             <strong>Argus Engine</strong>
@@ -11,16 +9,17 @@
         </span>
     </a>
 
-    <nav class="app-nav" aria-label="Primary navigation">
-        <NavLink class="nav-button" href="" Match="NavLinkMatch.All">Operations</NavLink>
-        <NavLink class="nav-button" href="targets">Targets</NavLink>
-        <NavLink class="nav-button" href="asset-admission">Asset Admission</NavLink>
-        <NavLink class="nav-button" href="high-value">High Value</NavLink>
-        <NavLink class="nav-button" href="technologies">Technologies</NavLink>
-        <NavLink class="nav-button" href="asset-graph">Asset Graph</NavLink>
-        <NavLink class="nav-button" href="status">System Status</NavLink>
-        <NavLink class="nav-button" href="admin">Admin</NavLink>
-        <NavLink class="nav-button" href="development">Development</NavLink>
+    <nav class="app-nav" aria-label="Primary">
+        <NavLink href="/operations" class="nav-button">Operations</NavLink>
+        <NavLink href="/targets" class="nav-button">Targets</NavLink>
+        <NavLink href="/asset-admission" class="nav-button">Asset Admission</NavLink>
+        <NavLink href="/high-value-findings" class="nav-button">High Value</NavLink>
+        <NavLink href="/technologies" class="nav-button">Technologies</NavLink>
+        <NavLink href="/asset-graph" class="nav-button">Asset Graph</NavLink>
+        <NavLink href="/status" class="nav-button">System Status</NavLink>
+        <NavLink href="/application-component-state" class="nav-button">Application State</NavLink>
+        <NavLink href="/admin" class="nav-button">Admin</NavLink>
+        <NavLink href="/development" class="nav-button">Development</NavLink>
     </nav>
 </header>
 

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
+using System.Diagnostics;
+using System.Globalization;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using ArgusEngine.Domain.Entities;
@@ -14,16 +16,24 @@ namespace ArgusEngine.Infrastructure.Observability;
 
 public sealed class ArgusDatabaseLoggerProvider : ILoggerProvider
 {
+    private const int MaxQueuedErrors = 10_000;
+    private const int BatchSize = 100;
+
+    private static readonly TimeSpan EmptyQueueDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan FailureDelay = TimeSpan.FromSeconds(5);
+
     private readonly IServiceProvider _serviceProvider;
     private readonly string _component;
     private readonly ConcurrentQueue<SystemError> _queue = new();
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _processorTask;
+    private int _queuedCount;
+    private int _disposed;
 
     public ArgusDatabaseLoggerProvider(IServiceProvider serviceProvider, string component)
     {
         _serviceProvider = serviceProvider;
-        _component = component;
+        _component = string.IsNullOrWhiteSpace(component) ? "unknown" : component;
         _processorTask = Task.Run(ProcessQueueAsync);
     }
 
@@ -31,50 +41,15 @@ public sealed class ArgusDatabaseLoggerProvider : ILoggerProvider
 
     public void EnqueueLog(SystemError error)
     {
-        if (_queue.Count > 2000) return; // Circuit breaker to prevent OOM
-        _queue.Enqueue(error);
-    }
+        ArgumentNullException.ThrowIfNull(error);
 
-    private async Task ProcessQueueAsync()
-    {
-        while (!_cts.IsCancellationRequested)
+        if (Volatile.Read(ref _queuedCount) >= MaxQueuedErrors)
         {
-            try
-            {
-                if (_queue.IsEmpty)
-                {
-                    await Task.Delay(1000, _cts.Token).ConfigureAwait(false);
-                    continue;
-                }
-
-                var batch = new List<SystemError>();
-                while (_queue.TryDequeue(out var error) && batch.Count < 100)
-                {
-                    batch.Add(error);
-                }
-
-                if (batch.Count > 0)
-                {
-                    using var scope = _serviceProvider.CreateScope();
-                    var dbFactory = scope.ServiceProvider.GetService<IDbContextFactory<ArgusDbContext>>();
-                    if (dbFactory != null)
-                    {
-                        await using var db = await dbFactory.CreateDbContextAsync(_cts.Token).ConfigureAwait(false);
-                        db.SystemErrors.AddRange(batch);
-                        await db.SaveChangesAsync(_cts.Token).ConfigureAwait(false);
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch
-            {
-                // Silently ignore logger failures to prevent recursive errors
-                await Task.Delay(5000).ConfigureAwait(false);
-            }
+            return;
         }
+
+        Interlocked.Increment(ref _queuedCount);
+        _queue.Enqueue(error);
     }
 
     public ILogger CreateLogger(string categoryName)
@@ -84,9 +59,104 @@ public sealed class ArgusDatabaseLoggerProvider : ILoggerProvider
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
         _cts.Cancel();
-        try { _processorTask.Wait(2000); } catch { }
+
+        try
+        {
+            _processorTask.Wait(TimeSpan.FromSeconds(2));
+        }
+        catch
+        {
+            // Logger shutdown must never block host shutdown.
+        }
+
         _cts.Dispose();
+    }
+
+    private async Task ProcessQueueAsync()
+    {
+        while (!_cts.IsCancellationRequested)
+        {
+            List<SystemError> batch = [];
+
+            try
+            {
+                batch = DrainBatch();
+
+                if (batch.Count == 0)
+                {
+                    await Task.Delay(EmptyQueueDelay, _cts.Token).ConfigureAwait(false);
+                    continue;
+                }
+
+                await WriteBatchAsync(batch, _cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+            {
+                break;
+            }
+            catch
+            {
+                Requeue(batch);
+
+                try
+                {
+                    await Task.Delay(FailureDelay, _cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    private List<SystemError> DrainBatch()
+    {
+        var batch = new List<SystemError>(BatchSize);
+
+        while (batch.Count < BatchSize && _queue.TryDequeue(out var error))
+        {
+            Interlocked.Decrement(ref _queuedCount);
+            batch.Add(error);
+        }
+
+        return batch;
+    }
+
+    private void Requeue(IEnumerable<SystemError> batch)
+    {
+        foreach (var error in batch)
+        {
+            EnqueueLog(error);
+        }
+    }
+
+    private async Task WriteBatchAsync(
+        IReadOnlyCollection<SystemError> batch,
+        CancellationToken cancellationToken)
+    {
+        if (batch.Count == 0)
+        {
+            return;
+        }
+
+        using var scope = _serviceProvider.CreateScope();
+        var dbFactory = scope.ServiceProvider.GetService<IDbContextFactory<ArgusDbContext>>();
+
+        if (dbFactory is null)
+        {
+            return;
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        db.SystemErrors.AddRange(batch);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 }
 
@@ -101,23 +171,33 @@ public sealed class ArgusDatabaseLogger : ILogger
         _provider = provider;
     }
 
-    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => default;
-
-    public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Error;
-
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    public IDisposable? BeginScope<TState>(TState state)
+        where TState : notnull
     {
-        if (!IsEnabled(logLevel)) return;
+        return default;
+    }
 
-        // Skip internal EF and logging related categories to avoid infinite loops
-        if (_name.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal) ||
-            _name.StartsWith("ArgusEngine.Infrastructure.Observability", StringComparison.Ordinal))
+    public bool IsEnabled(LogLevel logLevel)
+    {
+        return logLevel >= LogLevel.Error && !IsInternalPersistenceCategory(_name);
+    }
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        ArgumentNullException.ThrowIfNull(formatter);
+
+        if (!IsEnabled(logLevel))
         {
             return;
         }
 
-        var message = formatter(state, exception);
-        
+        var message = FormatMessage(state, exception, formatter);
+
         var error = new SystemError
         {
             Component = _provider.Component,
@@ -126,9 +206,78 @@ public sealed class ArgusDatabaseLogger : ILogger
             Message = message,
             Exception = exception?.ToString(),
             LoggerName = _name,
-            Timestamp = DateTimeOffset.UtcNow
+            Timestamp = DateTimeOffset.UtcNow,
+            MetadataJson = CreateMetadataJson(eventId, state)
         };
 
         _provider.EnqueueLog(error);
+    }
+
+    private static bool IsInternalPersistenceCategory(string categoryName)
+    {
+        return categoryName.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal)
+            || categoryName.StartsWith("ArgusEngine.Infrastructure.Observability", StringComparison.Ordinal)
+            || categoryName.StartsWith("Npgsql", StringComparison.Ordinal);
+    }
+
+    private static string FormatMessage<TState>(
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        try
+        {
+            var message = formatter(state, exception);
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                return message;
+            }
+        }
+        catch
+        {
+            // Fall back below. Logging must never throw back into application code.
+        }
+
+        return exception?.Message ?? state?.ToString() ?? "Error log entry did not include a message.";
+    }
+
+    private static string? CreateMetadataJson<TState>(EventId eventId, TState state)
+    {
+        try
+        {
+            var metadata = new Dictionary<string, string?>();
+
+            if (eventId.Id != 0)
+            {
+                metadata["event_id"] = eventId.Id.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (!string.IsNullOrWhiteSpace(eventId.Name))
+            {
+                metadata["event_name"] = eventId.Name;
+            }
+
+            var activity = Activity.Current;
+            if (activity is not null)
+            {
+                metadata["trace_id"] = activity.TraceId.ToString();
+                metadata["span_id"] = activity.SpanId.ToString();
+            }
+
+            if (state is IEnumerable<KeyValuePair<string, object?>> values)
+            {
+                foreach (var value in values)
+                {
+                    var key = value.Key == "{OriginalFormat}" ? "message_template" : value.Key;
+                    metadata[key] = value.Value?.ToString();
+                }
+            }
+
+            return metadata.Count == 0 ? null : JsonSerializer.Serialize(metadata);
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

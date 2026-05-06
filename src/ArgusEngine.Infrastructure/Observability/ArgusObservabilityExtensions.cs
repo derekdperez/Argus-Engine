@@ -1,7 +1,7 @@
+using System.Linq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -20,6 +20,7 @@ public static class ArgusObservabilityExtensions
             ?? Environment.GetEnvironmentVariable("NIGHTMARE_BUILD_STAMP")
             ?? "unknown";
 
+        services.AddArgusDatabaseLogging(serviceName);
         services.AddSingleton<ArgusMetrics>();
         services.AddSingleton<ArgusTracing>();
 
@@ -42,7 +43,9 @@ public static class ArgusObservabilityExtensions
 
                 var endpoint = configuration["OpenTelemetry:OtlpEndpoint"];
                 if (!string.IsNullOrWhiteSpace(endpoint))
+                {
                     metrics.AddOtlpExporter();
+                }
             })
             .WithTracing(tracing =>
             {
@@ -54,9 +57,11 @@ public static class ArgusObservabilityExtensions
 
                 var endpoint = configuration["OpenTelemetry:OtlpEndpoint"];
                 if (!string.IsNullOrWhiteSpace(endpoint))
+                {
                     tracing.AddOtlpExporter();
+                }
             });
-        
+
         return services;
     }
 
@@ -64,9 +69,14 @@ public static class ArgusObservabilityExtensions
         this IServiceCollection services,
         string componentName)
     {
-        services.AddSingleton<ILoggerProvider>(sp => 
-            new ArgusDatabaseLoggerProvider(sp, componentName));
-        
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(ArgusDatabaseLoggerProvider)))
+        {
+            return services;
+        }
+
+        services.AddSingleton(sp => new ArgusDatabaseLoggerProvider(sp, componentName));
+        services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<ArgusDatabaseLoggerProvider>());
+
         return services;
     }
 }

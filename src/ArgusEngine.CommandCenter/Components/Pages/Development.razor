@@ -1,11 +1,14 @@
 @page "/development"
+
 @using ArgusEngine.Harness.Core
 @using ArgusEngine.Domain.Entities
 @using ArgusEngine.Infrastructure.Data
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.Logging
 @inject IDbContextFactory<ArgusDbContext> DbFactory
 @inject HarnessRunner Harness
 @inject IJSRuntime Js
+@inject ILogger<Development> Logger
 
 <PageTitle>Development - Argus Engine</PageTitle>
 
@@ -24,6 +27,7 @@
                 <h2>Worker Test Harness</h2>
                 <p class="muted">Executes "Health Check" logic within each worker project to exercise core functionality.</p>
             </div>
+
             <button type="button" class="btn primary glow" disabled="@_busy" @onclick="RunHarnessAsync">
                 @if (_busy)
                 {
@@ -45,6 +49,7 @@
                     <span class="label">Executed At</span>
                     <span class="value">@_result.ExecutedAtUtc.ToLocalTime().ToString("HH:mm:ss")</span>
                 </div>
+
                 <div class="summary-stat">
                     <span class="label">Overall Status</span>
                     @if (_result.WorkerResults.All(r => r.Success))
@@ -56,6 +61,7 @@
                         <span class="value danger">DEGRADED</span>
                     }
                 </div>
+
                 <div class="summary-stat">
                     <span class="label">Success Rate</span>
                     <span class="value">@(_result.WorkerResults.Count(r => r.Success)) / @(_result.WorkerResults.Count)</span>
@@ -63,8 +69,8 @@
             </div>
 
             <div class="grid-container">
-                <RadzenDataGrid TItem="WorkerHealthCheckResultDto" 
-                                Data="@_result.WorkerResults" 
+                <RadzenDataGrid TItem="WorkerHealthCheckResultDto"
+                                Data="@_result.WorkerResults"
                                 AllowSorting="true"
                                 class="dev-grid">
                     <Columns>
@@ -76,6 +82,7 @@
                                 </div>
                             </Template>
                         </RadzenDataGridColumn>
+
                         <RadzenDataGridColumn TItem="WorkerHealthCheckResultDto" Property="Success" Title="Result" Width="120px">
                             <Template Context="r">
                                 <span class="badge @(r.Success ? "badge-green" : "badge-red")">
@@ -83,7 +90,9 @@
                                 </span>
                             </Template>
                         </RadzenDataGridColumn>
+
                         <RadzenDataGridColumn TItem="WorkerHealthCheckResultDto" Property="Message" Title="Diagnostic Message" />
+
                         <RadzenDataGridColumn TItem="WorkerHealthCheckResultDto" Title="Detailed Log" Width="140px" TextAlign="TextAlign.Center">
                             <Template Context="r">
                                 @if (!string.IsNullOrEmpty(r.Output))
@@ -103,7 +112,7 @@
         else if (!_busy)
         {
             <div class="harness-empty">
-                <div class="empty-icon">🧪</div>
+                <div class="empty-icon"></div>
                 <h3>Ready to test</h3>
                 <p>Click the button above to begin the automated worker health check suite.</p>
             </div>
@@ -116,11 +125,13 @@
                 <h2>System-Wide Error Log</h2>
                 <p class="muted">Centralized collection of all Critical and Error level logs from all system components.</p>
             </div>
+
             <div class="actions">
                 <button type="button" class="btn small outline" @onclick="RefreshErrorsAsync">
                     <i class="ms-Icon ms-Icon--Refresh"></i>
                     <span>Refresh</span>
                 </button>
+
                 <button type="button" class="btn small danger-outline" @onclick="ClearErrorsAsync">
                     <i class="ms-Icon ms-Icon--Delete"></i>
                     <span>Clear All</span>
@@ -129,10 +140,10 @@
         </div>
 
         <div class="grid-container">
-            <RadzenDataGrid TItem="SystemError" 
-                            Data="@_errors" 
-                            AllowPaging="true" 
-                            PageSize="10" 
+            <RadzenDataGrid TItem="SystemError"
+                            Data="@_errors"
+                            AllowPaging="true"
+                            PageSize="10"
                             AllowSorting="true"
                             class="dev-grid error-grid">
                 <Columns>
@@ -141,11 +152,13 @@
                             @e.Timestamp.ToLocalTime().ToString("MM/dd HH:mm:ss")
                         </Template>
                     </RadzenDataGridColumn>
+
                     <RadzenDataGridColumn TItem="SystemError" Property="Component" Title="Component" Width="140px">
                         <Template Context="e">
                             <span class="badge badge-component">@e.Component</span>
                         </Template>
                     </RadzenDataGridColumn>
+
                     <RadzenDataGridColumn TItem="SystemError" Property="LogLevel" Title="Level" Width="100px">
                         <Template Context="e">
                             <span class="badge @(e.LogLevel == "Critical" ? "badge-critical" : "badge-red")">
@@ -153,7 +166,9 @@
                             </span>
                         </Template>
                     </RadzenDataGridColumn>
+
                     <RadzenDataGridColumn TItem="SystemError" Property="Message" Title="Message" />
+
                     <RadzenDataGridColumn TItem="SystemError" Title="Details" Width="120px" TextAlign="TextAlign.Center">
                         <Template Context="e">
                             @if (!string.IsNullOrEmpty(e.Exception))
@@ -183,6 +198,7 @@
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
+
             _errors = await db.SystemErrors
                 .OrderByDescending(e => e.Timestamp)
                 .Take(500)
@@ -190,14 +206,16 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load errors: {ex.Message}");
+            Logger.LogError(ex, "Failed to load system-wide errors for the development diagnostics page.");
         }
     }
 
     private async Task ClearErrorsAsync()
     {
         if (!await Js.InvokeAsync<bool>("confirm", "Are you sure you want to clear all system errors?"))
+        {
             return;
+        }
 
         try
         {
@@ -207,6 +225,7 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Failed to clear system-wide errors from the development diagnostics page.");
             await Js.InvokeVoidAsync("alert", $"Failed to clear errors: {ex.Message}");
         }
     }
@@ -224,11 +243,13 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Harness execution failed from the development diagnostics page.");
             await Js.InvokeVoidAsync("alert", $"Harness Execution Error: {ex.Message}");
         }
         finally
         {
             _busy = false;
+            await RefreshErrorsAsync();
         }
     }
 

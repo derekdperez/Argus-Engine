@@ -17,8 +17,10 @@ public static class ToolRestartEndpoints
     {
         app.MapPost(
                 "/api/ops/subdomain-enum/restart",
-                async (RestartToolRequest body, ArgusDbContext db, IEventOutbox outbox, IOptions<SubdomainEnumerationOptions> options, CancellationToken ct) =>
+                async (RestartToolRequest body, ArgusDbContext db, IEventOutbox outbox, IOptions<SubdomainEnumerationOptions> options, ILogger<ToolRestartEndpointsLogger> logger, CancellationToken ct) =>
                 {
+                    logger.LogInformation("Subdomain enumeration restart requested. AllTargets: {AllTargets}, TargetCount: {TargetIdsCount}", body.AllTargets, body.TargetIds?.Length ?? 0);
+                    
                     var targetsQuery = db.Targets.AsNoTracking();
                     if (!body.AllTargets)
                     {
@@ -70,6 +72,7 @@ public static class ToolRestartEndpoints
                     if (eventsToEnqueue.Count > 0)
                     {
                         await outbox.EnqueueBatchAsync(eventsToEnqueue, ct).ConfigureAwait(false);
+                        logger.LogInformation("Enqueued {Count} SubdomainEnumerationRequested events to outbox.", eventsToEnqueue.Count);
                     }
 
                     return Results.Ok(new { Targets = targets.Count, JobsQueued = queued });
@@ -82,8 +85,11 @@ public static class ToolRestartEndpoints
                     RestartToolRequest body,
                     ArgusDbContext db,
                     RootSpiderSeedService rootSpiderSeedService,
+                    ILogger<ToolRestartEndpointsLogger> logger,
                     CancellationToken ct) =>
                 {
+                    logger.LogInformation("Spider restart requested. AllTargets: {AllTargets}, TargetCount: {TargetIdsCount}", body.AllTargets, body.TargetIds?.Length ?? 0);
+
                     var targetsQuery = db.Targets.AsNoTracking();
                     if (!body.AllTargets)
                     {
@@ -137,9 +143,18 @@ public static class ToolRestartEndpoints
                     }
 
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                    logger.LogInformation("Spider restart completed. Requeued {ExistingCount} existing requests, {RootSeedsCount} new root seeds.", existingQueueRows.Count, queuedRootSeeds);
+
                     return Results.Ok(new { Targets = targets.Count, RequeuedExistingRequests = existingQueueRows.Count, RootSeedsQueued = queuedRootSeeds });
                 })
             .WithName("RestartSpidering");
+
+        return app;
+    }
+
+    private sealed class ToolRestartEndpointsLogger { }
+
+    public static void Map(WebApplication app) => app.MapToolRestartEndpoints();
 
         return app;
     }

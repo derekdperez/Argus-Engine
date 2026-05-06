@@ -61,27 +61,29 @@ ref_q="$(quote "$E2E_GIT_REF")"
 base_url_q="$(quote "$E2E_COMMAND_CENTER_URL")"
 snapshot_q="$(quote "${ARGUS_E2E_DB_SNAPSHOT_SQL:-}")"
 
-remote_command="
+remote_script_file="$(mktemp)"
+cat >"$remote_script_file" <<EOF
 set -euo pipefail
-sudo -iu ubuntu bash -lc '
-  set -euo pipefail
-  if [[ ! -d /opt/argus/.git ]]; then
-    rm -rf /opt/argus
-    git clone ${repo_q} /opt/argus
-  fi
-  cd /opt/argus
-  git remote set-url origin ${repo_q}
-  git fetch --prune origin
-  git checkout --detach --force ${ref_q}
-  chmod +x deploy/deploy.sh src/tests/e2e/*.sh scripts/run-tests.sh test.sh || true
-  export argus_GIT_PULL=0
-  export COMPOSE_BAKE=false
-  ./deploy/deploy.sh --hot
-  export ARGUS_BASE_URL=${base_url_q}
-  export ARGUS_E2E_DB_SNAPSHOT_SQL=${snapshot_q}
-  ./src/tests/e2e/run-e2e-suite.sh
-'
-"
+if [[ ! -d /opt/argus/.git ]]; then
+  rm -rf /opt/argus
+  git clone ${repo_q} /opt/argus
+fi
+cd /opt/argus
+git remote set-url origin ${repo_q}
+git fetch --prune origin
+git checkout --detach --force ${ref_q}
+chmod +x deploy/deploy.sh src/tests/e2e/*.sh scripts/run-tests.sh test.sh || true
+export argus_GIT_PULL=0
+export COMPOSE_BAKE=false
+./deploy/deploy.sh --hot
+export ARGUS_BASE_URL=${base_url_q}
+export ARGUS_E2E_DB_SNAPSHOT_SQL=${snapshot_q}
+./src/tests/e2e/run-e2e-suite.sh
+EOF
+
+remote_script_b64="$(base64 <"$remote_script_file" | tr -d '\n')"
+rm -f "$remote_script_file"
+remote_command="printf '%s' '${remote_script_b64}' | base64 -d >/tmp/argus-e2e-run.sh && chmod +x /tmp/argus-e2e-run.sh && sudo -iu ubuntu bash /tmp/argus-e2e-run.sh"
 
 parameters_file="$(mktemp)"
 REMOTE_COMMAND="$remote_command" E2E_COMMAND_TIMEOUT_SECONDS="$E2E_COMMAND_TIMEOUT_SECONDS" python3 - >"$parameters_file" <<'PY'

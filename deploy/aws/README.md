@@ -24,6 +24,27 @@ The scripts intentionally do not create the VPC, cluster, load balancer, or data
 
 ## ECS deploy workflow
 
+## Main branch release gate
+
+`.github/workflows/release-main.yml` is the production path for pushes to `main`:
+
+1. Restore and build `ArgusEngine.slnx`.
+2. Run the unit test suite through `./test.sh unit`.
+3. Ensure the long-lived EC2 E2E test server exists, hot-deploy the pushed Git SHA to it, recreate the E2E databases, and run `src/tests/e2e/run-e2e-suite.sh`.
+4. Build and push ECR images tagged with the Git SHA.
+5. Register/update ECS services with the new image tag.
+
+The older `publish-ecr.yml` workflow is manual only so `main` cannot publish images before E2E has passed.
+
+Required GitHub configuration:
+
+- `ARGUS_AWS_GITHUB_ACTIONS_ROLE` repository variable, or the default role in the workflow.
+- `ARGUS_ECS_SERVICE_ENV` repository secret containing the production service env file contents.
+- ECS variables such as `ECS_CLUSTER`, `ECS_SUBNETS`, `ECS_SECURITY_GROUPS`, and `ECS_TASK_EXECUTION_ROLE_ARN`.
+- E2E variables such as `ARGUS_E2E_SUBNET_ID`, `ARGUS_E2E_SECURITY_GROUP`, and `ARGUS_E2E_IAM_INSTANCE_PROFILE`.
+
+The E2E host should use an instance profile with SSM managed-instance permissions. It is reused between builds, but `src/tests/e2e/reset-e2e-database.sh` drops and recreates `argus_engine` and `argus_engine_files` before every run. Set `ARGUS_E2E_DB_SNAPSHOT_SQL` to a SQL file path on that host when you want to restore a richer snapshot instead of the default empty bootstrapped database.
+
 ### EC2 one-command worker deployment
 
 When running the self-hosted stack on one EC2 host and placing workers on ECS, use:

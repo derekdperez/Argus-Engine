@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text;
 
 namespace ArgusEngine.Workers.Spider;
@@ -17,20 +18,31 @@ internal static class BoundedHttpContentReader
             bufferSize: 8192,
             leaveOpen: false);
 
-        var buffer = new char[Math.Min(8192, maxChars)];
+        var bufferLength = Math.Min(8192, maxChars);
+        var buffer = ArrayPool<char>.Shared.Rent(bufferLength);
         var sb = new StringBuilder(capacity: Math.Min(maxChars, 8192));
-        while (sb.Length < maxChars)
+
+        try
         {
-            var remaining = maxChars - sb.Length;
-            var read = await reader.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, remaining)), cancellationToken)
-                .ConfigureAwait(false);
-            if (read == 0)
-                break;
+            while (sb.Length < maxChars)
+            {
+                var remaining = maxChars - sb.Length;
+                var read = await reader
+                    .ReadAsync(buffer.AsMemory(0, Math.Min(bufferLength, remaining)), cancellationToken)
+                    .ConfigureAwait(false);
 
-            sb.Append(buffer, 0, read);
+                if (read == 0)
+                    break;
+
+                sb.Append(buffer, 0, read);
+            }
+
+            return sb.ToString();
         }
-
-        return sb.ToString();
+        finally
+        {
+            ArrayPool<char>.Shared.Return(buffer);
+        }
     }
 
     private static Encoding ResolveEncoding(string? charset)

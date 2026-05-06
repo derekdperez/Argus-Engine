@@ -9,34 +9,36 @@ public sealed class HtmlSignalExtractor
     public static HtmlSignals Extract(string? body, string? contentType, string sourceUrl)
     {
         if (string.IsNullOrWhiteSpace(body) || !ShouldParse(body, contentType))
-            return new HtmlSignals(new Dictionary<string, string>(), []);
+            return new HtmlSignals(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), []);
 
         var parser = new HtmlParser();
         var document = parser.ParseDocument(body);
-
         var meta = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var element in document.QuerySelectorAll("meta"))
         {
             var key = element.GetAttribute("name")
                 ?? element.GetAttribute("property")
                 ?? element.GetAttribute("http-equiv")
                 ?? element.GetAttribute("itemprop");
+
             var value = element.GetAttribute("content");
+
             if (!string.IsNullOrWhiteSpace(key) && value is not null)
-                meta[key.Trim().ToLowerInvariant()] = value;
+                meta[key.Trim()] = value;
         }
 
-        var scripts = new List<string>();
+        var scripts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Uri.TryCreate(sourceUrl, UriKind.Absolute, out var baseUri);
+
         foreach (var element in document.QuerySelectorAll("script[src]"))
         {
             var src = element.GetAttribute("src");
             if (!string.IsNullOrWhiteSpace(src))
-                scripts.Add(ResolveAgainstBaseUrl(src, sourceUrl));
+                scripts.Add(ResolveAgainstBaseUrl(src, baseUri));
         }
 
-        return new HtmlSignals(
-            meta,
-            scripts.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+        return new HtmlSignals(meta, scripts.Count == 0 ? [] : scripts.ToArray());
     }
 
     private static bool ShouldParse(string body, string? contentType)
@@ -47,7 +49,8 @@ public sealed class HtmlSignalExtractor
             return true;
         }
 
-        var prefix = body.Length <= SniffLength ? body : body[..SniffLength];
+        var prefix = body.AsSpan(0, Math.Min(body.Length, SniffLength));
+
         return prefix.Contains("<html", StringComparison.OrdinalIgnoreCase)
             || prefix.Contains("<head", StringComparison.OrdinalIgnoreCase)
             || prefix.Contains("<meta", StringComparison.OrdinalIgnoreCase)
@@ -55,14 +58,14 @@ public sealed class HtmlSignalExtractor
             || prefix.Contains("<body", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string ResolveAgainstBaseUrl(string src, string sourceUrl)
+    private static string ResolveAgainstBaseUrl(string src, Uri? baseUri)
     {
         if (Uri.TryCreate(src, UriKind.Absolute, out var absolute))
             return absolute.ToString();
 
-        return Uri.TryCreate(sourceUrl, UriKind.Absolute, out var baseUri)
+        return baseUri is not null
             && Uri.TryCreate(baseUri, src, out var resolved)
-                ? resolved.ToString()
-                : src;
+            ? resolved.ToString()
+            : src;
     }
 }

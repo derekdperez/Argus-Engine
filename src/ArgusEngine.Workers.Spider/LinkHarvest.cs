@@ -20,49 +20,62 @@ internal static class LinkHarvest
         RegexOptions.Compiled | RegexOptions.IgnoreCase,
         TimeSpan.FromSeconds(2));
 
-    public static HashSet<string> Extract(string text, string contentType, Uri baseUri)
+    public static HashSet<string> Extract(string text, string contentType, Uri baseUri) =>
+        Extract(text, contentType, baseUri, int.MaxValue);
+
+    public static HashSet<string> Extract(string? text, string? contentType, Uri baseUri, int maxLinks)
     {
-        var ct = contentType.ToLowerInvariant();
-        if (ct.Contains("html", StringComparison.Ordinal) || LooksLikeHtml(text))
-            return ExtractFromHtml(text, baseUri);
+        var set = CreateSet(maxLinks);
 
-        if (ct.Contains("markdown", StringComparison.Ordinal) || baseUri.AbsolutePath.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
-            return ExtractFromMarkdown(text, baseUri);
+        if (maxLinks <= 0 || string.IsNullOrEmpty(text))
+            return set;
 
-        if (ct.Contains("javascript", StringComparison.Ordinal) || baseUri.AbsolutePath.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
-            return ExtractFromScript(text, baseUri);
+        if (Contains(contentType, "html") || LooksLikeHtml(text))
+            return ExtractFromHtml(text, baseUri, maxLinks, set);
 
-        return ExtractFromPlain(text, baseUri);
+        if (Contains(contentType, "markdown") || baseUri.AbsolutePath.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+            return ExtractFromMarkdown(text, baseUri, maxLinks, set);
+
+        if (Contains(contentType, "javascript") || baseUri.AbsolutePath.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
+            return ExtractFromScript(text, baseUri, maxLinks, set);
+
+        return ExtractFromPlain(text, baseUri, maxLinks, set);
     }
 
-    private static bool LooksLikeHtml(string text) =>
-        text.Contains('<', StringComparison.Ordinal) && text.Contains('>', StringComparison.Ordinal);
+    private static bool Contains(string? value, string token) =>
+        !string.IsNullOrEmpty(value)
+        && value.Contains(token, StringComparison.OrdinalIgnoreCase);
 
-    private static HashSet<string> ExtractFromHtml(string html, Uri baseUri)
+    private static bool LooksLikeHtml(string text) =>
+        text.Contains('<', StringComparison.Ordinal)
+        && text.Contains('>', StringComparison.Ordinal);
+
+    private static HashSet<string> ExtractFromHtml(string html, Uri baseUri, int maxLinks, HashSet<string> set)
     {
         var parser = new HtmlParser();
         var doc = parser.ParseDocument(html);
-        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var el in doc.QuerySelectorAll(
-                     "a[href], link[href], area[href], script[src], img[src], iframe[src], embed[src], object[data], source[src], video[src], audio[src], form[action]"))
+
+        foreach (var el in doc.QuerySelectorAll("a[href], link[href], area[href], script[src], img[src], iframe[src], embed[src], object[data], source[src], video[src], audio[src], form[action]"))
         {
-            var href = el.GetAttribute("href") ?? el.GetAttribute("src") ?? el.GetAttribute("data") ?? el.GetAttribute("action");
-            if (string.IsNullOrWhiteSpace(href))
-                continue;
-            if (TryResolve(baseUri, href, out var abs))
-                set.Add(abs);
+            var href = el.GetAttribute("href")
+                ?? el.GetAttribute("src")
+                ?? el.GetAttribute("data")
+                ?? el.GetAttribute("action");
+
+            if (!string.IsNullOrWhiteSpace(href)
+                && AddIfResolved(set, baseUri, href.AsSpan(), maxLinks))
+            {
+                return set;
+            }
         }
 
         foreach (var el in doc.QuerySelectorAll("[srcset]"))
         {
             var srcset = el.GetAttribute("srcset");
-            if (string.IsNullOrWhiteSpace(srcset))
-                continue;
-            foreach (var part in srcset.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            if (!string.IsNullOrWhiteSpace(srcset)
+                && AddSrcSetLinks(set, baseUri, srcset, maxLinks))
             {
-                var url = part.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)[0];
-                if (TryResolve(baseUri, url, out var abs))
-                    set.Add(abs);
+                return set;
             }
         }
 
@@ -70,96 +83,152 @@ internal static class LinkHarvest
         {
             foreach (var script in htmlDoc.Scripts)
             {
-                if (!string.IsNullOrEmpty(script.Source) && TryResolve(baseUri, script.Source, out var srcAbs))
-                    set.Add(srcAbs);
-                else if (!string.IsNullOrEmpty(script.Text))
+                if (!string.IsNullOrEmpty(script.Source))
                 {
-                    foreach (var m in UrlInText.Matches(script.Text).Cast<Match>())
-                    {
-                        if (TryResolve(baseUri, m.Value, out var abs))
-                            set.Add(abs);
-                    }
+                    if (AddIfResolved(set, baseUri, script.Source.AsSpan(), maxLinks))
+                        return set;
+                }
+                else if (!string.IsNullOrEmpty(script.Text)
+                    && AddRegexMatches(set, baseUri, script.Text, maxLinks, UrlInText))
+                {
+                    return set;
                 }
             }
         }
 
-        foreach (var m in UrlInText.Matches(html).Cast<Match>())
-        {
-            if (TryResolve(baseUri, m.Value, out var abs))
-                set.Add(abs);
-        }
-
+        AddRegexMatches(set, baseUri, html, maxLinks, UrlInText);
         return set;
     }
 
-    private static HashSet<string> ExtractFromMarkdown(string markdown, Uri baseUri)
+    private static HashSet<string> ExtractFromMarkdown(string markdown, Uri baseUri, int maxLinks, HashSet<string> set)
     {
-        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var doc = Markdown.Parse(markdown);
-        foreach (var inline in doc.Descendants().OfType<LinkInline>())
+
+        foreach (var node in doc.Descendants())
         {
-            if (!string.IsNullOrWhiteSpace(inline.Url) && TryResolve(baseUri, inline.Url, out var abs))
-                set.Add(abs);
+            string? url = node switch
+            {
+                LinkInline { Url.Length: > 0 } link => link.Url,
+                AutolinkInline { Url.Length: > 0 } autolink => autolink.Url,
+                _ => null,
+            };
+
+            if (!string.IsNullOrWhiteSpace(url)
+                && AddIfResolved(set, baseUri, url.AsSpan(), maxLinks))
+            {
+                return set;
+            }
         }
 
-        foreach (var inline in doc.Descendants().OfType<AutolinkInline>())
-        {
-            if (TryResolve(baseUri, inline.Url, out var abs))
-                set.Add(abs);
-        }
-
-        foreach (var m in UrlInText.Matches(markdown).Cast<Match>())
-        {
-            if (TryResolve(baseUri, m.Value, out var abs))
-                set.Add(abs);
-        }
-
+        AddRegexMatches(set, baseUri, markdown, maxLinks, UrlInText);
         return set;
     }
 
-    private static HashSet<string> ExtractFromScript(string script, Uri baseUri)
+    private static HashSet<string> ExtractFromScript(string script, Uri baseUri, int maxLinks, HashSet<string> set)
     {
-        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var m in UrlInText.Matches(script).Cast<Match>())
-        {
-            if (TryResolve(baseUri, m.Value, out var abs))
-                set.Add(abs);
-        }
+        if (AddRegexMatches(set, baseUri, script, maxLinks, UrlInText))
+            return set;
 
-        foreach (var m in SrcHref.Matches(script).Cast<Match>())
-        {
-            if (TryResolve(baseUri, m.Groups[1].Value, out var abs))
-                set.Add(abs);
-        }
-
+        AddRegexMatches(set, baseUri, script, maxLinks, SrcHref, groupIndex: 1);
         return set;
     }
 
-    private static HashSet<string> ExtractFromPlain(string text, Uri baseUri)
+    private static HashSet<string> ExtractFromPlain(string text, Uri baseUri, int maxLinks, HashSet<string> set)
     {
-        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var m in UrlInText.Matches(text).Cast<Match>())
-        {
-            if (TryResolve(baseUri, m.Value, out var abs))
-                set.Add(abs);
-        }
-
+        AddRegexMatches(set, baseUri, text, maxLinks, UrlInText);
         return set;
     }
 
-    private static bool TryResolve(Uri baseUri, string raw, out string absolute)
+    private static bool AddRegexMatches(
+        HashSet<string> set,
+        Uri baseUri,
+        string input,
+        int maxLinks,
+        Regex regex,
+        int groupIndex = 0)
     {
-        absolute = "";
+        foreach (Match match in regex.Matches(input))
+        {
+            var value = groupIndex == 0 ? match.Value : match.Groups[groupIndex].Value;
+            if (AddIfResolved(set, baseUri, value.AsSpan(), maxLinks))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool AddSrcSetLinks(HashSet<string> set, Uri baseUri, string srcset, int maxLinks)
+    {
+        var remaining = srcset.AsSpan();
+
+        while (!remaining.IsEmpty)
+        {
+            var comma = remaining.IndexOf(',');
+            var candidate = comma >= 0 ? remaining[..comma] : remaining;
+
+            if (comma >= 0)
+                remaining = remaining[(comma + 1)..];
+            else
+                remaining = ReadOnlySpan<char>.Empty;
+
+            candidate = candidate.Trim();
+            if (candidate.IsEmpty)
+                continue;
+
+            var descriptorStart = IndexOfDescriptorSeparator(candidate);
+            if (descriptorStart >= 0)
+                candidate = candidate[..descriptorStart];
+
+            if (AddIfResolved(set, baseUri, candidate, maxLinks))
+                return true;
+        }
+
+        return false;
+    }
+
+
+    private static int IndexOfDescriptorSeparator(ReadOnlySpan<char> value)
+    {
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (c is ' ' or '\t' or '\r' or '\n')
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static bool AddIfResolved(HashSet<string> set, Uri baseUri, ReadOnlySpan<char> raw, int maxLinks)
+    {
+        if (TryResolve(baseUri, raw, out var absolute))
+            set.Add(absolute);
+
+        return set.Count >= maxLinks;
+    }
+
+    private static bool TryResolve(Uri baseUri, ReadOnlySpan<char> raw, out string absolute)
+    {
+        absolute = string.Empty;
+
         var trimmed = raw.Trim();
-        if (trimmed.StartsWith("//", StringComparison.Ordinal))
-            trimmed = baseUri.Scheme + ":" + trimmed;
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        if (trimmed.IsEmpty)
+            return false;
+
+        string candidate;
+
+        if (trimmed.Length >= 2 && trimmed[0] == '/' && trimmed[1] == '/')
+            candidate = string.Concat(baseUri.Scheme, ":", trimmed.ToString());
+        else
+            candidate = trimmed.ToString();
+
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out var uri))
         {
             absolute = uri.ToString();
             return true;
         }
 
-        if (Uri.TryCreate(baseUri, trimmed, out uri))
+        if (Uri.TryCreate(baseUri, candidate, out uri))
         {
             absolute = uri.ToString();
             return true;
@@ -168,12 +237,26 @@ internal static class LinkHarvest
         return false;
     }
 
+    private static HashSet<string> CreateSet(int maxLinks)
+    {
+        var capacity = maxLinks <= 0 || maxLinks == int.MaxValue
+            ? 64
+            : Math.Min(maxLinks, 256);
+
+        return new HashSet<string>(capacity, StringComparer.OrdinalIgnoreCase);
+    }
+
     public static AssetKind GuessKindForUrl(string url)
     {
         if (url.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
             return AssetKind.MarkdownBody;
-        if (url.EndsWith(".js", StringComparison.OrdinalIgnoreCase) || url.Contains("/js/", StringComparison.OrdinalIgnoreCase))
+
+        if (url.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("/js/", StringComparison.OrdinalIgnoreCase))
+        {
             return AssetKind.JavaScriptFile;
+        }
+
         return AssetKind.Url;
     }
 }

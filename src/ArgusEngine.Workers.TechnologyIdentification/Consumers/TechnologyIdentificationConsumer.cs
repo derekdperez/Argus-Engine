@@ -57,10 +57,12 @@ public sealed class TechnologyIdentificationConsumer(
             return;
 
         var message = context.Message;
+
         if (message.Source != ScannableContentSource.UrlHttpResponse)
             return;
 
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+
         var asset = await db.Assets.AsNoTracking()
             .Where(a => a.Id == message.AssetId)
             .Select(a => new { a.TypeDetailsJson })
@@ -71,6 +73,7 @@ public sealed class TechnologyIdentificationConsumer(
             return;
 
         UrlFetchSnapshot? snapshot;
+
         try
         {
             snapshot = JsonSerializer.Deserialize<UrlFetchSnapshot>(json, JsonOpts);
@@ -87,10 +90,12 @@ public sealed class TechnologyIdentificationConsumer(
         snapshot = await HydrateResponseBodyAsync(snapshot, ct).ConfigureAwait(false);
 
         var stopwatch = Stopwatch.StartNew();
+
         try
         {
             var requestHeaders = snapshot.RequestHeaders ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var responseHeaders = snapshot.ResponseHeaders ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
             var signals = HtmlSignalExtractor.Extract(snapshot.ResponseBody, snapshot.ContentType, snapshot.FinalUrl ?? message.SourceUrl);
             var cookies = CookieExtractor.Extract(requestHeaders, responseHeaders);
             var scriptUrls = BuildScriptUrls(message.SourceUrl, snapshot.FinalUrl, snapshot.ContentType, signals.ScriptUrls);
@@ -108,6 +113,7 @@ public sealed class TechnologyIdentificationConsumer(
                 scriptUrls);
 
             var results = scanner.Scan(input);
+
             var persisted = await tagService.UpsertTechnologyDetectionsAsync(
                     message.TargetId,
                     message.AssetId,
@@ -137,6 +143,7 @@ public sealed class TechnologyIdentificationConsumer(
             return snapshot;
 
         string? body = null;
+
         if (snapshot.ResponseBodyBlobId is { } blobId)
         {
             body = await artifactReader.ReadTextAsync(
@@ -157,19 +164,25 @@ public sealed class TechnologyIdentificationConsumer(
         string? contentType,
         IReadOnlyList<string> extractedScriptUrls)
     {
-        var scripts = extractedScriptUrls.ToList();
+        var scripts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 0; i < extractedScriptUrls.Count; i++)
+        {
+            var url = extractedScriptUrls[i];
+            if (!string.IsNullOrWhiteSpace(url))
+                scripts.Add(url);
+        }
 
         if (LooksLikeJavaScript(contentType, finalUrl ?? sourceUrl))
         {
-            scripts.Add(sourceUrl);
+            if (!string.IsNullOrWhiteSpace(sourceUrl))
+                scripts.Add(sourceUrl);
+
             if (!string.IsNullOrWhiteSpace(finalUrl))
                 scripts.Add(finalUrl);
         }
 
-        return scripts
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        return scripts.Count == 0 ? [] : scripts.ToArray();
     }
 
     private static bool LooksLikeJavaScript(string? contentType, string url)
@@ -182,6 +195,6 @@ public sealed class TechnologyIdentificationConsumer(
         }
 
         return Uri.TryCreate(url, UriKind.Absolute, out var uri)
-               && uri.AbsolutePath.EndsWith(".js", StringComparison.OrdinalIgnoreCase);
+            && uri.AbsolutePath.EndsWith(".js", StringComparison.OrdinalIgnoreCase);
     }
 }

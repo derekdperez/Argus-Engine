@@ -1,10 +1,13 @@
 @page "/development"
 
+@using System.Text
+@using System.Text.Json
 @using ArgusEngine.Harness.Core
 @using ArgusEngine.Domain.Entities
 @using ArgusEngine.Infrastructure.Data
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.Extensions.Logging
+@using Microsoft.JSInterop
 @inject IDbContextFactory<ArgusDbContext> DbFactory
 @inject HarnessRunner Harness
 @inject IJSRuntime Js
@@ -97,7 +100,7 @@
                             <Template Context="r">
                                 @if (!string.IsNullOrEmpty(r.Output))
                                 {
-                                    <button class="btn small outline" @onclick="@(() => ShowOutputAsync(r))">View Output</button>
+                                    <button type="button" class="btn small outline" @onclick="@(() => ShowOutputAsync(r))">View Output</button>
                                 }
                                 else
                                 {
@@ -139,6 +142,42 @@
             </div>
         </div>
 
+        @if (_selectedError != null)
+        {
+            <div class="error-detail-card">
+                <div class="error-detail-header">
+                    <div>
+                        <p class="eyebrow">Selected Error</p>
+                        <h3>@BuildErrorSummary(_selectedError)</h3>
+                        <p class="muted">@BuildContextLine(_selectedError)</p>
+                    </div>
+
+                    <button type="button" class="btn small outline" @onclick="CloseErrorDetail">Close</button>
+                </div>
+
+                <div class="error-detail-meta">
+                    <div>
+                        <span class="label">Time</span>
+                        <strong>@_selectedError.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz")</strong>
+                    </div>
+                    <div>
+                        <span class="label">Component</span>
+                        <strong>@Fallback(_selectedError.Component, "unknown")</strong>
+                    </div>
+                    <div>
+                        <span class="label">Logger</span>
+                        <strong>@Fallback(_selectedError.LoggerName, "unknown")</strong>
+                    </div>
+                    <div>
+                        <span class="label">Machine</span>
+                        <strong>@Fallback(_selectedError.MachineName, "unknown")</strong>
+                    </div>
+                </div>
+
+                <pre class="stack-trace">@BuildFullErrorDetail(_selectedError)</pre>
+            </div>
+        }
+
         <div class="grid-container">
             <RadzenDataGrid TItem="SystemError"
                             Data="@_errors"
@@ -155,26 +194,34 @@
 
                     <RadzenDataGridColumn TItem="SystemError" Property="Component" Title="Component" Width="140px">
                         <Template Context="e">
-                            <span class="badge badge-component">@e.Component</span>
+                            <span class="badge badge-component">@Fallback(e.Component, "unknown")</span>
                         </Template>
                     </RadzenDataGridColumn>
 
                     <RadzenDataGridColumn TItem="SystemError" Property="LogLevel" Title="Level" Width="100px">
                         <Template Context="e">
                             <span class="badge @(e.LogLevel == "Critical" ? "badge-critical" : "badge-red")">
-                                @e.LogLevel
+                                @Fallback(e.LogLevel, "Error")
                             </span>
                         </Template>
                     </RadzenDataGridColumn>
 
-                    <RadzenDataGridColumn TItem="SystemError" Property="Message" Title="Message" />
-
-                    <RadzenDataGridColumn TItem="SystemError" Title="Details" Width="120px" TextAlign="TextAlign.Center">
+                    <RadzenDataGridColumn TItem="SystemError" Property="Message" Title="Error Context">
                         <Template Context="e">
-                            @if (!string.IsNullOrEmpty(e.Exception))
-                            {
-                                <button class="btn small outline" @onclick="@(() => ShowErrorDetailAsync(e))">Stack Trace</button>
-                            }
+                            <div class="error-message-cell">
+                                <strong>@BuildErrorSummary(e)</strong>
+                                <span>@BuildContextLine(e)</span>
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="SystemError" Title="Details" Width="130px" TextAlign="TextAlign.Center">
+                        <Template Context="e">
+                            <button type="button"
+                                    class="btn small outline"
+                                    @onclick="@(() => ToggleErrorDetail(e))">
+                                @(HasStackTrace(e) ? "Stack Trace" : "Details")
+                            </button>
                         </Template>
                     </RadzenDataGridColumn>
                 </Columns>
@@ -187,6 +234,7 @@
     private bool _busy;
     private HarnessResultDto? _result;
     private List<SystemError> _errors = new();
+    private SystemError? _selectedError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -203,6 +251,11 @@
                 .OrderByDescending(e => e.Timestamp)
                 .Take(500)
                 .ToListAsync();
+
+            if (_selectedError is not null)
+            {
+                _selectedError = _errors.FirstOrDefault(error => error.Id == _selectedError.Id);
+            }
         }
         catch (Exception ex)
         {
@@ -221,6 +274,7 @@
         {
             await using var db = await DbFactory.CreateDbContextAsync();
             await db.Database.ExecuteSqlRawAsync("TRUNCATE TABLE system_errors");
+            _selectedError = null;
             await RefreshErrorsAsync();
         }
         catch (Exception ex)
@@ -258,8 +312,184 @@
         await Js.InvokeVoidAsync("alert", $"{r.WorkerName} Health Check Output:\n\n{r.Output}");
     }
 
-    private async Task ShowErrorDetailAsync(SystemError e)
+    private void ToggleErrorDetail(SystemError e)
     {
-        await Js.InvokeVoidAsync("alert", $"Error in {e.Component} ({e.LoggerName}):\n\n{e.Message}\n\n{e.Exception}");
+        if (_selectedError?.Id == e.Id)
+        {
+            _selectedError = null;
+            return;
+        }
+
+        _selectedError = e;
+    }
+
+    private void CloseErrorDetail()
+    {
+        _selectedError = null;
+    }
+
+    private static bool HasStackTrace(SystemError e)
+    {
+        return !string.IsNullOrWhiteSpace(e.Exception);
+    }
+
+    private static string BuildErrorSummary(SystemError e)
+    {
+        var message = Fallback(e.Message, "Error log entry did not include a message.");
+        var exceptionHeadline = GetExceptionHeadline(e.Exception);
+
+        if (!string.IsNullOrWhiteSpace(exceptionHeadline))
+        {
+            if (IsGenericErrorMessage(message))
+            {
+                return exceptionHeadline;
+            }
+
+            if (!message.Contains(exceptionHeadline, StringComparison.OrdinalIgnoreCase)
+                && !message.Contains(exceptionHeadline.Split(':', 2)[^1].Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return $"{message} — {exceptionHeadline}";
+            }
+        }
+
+        return message;
+    }
+
+    private static string BuildContextLine(SystemError e)
+    {
+        var context = new List<string>
+        {
+            $"Logger: {Fallback(e.LoggerName, "unknown")}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(e.MachineName))
+        {
+            context.Add($"Machine: {e.MachineName}");
+        }
+
+        var metadata = ParseMetadata(e.MetadataJson);
+
+        if (metadata.TryGetValue("event_id", out var eventId) && !string.IsNullOrWhiteSpace(eventId))
+        {
+            context.Add($"EventId: {eventId}");
+        }
+
+        if (metadata.TryGetValue("event_name", out var eventName) && !string.IsNullOrWhiteSpace(eventName))
+        {
+            context.Add($"Event: {eventName}");
+        }
+
+        if (metadata.TryGetValue("trace_id", out var traceId) && !string.IsNullOrWhiteSpace(traceId))
+        {
+            context.Add($"Trace: {traceId}");
+        }
+
+        return string.Join(" • ", context);
+    }
+
+    private static string BuildFullErrorDetail(SystemError e)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine($"Time:      {e.Timestamp.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}");
+        sb.AppendLine($"Component: {Fallback(e.Component, "unknown")}");
+        sb.AppendLine($"Level:     {Fallback(e.LogLevel, "Error")}");
+        sb.AppendLine($"Logger:    {Fallback(e.LoggerName, "unknown")}");
+        sb.AppendLine($"Machine:   {Fallback(e.MachineName, "unknown")}");
+        sb.AppendLine();
+        sb.AppendLine("Message:");
+        sb.AppendLine(Fallback(e.Message, "Error log entry did not include a message."));
+
+        if (!string.IsNullOrWhiteSpace(e.Exception))
+        {
+            sb.AppendLine();
+            sb.AppendLine("Exception / stack trace:");
+            sb.AppendLine(e.Exception.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(e.MetadataJson))
+        {
+            sb.AppendLine();
+            sb.AppendLine("Metadata:");
+            sb.AppendLine(FormatMetadata(e.MetadataJson));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string? GetExceptionHeadline(string? exception)
+    {
+        if (string.IsNullOrWhiteSpace(exception))
+        {
+            return null;
+        }
+
+        var firstLine = exception
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
+
+        return string.IsNullOrWhiteSpace(firstLine) ? null : firstLine;
+    }
+
+    private static bool IsGenericErrorMessage(string message)
+    {
+        var normalized = message.Trim().TrimEnd('.');
+
+        return normalized.Equals("An error has occurred", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("An error has occured", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("An unhandled exception has occurred while executing the request", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("Unhandled exception rendering component", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("Circuit host terminated unexpectedly", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatMetadata(string metadataJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(metadataJson);
+
+            return JsonSerializer.Serialize(
+                document.RootElement,
+                new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return metadataJson;
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string?> ParseMetadata(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson))
+        {
+            return new Dictionary<string, string?>();
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(metadataJson);
+
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return new Dictionary<string, string?>();
+            }
+
+            return document.RootElement
+                .EnumerateObject()
+                .ToDictionary(
+                    property => property.Name,
+                    property => property.Value.ValueKind == JsonValueKind.String
+                        ? property.Value.GetString()
+                        : property.Value.ToString());
+        }
+        catch
+        {
+            return new Dictionary<string, string?>();
+        }
+    }
+
+    private static string Fallback(string? value, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
     }
 }

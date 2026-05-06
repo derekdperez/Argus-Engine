@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -19,6 +20,9 @@ public static class ArgusObservabilityExtensions
             ?? Environment.GetEnvironmentVariable("NIGHTMARE_BUILD_STAMP")
             ?? "unknown";
 
+        services.AddArgusDatabaseLogging(serviceName);
+        services.AddSingleton<ArgusMetrics>();
+        services.AddSingleton<ArgusTracing>();
 
         services.AddOpenTelemetry()
             .ConfigureResource(resource =>
@@ -58,8 +62,6 @@ public static class ArgusObservabilityExtensions
                 }
             });
 
-        services.AddArgusDatabaseLogging(serviceName);
-
         return services;
     }
 
@@ -67,8 +69,13 @@ public static class ArgusObservabilityExtensions
         this IServiceCollection services,
         string componentName)
     {
-        services.AddSingleton<ILoggerProvider>(sp => new ArgusDatabaseLoggerProvider(sp, componentName));
-        services.AddHostedService<SystemErrorSchemaInitializer>();
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(ArgusDatabaseLoggerProvider)))
+        {
+            return services;
+        }
+
+        services.AddSingleton(sp => new ArgusDatabaseLoggerProvider(sp, componentName));
+        services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<ArgusDatabaseLoggerProvider>());
 
         return services;
     }

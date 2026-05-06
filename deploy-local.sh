@@ -16,7 +16,46 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$SCRIPT_DIR"
+
+find_repo_root() {
+  local candidate
+
+  # Explicit override for unusual EC2/dev layouts.
+  if [[ -n "${ARGUS_LOCAL_REPO_ROOT:-}" ]]; then
+    candidate="${ARGUS_LOCAL_REPO_ROOT%/}"
+    if [[ -f "$candidate/deploy/docker-compose.yml" ]]; then
+      cd "$candidate" && pwd
+      return 0
+    fi
+  fi
+
+  # Prefer the caller's working directory so this still works when the script is
+  # launched from an extracted helper folder such as ./argus-local-dev-scripts.
+  for candidate in "$PWD" "$SCRIPT_DIR" "$SCRIPT_DIR/.." "$SCRIPT_DIR/../.." "$SCRIPT_DIR/../../.."; do
+    if [[ -f "$candidate/deploy/docker-compose.yml" ]]; then
+      cd "$candidate" && pwd
+      return 0
+    fi
+  done
+
+  # Git can fail under sudo on EC2 because of safe.directory ownership checks, so
+  # use it only as a final best-effort fallback.
+  if command -v git >/dev/null 2>&1; then
+    candidate="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [[ -n "$candidate" && -f "$candidate/deploy/docker-compose.yml" ]]; then
+      cd "$candidate" && pwd
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+ROOT="$(find_repo_root || true)"
+[[ -n "$ROOT" ]] || {
+  echo "ERROR: Could not locate Argus-Engine repo root. Run from the repo root or set ARGUS_LOCAL_REPO_ROOT=/path/to/argus-engine." >&2
+  exit 1
+}
 DEPLOY_DIR="$ROOT/deploy"
 COMPOSE_FILE="$DEPLOY_DIR/docker-compose.yml"
 OBSERVABILITY_COMPOSE_FILE="$DEPLOY_DIR/docker-compose.observability.yml"
@@ -219,7 +258,7 @@ done
 
 LOG_SERVICES=("$@")
 
-[[ -f "$COMPOSE_FILE" ]] || die "Missing $COMPOSE_FILE. Run this from the Argus-Engine repo root."
+[[ -f "$COMPOSE_FILE" ]] || die "Missing $COMPOSE_FILE. Run from the repo root or set ARGUS_LOCAL_REPO_ROOT=/path/to/argus-engine."
 
 cd "$ROOT"
 

@@ -10,9 +10,34 @@ argus_dev_script_dir() {
 }
 
 argus_dev_repo_root() {
-  local dir
+  local dir candidate
   dir="$(argus_dev_script_dir)"
-  cd "$dir/../.." && pwd
+
+  # Explicit override for unusual EC2/dev layouts.
+  if [[ -n "${ARGUS_DEV_ROOT:-}" && -f "${ARGUS_DEV_ROOT%/}/deploy/docker-compose.yml" ]]; then
+    cd "${ARGUS_DEV_ROOT%/}" && pwd
+    return 0
+  fi
+
+  # Prefer the caller's working directory so scripts still work when launched
+  # from an extracted helper folder such as ./argus-local-dev-scripts.
+  for candidate in "$PWD" "$dir" "$dir/.." "$dir/../.." "$dir/../../.." "$dir/../../../.."; do
+    if [[ -f "$candidate/deploy/docker-compose.yml" ]]; then
+      cd "$candidate" && pwd
+      return 0
+    fi
+  done
+
+  if command -v git >/dev/null 2>&1; then
+    candidate="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [[ -n "$candidate" && -f "$candidate/deploy/docker-compose.yml" ]]; then
+      cd "$candidate" && pwd
+      return 0
+    fi
+  fi
+
+  echo "ERROR: Could not locate Argus-Engine repo root. Run from the repo root or set ARGUS_DEV_ROOT=/path/to/argus-engine." >&2
+  return 1
 }
 
 ARGUS_DEV_ROOT="${ARGUS_DEV_ROOT:-$(argus_dev_repo_root)}"

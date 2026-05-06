@@ -192,7 +192,16 @@ argus_service_specific_source_inputs() {
 
   case "$service" in
     command-center)
-      inputs+=("src/Resources/Wordlists/high_value")
+      inputs+=(
+        "src/ArgusEngine.Harness.Core"
+        "src/ArgusEngine.Gatekeeper"
+        "src/ArgusEngine.Workers.Enum"
+        "src/ArgusEngine.Workers.Spider"
+        "src/ArgusEngine.Workers.PortScan"
+        "src/ArgusEngine.Workers.HighValue"
+        "src/ArgusEngine.Workers.TechnologyIdentification"
+        "src/Resources/Wordlists/high_value"
+      )
       ;;
     worker-highvalue)
       inputs+=("src/Resources/RegexPatterns" "src/Resources/Wordlists/high_value")

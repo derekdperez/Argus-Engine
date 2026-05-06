@@ -10,8 +10,7 @@ namespace ArgusEngine.IntegrationTests.Infrastructure.Persistence;
 
 public class DatabaseIntegrationTests : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgresContainer = new PostgreSqlBuilder()
-        .WithImage("postgres:16-alpine")
+    private readonly PostgreSqlContainer _postgresContainer = new PostgreSqlBuilder("postgres:16-alpine")
         .Build();
 
     public async Task InitializeAsync()

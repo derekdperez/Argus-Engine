@@ -30,7 +30,7 @@ try
     });
 
     builder.Services.AddSingleton<TechnologyScanner>();
-    builder.Services.AddSingleton<HtmlSignalExtractor>();
+
 
     builder.Services.AddArgusRabbitMq(
         builder.Configuration,

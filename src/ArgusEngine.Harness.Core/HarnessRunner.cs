@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using ArgusEngine.Application.Workers;
 using ArgusEngine.Gatekeeper;
-using ArgusEngine.Workers.Enum;
+using ArgusEngine.Workers.Enumeration;
 using ArgusEngine.Workers.Spider;
 using ArgusEngine.Workers.PortScan;
 using ArgusEngine.Workers.HighValue;

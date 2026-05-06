@@ -8,7 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ArgusEngine.Application\ArgusEngine.Application.csproj" />
     <ProjectReference Include="..\ArgusEngine.Gatekeeper\ArgusEngine.Gatekeeper.csproj" />
-    <ProjectReference Include="..\ArgusEngine.Workers.Enum\ArgusEngine.Workers.Enum.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Workers.Enumeration\ArgusEngine.Workers.Enumeration.csproj" />
     <ProjectReference Include="..\ArgusEngine.Workers.Spider\ArgusEngine.Workers.Spider.csproj" />
     <ProjectReference Include="..\ArgusEngine.Workers.PortScan\ArgusEngine.Workers.PortScan.csproj" />
     <ProjectReference Include="..\ArgusEngine.Workers.HighValue\ArgusEngine.Workers.HighValue.csproj" />

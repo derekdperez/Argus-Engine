@@ -18,8 +18,8 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR"
 DEPLOY_DIR="$ROOT/deploy"
-COMPOSE_FILE="$DEPLOY_DIR/docker-compose.yml"
-OBSERVABILITY_COMPOSE_FILE="$DEPLOY_DIR/docker-compose.observability.yml"
+COMPOSE_FILE="$ROOT/docker-compose.yml"
+OBSERVABILITY_COMPOSE_FILE="$ROOT/docker-compose.observability.yml"
 
 CMD="up"
 MODE="image"

@@ -1,0 +1,811 @@
+@page "/"
+@page "/ops"
+@rendermode InteractiveServer
+@using System.Globalization
+@using System.Net
+@using System.Net.Http.Json
+@using ArgusEngine.CommandCenter.Models
+@using ArgusEngine.CommandCenter.Realtime
+@implements IDisposable
+@inject HttpClient Http
+@inject IJSRuntime Js
+@inject DiscoveryRealtimeClient Realtime
+
+<PageTitle>Operations - Argus Engine</PageTitle>
+
+<div class="page-shell ops-page">
+    <section class="page-hero">
+        <div class="ops-hero-grid">
+            <div>
+                <p class="eyebrow">Project Argus Engine</p>
+                <h1>Operations Dashboard</h1>
+                <p class="hero-copy">
+                    Real-time worker controls, queue health, bus traffic, and asset discovery metrics.
+                </p>
+            </div>
+            <div class="ops-toolbar" role="toolbar" aria-label="Operations actions">
+                <button class="primary" type="button" @onclick="RefreshAsync" disabled="@_refreshing">
+                    @(_refreshing ? "Refreshing..." : "Refresh")
+                </button>
+                <span class="@RealtimeBadgeClass">@RealtimeStatusText</span>
+                @if (_lastLoadedAtUtc is not null)
+                {
+                    <span class="muted">Loaded @FormatTime(_lastLoadedAtUtc)</span>
+                }
+            </div>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(_status))
+    {
+        <div class="ops-alert ops-alert-info" role="status">@_status</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="ops-alert ops-alert-danger" role="alert">@_error</div>
+    }
+
+    @if (_loading && _snapshot is null)
+    {
+        <section class="panel">
+            <p class="muted">Loading operations data...</p>
+        </section>
+    }
+    else if (_snapshot is null)
+    {
+        <section class="panel">
+            <p class="muted">Operations data is unavailable. Use Refresh to retry.</p>
+        </section>
+    }
+    else
+    {
+        <section class="stat-grid" aria-label="Operations summary">
+            <div class="stat-card">
+                <div class="stat-label">Total assets</div>
+                <div class="stat-value">@Number(_snapshot.AssetSummary.TotalAssets)</div>
+                <div class="muted">@Number(_snapshot.AssetSummary.ConfirmedCount) confirmed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Targets</div>
+                <div class="stat-value">@Number(_snapshot.AssetSummary.TotalTargets)</div>
+                <div class="muted">@Number(_snapshot.AssetSummary.AssetsDiscoveredLast24Hours) assets in 24h</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Subdomains</div>
+                <div class="stat-value">@Number(_snapshot.AssetSummary.SubdomainCount)</div>
+                <div class="muted">@Number(_snapshot.AssetSummary.DomainCount) domains</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">URLs</div>
+                <div class="stat-value">@Number(_snapshot.AssetSummary.UrlCount)</div>
+                <div class="muted">@Number(_snapshot.AssetSummary.ConfirmedUrlCount) confirmed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">HTTP backlog</div>
+                <div class="stat-value">@Number(_slo?.HttpBacklogCount ?? _snapshot.AssetSummary.FetchableDiscoveredCount)</div>
+                <div class="muted">Oldest @AgeSeconds(_slo?.OldestHttpBacklogAgeSeconds)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">RabbitMQ</div>
+                <div class="stat-value small">@(_snapshot.RabbitManagementAvailable ? "Connected" : "Unavailable")</div>
+                <div class="muted">@Number(_snapshot.RabbitQueues.Sum(q => q.MessagesReady)) ready / @Number(_snapshot.RabbitQueues.Sum(q => q.MessagesUnacknowledged)) unacked</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Bus published</div>
+                <div class="stat-value">@Number(_snapshot.BusTraffic.PublishedLastHour)</div>
+                <div class="muted">@Number(_snapshot.BusTraffic.PublishedLast24Hours) in 24h</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Bus consumed</div>
+                <div class="stat-value">@Number(_snapshot.BusTraffic.ConsumedLastHour)</div>
+                <div class="muted">@Number(_snapshot.BusTraffic.ConsumedLast24Hours) in 24h</div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <h2>Worker controls</h2>
+                    <p class="muted">
+                        Pause/resume toggles update <code>/api/workers/&lt;key&gt;</code>. Manual scale changes update <code>/api/workers/&lt;key&gt;/scale</code>.
+                    </p>
+                </div>
+            </div>
+
+            @if (_workerRows.Count == 0)
+            {
+                <p class="muted">No workers have been reported yet.</p>
+            }
+            else
+            {
+                <div class="scroll">
+                    <table class="grid ops-grid">
+                        <thead>
+                            <tr>
+                                <th>Worker</th>
+                                <th>Toggle</th>
+                                <th>Health</th>
+                                <th>Processed</th>
+                                <th>Rabbit backlog</th>
+                                <th>Scale</th>
+                                <th>Last activity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _workerRows)
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@row.DisplayName</strong>
+                                        <div class="muted mono">@row.WorkerKey</div>
+                                    </td>
+                                    <td>
+                                        <button class="small @(row.Enabled ? "danger" : "primary")"
+                                                type="button"
+                                                @onclick="() => SetWorkerEnabledAsync(row, !row.Enabled)"
+                                                disabled="@IsWorkerBusy(row.WorkerKey)">
+                                            @(IsWorkerBusy(row.WorkerKey) ? "Saving..." : row.Enabled ? "Pause" : "Resume")
+                                        </button>
+                                        <div class="muted">Updated @FormatTime(row.Switch?.UpdatedAtUtc)</div>
+                                    </td>
+                                    <td>
+                                        <span class="@WorkerHealthBadgeClass(row)">@WorkerHealthLabel(row)</span>
+                                        <div class="muted">@WorkerHealthReason(row)</div>
+                                    </td>
+                                    <td>
+                                        <strong>@Number(row.Stats?.ConsumedLastHour ?? row.Health?.ProcessedLastHour ?? 0L)</strong> 1h
+                                        <div class="muted">@Number(row.Stats?.ConsumedLast24Hours ?? row.Health?.ProcessedLast24Hours ?? 0L) 24h</div>
+                                        <div class="muted">@Number(row.Stats?.AssetsAttributedLast24Hours ?? 0L) assets attributed 24h</div>
+                                    </td>
+                                    <td>
+                                        <strong>@Number(row.Stats?.RabbitReadyMessages ?? 0L)</strong> ready
+                                        <div class="muted">@Number(row.Stats?.RabbitUnacknowledgedMessages ?? 0L) unacked</div>
+                                        <div class="muted">@QueueList(row)</div>
+                                    </td>
+                                    <td>
+                                        @if (row.Scale is null)
+                                        {
+                                            <span class="muted">Not scalable</span>
+                                        }
+                                        else
+                                        {
+                                            <div class="scale-control">
+                                                <input type="number"
+                                                       min="0"
+                                                       @bind="row.DesiredCountDraft"
+                                                       @bind:event="oninput"
+                                                       disabled="@IsScaleBusy(row.WorkerKey)"
+                                                       aria-label="Desired count for @row.DisplayName" />
+                                                <button class="small"
+                                                        type="button"
+                                                        @onclick="() => ApplyScaleAsync(row)"
+                                                        disabled="@IsScaleBusy(row.WorkerKey)">
+                                                    @(IsScaleBusy(row.WorkerKey) ? "Applying..." : "Apply")
+                                                </button>
+                                            </div>
+                                            <div class="muted">
+                                                desired @(row.Scale.DesiredCount?.ToString(CultureInfo.InvariantCulture) ?? "-"),
+                                                running @(row.Scale.RunningCount?.ToString(CultureInfo.InvariantCulture) ?? "-"),
+                                                pending @(row.Scale.PendingCount?.ToString(CultureInfo.InvariantCulture) ?? "-")
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(row.Scale.Status))
+                                            {
+                                                <div class="muted">@row.Scale.Status</div>
+                                            }
+                                        }
+                                    </td>
+                                    <td>
+                                        @FormatTime(row.Stats?.LastConsumedAtUtc ?? row.Health?.LastActivityUtc)
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="ops-two-column">
+            <div class="panel">
+                <div class="section-heading">
+                    <h2>Reliability SLO</h2>
+                    @if (_slo is not null)
+                    {
+                        <span class="@SloBadgeClass">@SloBadgeText</span>
+                    }
+                </div>
+
+                @if (_slo is null)
+                {
+                    <p class="muted">Reliability data is unavailable.</p>
+                }
+                else
+                {
+                    <dl class="ops-dl">
+                        <div>
+                            <dt>Consume success rate</dt>
+                            <dd>@_slo.ConsumeSuccessRate.ToString("P1", CultureInfo.InvariantCulture)</dd>
+                        </div>
+                        <div>
+                            <dt>HTTP completed / failed 1h</dt>
+                            <dd>@Number(_slo.CompletedHttpLastHour) / @Number(_slo.FailedHttpLastHour)</dd>
+                        </div>
+                        <div>
+                            <dt>Published / consumed 1h</dt>
+                            <dd>@Number(_slo.PublishedLastHour) / @Number(_slo.ConsumedLastHour)</dd>
+                        </div>
+                        <div>
+                            <dt>API ready</dt>
+                            <dd>@(_slo.ApiReady ? "Yes" : "No")</dd>
+                        </div>
+                    </dl>
+                }
+            </div>
+
+            <div class="panel">
+                <div class="section-heading">
+                    <h2>Asset discovery</h2>
+                </div>
+                <dl class="ops-dl">
+                    <div>
+                        <dt>Last discovery</dt>
+                        <dd>@FormatTime(_snapshot.AssetSummary.LastAssetDiscoveredAtUtc)</dd>
+                    </div>
+                    <div>
+                        <dt>Discovered / queued / confirmed</dt>
+                        <dd>@Number(_snapshot.AssetSummary.DiscoveredCount) / @Number(_snapshot.AssetSummary.QueuedCount) / @Number(_snapshot.AssetSummary.ConfirmedCount)</dd>
+                    </div>
+                    <div>
+                        <dt>HTTP snapshots saved</dt>
+                        <dd>@Number(_snapshot.AssetSummary.HttpSnapshotsSavedCount)</dd>
+                    </div>
+                    <div>
+                        <dt>Open ports / high value findings</dt>
+                        <dd>@Number(_snapshot.AssetSummary.OpenPortCount) / @Number(_snapshot.AssetSummary.HighValueFindingCount)</dd>
+                    </div>
+                </dl>
+            </div>
+        </section>
+
+        <section class="ops-two-column">
+            <div class="panel">
+                <div class="section-heading">
+                    <h2>Top domains by assets</h2>
+                </div>
+                @if (_snapshot.AssetSummary.TopDomains.Count == 0)
+                {
+                    <p class="muted">No domain asset counts yet.</p>
+                }
+                else
+                {
+                    <div class="scroll short">
+                        <table class="grid tight">
+                            <thead>
+                                <tr>
+                                    <th>Domain</th>
+                                    <th>Assets</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _snapshot.AssetSummary.TopDomains)
+                                {
+                                    <tr>
+                                        <td>@item.Domain</td>
+                                        <td>@Number(item.Count)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+
+            <div class="panel">
+                <div class="section-heading">
+                    <h2>Discovery sources</h2>
+                </div>
+                @if (_snapshot.AssetSummary.DiscoveredBy.Count == 0)
+                {
+                    <p class="muted">No discovery source counts yet.</p>
+                }
+                else
+                {
+                    <div class="scroll short">
+                        <table class="grid tight">
+                            <thead>
+                                <tr>
+                                    <th>Source</th>
+                                    <th>Assets</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _snapshot.AssetSummary.DiscoveredBy)
+                                {
+                                    <tr>
+                                        <td class="mono">@item.DiscoveredBy</td>
+                                        <td>@Number(item.Count)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <h2>RabbitMQ queues</h2>
+                <span class="@(_snapshot.RabbitManagementAvailable ? "badge badge-green" : "badge badge-gray")">
+                    @(_snapshot.RabbitManagementAvailable ? "available" : "unavailable")
+                </span>
+            </div>
+
+            @if (_snapshot.RabbitQueues.Count == 0)
+            {
+                <p class="muted">No queues were returned by RabbitMQ management.</p>
+            }
+            else
+            {
+                <div class="scroll">
+                    <table class="grid tight">
+                        <thead>
+                            <tr>
+                                <th>Queue</th>
+                                <th>Worker</th>
+                                <th>Messages</th>
+                                <th>Ready</th>
+                                <th>Unacked</th>
+                                <th>Consumers</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var queue in _snapshot.RabbitQueues)
+                            {
+                                <tr>
+                                    <td class="mono">@queue.Name</td>
+                                    <td>@(queue.LikelyWorkerKey ?? "-")</td>
+                                    <td>@Number(queue.Messages)</td>
+                                    <td>@Number(queue.MessagesReady)</td>
+                                    <td>@Number(queue.MessagesUnacknowledged)</td>
+                                    <td>@queue.Consumers</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private readonly CancellationTokenSource _pollCts = new();
+    private readonly HashSet<string> _busyWorkerKeys = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _busyScaleKeys = new(StringComparer.Ordinal);
+    private bool _initialLoadStarted;
+    private bool _loading = true;
+    private bool _refreshing;
+    private string? _status;
+    private string? _error;
+    private DateTimeOffset? _lastLoadedAtUtc;
+    private OpsSnapshotDto? _snapshot;
+    private ReliabilitySloSnapshotDto? _slo;
+    private List<WorkerCapabilityDto> _capabilities = new();
+    private List<WorkerHealthDto> _health = new();
+    private List<WorkerScaleTargetDto> _scaleTargets = new();
+    private List<WorkerRowViewModel> _workerRows = new();
+
+    protected override Task OnInitializedAsync()
+    {
+        Realtime.DomainEventReceived += OnRealtimeEvent;
+        Realtime.ConnectionStateChanged += OnRealtimeStateChanged;
+        return Task.CompletedTask;
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialLoadStarted)
+        {
+            _initialLoadStarted = true;
+            _ = InvokeAsync(LoadInitialAsync);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadInitialAsync()
+    {
+        await ReloadAsync().ConfigureAwait(false);
+        await StartRealtimeAsync().ConfigureAwait(false);
+        _ = PollAsync();
+        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+    }
+
+    private async Task StartRealtimeAsync()
+    {
+        try
+        {
+            await Realtime.EnsureStartedAsync(_pollCts.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            _status = "Live updates are unavailable; manual refresh and periodic refresh remain active.";
+        }
+    }
+
+    private void OnRealtimeStateChanged(object? sender, EventArgs e)
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
+    {
+        if (evt.Scope is not ("workers" or "http" or "assets" or "targets"))
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            await ReloadAsync().ConfigureAwait(false);
+            StateHasChanged();
+        });
+    }
+
+    private async Task PollAsync()
+    {
+        try
+        {
+            while (!_pollCts.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(45), _pollCts.Token).ConfigureAwait(false);
+                await ReloadAsync().ConfigureAwait(false);
+                await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Component is shutting down.
+        }
+    }
+
+    private Task RefreshAsync() => ReloadAsync(userInitiated: true);
+
+    private async Task ReloadAsync(bool userInitiated = false)
+    {
+        if (_refreshing)
+        {
+            return;
+        }
+
+        _refreshing = true;
+        _loading = _snapshot is null;
+        if (userInitiated)
+        {
+            _status = null;
+        }
+
+        try
+        {
+            var snapshotTask = Http.GetFromJsonAsync<OpsSnapshotDto>("/api/ops/snapshot", _pollCts.Token);
+            var sloTask = Http.GetFromJsonAsync<ReliabilitySloSnapshotDto>("/api/ops/reliability-slo", _pollCts.Token);
+            var capabilitiesTask = Http.GetFromJsonAsync<List<WorkerCapabilityDto>>("/api/workers/capabilities", _pollCts.Token);
+            var healthTask = Http.GetFromJsonAsync<List<WorkerHealthDto>>("/api/workers/health", _pollCts.Token);
+            var scaleTask = Http.GetFromJsonAsync<List<WorkerScaleTargetDto>>("/api/workers/scale", _pollCts.Token);
+
+            _snapshot = await snapshotTask.ConfigureAwait(false);
+            _slo = await sloTask.ConfigureAwait(false);
+            _capabilities = await capabilitiesTask.ConfigureAwait(false) ?? new List<WorkerCapabilityDto>();
+            _health = await healthTask.ConfigureAwait(false) ?? new List<WorkerHealthDto>();
+            _scaleTargets = await scaleTask.ConfigureAwait(false) ?? new List<WorkerScaleTargetDto>();
+
+            BuildWorkerRows();
+            _lastLoadedAtUtc = DateTimeOffset.UtcNow;
+            _error = null;
+        }
+        catch (OperationCanceledException) when (_pollCts.IsCancellationRequested)
+        {
+            // Component is shutting down.
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not load operations data: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+            _refreshing = false;
+        }
+    }
+
+    private void BuildWorkerRows()
+    {
+        var keys = new List<string>();
+
+        if (_snapshot is not null)
+        {
+            keys.AddRange(_snapshot.Workers.Select(w => w.WorkerKey));
+            keys.AddRange(_snapshot.WorkerStats.Select(w => w.WorkerKey));
+            keys.AddRange(_snapshot.Activity.WorkerSummaries.Select(w => w.WorkerKey));
+        }
+
+        keys.AddRange(_capabilities.Select(w => w.WorkerKey));
+        keys.AddRange(_health.Select(w => w.WorkerKey));
+        keys.AddRange(_scaleTargets.Select(w => w.WorkerKey));
+
+        _workerRows = keys
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(DisplayNameForWorker, StringComparer.OrdinalIgnoreCase)
+            .Select(BuildWorkerRow)
+            .ToList();
+    }
+
+    private WorkerRowViewModel BuildWorkerRow(string key)
+    {
+        var workerSwitch = _snapshot?.Workers.FirstOrDefault(w => string.Equals(w.WorkerKey, key, StringComparison.Ordinal));
+        var health = _health.FirstOrDefault(w => string.Equals(w.WorkerKey, key, StringComparison.Ordinal));
+        var stats = _snapshot?.WorkerStats.FirstOrDefault(w => string.Equals(w.WorkerKey, key, StringComparison.Ordinal));
+        var scale = _scaleTargets.FirstOrDefault(w => string.Equals(w.WorkerKey, key, StringComparison.Ordinal));
+        var capability = _capabilities.FirstOrDefault(w => string.Equals(w.WorkerKey, key, StringComparison.Ordinal));
+        var desired = scale?.DesiredCount ?? scale?.ManualDesiredCount ?? 0;
+
+        return new WorkerRowViewModel
+        {
+            WorkerKey = key,
+            DisplayName = capability?.DisplayName ?? DisplayNameForWorker(key),
+            Enabled = workerSwitch?.IsEnabled ?? health?.Enabled ?? true,
+            Switch = workerSwitch,
+            Health = health,
+            Stats = stats,
+            Scale = scale,
+            Capability = capability,
+            DesiredCountDraft = Math.Max(0, desired)
+        };
+    }
+
+    private async Task SetWorkerEnabledAsync(WorkerRowViewModel row, bool enabled)
+    {
+        if (_busyWorkerKeys.Contains(row.WorkerKey))
+        {
+            return;
+        }
+
+        if (!enabled)
+        {
+            var confirmed = await Js.InvokeAsync<bool>(
+                "confirm",
+                $"Pause {row.DisplayName}? Discovery work assigned to this worker will stop until it is resumed.");
+
+            if (!confirmed)
+            {
+                return;
+            }
+        }
+
+        _busyWorkerKeys.Add(row.WorkerKey);
+        _status = null;
+        _error = null;
+
+        try
+        {
+            var response = await Http.PutAsJsonAsync(
+                $"/api/workers/{Uri.EscapeDataString(row.WorkerKey)}",
+                new WorkerPatchRequest(enabled),
+                _pollCts.Token).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _error = await ReadResponseMessageAsync(response, $"Could not {(enabled ? "resume" : "pause")} {row.DisplayName}.").ConfigureAwait(false);
+                return;
+            }
+
+            _status = $"{row.DisplayName} {(enabled ? "resumed" : "paused")}.";
+            await ReloadAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busyWorkerKeys.Remove(row.WorkerKey);
+        }
+    }
+
+    private async Task ApplyScaleAsync(WorkerRowViewModel row)
+    {
+        if (row.Scale is null || _busyScaleKeys.Contains(row.WorkerKey))
+        {
+            return;
+        }
+
+        if (row.DesiredCountDraft < 0)
+        {
+            _error = "Desired worker count must be zero or greater.";
+            return;
+        }
+
+        var confirmed = await Js.InvokeAsync<bool>(
+            "confirm",
+            $"Set desired worker count for {row.DisplayName} to {row.DesiredCountDraft}?");
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        _busyScaleKeys.Add(row.WorkerKey);
+        _status = null;
+        _error = null;
+
+        try
+        {
+            var response = await Http.PutAsJsonAsync(
+                $"/api/workers/{Uri.EscapeDataString(row.WorkerKey)}/scale",
+                new WorkerScalePatchRequest(row.DesiredCountDraft),
+                _pollCts.Token).ConfigureAwait(false);
+
+            if (response.StatusCode == HttpStatusCode.BadRequest)
+            {
+                _error = await ReadResponseMessageAsync(response, "Worker scale could not be updated.").ConfigureAwait(false);
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+
+            var result = await response.Content.ReadFromJsonAsync<WorkerScaleUpdateResult>(cancellationToken: _pollCts.Token)
+                .ConfigureAwait(false);
+
+            _status = result?.Message ?? $"{row.DisplayName} desired worker count updated.";
+            await ReloadAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busyScaleKeys.Remove(row.WorkerKey);
+        }
+    }
+
+    private bool IsWorkerBusy(string workerKey) => _busyWorkerKeys.Contains(workerKey);
+
+    private bool IsScaleBusy(string workerKey) => _busyScaleKeys.Contains(workerKey);
+
+    private string RealtimeStatusText => Realtime.IsConnected ? "Live updates connected" : $"Live updates {Realtime.State.ToLowerInvariant()}";
+
+    private string RealtimeBadgeClass => Realtime.IsConnected ? "badge badge-green" : "badge badge-gray";
+
+    private string SloBadgeText => _slo is null
+        ? "unknown"
+        : !_slo.ApiReady
+            ? "api unavailable"
+            : _slo.ConsumeSuccessRate >= 0.95m && _slo.FailedHttpLastHour == 0
+                ? "healthy"
+                : "degraded";
+
+    private string SloBadgeClass => SloBadgeText switch
+    {
+        "healthy" => "badge badge-green",
+        "degraded" => "badge badge-yellow",
+        "api unavailable" => "badge badge-red",
+        _ => "badge badge-gray"
+    };
+
+    private static string WorkerHealthLabel(WorkerRowViewModel row)
+    {
+        if (!row.Enabled)
+        {
+            return "Paused";
+        }
+
+        if (row.Health is null)
+        {
+            return "Unknown";
+        }
+
+        return row.Health.Healthy ? "Healthy" : "Needs attention";
+    }
+
+    private static string WorkerHealthReason(WorkerRowViewModel row)
+    {
+        if (row.Health is null)
+        {
+            return "No health payload returned.";
+        }
+
+        return row.Health.Reason;
+    }
+
+    private static string WorkerHealthBadgeClass(WorkerRowViewModel row)
+    {
+        if (!row.Enabled)
+        {
+            return "badge badge-gray";
+        }
+
+        if (row.Health is null)
+        {
+            return "badge badge-gray";
+        }
+
+        return row.Health.Healthy ? "badge badge-green" : "badge badge-red";
+    }
+
+    private static string QueueList(WorkerRowViewModel row)
+    {
+        if (row.Stats?.RabbitQueues is null || row.Stats.RabbitQueues.Count == 0)
+        {
+            return "No mapped queues";
+        }
+
+        return string.Join(", ", row.Stats.RabbitQueues);
+    }
+
+    private static string Number(long value) => value.ToString("N0", CultureInfo.InvariantCulture);
+
+    private static string FormatTime(DateTimeOffset? value) => AppTimeFormat.Format(value);
+
+    private static string AgeSeconds(long? seconds)
+    {
+        if (seconds is null)
+        {
+            return "-";
+        }
+
+        if (seconds.Value < 60)
+        {
+            return $"{seconds.Value:N0}s";
+        }
+
+        var time = TimeSpan.FromSeconds(seconds.Value);
+        if (time.TotalHours < 1)
+        {
+            return $"{time.TotalMinutes:N0}m";
+        }
+
+        return $"{time.TotalHours:N1}h";
+    }
+
+    private static string DisplayNameForWorker(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return "Unknown worker";
+        }
+
+        var spaced = key.Replace('-', ' ').Replace('_', ' ');
+        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(spaced);
+    }
+
+    private static async Task<string> ReadResponseMessageAsync(HttpResponseMessage response, string fallback)
+    {
+        var message = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(message) ? fallback : message;
+    }
+
+    public void Dispose()
+    {
+        Realtime.DomainEventReceived -= OnRealtimeEvent;
+        Realtime.ConnectionStateChanged -= OnRealtimeStateChanged;
+        _pollCts.Cancel();
+        _pollCts.Dispose();
+    }
+
+    private sealed class WorkerRowViewModel
+    {
+        public string WorkerKey { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public bool Enabled { get; set; }
+        public int DesiredCountDraft { get; set; }
+        public WorkerSwitchDto? Switch { get; set; }
+        public WorkerHealthDto? Health { get; set; }
+        public WorkerDetailStatsDto? Stats { get; set; }
+        public WorkerScaleTargetDto? Scale { get; set; }
+        public WorkerCapabilityDto? Capability { get; set; }
+    }
+}

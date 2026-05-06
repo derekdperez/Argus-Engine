@@ -171,18 +171,26 @@ internal static class OpsSnapshotBuilder
                 t => t.Id,
                 (a, t) => t.RootDomain)
             .GroupBy(d => d)
-            .Select(g => new AssetCountByDomainDto(g.Key, g.LongCount()))
+            .Select(g => new { Domain = g.Key, Count = g.LongCount() })
             .OrderByDescending(x => x.Count)
             .Take(25)
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
-        var byDiscoveredBy = await assets
+        var topDomainDtos = topDomains
+            .Select(x => new AssetCountByDomainDto(x.Domain, x.Count))
+            .ToList();
+
+        var discoveredBySummary = await assets
             .GroupBy(a => a.DiscoveredBy)
-            .Select(g => new DiscoveredByCountDto(g.Key, g.LongCount()))
+            .Select(g => new { DiscoveredBy = g.Key, Count = g.LongCount() })
             .OrderByDescending(x => x.Count)
             .ToListAsync(ct)
             .ConfigureAwait(false);
+
+        var byDiscoveredBy = discoveredBySummary
+            .Select(x => new DiscoveredByCountDto(x.DiscoveredBy, x.Count))
+            .ToList();
 
         return new AssetOpsSummaryDto(
             totalAssets,
@@ -204,7 +212,7 @@ internal static class OpsSnapshotBuilder
             httpSnapshotsSaved,
             openPortsTotal,
             highValueFindingsTotal,
-            topDomains,
+            topDomainDtos,
             byDiscoveredBy);
     }
 

@@ -99,15 +99,16 @@ public sealed class OutboxDispatcherWorker(
             await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
             var now = DateTimeOffset.UtcNow;
             
+            var dispatcherKey = $"outbox-dispatcher-{Environment.ProcessId}";
             var heartbeat = await db.WorkerHeartbeats
-                .FirstOrDefaultAsync(h => h.WorkerKey == "outbox-dispatcher" && h.HostName == Environment.MachineName, ct)
+                .FirstOrDefaultAsync(h => h.WorkerKey == dispatcherKey && h.HostName == Environment.MachineName, ct)
                 .ConfigureAwait(false);
 
             if (heartbeat == null)
             {
                 heartbeat = new WorkerHeartbeat
                 {
-                    WorkerKey = "outbox-dispatcher",
+                    WorkerKey = dispatcherKey,
                     HostName = Environment.MachineName,
                     LastHeartbeatUtc = now,
                     IsHealthy = true,

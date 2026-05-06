@@ -269,6 +269,32 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
+        logger.LogDebug("Patching worker_heartbeats primary key...");
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                DO $patch$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.table_constraints 
+                        WHERE constraint_name = 'worker_heartbeats_pkey' AND table_name = 'worker_heartbeats'
+                    ) THEN
+                        -- Check if it's already a composite key or just HostName
+                        IF (
+                            SELECT count(*) FROM information_schema.key_column_usage
+                            WHERE constraint_name = 'worker_heartbeats_pkey' AND table_name = 'worker_heartbeats'
+                        ) = 1 THEN
+                            ALTER TABLE worker_heartbeats DROP CONSTRAINT worker_heartbeats_pkey;
+                            ALTER TABLE worker_heartbeats ADD PRIMARY KEY ("HostName", "WorkerKey");
+                        END IF;
+                    ELSE
+                        ALTER TABLE worker_heartbeats ADD PRIMARY KEY ("HostName", "WorkerKey");
+                    END IF;
+                END
+                $patch$;
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         logger.LogDebug("Executing backfill tasks...");
         await BackfillAssetCategoriesAndRootsAsync(db, logger, cancellationToken).ConfigureAwait(false);
         await BackfillAssetRelationshipsAsync(db, logger, cancellationToken).ConfigureAwait(false);

@@ -190,9 +190,9 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
         modelBuilder.Entity<WorkerHeartbeat>(e =>
         {
             e.ToTable("worker_heartbeats");
-            e.HasKey(x => x.HostName);
+            e.HasKey(x => new { x.HostName, x.WorkerKey });
             e.Property(x => x.HostName).HasMaxLength(256);
-            e.Property(x => x.WorkerKey).HasMaxLength(64).IsRequired();
+            e.Property(x => x.WorkerKey).HasMaxLength(64);
         });
 
         modelBuilder.Entity<WorkerSwitch>(e =>

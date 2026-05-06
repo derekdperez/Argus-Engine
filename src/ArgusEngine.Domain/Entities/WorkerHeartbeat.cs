@@ -4,7 +4,6 @@ namespace ArgusEngine.Domain.Entities;
 
 public sealed class WorkerHeartbeat
 {
-    [Key]
     public string HostName { get; set; } = "";
     public string WorkerKey { get; set; } = "";
     public DateTimeOffset LastHeartbeatUtc { get; set; }

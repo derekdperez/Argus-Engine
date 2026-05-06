@@ -37,6 +37,9 @@ public sealed class HttpRequestQueueWorker(
     private static readonly Action<ILogger, Exception?> LogPermanentFailure =
         LoggerMessage.Define(LogLevel.Warning, new EventId(4, nameof(ProcessItemAsync)), "Permanent failure for HTTP request queue item.");
 
+    private static readonly Action<ILogger, Guid, Guid, Exception?> LogAssetNotFound =
+        LoggerMessage.Define<Guid, Guid>(LogLevel.Warning, new EventId(5, nameof(ProcessItemAsync)), "Skipping HTTP request: asset {AssetId} not found for queue item {QueueItemId}.");
+
     private const int MaxLinksPerAsset = 250;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -130,7 +133,7 @@ public sealed class HttpRequestQueueWorker(
 
             if (asset is null)
             {
-                logger.LogWarning("Skipping HTTP request: asset {AssetId} not found for queue item {QueueItemId}.", item.AssetId, item.Id);
+                LogAssetNotFound(logger, item.AssetId, item.Id, null);
                 await MarkFailedAsync(item.Id, "Asset not found", terminal: true, ct).ConfigureAwait(false);
                 return;
             }

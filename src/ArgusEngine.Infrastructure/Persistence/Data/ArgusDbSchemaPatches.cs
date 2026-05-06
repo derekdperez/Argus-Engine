@@ -7,25 +7,67 @@ namespace ArgusEngine.Infrastructure.Data;
 /// <summary>
 /// EF <c>EnsureCreated</c> does not add new columns to existing databases; run these patches after it on upgrade.
 /// </summary>
-public static class ArgusDbSchemaPatches
+public static partial class ArgusDbSchemaPatches
 {
+    [LoggerMessage(Level = LogLevel.Information, Message = "Applying database schema patches after EnsureCreated...")]
+    static partial void LogApplyingPatches(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Acquiring advisory lock for schema patches...")]
+    static partial void LogAcquiringAdvisoryLock(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Normalizing stored asset ID columns...")]
+    static partial void LogNormalizingAssetIds(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Normalizing column casing...")]
+    static partial void LogNormalizingCasing(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Ensuring pgcrypto extension...")]
+    static partial void LogEnsuringPgCrypto(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Patching bus_journal schema...")]
+    static partial void LogPatchingBusJournal(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Patching stored_assets schema...")]
+    static partial void LogPatchingStoredAssets(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Ensuring asset_relationships table and constraints...")]
+    static partial void LogEnsuringAssetRelationships(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Ensuring tags and detections tables...")]
+    static partial void LogEnsuringTagsAndDetections(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Ensuring high_value_findings and outbox tables...")]
+    static partial void LogEnsuringHighValueAndOutbox(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Ensuring system_errors table...")]
+    static partial void LogEnsuringSystemErrors(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Patching worker_heartbeats primary key...")]
+    static partial void LogPatchingHeartbeats(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Executing backfill tasks...")]
+    static partial void LogExecutingBackfills(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Database schema patches applied successfully.")]
+    static partial void LogPatchesApplied(ILogger logger);
+
     public static async Task ApplyAfterEnsureCreatedAsync(ArgusDbContext db, ILogger logger, CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("Applying database schema patches after EnsureCreated...");
+        LogApplyingPatches(logger);
 
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         
-        logger.LogDebug("Acquiring advisory lock for schema patches...");
+        LogAcquiringAdvisoryLock(logger);
         await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(542017296183746291);", cancellationToken)
             .ConfigureAwait(false);
 
-        logger.LogDebug("Normalizing stored asset ID columns...");
+        LogNormalizingAssetIds(logger);
         await NormalizeStoredAssetIdColumnAsync(db, logger, cancellationToken).ConfigureAwait(false);
 
-        logger.LogDebug("Normalizing column casing...");
+        LogNormalizingCasing(logger);
         await NormalizeColumnCasingAsync(db, logger, cancellationToken).ConfigureAwait(false);
 
-        logger.LogDebug("Ensuring pgcrypto extension...");
+        LogEnsuringPgCrypto(logger);
         await db.Database.ExecuteSqlRawAsync(
                 """
                 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -33,7 +75,7 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
-        logger.LogDebug("Patching bus_journal schema...");
+        LogPatchingBusJournal(logger);
         await db.Database.ExecuteSqlRawAsync(
                 """
                 ALTER TABLE bus_journal ADD COLUMN IF NOT EXISTS host_name character varying(256) NOT NULL DEFAULT '';
@@ -62,7 +104,7 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
-        logger.LogDebug("Patching stored_assets schema...");
+        LogPatchingStoredAssets(logger);
         await db.Database.ExecuteSqlRawAsync(
                 """
                 ALTER TABLE stored_assets ADD COLUMN IF NOT EXISTS asset_category smallint NOT NULL DEFAULT 0;
@@ -79,7 +121,7 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
-        logger.LogDebug("Ensuring asset_relationships table and constraints...");
+        LogEnsuringAssetRelationships(logger);
         await db.Database.ExecuteSqlRawAsync(
                 """
                 CREATE TABLE IF NOT EXISTS asset_relationships (
@@ -122,7 +164,7 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
-        logger.LogDebug("Ensuring tags and detections tables...");
+        LogEnsuringTagsAndDetections(logger);
         await db.Database.ExecuteSqlRawAsync(
                 """
                 CREATE TABLE IF NOT EXISTS tags (
@@ -184,7 +226,7 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
-        logger.LogDebug("Ensuring high_value_findings and outbox tables...");
+        LogEnsuringHighValueAndOutbox(logger);
         await db.Database.ExecuteSqlRawAsync(
                 """
                 CREATE TABLE IF NOT EXISTS high_value_findings (
@@ -249,7 +291,7 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
-        logger.LogDebug("Ensuring system_errors table...");
+        LogEnsuringSystemErrors(logger);
         await db.Database.ExecuteSqlRawAsync(
                 """
                 CREATE TABLE IF NOT EXISTS system_errors (
@@ -269,7 +311,7 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
-        logger.LogDebug("Patching worker_heartbeats primary key...");
+        LogPatchingHeartbeats(logger);
         await db.Database.ExecuteSqlRawAsync(
                 """
                 DO $patch$
@@ -302,14 +344,14 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
-        logger.LogDebug("Executing backfill tasks...");
+        LogExecutingBackfills(logger);
         await BackfillAssetCategoriesAndRootsAsync(db, logger, cancellationToken).ConfigureAwait(false);
         await BackfillAssetRelationshipsAsync(db, logger, cancellationToken).ConfigureAwait(false);
         await BackfillHttpRequestQueueAsync(db, logger, cancellationToken).ConfigureAwait(false);
         await BackfillLegacyDiscoveredAssetsAsync(db, logger, cancellationToken).ConfigureAwait(false);
 
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-        logger.LogInformation("Database schema patches applied successfully.");
+        LogPatchesApplied(logger);
     }
 
     private static async Task NormalizeStoredAssetIdColumnAsync(ArgusDbContext db, ILogger logger, CancellationToken cancellationToken)

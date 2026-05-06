@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ArgusEngine.Workers.Spider;
 
-public class SpiderWorkerHealthCheck : IWorkerHealthCheck
+public partial class SpiderWorkerHealthCheck : IWorkerHealthCheck
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SpiderWorkerHealthCheck> _logger;
@@ -20,9 +20,12 @@ public class SpiderWorkerHealthCheck : IWorkerHealthCheck
 
     public string WorkerName => "Spider";
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "Running Spider health check...")]
+    private partial void LogRunningHealthCheck();
+
     public async Task<WorkerHealthCheckResult> RunAsync(CancellationToken ct)
     {
-        _logger.LogInformation("Running Spider health check...");
+        LogRunningHealthCheck();
         
         try
         {

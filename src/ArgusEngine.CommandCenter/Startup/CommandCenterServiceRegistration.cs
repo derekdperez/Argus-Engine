@@ -25,12 +25,12 @@ using ArgusEngine.CommandCenter.Services.Updates;
 
 using ArgusEngine.CommandCenter.Services.Workers;
 
-using ArgusEngine.Workers.Enum.Consumers;
+using ArgusEngine.Workers.Enumeration.Consumers;
 
 using ArgusEngine.Workers.Spider;
 
 using ArgusEngine.Gatekeeper;
-using ArgusEngine.Workers.Enum;
+using ArgusEngine.Workers.Enumeration;
 
 using ArgusEngine.Workers.PortScan;
 

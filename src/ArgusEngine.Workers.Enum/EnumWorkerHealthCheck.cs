@@ -23,17 +23,20 @@ public class EnumWorkerHealthCheck : IWorkerHealthCheck
 
     public async Task<WorkerHealthCheckResult> RunAsync(CancellationToken ct)
     {
-        _logger.LogInformation("Running Enumeration health check...");
-        
         var options = _options.Value;
-        if (string.IsNullOrEmpty(options.Subfinder.BinaryPath) && string.IsNullOrEmpty(options.Amass.BinaryPath))
+        var subfinderExists = !string.IsNullOrEmpty(options.Subfinder.BinaryPath) && File.Exists(options.Subfinder.BinaryPath);
+        var amassExists = !string.IsNullOrEmpty(options.Amass.BinaryPath) && File.Exists(options.Amass.BinaryPath);
+        var wordlistExists = !string.IsNullOrEmpty(options.Amass.WordlistPath) && File.Exists(options.Amass.WordlistPath);
+
+        var details = $"Configured providers: subfinder={subfinderExists}, amass={amassExists}, wordlist={wordlistExists}.";
+        
+        if (!subfinderExists && !amassExists)
         {
-            return new WorkerHealthCheckResult(false, "No subdomain enumeration providers (Subfinder/Amass) configured.");
+            _logger.LogWarning("Enumeration worker degraded: no external tools (subfinder/amass) found at configured paths. {Details}", details);
+            return new WorkerHealthCheckResult(true, "Degraded: No enumeration tools found. " + details);
         }
 
-        // We could run a "help" command to verify binary presence
-        // But for now, just checking config and basic reachability
-        
-        return new WorkerHealthCheckResult(true, $"Enumeration worker is ready. Configured providers: {(options.Subfinder.BinaryPath != null ? "Subfinder " : "")}{(options.Amass.BinaryPath != null ? "Amass" : "")}");
+        _logger.LogInformation("Enumeration worker health check: {Details}", details);
+        return new WorkerHealthCheckResult(true, "Ready. " + details);
     }
 }

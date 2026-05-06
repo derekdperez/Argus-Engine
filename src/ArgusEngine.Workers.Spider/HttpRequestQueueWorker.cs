@@ -117,6 +117,24 @@ public sealed class HttpRequestQueueWorker(
 
         try
         {
+            // Ensure we have the asset and target info for HarvestLinksAsync
+            StoredAsset? asset;
+            await using (var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false))
+            {
+                asset = await db.Assets
+                    .AsNoTracking()
+                    .Include(a => a.Target)
+                    .FirstOrDefaultAsync(a => a.Id == item.AssetId, ct)
+                    .ConfigureAwait(false);
+            }
+
+            if (asset is null)
+            {
+                logger.LogWarning("Skipping HTTP request: asset {AssetId} not found for queue item {QueueItemId}.", item.AssetId, item.Id);
+                await MarkFailedAsync(item.Id, "Asset not found", terminal: true, ct).ConfigureAwait(false);
+                return;
+            }
+
             using var client = httpClientFactory.CreateClient("spider");
             using var request = new HttpRequestMessage(new HttpMethod(item.Method), item.RequestUrl);
             
@@ -141,9 +159,9 @@ public sealed class HttpRequestQueueWorker(
 
             concurrency.ReportResult(true);
 
-            if (item.AssetKind == AssetKind.Url)
+            if (item.AssetKind == AssetKind.Url || item.AssetKind == AssetKind.Subdomain || item.AssetKind == AssetKind.Domain)
             {
-                await HarvestLinksAsync(item.Asset!, snapshot, ct).ConfigureAwait(false);
+                await HarvestLinksAsync(asset, snapshot, ct).ConfigureAwait(false);
             }
         }
         catch (Exception ex) when (IsHttpTransient(ex))

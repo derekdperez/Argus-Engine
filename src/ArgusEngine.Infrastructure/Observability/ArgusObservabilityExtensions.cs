@@ -1,4 +1,3 @@
-using System;
 using System.Linq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +21,8 @@ public static class ArgusObservabilityExtensions
             ?? "unknown";
 
         services.AddArgusDatabaseLogging(serviceName);
+        services.AddSingleton<ArgusMetrics>();
+        services.AddSingleton<ArgusTracing>();
 
         services.AddOpenTelemetry()
             .ConfigureResource(resource =>
@@ -75,6 +76,7 @@ public static class ArgusObservabilityExtensions
 
         services.AddSingleton(sp => new ArgusDatabaseLoggerProvider(sp, componentName));
         services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<ArgusDatabaseLoggerProvider>());
+
         return services;
     }
 }

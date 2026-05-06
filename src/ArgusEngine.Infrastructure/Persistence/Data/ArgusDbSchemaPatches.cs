@@ -273,20 +273,27 @@ public static class ArgusDbSchemaPatches
         await db.Database.ExecuteSqlRawAsync(
                 """
                 DO $patch$
+                DECLARE
+                    pk_name text;
                 BEGIN
-                    IF EXISTS (
-                        SELECT 1 FROM information_schema.table_constraints 
-                        WHERE constraint_name = 'worker_heartbeats_pkey' AND table_name = 'worker_heartbeats'
-                    ) THEN
-                        -- Check if it's already a composite key or just HostName
+                    -- Find the actual primary key constraint name for worker_heartbeats
+                    SELECT constraint_name INTO pk_name
+                    FROM information_schema.table_constraints 
+                    WHERE table_name = 'worker_heartbeats' AND constraint_type = 'PRIMARY KEY'
+                    LIMIT 1;
+
+                    IF pk_name IS NOT NULL THEN
+                        -- Check if it's already a composite key (2 columns)
                         IF (
                             SELECT count(*) FROM information_schema.key_column_usage
-                            WHERE constraint_name = 'worker_heartbeats_pkey' AND table_name = 'worker_heartbeats'
+                            WHERE constraint_name = pk_name AND table_name = 'worker_heartbeats'
                         ) = 1 THEN
-                            ALTER TABLE worker_heartbeats DROP CONSTRAINT worker_heartbeats_pkey;
+                            -- It's a single-column PK (legacy), drop and upgrade to composite
+                            EXECUTE 'ALTER TABLE worker_heartbeats DROP CONSTRAINT ' || quote_ident(pk_name);
                             ALTER TABLE worker_heartbeats ADD PRIMARY KEY ("HostName", "WorkerKey");
                         END IF;
                     ELSE
+                        -- No primary key found at all, add the composite one
                         ALTER TABLE worker_heartbeats ADD PRIMARY KEY ("HostName", "WorkerKey");
                     END IF;
                 END

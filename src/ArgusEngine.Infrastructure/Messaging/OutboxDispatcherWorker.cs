@@ -109,10 +109,11 @@ public sealed class OutboxDispatcherWorker(
                 {
                     WorkerKey = "outbox-dispatcher",
                     HostName = Environment.MachineName,
-                    StartedAtUtc = now,
                     LastHeartbeatUtc = now,
                     IsHealthy = true,
-                    HealthMessage = "Dispatcher active"
+                    HealthMessage = "Dispatcher active",
+                    ProcessId = Environment.ProcessId,
+                    Version = "2.6.1"
                 };
                 db.WorkerHeartbeats.Add(heartbeat);
             }

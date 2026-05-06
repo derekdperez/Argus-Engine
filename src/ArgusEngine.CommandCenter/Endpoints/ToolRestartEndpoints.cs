@@ -155,9 +155,4 @@ public static class ToolRestartEndpoints
     private sealed class ToolRestartEndpointsLogger { }
 
     public static void Map(WebApplication app) => app.MapToolRestartEndpoints();
-
-        return app;
-    }
-
-    public static void Map(WebApplication app) => app.MapToolRestartEndpoints();
 }

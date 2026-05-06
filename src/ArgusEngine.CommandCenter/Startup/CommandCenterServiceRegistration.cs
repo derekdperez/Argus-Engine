@@ -2,6 +2,7 @@ using MassTransit;
 using Microsoft.AspNetCore.Components;
 using ArgusEngine.CommandCenter.DataMaintenance;
 using ArgusEngine.Application.Sagas;
+using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Harness.Core;
 using ArgusEngine.Application.Workers;
 using ArgusEngine.CommandCenter.Realtime;
@@ -121,9 +122,9 @@ public static class CommandCenterServiceRegistration
                 "Argus/Nightmare DataMaintenance Enabled=true requires DataMaintenance ApiKey.")
             .ValidateOnStart();
 
-        services.Configure<SubdomainEnumerationOptions>(configuration.GetSection("Argus:SubdomainEnumeration"));
-        services.Configure<SpiderOptions>(configuration.GetSection("Argus:Spider"));
-        services.Configure<SpiderHttpOptions>(configuration.GetSection("Argus:Spider"));
+        // Bind worker options to their specific sections as defined in docker-compose/env vars
+        services.Configure<SubdomainEnumerationOptions>(configuration.GetSection("Enumeration"));
+        services.Configure<SpiderHttpOptions>(configuration.GetSection("Spider"));
 
         return services;
     }

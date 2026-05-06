@@ -45,6 +45,18 @@ public sealed class OutboxDispatcherWorker(
             new EventId(4, nameof(LogOutboxMessageStaleLease)),
             "Outbox message {OutboxId} was not marked {TargetState} because worker {WorkerId} no longer owns the active lease.");
 
+    private static readonly Action<ILogger, double, Exception?> LogDispatchTimeout =
+        LoggerMessage.Define<double>(
+            LogLevel.Warning,
+            new EventId(5, nameof(LogDispatchTimeout)),
+            "Outbox dispatch batch timed out after {Timeout}s. Some messages may be stuck InFlight until lease expires.");
+
+    private static readonly Action<ILogger, Exception?> LogHeartbeatFailed =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(6, nameof(LogHeartbeatFailed)),
+            "Failed to report outbox dispatcher heartbeat.");
+
     private readonly string _workerId = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
     private readonly TimeSpan _dispatchTimeout = TimeSpan.FromSeconds(30);
 
@@ -77,7 +89,7 @@ public sealed class OutboxDispatcherWorker(
                 }
                 catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
                 {
-                    logger.LogWarning("Outbox dispatch batch timed out after {Timeout}s. Some messages may be stuck InFlight until lease expires.", _dispatchTimeout.TotalSeconds);
+                    LogDispatchTimeout(logger, _dispatchTimeout.TotalSeconds, null);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -129,7 +141,7 @@ public sealed class OutboxDispatcherWorker(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to report outbox dispatcher heartbeat.");
+            LogHeartbeatFailed(logger, ex);
         }
     }
 

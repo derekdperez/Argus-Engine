@@ -290,7 +290,7 @@ public sealed class CommandCenterStatusSnapshotService(
         return result;
     }
 
-    private IReadOnlyList<CommandCenterWorkerStatus> BuildUnavailableWorkerStatuses()
+    private List<CommandCenterWorkerStatus> BuildUnavailableWorkerStatuses()
     {
         return workerDefinitions.WorkerScaleDefinitions
             .Select(definition => new CommandCenterWorkerStatus(
@@ -318,8 +318,8 @@ public sealed class CommandCenterStatusSnapshotService(
         return Math.Max(0, defaults.MinTasks);
     }
 
-    private async Task<IReadOnlyList<CommandCenterQueueStatus>> BuildQueueStatusesAsync(
-        ICollection<CommandCenterAlert> alerts,
+    private async Task<List<CommandCenterQueueStatus>> BuildQueueStatusesAsync(
+        List<CommandCenterAlert> alerts,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {

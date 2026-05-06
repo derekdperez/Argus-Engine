@@ -82,9 +82,9 @@ public sealed class BusJournalConsumeObserver(BusJournalBuffer buffer) : IConsum
         return Task.CompletedTask;
     }
 
-    public Task ConsumeFault(ConsumeContext context, Exception exception) => Task.CompletedTask;
-    public Task PostConsume(ConsumeContext context) => Task.CompletedTask;
-    public Task PreConsume(ConsumeContext context) => Task.CompletedTask;
+    public static Task ConsumeFault(ConsumeContext context, Exception exception) => Task.CompletedTask;
+    public static Task PostConsume(ConsumeContext context) => Task.CompletedTask;
+    public static Task PreConsume(ConsumeContext context) => Task.CompletedTask;
 
     private static double? ResolveDuration(ConsumeContext context)
     {

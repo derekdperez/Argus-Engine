@@ -19,7 +19,7 @@ namespace ArgusEngine.Harness.Core;
 public record HarnessResultDto(DateTimeOffset ExecutedAtUtc, List<WorkerHealthCheckResultDto> WorkerResults);
 public record WorkerHealthCheckResultDto(string WorkerName, bool Success, string Message, string Output);
 
-public class HarnessRunner
+public partial class HarnessRunner
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<HarnessRunner> _logger;
@@ -30,9 +30,12 @@ public class HarnessRunner
         _logger = logger;
     }
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "Starting Worker Test Harness run...")]
+    private partial void LogStartingHarnessRun();
+
     public async Task<HarnessResultDto> RunAllAsync(CancellationToken ct)
     {
-        _logger.LogInformation("Starting Worker Test Harness run...");
+        LogStartingHarnessRun();
         
         var results = new List<WorkerHealthCheckResultDto>();
         

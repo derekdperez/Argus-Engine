@@ -19,7 +19,10 @@ public static class ToolRestartEndpoints
                 "/api/ops/subdomain-enum/restart",
                 async (RestartToolRequest body, ArgusDbContext db, IEventOutbox outbox, IOptions<SubdomainEnumerationOptions> options, ILogger<ToolRestartEndpointsLogger> logger, CancellationToken ct) =>
                 {
-                    logger.LogInformation("Subdomain enumeration restart requested. AllTargets: {AllTargets}, TargetCount: {TargetIdsCount}", body.AllTargets, body.TargetIds?.Length ?? 0);
+                    if (logger.IsEnabled(LogLevel.Information))
+                    {
+                        logger.LogInformation("Subdomain enumeration restart requested. AllTargets: {AllTargets}, TargetCount: {TargetIdsCount}", body.AllTargets, body.TargetIds?.Length ?? 0);
+                    }
                     
                     var targetsQuery = db.Targets.AsNoTracking();
                     if (!body.AllTargets)
@@ -72,7 +75,10 @@ public static class ToolRestartEndpoints
                     if (eventsToEnqueue.Count > 0)
                     {
                         await outbox.EnqueueBatchAsync(eventsToEnqueue, ct).ConfigureAwait(false);
-                        logger.LogInformation("Enqueued {Count} SubdomainEnumerationRequested events to outbox.", eventsToEnqueue.Count);
+                        if (logger.IsEnabled(LogLevel.Information))
+                        {
+                            logger.LogInformation("Enqueued {Count} SubdomainEnumerationRequested events to outbox.", eventsToEnqueue.Count);
+                        }
                     }
 
                     return Results.Ok(new { Targets = targets.Count, JobsQueued = queued });
@@ -88,7 +94,10 @@ public static class ToolRestartEndpoints
                     ILogger<ToolRestartEndpointsLogger> logger,
                     CancellationToken ct) =>
                 {
-                    logger.LogInformation("Spider restart requested. AllTargets: {AllTargets}, TargetCount: {TargetIdsCount}", body.AllTargets, body.TargetIds?.Length ?? 0);
+                    if (logger.IsEnabled(LogLevel.Information))
+                    {
+                        logger.LogInformation("Spider restart requested. AllTargets: {AllTargets}, TargetCount: {TargetIdsCount}", body.AllTargets, body.TargetIds?.Length ?? 0);
+                    }
 
                     var targetsQuery = db.Targets.AsNoTracking();
                     if (!body.AllTargets)
@@ -143,7 +152,10 @@ public static class ToolRestartEndpoints
                     }
 
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                    logger.LogInformation("Spider restart completed. Requeued {ExistingCount} existing requests, {RootSeedsCount} new root seeds.", existingQueueRows.Count, queuedRootSeeds);
+                    if (logger.IsEnabled(LogLevel.Information))
+                    {
+                        logger.LogInformation("Spider restart completed. Requeued {ExistingCount} existing requests, {RootSeedsCount} new root seeds.", existingQueueRows.Count, queuedRootSeeds);
+                    }
 
                     return Results.Ok(new { Targets = targets.Count, RequeuedExistingRequests = existingQueueRows.Count, RootSeedsQueued = queuedRootSeeds });
                 })

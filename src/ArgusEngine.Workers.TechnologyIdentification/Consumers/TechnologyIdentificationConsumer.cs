@@ -24,7 +24,6 @@ public sealed class TechnologyIdentificationConsumer(
     IAssetTagService tagService,
     IHttpArtifactReader artifactReader,
     HtmlSignalExtractor htmlSignals,
-    CookieExtractor cookieExtractor,
     IOptions<TechnologyIdentificationScanOptions> scanOptions,
     ILogger<TechnologyIdentificationConsumer> logger) : IConsumer<ScannableContentAvailable>
 {
@@ -94,7 +93,7 @@ public sealed class TechnologyIdentificationConsumer(
             var requestHeaders = snapshot.RequestHeaders ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var responseHeaders = snapshot.ResponseHeaders ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var signals = htmlSignals.Extract(snapshot.ResponseBody, snapshot.ContentType, snapshot.FinalUrl ?? message.SourceUrl);
-            var cookies = cookieExtractor.Extract(requestHeaders, responseHeaders);
+            var cookies = CookieExtractor.Extract(requestHeaders, responseHeaders);
             var scriptUrls = BuildScriptUrls(message.SourceUrl, snapshot.FinalUrl, snapshot.ContentType, signals.ScriptUrls);
 
             var input = new TechnologyScanInput(

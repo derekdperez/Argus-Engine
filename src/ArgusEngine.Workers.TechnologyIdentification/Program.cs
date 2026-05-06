@@ -32,7 +32,6 @@ try
 
     builder.Services.AddSingleton<TechnologyScanner>();
     builder.Services.AddSingleton<HtmlSignalExtractor>();
-    builder.Services.AddSingleton<CookieExtractor>();
 
     builder.Services.AddArgusRabbitMq(
         builder.Configuration,

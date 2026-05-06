@@ -19,7 +19,6 @@ using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Harness.Core;
 using ArgusEngine.Gatekeeper;
 using ArgusEngine.Workers.Enum;
-using ArgusEngine.Workers.Spider;
 using ArgusEngine.Workers.PortScan;
 using ArgusEngine.Workers.HighValue;
 using ArgusEngine.Workers.TechnologyIdentification;

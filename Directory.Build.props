@@ -13,5 +13,6 @@
     <Company>Argus Engine</Company>
     <Authors>Argus Engine</Authors>
     <RepositoryUrl>https://github.com/derekdperez/Argus-Engine</RepositoryUrl>
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
 </Project>

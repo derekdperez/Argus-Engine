@@ -17,7 +17,7 @@ public sealed partial class CookieExtractor
         "partitioned",
     };
 
-    public IReadOnlyDictionary<string, string> Extract(
+    public static IReadOnlyDictionary<string, string> Extract(
         IReadOnlyDictionary<string, string> requestHeaders,
         IReadOnlyDictionary<string, string> responseHeaders)
     {

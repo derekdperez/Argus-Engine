@@ -9,7 +9,7 @@ using System.Diagnostics;
 
 namespace ArgusEngine.Infrastructure.Messaging;
 
-public sealed class WorkerHeartbeatService(
+public sealed partial class WorkerHeartbeatService(
     IServiceScopeFactory scopeFactory,
     IDbContextFactory<ArgusDbContext> dbFactory,
     string workerKey,
@@ -18,9 +18,15 @@ public sealed class WorkerHeartbeatService(
     private readonly string _hostName = Environment.MachineName;
     private readonly int _pid = Environment.ProcessId;
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "WorkerHeartbeatService started for {WorkerKey} on {HostName}.")]
+    private partial void LogServiceStarted(string workerKey, string hostName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to send worker heartbeat.")]
+    private partial void LogHeartbeatFailed(Exception ex);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("WorkerHeartbeatService started for {WorkerKey} on {HostName}.", workerKey, _hostName);
+        LogServiceStarted(workerKey, _hostName);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -30,7 +36,7 @@ public sealed class WorkerHeartbeatService(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to send worker heartbeat.");
+                LogHeartbeatFailed(ex);
             }
 
             await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken).ConfigureAwait(false);

@@ -138,7 +138,7 @@ public sealed class ArgusDatabaseLoggerProvider : ILoggerProvider
     }
 
     private async Task WriteBatchAsync(
-        IReadOnlyCollection<SystemError> batch,
+        List<SystemError> batch,
         CancellationToken cancellationToken)
     {
         if (batch.Count == 0)

@@ -10,12 +10,27 @@ using Microsoft.Extensions.Logging;
 
 namespace ArgusEngine.CommandCenter.Security;
 
-public static class SensitiveEndpointProtection
+public static partial class SensitiveEndpointProtection
 {
     public const string DiagnosticsPolicyName = "DiagnosticsApiKey";
     public const string MaintenancePolicyName = "MaintenanceApiKey";
 
     private static readonly SensitiveEndpointRateLimiter RateLimiter = new();
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Sensitive endpoint audit kind={Kind} method={Method} path={Path} outcome={Outcome} status={StatusCode} remoteIp={RemoteIp} apiKeyFingerprint={ApiKeyFingerprint} userAgent={UserAgent}",
+        EventName = "SensitiveEndpointAudit")]
+    private static partial void LogAudit(
+        ILogger logger,
+        SensitiveEndpointKind kind,
+        string method,
+        string? path,
+        string outcome,
+        string? statusCode,
+        string? remoteIp,
+        string apiKeyFingerprint,
+        string userAgent);
 
     public static IApplicationBuilder UseSensitiveEndpointProtection(this IApplicationBuilder app)
     {
@@ -176,8 +191,8 @@ public static class SensitiveEndpointProtection
         int? statusCode,
         string? suppliedKey)
     {
-        auditLogger.LogWarning(
-            "Sensitive endpoint audit kind={Kind} method={Method} path={Path} outcome={Outcome} status={StatusCode} remoteIp={RemoteIp} apiKeyFingerprint={ApiKeyFingerprint} userAgent={UserAgent}",
+        LogAudit(
+            auditLogger,
             kind,
             context.Request.Method,
             context.Request.Path.Value,

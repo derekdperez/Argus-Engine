@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ArgusEngine.Gatekeeper;
 
-public class GatekeeperWorkerHealthCheck : IWorkerHealthCheck
+public partial class GatekeeperWorkerHealthCheck : IWorkerHealthCheck
 {
     private readonly GatekeeperOrchestrator _orchestrator;
     private readonly ILogger<GatekeeperWorkerHealthCheck> _logger;
@@ -20,9 +20,12 @@ public class GatekeeperWorkerHealthCheck : IWorkerHealthCheck
 
     public string WorkerName => "Gatekeeper";
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "Running Gatekeeper health check...")]
+    private partial void LogRunningHealthCheck();
+
     public async Task<WorkerHealthCheckResult> RunAsync(CancellationToken ct)
     {
-        _logger.LogInformation("Running Gatekeeper health check...");
+        LogRunningHealthCheck();
         
         // Gatekeeper orchestrator check
         if (_orchestrator == null)

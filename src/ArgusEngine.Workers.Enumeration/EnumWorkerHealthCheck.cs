@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using ArgusEngine.Application.Workers;
-using ArgusEngine.Workers.Enum.Consumers;
+using ArgusEngine.Workers.Enumeration.Consumers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

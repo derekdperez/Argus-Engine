@@ -120,6 +120,19 @@ public sealed class DeploymentVersioningTests
         Assert.Contains("Math.Clamp(body.GlobalRequestsPerMinute, 1, 120_000)", endpoints);
     }
 
+    [Fact]
+    public void SchemaPatchesCreateBusJournalBeforeAlteringItForPartialFreshDatabases()
+    {
+        var text = File.ReadAllText(ProjectRoot("src/ArgusEngine.Infrastructure/Persistence/Data/ArgusDbSchemaPatches.cs"));
+        var createIndex = text.IndexOf("CREATE TABLE IF NOT EXISTS bus_journal", StringComparison.Ordinal);
+        var alterIndex = text.IndexOf("ALTER TABLE bus_journal ADD COLUMN IF NOT EXISTS host_name", StringComparison.Ordinal);
+
+        Assert.True(createIndex >= 0, "Schema patch must create bus_journal when EnsureCreated skips creation in a partial database.");
+        Assert.True(alterIndex > createIndex, "bus_journal must be created before any ALTER TABLE bus_journal patch runs.");
+        Assert.Contains("CREATE INDEX IF NOT EXISTS ix_bus_journal_occurred_at_utc", text);
+        Assert.Contains("CREATE INDEX IF NOT EXISTS ix_bus_journal_message_id", text);
+    }
+
     private static string ProjectRoot(string relativePath)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

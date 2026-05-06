@@ -78,6 +78,22 @@ public static partial class ArgusDbSchemaPatches
         LogPatchingBusJournal(logger);
         await db.Database.ExecuteSqlRawAsync(
                 """
+                CREATE TABLE IF NOT EXISTS bus_journal (
+                    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                    direction character varying(16) NOT NULL,
+                    message_type character varying(256) NOT NULL,
+                    consumer_type character varying(512) NULL,
+                    payload_json text NOT NULL,
+                    occurred_at_utc timestamp with time zone NOT NULL,
+                    host_name character varying(256) NOT NULL DEFAULT '',
+                    "Status" character varying(32) NOT NULL DEFAULT 'Completed',
+                    "DurationMs" double precision NULL,
+                    "Error" text NULL,
+                    "MessageId" uuid NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_bus_journal_occurred_at_utc ON bus_journal (occurred_at_utc);
+                CREATE INDEX IF NOT EXISTS ix_bus_journal_message_id ON bus_journal ("MessageId");
+
                 ALTER TABLE bus_journal ADD COLUMN IF NOT EXISTS host_name character varying(256) NOT NULL DEFAULT '';
                 """,
                 cancellationToken)

@@ -6,7 +6,7 @@ public sealed class HtmlSignalExtractor
 {
     private const int SniffLength = 8 * 1024;
 
-    public HtmlSignals Extract(string? body, string? contentType, string sourceUrl)
+    public static HtmlSignals Extract(string? body, string? contentType, string sourceUrl)
     {
         if (string.IsNullOrWhiteSpace(body) || !ShouldParse(body, contentType))
             return new HtmlSignals(new Dictionary<string, string>(), []);

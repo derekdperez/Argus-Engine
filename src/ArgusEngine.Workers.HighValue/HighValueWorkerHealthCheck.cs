@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ArgusEngine.Workers.HighValue;
 
-public class HighValueWorkerHealthCheck : IWorkerHealthCheck
+public partial class HighValueWorkerHealthCheck : IWorkerHealthCheck
 {
     private readonly ILogger<HighValueWorkerHealthCheck> _logger;
 
@@ -17,9 +17,12 @@ public class HighValueWorkerHealthCheck : IWorkerHealthCheck
 
     public string WorkerName => "HighValue";
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "Running HighValue health check...")]
+    private partial void LogRunningHealthCheck();
+
     public async Task<WorkerHealthCheckResult> RunAsync(CancellationToken ct)
     {
-        _logger.LogInformation("Running HighValue health check...");
+        LogRunningHealthCheck();
         
         // Check if wordlists are accessible
         return new WorkerHealthCheckResult(true, "HighValue worker ready for scanning.");

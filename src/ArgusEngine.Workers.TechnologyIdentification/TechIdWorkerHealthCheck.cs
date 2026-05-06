@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ArgusEngine.Workers.TechnologyIdentification;
 
-public class TechIdWorkerHealthCheck : IWorkerHealthCheck
+public partial class TechIdWorkerHealthCheck : IWorkerHealthCheck
 {
     private readonly ILogger<TechIdWorkerHealthCheck> _logger;
 
@@ -17,9 +17,12 @@ public class TechIdWorkerHealthCheck : IWorkerHealthCheck
 
     public string WorkerName => "TechnologyIdentification";
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "Running TechID health check...")]
+    private partial void LogRunningHealthCheck();
+
     public async Task<WorkerHealthCheckResult> RunAsync(CancellationToken ct)
     {
-        _logger.LogInformation("Running TechID health check...");
+        LogRunningHealthCheck();
         
         return new WorkerHealthCheckResult(true, "Technology Identification worker ready.");
     }

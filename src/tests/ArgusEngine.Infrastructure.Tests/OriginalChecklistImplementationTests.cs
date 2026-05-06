@@ -99,7 +99,7 @@ public sealed class OriginalChecklistImplementationTests
             Path.Combine("src", "ArgusEngine.CommandCenter", "Startup", "CommandCenterServiceRegistration.cs"),
             Path.Combine("src", "ArgusEngine.Gatekeeper", "Program.cs"),
             Path.Combine("src", "ArgusEngine.Workers.Spider", "Program.cs"),
-            Path.Combine("src", "ArgusEngine.Workers.Enum", "Program.cs"),
+            Path.Combine("src", "ArgusEngine.Workers.Enumeration", "Program.cs"),
             Path.Combine("src", "ArgusEngine.Workers.PortScan", "Program.cs"),
             Path.Combine("src", "ArgusEngine.Workers.HighValue", "Program.cs"),
             Path.Combine("src", "ArgusEngine.Workers.TechnologyIdentification", "Program.cs")

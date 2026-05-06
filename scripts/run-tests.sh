@@ -1,20 +1,55 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# Run Unit Tests
-echo "Running Unit Tests..."
-dotnet test src/tests/ArgusEngine.UnitTests/ArgusEngine.UnitTests.csproj --configuration Release
+CONFIGURATION="${CONFIGURATION:-Release}"
+MODE="${1:-all}"
 
-# Run Infrastructure Unit/Integration Tests (that don't require external services)
-echo "Running Infrastructure Tests..."
-dotnet test src/tests/ArgusEngine.Infrastructure.Tests/ArgusEngine.Infrastructure.Tests.csproj --configuration Release
+run_dotnet_tests() {
+  local project="$1"
+  local args=()
+  if [[ "${ARGUS_TEST_NO_BUILD:-0}" == "1" ]]; then
+    args+=(--no-build)
+  fi
+  echo "Running ${project}..."
+  dotnet test "$project" --configuration "$CONFIGURATION" "${args[@]}"
+}
 
-# Run Database Integration Tests (requires Docker)
-if docker info >/dev/null 2>&1; then
-    echo "Running Database Integration Tests (with Testcontainers)..."
-    dotnet test src/tests/ArgusEngine.IntegrationTests/ArgusEngine.IntegrationTests.csproj --configuration Release
-else
-    echo "Skipping Database Integration Tests because Docker is not running."
-fi
+run_unit_tests() {
+  run_dotnet_tests "src/tests/ArgusEngine.UnitTests/ArgusEngine.UnitTests.csproj"
+  run_dotnet_tests "src/tests/ArgusEngine.Infrastructure.Tests/ArgusEngine.Infrastructure.Tests.csproj"
+  run_dotnet_tests "src/tests/ArgusEngine.CommandCenter.Tests/ArgusEngine.CommandCenter.Tests.csproj"
+}
 
-echo "All tests completed successfully!"
+run_integration_tests() {
+  if docker info >/dev/null 2>&1; then
+    run_dotnet_tests "src/tests/ArgusEngine.IntegrationTests/ArgusEngine.IntegrationTests.csproj"
+  else
+    echo "Skipping database integration tests because Docker is not running."
+  fi
+}
+
+run_e2e_tests() {
+  "src/tests/e2e/run-e2e-suite.sh"
+}
+
+case "$MODE" in
+  unit)
+    run_unit_tests
+    ;;
+  integration)
+    run_integration_tests
+    ;;
+  e2e)
+    run_e2e_tests
+    ;;
+  all)
+    run_unit_tests
+    run_integration_tests
+    ;;
+  *)
+    echo "Usage: $0 [unit|integration|e2e|all]" >&2
+    exit 2
+    ;;
+esac
+
+echo "Test mode '${MODE}' completed successfully."

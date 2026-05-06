@@ -1,0 +1,146 @@
+name: Main Branch Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  CONFIGURATION: Release
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID || '415144299522' }}
+  ECR_PREFIX: ${{ vars.ECR_PREFIX || 'argus-v2' }}
+  ROLE_TO_ASSUME: ${{ vars.ARGUS_AWS_GITHUB_ACTIONS_ROLE || 'arn:aws:iam::415144299522:role/ArgusEngineGitHubActionsRole' }}
+  IMAGE_TAG: ${{ github.sha }}
+  BUILD_SOURCE_STAMP: ${{ github.sha }}
+  COMPONENT_VERSION: ci-${{ github.run_number }}
+
+jobs:
+  build-and-unit-tests:
+    name: Build solution and run unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET from global.json
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: ./global.json
+
+      - name: Restore
+        run: dotnet restore ArgusEngine.slnx
+
+      - name: Build
+        run: dotnet build ArgusEngine.slnx --configuration "$CONFIGURATION" --no-restore
+
+      - name: Run unit test suite
+        env:
+          ARGUS_TEST_NO_BUILD: "1"
+        run: |
+          chmod +x ./test.sh ./scripts/run-tests.sh
+          ./test.sh unit
+
+  e2e-tests:
+    name: Deploy to EC2 E2E server and run E2E tests
+    runs-on: ubuntu-latest
+    needs: build-and-unit-tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Ensure E2E EC2 server, hot deploy, and run E2E suite
+        env:
+          E2E_GIT_REF: ${{ github.sha }}
+          E2E_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          E2E_INSTANCE_NAME: ${{ vars.ARGUS_E2E_INSTANCE_NAME || 'argus-e2e-test-server' }}
+          E2E_INSTANCE_TYPE: ${{ vars.ARGUS_E2E_INSTANCE_TYPE || 'm7i-flex.large' }}
+          E2E_KEY_PAIR: ${{ vars.ARGUS_E2E_KEY_PAIR || '' }}
+          E2E_IAM_INSTANCE_PROFILE: ${{ vars.ARGUS_E2E_IAM_INSTANCE_PROFILE || 'ec2-ssm-worker-role' }}
+          E2E_SECURITY_GROUP: ${{ vars.ARGUS_E2E_SECURITY_GROUP || 'default' }}
+          E2E_SUBNET_ID: ${{ vars.ARGUS_E2E_SUBNET_ID || '' }}
+          E2E_COMMAND_TIMEOUT_SECONDS: ${{ vars.ARGUS_E2E_COMMAND_TIMEOUT_SECONDS || '5400' }}
+          ARGUS_E2E_DB_SNAPSHOT_SQL: ${{ vars.ARGUS_E2E_DB_SNAPSHOT_SQL || '' }}
+        run: |
+          chmod +x deploy/aws/provision-e2e-test-server.sh deploy/aws/run-e2e-on-ec2.sh
+          deploy/aws/run-e2e-on-ec2.sh
+
+  deploy-production:
+    name: Deploy to ECS production
+    runs-on: ubuntu-latest
+    needs: e2e-tests
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Write ECS service environment
+        env:
+          ARGUS_ECS_SERVICE_ENV: ${{ secrets.ARGUS_ECS_SERVICE_ENV }}
+        run: |
+          test -n "$ARGUS_ECS_SERVICE_ENV"
+          printf '%s\n' "$ARGUS_ECS_SERVICE_ENV" > deploy/aws/service-env
+
+      - name: Ensure ECR repositories
+        run: |
+          chmod +x deploy/aws/create-ecr-repos.sh
+          deploy/aws/create-ecr-repos.sh
+
+      - name: Build and push production images
+        run: |
+          chmod +x deploy/aws/build-push-ecr.sh
+          deploy/aws/build-push-ecr.sh
+
+      - name: Deploy ECS services
+        env:
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'argus-engine' }}
+          ECS_SUBNETS: ${{ vars.ECS_SUBNETS }}
+          ECS_SECURITY_GROUPS: ${{ vars.ECS_SECURITY_GROUPS }}
+          ECS_TASK_EXECUTION_ROLE_ARN: ${{ vars.ECS_TASK_EXECUTION_ROLE_ARN }}
+          ECS_TASK_ROLE_ARN: ${{ vars.ECS_TASK_ROLE_ARN || '' }}
+          ECS_LAUNCH_TYPE: ${{ vars.ECS_LAUNCH_TYPE || 'FARGATE' }}
+          ECS_ASSIGN_PUBLIC_IP: ${{ vars.ECS_ASSIGN_PUBLIC_IP || 'DISABLED' }}
+          ECS_LOG_GROUP: ${{ vars.ECS_LOG_GROUP || '/ecs/argus-v2' }}
+          ECS_LOG_PREFIX: ${{ vars.ECS_LOG_PREFIX || 'argus-v2' }}
+          COMMAND_CENTER_SERVICE: ${{ vars.COMMAND_CENTER_SERVICE || 'argus-command-center' }}
+          GATEKEEPER_SERVICE: ${{ vars.GATEKEEPER_SERVICE || 'argus-gatekeeper' }}
+          WORKER_SPIDER_SERVICE: ${{ vars.WORKER_SPIDER_SERVICE || 'argus-worker-spider' }}
+          WORKER_ENUM_SERVICE: ${{ vars.WORKER_ENUM_SERVICE || 'argus-worker-enum' }}
+          WORKER_PORTSCAN_SERVICE: ${{ vars.WORKER_PORTSCAN_SERVICE || 'argus-worker-portscan' }}
+          WORKER_HIGHVALUE_SERVICE: ${{ vars.WORKER_HIGHVALUE_SERVICE || 'argus-worker-highvalue' }}
+          WORKER_TECHID_SERVICE: ${{ vars.WORKER_TECHID_SERVICE || 'argus-worker-techid' }}
+          SERVICE_ENV_FILE: deploy/aws/service-env
+          UPDATE_DESIRED_COUNTS: ${{ vars.UPDATE_DESIRED_COUNTS || 'false' }}
+          ECS_FORCE_NEW_DEPLOYMENT: "false"
+        run: |
+          chmod +x deploy/aws/deploy-ecs-services.sh
+          deploy/aws/deploy-ecs-services.sh

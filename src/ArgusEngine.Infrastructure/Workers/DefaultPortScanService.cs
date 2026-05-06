@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Sockets;
 using ArgusEngine.Application.Workers;
 
@@ -12,44 +13,56 @@ public sealed class DefaultPortScanService : IPortScanService
         int maxConcurrency,
         CancellationToken cancellationToken = default)
     {
-        var open = new List<int>();
-        var semaphore = new SemaphoreSlim(Math.Clamp(maxConcurrency, 1, 256));
-        var gate = new object();
-        var tasks = ports.Select(async port =>
-        {
-            await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                if (await IsOpenAsync(hostOrIp, port, perPortTimeout, cancellationToken).ConfigureAwait(false))
-                {
-                    lock (gate)
-                    {
-                        open.Add(port);
-                    }
-                }
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        }).ToArray();
+        if (ports.Count == 0)
+            return [];
 
-        await Task.WhenAll(tasks).ConfigureAwait(false);
-        open.Sort();
-        return open;
+        var openPorts = new ConcurrentBag<int>();
+
+        await Parallel.ForEachAsync(
+            ports,
+            new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = Math.Clamp(maxConcurrency, 1, 256),
+            },
+            async (port, token) =>
+            {
+                if (await IsOpenAsync(hostOrIp, port, perPortTimeout, token).ConfigureAwait(false))
+                    openPorts.Add(port);
+            }).ConfigureAwait(false);
+
+        if (openPorts.IsEmpty)
+            return [];
+
+        var sorted = openPorts.ToArray();
+        Array.Sort(sorted);
+        return sorted;
     }
 
-    private static async Task<bool> IsOpenAsync(string host, int port, TimeSpan timeout, CancellationToken cancellationToken)
+    private static async Task<bool> IsOpenAsync(
+        string host,
+        int port,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
     {
         using var client = new TcpClient();
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(timeout);
+
         try
         {
             await client.ConnectAsync(host, port, timeoutCts.Token).ConfigureAwait(false);
             return client.Connected;
         }
-        catch
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+        catch (IOException)
         {
             return false;
         }

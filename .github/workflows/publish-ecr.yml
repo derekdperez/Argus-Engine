@@ -1,9 +1,6 @@
 name: Build and Push Images to ECR
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       services:

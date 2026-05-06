@@ -17,21 +17,25 @@ public sealed class AmassEnumerationProvider(
             LogLevel.Information,
             new EventId(1, nameof(LogAmassStarted)),
             "amass started. RootDomain={RootDomain}, WordlistPath={WordlistPath}");
+
     private static readonly Action<ILogger, string, string, Exception?> LogAmassWordlistMissing =
         LoggerMessage.Define<string, string>(
             LogLevel.Warning,
             new EventId(2, nameof(LogAmassWordlistMissing)),
             "Amass wordlist was not found. RootDomain={RootDomain}, WordlistPath={WordlistPath}");
+
     private static readonly Action<ILogger, string, int?, string, Exception?> LogAmassFailed =
         LoggerMessage.Define<string, int?, string>(
             LogLevel.Warning,
             new EventId(3, nameof(LogAmassFailed)),
             "amass failed for {RootDomain}. ExitCode={ExitCode}. Error={Error}");
+
     private static readonly Action<ILogger, string, string, Exception?> LogWildcardDnsDetected =
         LoggerMessage.Define<string, string>(
             LogLevel.Warning,
             new EventId(4, nameof(LogWildcardDnsDetected)),
             "Wildcard DNS detected for {RootDomain}. Provider={Provider}");
+
     private static readonly Action<ILogger, string, int, Exception?> LogAmassCompleted =
         LoggerMessage.Define<string, int>(
             LogLevel.Information,
@@ -45,6 +49,7 @@ public sealed class AmassEnumerationProvider(
         CancellationToken cancellationToken = default)
     {
         var opt = options.Value;
+
         if (!opt.Amass.Enabled)
             return [];
 
@@ -53,6 +58,7 @@ public sealed class AmassEnumerationProvider(
 
         var wordlistPath = ResolveWordlistPath(opt.Amass.WordlistPath);
         LogAmassStarted(logger, request.RootDomain, wordlistPath, null);
+
         if (!File.Exists(wordlistPath))
         {
             LogAmassWordlistMissing(logger, request.RootDomain, wordlistPath, null);
@@ -66,10 +72,13 @@ public sealed class AmassEnumerationProvider(
         var logFile = Path.Combine(workingDirectory, $"amass-{safeDomain}-{safeJobId}.log");
 
         var args = new List<string> { "enum" };
+
         if (opt.Amass.Active)
             args.Add("-active");
+
         if (opt.Amass.BruteForce)
             args.Add("-brute");
+
         args.AddRange(
         [
             "-d", request.RootDomain,
@@ -96,35 +105,46 @@ public sealed class AmassEnumerationProvider(
         }
 
         var wildcardDetected = await DetectWildcardDnsAsync(request.RootDomain, cancellationToken).ConfigureAwait(false);
-        if (wildcardDetected)
-        {
-            LogWildcardDnsDetected(logger, request.RootDomain, Name, null);
-        }
 
-        var parsed = SubdomainEnumerationParsers.ParseAmassOutputFile(outputFile)
-            .Select(
-                host => new SubdomainEnumerationResult
+        if (wildcardDetected)
+            LogWildcardDnsDetected(logger, request.RootDomain, Name, null);
+
+        var hosts = SubdomainEnumerationParsers.ParseAmassOutputFile(outputFile);
+        var parsed = new List<SubdomainEnumerationResult>(hosts.Count);
+
+        foreach (var host in hosts)
+        {
+            parsed.Add(
+                new SubdomainEnumerationResult
                 {
                     Hostname = host,
                     Provider = Name,
                     Method = "active-bruteforce",
-                })
-            .ToList();
+                });
+        }
+
         LogAmassCompleted(logger, request.RootDomain, parsed.Count, null);
         return parsed;
     }
 
     internal async Task<bool> DetectWildcardDnsAsync(string rootDomain, CancellationToken cancellationToken)
     {
-        var samples = new List<IReadOnlyCollection<string>>(capacity: 3);
+        var samples = new List<string[]>(capacity: 3);
+
         for (var i = 0; i < 3; i++)
         {
             var randomHost = $"random-{Guid.NewGuid():N}.{rootDomain}";
+
             try
             {
                 var addresses = await hostResolver.ResolveHostAsync(randomHost, cancellationToken).ConfigureAwait(false);
+
                 if (addresses.Count > 0)
-                    samples.Add(addresses.OrderBy(x => x, StringComparer.Ordinal).ToArray());
+                {
+                    var sorted = addresses.ToArray();
+                    Array.Sort(sorted, StringComparer.Ordinal);
+                    samples.Add(sorted);
+                }
             }
             catch
             {
@@ -135,15 +155,22 @@ public sealed class AmassEnumerationProvider(
         if (samples.Count < 2)
             return false;
 
-        var first = string.Join("|", samples[0]);
-        var same = samples.LongCount(x => string.Equals(first, string.Join("|", x.OrderBy(a => a, StringComparer.Ordinal)), StringComparison.Ordinal));
-        return same >= 2;
+        var matchingSamples = 1;
+
+        for (var i = 1; i < samples.Count; i++)
+        {
+            if (samples[0].AsSpan().SequenceEqual(samples[i]))
+                matchingSamples++;
+        }
+
+        return matchingSamples >= 2;
     }
 
     private static string ResolveWordlistPath(string configuredPath)
     {
-        if (Path.IsPathRooted(configuredPath))
+        if (Path.IsPathFullyQualified(configuredPath))
             return configuredPath;
-        return Path.Combine(AppContext.BaseDirectory, configuredPath);
+
+        return Path.GetFullPath(configuredPath);
     }
 }

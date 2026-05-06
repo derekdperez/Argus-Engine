@@ -16,7 +16,7 @@ public sealed class WorkerHeartbeatService(
     ILogger<WorkerHeartbeatService> logger) : BackgroundService
 {
     private readonly string _hostName = Environment.MachineName;
-    private readonly int _pid = Process.GetCurrentProcess().Id;
+    private readonly int _pid = Environment.ProcessId;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

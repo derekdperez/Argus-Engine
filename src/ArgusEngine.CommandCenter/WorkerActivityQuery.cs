@@ -138,7 +138,7 @@ internal static class WorkerActivityQuery
         return new WorkerActivitySnapshotDto(summaries, instances);
     }
 
-    private record JournalEntryDetail(string MessageType, string Payload, DateTimeOffset At, string Status, double? DurationMs, string? Error, Guid? MessageId);
+    private sealed record JournalEntryDetail(string MessageType, string Payload, DateTimeOffset At, string Status, double? DurationMs, string? Error, Guid? MessageId);
 
     private static string ActivityLabel(DateTimeOffset lastAt, DateTimeOffset now, string status, bool isAlive)
     {

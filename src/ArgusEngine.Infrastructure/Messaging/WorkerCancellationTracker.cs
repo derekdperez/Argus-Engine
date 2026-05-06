@@ -11,7 +11,7 @@ using ArgusEngine.Infrastructure.Data;
 
 namespace ArgusEngine.Infrastructure.Messaging;
 
-public class WorkerCancellationTracker : BackgroundService
+public sealed class WorkerCancellationTracker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<WorkerCancellationTracker> _logger;
@@ -91,7 +91,7 @@ public class WorkerCancellationTracker : BackgroundService
     }
 }
 
-internal class ConcurrentHashSet<T> where T : notnull
+internal sealed class ConcurrentHashSet<T> where T : notnull
 {
     private readonly ConcurrentDictionary<T, byte> _dict = new();
     public bool Add(T item) => _dict.TryAdd(item, 0);

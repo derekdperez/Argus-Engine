@@ -6,7 +6,7 @@
     <Project Path="src/ArgusEngine.Domain/ArgusEngine.Domain.csproj" Type="Classic C#" />
     <Project Path="src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj" Type="Classic C#" />
     <Project Path="src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.Workers.Enum/ArgusEngine.Workers.Enum.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.Workers.Enumeration/ArgusEngine.Workers.Enumeration.csproj" Type="Classic C#" />
     <Project Path="src/ArgusEngine.Workers.Spider/ArgusEngine.Workers.Spider.csproj" Type="Classic C#" />
     <Project Path="src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj" Type="Classic C#" />
     <Project Path="src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj" Type="Classic C#" />

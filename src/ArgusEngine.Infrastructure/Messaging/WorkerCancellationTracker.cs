@@ -18,6 +18,15 @@ public sealed class WorkerCancellationTracker : BackgroundService
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeTasks = new();
     private readonly ConcurrentHashSet<Guid> _cancelledMessageIds = new();
 
+    private static readonly Action<ILogger, Guid, Exception?> _logImmediateCancellation =
+        LoggerMessage.Define<Guid>(LogLevel.Information, new EventId(1, nameof(CreateLinkedCts)), "Message {MessageId} was already cancelled, triggering immediate cancellation");
+
+    private static readonly Action<ILogger, Exception?> _logSyncError =
+        LoggerMessage.Define(LogLevel.Error, new EventId(2, nameof(ExecuteAsync)), "Error syncing worker cancellations");
+
+    private static readonly Action<ILogger, Guid, Exception?> _logAdministrativeCancellation =
+        LoggerMessage.Define<Guid>(LogLevel.Warning, new EventId(3, nameof(SyncCancellationsAsync)), "Cancelling active task for message {MessageId} per administrative request");
+
     public WorkerCancellationTracker(IServiceScopeFactory scopeFactory, ILogger<WorkerCancellationTracker> logger)
     {
         _scopeFactory = scopeFactory;
@@ -31,7 +40,7 @@ public sealed class WorkerCancellationTracker : BackgroundService
         
         if (_cancelledMessageIds.Contains(messageId))
         {
-            _logger.LogInformation("Message {MessageId} was already cancelled, triggering immediate cancellation", messageId);
+            _logImmediateCancellation(_logger, messageId, null);
             cts.Cancel();
         }
         
@@ -56,7 +65,7 @@ public sealed class WorkerCancellationTracker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error syncing worker cancellations");
+                _logSyncError(_logger, ex);
             }
 
             await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken).ConfigureAwait(false);
@@ -80,7 +89,7 @@ public sealed class WorkerCancellationTracker : BackgroundService
             _cancelledMessageIds.Add(id);
             if (_activeTasks.TryGetValue(id, out var cts) && !cts.IsCancellationRequested)
             {
-                _logger.LogWarning("Cancelling active task for message {MessageId} per administrative request", id);
+                _logAdministrativeCancellation(_logger, id, null);
                 cts.Cancel();
             }
         }

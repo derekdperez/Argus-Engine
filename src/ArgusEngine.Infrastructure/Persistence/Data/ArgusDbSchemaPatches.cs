@@ -249,6 +249,26 @@ public static class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
+        logger.LogDebug("Ensuring system_errors table...");
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS system_errors (
+                    "Id" uuid NOT NULL PRIMARY KEY,
+                    "Timestamp" timestamp with time zone NOT NULL,
+                    "Component" character varying(128) NOT NULL,
+                    "LogLevel" character varying(32) NOT NULL,
+                    "LoggerName" character varying(512) NOT NULL,
+                    "Message" text NOT NULL,
+                    "Exception" text NULL,
+                    "MachineName" character varying(256) NOT NULL,
+                    "MetadataJson" jsonb NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_system_errors_timestamp ON system_errors ("Timestamp" DESC);
+                CREATE INDEX IF NOT EXISTS ix_system_errors_component ON system_errors ("Component");
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         logger.LogDebug("Executing backfill tasks...");
         await BackfillAssetCategoriesAndRootsAsync(db, logger, cancellationToken).ConfigureAwait(false);
         await BackfillAssetRelationshipsAsync(db, logger, cancellationToken).ConfigureAwait(false);

@@ -10,7 +10,6 @@ using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
-using ArgusEngine.Workers.TechnologyIdentification;
 using ArgusEngine.Workers.TechnologyIdentification.Consumers;
 
 try

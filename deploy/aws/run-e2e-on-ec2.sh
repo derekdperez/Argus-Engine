@@ -65,8 +65,9 @@ remote_script_file="$(mktemp)"
 cat >"$remote_script_file" <<EOF
 set -euo pipefail
 if [[ ! -d /opt/argus/.git ]]; then
-  rm -rf /opt/argus
-  git clone ${repo_q} /opt/argus
+  sudo rm -rf /opt/argus
+  sudo git clone ${repo_q} /opt/argus
+  sudo chown -R ubuntu:ubuntu /opt/argus
 fi
 cd /opt/argus
 git remote set-url origin ${repo_q}

@@ -5,9 +5,15 @@
 # Bump ARGUS_ENGINE_VERSION before every deploy. The Command Center System Status
 # screen reads container image labels/tags and will show stale versions if this
 # stays unchanged.
+#
+# Database connection pool tuning:
+# Each service can override Argus__Postgres__MaxPoolSize and
+# Argus__FileStore__MaxPoolSize below. Keep worker pools small because worker
+# replicas multiply total PostgreSQL connections quickly.
+
 name: argus-engine
 
-x-component-version: &component-version ${ARGUS_ENGINE_VERSION:-2.6.2}
+x-component-version: &component-version ${ARGUS_ENGINE_VERSION:-2.6.3}
 
 x-dotnet-build-args: &dotnet-build-args
   BUILD_SOURCE_STAMP: ${BUILD_SOURCE_STAMP:-unknown}
@@ -21,8 +27,9 @@ x-enum-build-args: &enum-build-args
 x-common-env: &common-env
   ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=argus_engine;Username=argus;Password=argus
   ConnectionStrings__FileStore: Host=postgres;Port=5432;Database=argus_engine_files;Username=argus;Password=argus
-  Argus__Postgres__MaxPoolSize: ${ARGUS_POSTGRES_MAX_POOL_SIZE:-8}
-  Argus__FileStore__MaxPoolSize: ${ARGUS_FILESTORE_MAX_POOL_SIZE:-4}
+  # Conservative defaults for services that do not override their own pool sizes.
+  Argus__Postgres__MaxPoolSize: ${ARGUS_POSTGRES_MAX_POOL_SIZE:-4}
+  Argus__FileStore__MaxPoolSize: ${ARGUS_FILESTORE_MAX_POOL_SIZE:-1}
   ConnectionStrings__Redis: redis:6379
   RabbitMq__Host: rabbitmq
   RabbitMq__Username: argus
@@ -37,12 +44,15 @@ configs:
     content: |
       #!/bin/sh
       set -e
+
       echo "Connecting to postgres as user 'argus' to check/create 'argus_engine_files'..."
+
       # Use argus_engine as the maintenance DB since it's what we defined in POSTGRES_DB
       if psql -h postgres -U argus -d argus_engine -tAc "SELECT 1 FROM pg_database WHERE datname = 'argus_engine_files'" 2>/dev/null | grep -q '1'; then
         echo "argus_engine_files already exists; nothing to do."
         exit 0
       fi
+
       echo "Creating database argus_engine_files..."
       psql -h postgres -U argus -d argus_engine -v ON_ERROR_STOP=1 -c "CREATE DATABASE argus_engine_files OWNER argus;"
       echo "Done."
@@ -105,7 +115,7 @@ services:
       start_period: 30s
 
   command-center:
-    image: argus-engine/command-center:${ARGUS_ENGINE_VERSION:-2.6.2}
+    image: argus-engine/command-center:${ARGUS_ENGINE_VERSION:-2.6.3}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.web
@@ -113,6 +123,9 @@ services:
         <<: *dotnet-build-args
     environment:
       <<: *common-env
+      # Command Center is interactive and can tolerate a larger pool than workers.
+      Argus__Postgres__MaxPoolSize: ${ARGUS_COMMAND_CENTER_POSTGRES_MAX_POOL_SIZE:-8}
+      Argus__FileStore__MaxPoolSize: ${ARGUS_COMMAND_CENTER_FILESTORE_MAX_POOL_SIZE:-2}
       ASPNETCORE_URLS: http://+:8080
       Argus__ListenPlainHttp: "true"
       Argus__Diagnostics__Enabled: "true"
@@ -157,7 +170,7 @@ services:
         condition: service_healthy
 
   gatekeeper:
-    image: argus-engine/gatekeeper:${ARGUS_ENGINE_VERSION:-2.6.2}
+    image: argus-engine/gatekeeper:${ARGUS_ENGINE_VERSION:-2.6.3}
     restart: unless-stopped
     build:
       context: ..
@@ -169,6 +182,8 @@ services:
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
+      Argus__Postgres__MaxPoolSize: ${ARGUS_GATEKEEPER_POSTGRES_MAX_POOL_SIZE:-2}
+      Argus__FileStore__MaxPoolSize: ${ARGUS_GATEKEEPER_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
       command-center:
         condition: service_healthy
@@ -180,7 +195,7 @@ services:
         condition: service_healthy
 
   worker-spider:
-    image: argus-engine/worker-spider:${ARGUS_ENGINE_VERSION:-2.6.2}
+    image: argus-engine/worker-spider:${ARGUS_ENGINE_VERSION:-2.6.3}
     restart: unless-stopped
     build:
       context: ..
@@ -193,6 +208,8 @@ services:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
       Spider__Http__AllowInsecureSsl: "false"
+      Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_SPIDER_POSTGRES_MAX_POOL_SIZE:-3}
+      Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_SPIDER_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
       command-center:
         condition: service_healthy
@@ -203,10 +220,10 @@ services:
       rabbitmq:
         condition: service_healthy
     deploy:
-      replicas: 10
+      replicas: ${ARGUS_WORKER_SPIDER_REPLICAS:-3}
 
   worker-enum:
-    image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.6.2}
+    image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.6.3}
     restart: unless-stopped
     build:
       context: ..
@@ -231,6 +248,8 @@ services:
       Enumeration__UseDnsFallback: "true"
       Enumeration__DnsFallbackMaxCandidates: "300"
       Enumeration__SubdomainWordlistPath: /opt/argus/wordlists/subdomains.txt
+      Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_ENUM_POSTGRES_MAX_POOL_SIZE:-2}
+      Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_ENUM_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
       command-center:
         condition: service_healthy
@@ -241,10 +260,10 @@ services:
       rabbitmq:
         condition: service_healthy
     deploy:
-      replicas: 10
+      replicas: ${ARGUS_WORKER_ENUM_REPLICAS:-2}
 
   worker-portscan:
-    image: argus-engine/worker-portscan:${ARGUS_ENGINE_VERSION:-2.6.2}
+    image: argus-engine/worker-portscan:${ARGUS_ENGINE_VERSION:-2.6.3}
     restart: unless-stopped
     build:
       context: ..
@@ -256,6 +275,8 @@ services:
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
+      Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_PORTSCAN_POSTGRES_MAX_POOL_SIZE:-2}
+      Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_PORTSCAN_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
       command-center:
         condition: service_healthy
@@ -265,9 +286,11 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    deploy:
+      replicas: ${ARGUS_WORKER_PORTSCAN_REPLICAS:-1}
 
   worker-highvalue:
-    image: argus-engine/worker-highvalue:${ARGUS_ENGINE_VERSION:-2.6.2}
+    image: argus-engine/worker-highvalue:${ARGUS_ENGINE_VERSION:-2.6.3}
     restart: unless-stopped
     build:
       context: ..
@@ -279,6 +302,8 @@ services:
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
+      Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_HIGHVALUE_POSTGRES_MAX_POOL_SIZE:-2}
+      Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_HIGHVALUE_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
       command-center:
         condition: service_healthy
@@ -288,9 +313,11 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    deploy:
+      replicas: ${ARGUS_WORKER_HIGHVALUE_REPLICAS:-1}
 
   worker-techid:
-    image: argus-engine/worker-techid:${ARGUS_ENGINE_VERSION:-2.6.2}
+    image: argus-engine/worker-techid:${ARGUS_ENGINE_VERSION:-2.6.3}
     restart: unless-stopped
     build:
       context: ..
@@ -302,6 +329,8 @@ services:
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
+      Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_TECHID_POSTGRES_MAX_POOL_SIZE:-2}
+      Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_TECHID_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
       command-center:
         condition: service_healthy
@@ -311,6 +340,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    deploy:
+      replicas: ${ARGUS_WORKER_TECHID_REPLICAS:-1}
 
 volumes:
   pgdata:

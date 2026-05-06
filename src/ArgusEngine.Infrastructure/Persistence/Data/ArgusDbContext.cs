@@ -22,6 +22,7 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
     public DbSet<CloudResourceUsageSample> CloudResourceUsageSamples => Set<CloudResourceUsageSample>();
     public DbSet<WorkerScaleTarget> WorkerScaleTargets => Set<WorkerScaleTarget>();
     public DbSet<WorkerScalingSetting> WorkerScalingSettings => Set<WorkerScalingSetting>();
+    public DbSet<SystemError> SystemErrors => Set<SystemError>();
     public DbSet<Ec2WorkerMachine> Ec2WorkerMachines => Set<Ec2WorkerMachine>();
     public DbSet<TargetScanState> TargetScanStates => Set<TargetScanState>();
     public DbSet<WorkerHeartbeat> WorkerHeartbeats => Set<WorkerHeartbeat>();

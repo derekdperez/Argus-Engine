@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -55,7 +56,17 @@ public static class ArgusObservabilityExtensions
                 if (!string.IsNullOrWhiteSpace(endpoint))
                     tracing.AddOtlpExporter();
             });
+        
+        return services;
+    }
 
+    public static IServiceCollection AddArgusDatabaseLogging(
+        this IServiceCollection services,
+        string componentName)
+    {
+        services.AddSingleton<ILoggerProvider>(sp => 
+            new ArgusDatabaseLoggerProvider(sp, componentName));
+        
         return services;
     }
 }

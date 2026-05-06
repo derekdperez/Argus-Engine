@@ -136,3 +136,41 @@
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
+
+.error-log-panel {
+    margin-top: 3rem;
+}
+
+.section-heading .actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.badge-component {
+    background: var(--bg-surface-3);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+}
+
+.badge-critical {
+    background: #ff0000;
+    color: #fff;
+    font-weight: 800;
+    animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+    0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+}
+
+.error-grid {
+    --rz-grid-cell-padding: 0.75rem;
+}
+
+.error-grid ::v-deep .rz-grid-table-fixed .rz-cell-data {
+    font-size: 0.85rem;
+}

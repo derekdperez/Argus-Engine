@@ -1,5 +1,9 @@
 @page "/development"
 @using ArgusEngine.Harness.Core
+@using ArgusEngine.Domain.Entities
+@using ArgusEngine.Infrastructure.Persistence.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ArgusDbContext> DbFactory
 @inject HarnessRunner Harness
 @inject IJSRuntime Js
 
@@ -105,11 +109,107 @@
             </div>
         }
     </section>
+
+    <section class="panel error-log-panel">
+        <div class="section-heading">
+            <div class="title-group">
+                <h2>System-Wide Error Log</h2>
+                <p class="muted">Centralized collection of all Critical and Error level logs from all system components.</p>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn small outline" @onclick="RefreshErrorsAsync">
+                    <i class="ms-Icon ms-Icon--Refresh"></i>
+                    <span>Refresh</span>
+                </button>
+                <button type="button" class="btn small danger-outline" @onclick="ClearErrorsAsync">
+                    <i class="ms-Icon ms-Icon--Delete"></i>
+                    <span>Clear All</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="grid-container">
+            <RadzenDataGrid TItem="SystemError" 
+                            Data="@_errors" 
+                            AllowPaging="true" 
+                            PageSize="10" 
+                            AllowSorting="true"
+                            class="dev-grid error-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="SystemError" Property="Timestamp" Title="Time" Width="160px">
+                        <Template Context="e">
+                            @e.Timestamp.ToLocalTime().ToString("MM/dd HH:mm:ss")
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="SystemError" Property="Component" Title="Component" Width="140px">
+                        <Template Context="e">
+                            <span class="badge badge-component">@e.Component</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="SystemError" Property="LogLevel" Title="Level" Width="100px">
+                        <Template Context="e">
+                            <span class="badge @(e.LogLevel == "Critical" ? "badge-critical" : "badge-red")">
+                                @e.LogLevel
+                            </span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="SystemError" Property="Message" Title="Message" />
+                    <RadzenDataGridColumn TItem="SystemError" Title="Details" Width="120px" TextAlign="TextAlign.Center">
+                        <Template Context="e">
+                            @if (!string.IsNullOrEmpty(e.Exception))
+                            {
+                                <button class="btn small outline" @onclick="@(() => ShowErrorDetailAsync(e))">Stack Trace</button>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </div>
+    </section>
 </div>
 
 @code {
     private bool _busy;
     private HarnessResultDto? _result;
+    private List<SystemError> _errors = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshErrorsAsync();
+    }
+
+    private async Task RefreshErrorsAsync()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _errors = await db.SystemErrors
+                .OrderByDescending(e => e.Timestamp)
+                .Take(500)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load errors: {ex.Message}");
+        }
+    }
+
+    private async Task ClearErrorsAsync()
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", "Are you sure you want to clear all system errors?"))
+            return;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            await db.Database.ExecuteSqlRawAsync("TRUNCATE TABLE system_errors");
+            await RefreshErrorsAsync();
+        }
+        catch (Exception ex)
+        {
+            await Js.InvokeVoidAsync("alert", $"Failed to clear errors: {ex.Message}");
+        }
+    }
 
     private async Task RunHarnessAsync()
     {
@@ -119,7 +219,6 @@
 
         try
         {
-            // Give the UI a moment to show the spinner
             await Task.Delay(500);
             _result = await Harness.RunAllAsync(default);
         }
@@ -135,8 +234,11 @@
 
     private async Task ShowOutputAsync(WorkerHealthCheckResultDto r)
     {
-        // In a real premium app, this would be a Radzen Dialog.
-        // For now, let's use a simple confirm/alert or a dedicated section.
         await Js.InvokeVoidAsync("alert", $"{r.WorkerName} Health Check Output:\n\n{r.Output}");
+    }
+
+    private async Task ShowErrorDetailAsync(SystemError e)
+    {
+        await Js.InvokeVoidAsync("alert", $"Error in {e.Component} ({e.LoggerName}):\n\n{e.Message}\n\n{e.Exception}");
     }
 }

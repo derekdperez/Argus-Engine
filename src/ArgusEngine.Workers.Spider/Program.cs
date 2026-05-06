@@ -16,6 +16,7 @@ try
     var builder = Host.CreateApplicationBuilder(args);
 
     builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-spider");
+    builder.Services.AddArgusDatabaseLogging("worker-spider");
 
     builder.Services.AddSingleton<AdaptiveConcurrencyController>();
     builder.Services.AddHostedService<HttpRequestQueueWorker>();

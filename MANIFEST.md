@@ -1,5 +1,9 @@
-# Argus Engine Worker Heartbeat DB Hotfix Manifest
+# Argus Engine command-center runtime hotfix manifest
+
+Modified:
+- src/ArgusEngine.CommandCenter/Startup/CommandCenterServiceRegistration.cs
+- src/ArgusEngine.CommandCenter/appsettings.json
 
 Added:
-- scripts/hotfix-create-worker-heartbeat-tables.sql
-- scripts/apply-worker-heartbeat-db-hotfix.sh
+- scripts/2026-05-06-command-center-runtime-hotfix.sql
+- scripts/apply-command-center-runtime-hotfix.sh

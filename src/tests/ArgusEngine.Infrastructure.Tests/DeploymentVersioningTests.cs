@@ -82,6 +82,32 @@ public sealed class DeploymentVersioningTests
         Assert.Contains("next_attempt_at_utc IS NULL OR next_attempt_at_utc <=", text);
     }
 
+    [Theory]
+    [InlineData("src/ArgusEngine.Gatekeeper/Program.cs")]
+    [InlineData("src/ArgusEngine.Workers.Spider/Program.cs")]
+    [InlineData("src/ArgusEngine.Workers.Enumeration/Program.cs")]
+    [InlineData("src/ArgusEngine.Workers.PortScan/Program.cs")]
+    [InlineData("src/ArgusEngine.Workers.HighValue/Program.cs")]
+    [InlineData("src/ArgusEngine.Workers.TechnologyIdentification/Program.cs")]
+    public void NonCommandCenterProcessesDoNotStartOutboxDispatchers(string relativePath)
+    {
+        var text = File.ReadAllText(ProjectRoot(relativePath));
+
+        Assert.Contains("enableOutboxDispatcher: false", text);
+    }
+
+    [Fact]
+    public void CommandCenterKeepsTheSingleOutboxDispatcher()
+    {
+        var commandCenter = File.ReadAllText(ProjectRoot("src/ArgusEngine.CommandCenter/Startup/CommandCenterServiceRegistration.cs"));
+        var infrastructure = File.ReadAllText(ProjectRoot("src/ArgusEngine.Infrastructure/DependencyInjection.cs"));
+
+        Assert.Contains("services.AddArgusInfrastructure(configuration);", commandCenter);
+        Assert.Contains("bool enableOutboxDispatcher = true", infrastructure);
+        Assert.Contains("if (enableOutboxDispatcher)", infrastructure);
+        Assert.Contains("services.AddHostedService<OutboxDispatcherWorker>();", infrastructure);
+    }
+
     private static string ProjectRoot(string relativePath)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

@@ -18,7 +18,7 @@ try
 
     builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-enum");
     builder.Services.AddArgusDatabaseLogging("worker-enum");
-    builder.Services.AddArgusInfrastructure(builder.Configuration);
+    builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
     builder.Services.AddArgusWorkerHeartbeat(WorkerKeys.Enumeration);
     builder.Services.AddScoped<IWorkerHealthCheck, EnumWorkerHealthCheck>();
 

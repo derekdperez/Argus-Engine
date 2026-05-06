@@ -54,6 +54,29 @@ public sealed class CommandCenterChecklistTests
         Assert.Contains("argusUi.downloadTextFile", text);
     }
 
+    [Fact]
+    public void OperationsWorkerActivityOnlyShowsLiveHeartbeatOnlyRows()
+    {
+        var root = FindRepositoryRoot();
+        var path = Path.Combine(root, "src", "ArgusEngine.CommandCenter", "WorkerActivityQuery.cs");
+        var text = File.ReadAllText(path);
+
+        Assert.Contains("var isAlive = (now - h.LastHeartbeatUtc) < TimeSpan.FromMinutes(2);", text);
+        Assert.Contains("if (!isAlive)", text);
+        Assert.Contains("continue;", text);
+    }
+
+    [Fact]
+    public void EnumerationConsumersResolveToEnumWorkerKind()
+    {
+        var root = FindRepositoryRoot();
+        var path = Path.Combine(root, "src", "ArgusEngine.Application", "Workers", "WorkerConsumerKindResolver.cs");
+        var text = File.ReadAllText(path);
+
+        Assert.Contains("Workers.Enumeration.Consumers.TargetCreatedConsumer", text);
+        Assert.Contains("Workers.Enumeration.Consumers.SubdomainEnumerationRequestedConsumer", text);
+    }
+
     private static string FindRepositoryRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

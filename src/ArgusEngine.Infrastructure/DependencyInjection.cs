@@ -55,10 +55,16 @@ public static class DependencyInjection
         return services;
     }
 
-    public static IServiceCollection AddArgusInfrastructure(this IServiceCollection services, IConfiguration configuration) =>
-        services.AddNightmareInfrastructure(configuration);
+    public static IServiceCollection AddArgusInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        bool enableOutboxDispatcher = true) =>
+        services.AddNightmareInfrastructure(configuration, enableOutboxDispatcher);
 
-    public static IServiceCollection AddNightmareInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddNightmareInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        bool enableOutboxDispatcher = true)
     {
         var isDevelopment = IsDevelopment(configuration);
 
@@ -153,7 +159,11 @@ public static class DependencyInjection
         services.AddSingleton<IPortScanService, DefaultPortScanService>();
         services.AddScoped<IEventOutbox, EfEventOutbox>();
         services.AddScoped<IInboxDeduplicator, EfInboxDeduplicator>();
-        services.AddHostedService<OutboxDispatcherWorker>();
+        if (enableOutboxDispatcher)
+        {
+            services.AddHostedService<OutboxDispatcherWorker>();
+        }
+
         services.AddSingleton<BusJournalBuffer>();
         services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<BusJournalBuffer>());
         services.AddSingleton<BusJournalPublishObserver>();

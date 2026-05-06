@@ -18,7 +18,7 @@ try
 
     builder.Services.AddArgusObservability(builder.Configuration, "argus-gatekeeper");
     builder.Services.AddArgusDatabaseLogging("gatekeeper");
-    builder.Services.AddArgusInfrastructure(builder.Configuration);
+    builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
     builder.Services.AddArgusWorkerHeartbeat(WorkerKeys.Gatekeeper);
     builder.Services.AddScoped<GatekeeperOrchestrator>();
     builder.Services.AddScoped<IWorkerHealthCheck, GatekeeperWorkerHealthCheck>();

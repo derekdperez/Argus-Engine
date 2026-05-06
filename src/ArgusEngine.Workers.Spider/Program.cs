@@ -21,7 +21,7 @@ try
     builder.Services.AddSingleton<AdaptiveConcurrencyController>();
     builder.Services.AddHostedService<HttpRequestQueueWorker>();
 
-    builder.Services.AddArgusInfrastructure(builder.Configuration);
+    builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
     builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.Spider);
     builder.Services.AddScoped<IWorkerHealthCheck, SpiderWorkerHealthCheck>();
     builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });

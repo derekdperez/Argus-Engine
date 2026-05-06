@@ -103,6 +103,10 @@ internal static class WorkerActivityQuery
         {
             if (instances.Any(i => i.HostName == h.HostName)) continue;
 
+            var isAlive = (now - h.LastHeartbeatUtc) < TimeSpan.FromMinutes(2);
+            if (!isAlive)
+                continue;
+
             instances.Add(new WorkerInstanceActivityDto(
                 h.HostName,
                 h.WorkerKey,

@@ -17,7 +17,7 @@ try
     var builder = Host.CreateApplicationBuilder(args);
 
     builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-tech-id");
-    builder.Services.AddArgusInfrastructure(builder.Configuration);
+    builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
     builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.TechnologyIdentification);
     builder.Services.AddScoped<IWorkerHealthCheck, TechIdWorkerHealthCheck>();
 

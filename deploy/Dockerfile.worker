@@ -23,7 +23,7 @@ COPY src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj src/
 COPY src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj src/ArgusEngine.Workers.PortScan/
 COPY src/ArgusEngine.Workers.Spider/ArgusEngine.Workers.Spider.csproj src/ArgusEngine.Workers.Spider/
 COPY src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj src/ArgusEngine.Workers.TechnologyIdentification/
-COPY src/ArgusEngine.Workers.Enum/ArgusEngine.Workers.Enum.csproj src/ArgusEngine.Workers.Enum/
+COPY src/ArgusEngine.Workers.Enumeration/ArgusEngine.Workers.Enumeration.csproj src/ArgusEngine.Workers.Enumeration/
 COPY src/ArgusEngine.Harness.Core/ArgusEngine.Harness.Core.csproj src/ArgusEngine.Harness.Core/
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
@@ -34,7 +34,7 @@ COPY src/ArgusEngine.Application/ src/ArgusEngine.Application/
 COPY src/ArgusEngine.Contracts/ src/ArgusEngine.Contracts/
 COPY src/ArgusEngine.Domain/ src/ArgusEngine.Domain/
 COPY src/ArgusEngine.Infrastructure/ src/ArgusEngine.Infrastructure/
-COPY src/ArgusEngine.Workers.Enum/ src/ArgusEngine.Workers.Enum/
+COPY src/ArgusEngine.Workers.Enumeration/ src/ArgusEngine.Workers.Enumeration/
 COPY src/ArgusEngine.Harness.Core/ src/ArgusEngine.Harness.Core/
 COPY src/${PROJECT_DIR}/ src/${PROJECT_DIR}/
 

@@ -206,8 +206,8 @@ services:
       dockerfile: deploy/Dockerfile.worker-enum
       args:
         <<: *enum-build-args
-        PROJECT_DIR: ArgusEngine.Workers.Enum
-        APP_DLL: ArgusEngine.Workers.Enum.dll
+        PROJECT_DIR: ArgusEngine.Workers.Enumeration
+        APP_DLL: ArgusEngine.Workers.Enumeration.dll
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"

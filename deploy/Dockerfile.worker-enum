@@ -2,8 +2,8 @@
 # Enum worker image. This is separate from the generic worker Dockerfile so subfinder/amass are not
 # rebuilt or copied into every worker image.
 
-ARG PROJECT_DIR=ArgusEngine.Workers.Enum
-ARG APP_DLL=ArgusEngine.Workers.Enum.dll
+ARG PROJECT_DIR=ArgusEngine.Workers.Enumeration
+ARG APP_DLL=ArgusEngine.Workers.Enumeration.dll
 
 FROM golang:1.26.2-bookworm AS recon-tools
 
@@ -33,7 +33,7 @@ COPY src/ArgusEngine.Application/ArgusEngine.Application.csproj src/ArgusEngine.
 COPY src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj src/ArgusEngine.Contracts/
 COPY src/ArgusEngine.Domain/ArgusEngine.Domain.csproj src/ArgusEngine.Domain/
 COPY src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj src/ArgusEngine.Infrastructure/
-COPY src/ArgusEngine.Workers.Enum/ArgusEngine.Workers.Enum.csproj src/ArgusEngine.Workers.Enum/
+COPY src/ArgusEngine.Workers.Enumeration/ArgusEngine.Workers.Enumeration.csproj src/ArgusEngine.Workers.Enumeration/
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
@@ -42,7 +42,7 @@ COPY src/ArgusEngine.Application/ src/ArgusEngine.Application/
 COPY src/ArgusEngine.Contracts/ src/ArgusEngine.Contracts/
 COPY src/ArgusEngine.Domain/ src/ArgusEngine.Domain/
 COPY src/ArgusEngine.Infrastructure/ src/ArgusEngine.Infrastructure/
-COPY src/ArgusEngine.Workers.Enum/ src/ArgusEngine.Workers.Enum/
+COPY src/ArgusEngine.Workers.Enumeration/ src/ArgusEngine.Workers.Enumeration/
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \

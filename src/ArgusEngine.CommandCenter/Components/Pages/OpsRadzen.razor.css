@@ -10,6 +10,25 @@
     gap: 1rem;
 }
 
+.ops-page-lite .ops-scope-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1rem;
+}
+
+.ops-page-lite .scope-panel {
+    display: flex;
+    flex-direction: column;
+    height: 50vh;
+    min-height: 18rem;
+}
+
+.ops-page-lite .scope-table-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+}
+
 .ops-page-lite .metric-card,
 .ops-page-lite .panel,
 .ops-page-lite .worker-card {
@@ -119,6 +138,14 @@
     min-width: 640px;
 }
 
+.ops-page-lite .targets-table {
+    min-width: 760px;
+}
+
+.ops-page-lite .subdomains-table {
+    min-width: 620px;
+}
+
 .ops-page-lite .event-table {
     min-width: 860px;
 }
@@ -147,6 +174,18 @@
 
 .ops-page-lite .ops-table a {
     color: var(--primary-strong);
+}
+
+.ops-page-lite .selectable-row {
+    cursor: pointer;
+}
+
+.ops-page-lite .selectable-row:hover td {
+    background: #f8fafc;
+}
+
+.ops-page-lite .selectable-row.selected td {
+    background: #dbeafe;
 }
 
 .ops-page-lite .clip {
@@ -255,6 +294,14 @@
     .ops-page-lite .ops-rz-toolbar.simple {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .ops-page-lite .ops-scope-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ops-page-lite .scope-panel {
+        height: 42vh;
     }
 
     .ops-page-lite .ops-split-grid {

@@ -11,82 +11,80 @@
 <PageTitle>Operations - Argus Engine</PageTitle>
 
 <div class="page-shell ops-page ops-page-lite">
-    <section class="page-hero ops-hero">
-        <div>
-            <p class="eyebrow">Command center</p>
-            <h1>Operations</h1>
-            <p class="hero-copy">Command-center workspace for target scope, confirmed asset inventory, HTTP request queue, and worker runtime health.</p>
-        </div>
-
-        <button type="button" class="btn primary" @onclick="ReloadAllAsync" disabled="@_loading">
-            @(_loading ? "Refreshing..." : "Refresh")
-        </button>
-    </section>
-
     @if (!string.IsNullOrWhiteSpace(_statusMessage))
     {
         <div class="ops-alert">@_statusMessage</div>
     }
 
-    <section class="metrics-grid">
-        <article class="metric-card">
-            <span>Targets</span>
-            <strong>@FormatNumber(TargetCount)</strong>
-        </article>
-        <article class="metric-card">
-            <span>Confirmed assets</span>
-            <strong>@FormatNumber(OverviewLong("totalAssetsConfirmed"))</strong>
-        </article>
-        <article class="metric-card">
-            <span>Subdomains confirmed</span>
-            <strong>@FormatNumber(SubdomainsConfirmed)</strong>
-        </article>
-        <article class="metric-card">
-            <span>HTTP queue</span>
-            <strong>@FormatNumber(HttpQueueCount)</strong>
-        </article>
-        <article class="metric-card wide">
-            <span>Top domain</span>
-            <strong>@TopDomainLabel</strong>
-        </article>
-    </section>
-
-    <section class="panel">
-        <div class="section-heading">
-            <div>
-                <p class="eyebrow">Scope</p>
-                <h2>Targets</h2>
+    <section class="ops-scope-grid">
+        <section class="panel scope-panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Scope</p>
+                    <h2>Targets</h2>
+                </div>
+                <span class="muted">@FormatNumber(TargetCount)</span>
             </div>
-            <span class="muted">@FormatNumber(TargetCount) configured targets</span>
-        </div>
 
-        <div class="ops-table-wrap compact">
-            <table class="ops-table targets-table">
-                <thead>
-                    <tr>
-                        <th>Root domain</th>
-                        <th>Max depth</th>
-                        <th>Confirmed subdomains</th>
-                        <th>Confirmed assets</th>
-                        <th>Confirmed URLs</th>
-                        <th>Last run</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var t in _targets)
-                    {
+            <div class="ops-table-wrap scope-table-wrap">
+                <table class="ops-table targets-table">
+                    <thead>
                         <tr>
-                            <td class="clip" title="@Text(t, "rootDomain", "RootDomain")">@Text(t, "rootDomain", "RootDomain")</td>
-                            <td>@DisplayOrDash(Text(t, "globalMaxDepth", "GlobalMaxDepth"))</td>
-                            <td>@FormatNumber(Long(t, "subdomainCount", "SubdomainCount"))</td>
-                            <td>@FormatNumber(Long(t, "confirmedAssetCount", "ConfirmedAssetCount"))</td>
-                            <td>@FormatNumber(Long(t, "confirmedUrlCount", "ConfirmedUrlCount"))</td>
-                            <td>@FormatTime(Text(t, "lastRunAtUtc", "LastRunAtUtc"))</td>
+                            <th>Target name</th>
+                            <th>Max depth</th>
+                            <th>Subdomains</th>
+                            <th>Confirmed assets</th>
+                            <th>Last run</th>
                         </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in _targets)
+                        {
+                            <tr class="selectable-row @(IsSelectedTarget(t) ? "selected" : "")" @onclick="@(() => SelectTarget(t))">
+                                <td class="clip" title="@Text(t, "rootDomain", "RootDomain")">@Text(t, "rootDomain", "RootDomain")</td>
+                                <td>@DisplayOrDash(Text(t, "globalMaxDepth", "GlobalMaxDepth"))</td>
+                                <td>@FormatNumber(Long(t, "subdomainCount", "SubdomainCount"))</td>
+                                <td>@FormatNumber(Long(t, "confirmedAssetCount", "ConfirmedAssetCount"))</td>
+                                <td>@FormatTime(Text(t, "lastRunAtUtc", "LastRunAtUtc"))</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel scope-panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Scope</p>
+                    <h2>Subdomains</h2>
+                </div>
+                <span class="muted">@SelectedTargetLabel</span>
+            </div>
+
+            <div class="ops-table-wrap scope-table-wrap">
+                <table class="ops-table subdomains-table">
+                    <thead>
+                        <tr>
+                            <th>Subdomain</th>
+                            <th>Discovered</th>
+                            <th>How found</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var subdomain in SubdomainRows)
+                        {
+                            var name = SubdomainName(subdomain);
+                            <tr class="selectable-row @(IsSelectedSubdomain(name) ? "selected" : "")" @onclick="@(() => SelectSubdomain(name))">
+                                <td class="clip" title="@name">@DisplayOrDash(name)</td>
+                                <td>@FormatTime(Text(subdomain, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
+                                <td class="clip" title="@Text(subdomain, "discoveryContext", "DiscoveryContext")">@DisplayOrDash(Text(subdomain, "discoveryContext", "DiscoveryContext"))</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
     </section>
 
     <section class="panel">
@@ -379,11 +377,12 @@
     private readonly List<JsonElement> _rabbitQueues = [];
     private readonly List<JsonElement> _events = [];
 
-    private bool _loading;
     private bool _assetsLoading;
     private string _assetSearch = "";
     private string _httpStateFilter = "";
     private string _statusMessage = "";
+    private string? _selectedTargetId;
+    private string? _selectedSubdomain;
 
     private int TargetCount => _targets.Count;
     private int HttpQueueCount => _queue.Count;
@@ -416,9 +415,32 @@
         }
     }
 
-    private ICollection<JsonElement> FilteredAssetRows => string.IsNullOrWhiteSpace(_assetSearch)
-        ? _assets
-        : _assets.Where(a => Matches(a, _assetSearch)).ToArray();
+    private ICollection<JsonElement> FilteredAssetRows => _assets
+        .Where(MatchesSelectedTarget)
+        .Where(MatchesSelectedSubdomain)
+        .Where(a => string.IsNullOrWhiteSpace(_assetSearch) || Matches(a, _assetSearch))
+        .ToArray();
+
+    private IEnumerable<JsonElement> SubdomainRows => _assets
+        .Where(MatchesSelectedTarget)
+        .Where(a => Text(a, "kind", "Kind").Equals("Subdomain", StringComparison.OrdinalIgnoreCase))
+        .GroupBy(SubdomainName, StringComparer.OrdinalIgnoreCase)
+        .Where(g => !string.IsNullOrWhiteSpace(g.Key))
+        .Select(g => g.OrderByDescending(a => Text(a, "discoveredAtUtc", "DiscoveredAtUtc"), StringComparer.Ordinal).First())
+        .OrderBy(SubdomainName, StringComparer.OrdinalIgnoreCase);
+
+    private string SelectedTargetLabel
+    {
+        get
+        {
+            var target = _targets.FirstOrDefault(t => IsSelectedTarget(t));
+            var label = target.ValueKind == JsonValueKind.Object
+                ? Text(target, "rootDomain", "RootDomain")
+                : "";
+
+            return string.IsNullOrWhiteSpace(label) ? "Select a target" : label;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -427,7 +449,6 @@
 
     private async Task ReloadAllAsync()
     {
-        _loading = true;
         _statusMessage = "";
 
         try
@@ -448,7 +469,7 @@
         }
         finally
         {
-            _loading = false;
+            EnsureSelection();
         }
     }
 
@@ -467,6 +488,7 @@
     private async Task ReloadTargetsAsync()
     {
         Replace(_targets, await GetArrayAsync("/api/targets"));
+        EnsureSelection();
     }
 
     private async Task ReloadAssetsAsync()
@@ -479,8 +501,120 @@
         }
         finally
         {
+            EnsureSelection();
             _assetsLoading = false;
         }
+    }
+
+    private void EnsureSelection()
+    {
+        if (_targets.Count == 0)
+        {
+            _selectedTargetId = null;
+            _selectedSubdomain = null;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_selectedTargetId) || !_targets.Any(t => IsSelectedTarget(t)))
+        {
+            SelectTarget(_targets[0]);
+        }
+    }
+
+    private bool IsSelectedTarget(JsonElement target) =>
+        !string.IsNullOrWhiteSpace(_selectedTargetId)
+        && Text(target, "id", "Id").Equals(_selectedTargetId, StringComparison.OrdinalIgnoreCase);
+
+    private void SelectTarget(JsonElement target)
+    {
+        var targetId = Text(target, "id", "Id");
+        if (string.IsNullOrWhiteSpace(targetId))
+        {
+            return;
+        }
+
+        if (!string.Equals(_selectedTargetId, targetId, StringComparison.OrdinalIgnoreCase))
+        {
+            _selectedSubdomain = null;
+        }
+
+        _selectedTargetId = targetId;
+    }
+
+    private bool IsSelectedSubdomain(string subdomain) =>
+        !string.IsNullOrWhiteSpace(_selectedSubdomain)
+        && subdomain.Equals(_selectedSubdomain, StringComparison.OrdinalIgnoreCase);
+
+    private void SelectSubdomain(string subdomain)
+    {
+        _selectedSubdomain = string.IsNullOrWhiteSpace(subdomain) ? null : subdomain;
+    }
+
+    private bool MatchesSelectedTarget(JsonElement asset) =>
+        string.IsNullOrWhiteSpace(_selectedTargetId)
+        || Text(asset, "targetId", "TargetId").Equals(_selectedTargetId, StringComparison.OrdinalIgnoreCase);
+
+    private bool MatchesSelectedSubdomain(JsonElement asset)
+    {
+        if (string.IsNullOrWhiteSpace(_selectedSubdomain))
+        {
+            return true;
+        }
+
+        var subdomain = _selectedSubdomain.Trim();
+        if (Text(asset, "kind", "Kind").Equals("Subdomain", StringComparison.OrdinalIgnoreCase))
+        {
+            return SubdomainName(asset).Equals(subdomain, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var candidates = new[]
+        {
+            Text(asset, "finalUrl", "FinalUrl"),
+            Text(asset, "rawValue", "RawValue"),
+            Text(asset, "canonicalKey", "CanonicalKey"),
+            Text(asset, "displayName", "DisplayName"),
+            Text(asset, "discoveryContext", "DiscoveryContext")
+        };
+
+        return candidates.Any(value => ValueBelongsToSubdomain(value, subdomain));
+    }
+
+    private static bool ValueBelongsToSubdomain(string value, string subdomain)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return HostMatches(uri.Host, subdomain);
+        }
+
+        return value.Contains(subdomain, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HostMatches(string host, string subdomain) =>
+        host.Equals(subdomain, StringComparison.OrdinalIgnoreCase)
+        || host.EndsWith("." + subdomain, StringComparison.OrdinalIgnoreCase);
+
+    private static string SubdomainName(JsonElement asset)
+    {
+        foreach (var name in new[] { "displayName", "DisplayName", "rawValue", "RawValue", "canonicalKey", "CanonicalKey", "finalUrl", "FinalUrl" })
+        {
+            var value = Text(asset, name);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+                {
+                    return uri.Host;
+                }
+
+                return value.Trim();
+            }
+        }
+
+        return "";
     }
 
     private async Task ReloadHttpQueueAsync()

@@ -72,15 +72,9 @@ RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locke
     /p:InformationalVersion="${COMPONENT_VERSION}" \
   && test -s /app/publish/ArgusEngine.CommandCenter.dll
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS final
-# Npgsql can dlopen Kerberos for Postgres auth negotiation; slim runtime image omits it by default.
-
-# curl: Docker HEALTHCHECK + manual probes.
-
-# docker: CLI used by runtime container/image/log inspection and component update actions.
-# git: used by the Development page component updater to compare/pull GitHub main.
-
-RUN apk add --no-cache krb5-libs curl docker git
+FROM argus-engine-base:local AS final
+ARG BUILD_SOURCE_STAMP=unknown
+ARG COMPONENT_VERSION=2.6.2
 
 WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080

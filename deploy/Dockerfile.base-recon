@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1.7
+FROM golang:1.26.2-alpine AS build
+
+ARG SUBFINDER_PACKAGE=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.14.0
+ARG AMASS_PACKAGE=github.com/owasp-amass/amass/v5/cmd/amass@v5.1.1
+
+ENV GOBIN=/out \
+    CGO_ENABLED=0
+
+RUN apk add --no-cache git \
+    && mkdir -p /out \
+    && go install -v "${SUBFINDER_PACKAGE}" \
+    && go install -v "${AMASS_PACKAGE}" \
+    && test -x /out/subfinder \
+    && test -x /out/amass
+
+FROM scratch
+COPY --from=build /out/subfinder /subfinder
+COPY --from=build /out/amass /amass

@@ -1,0 +1,9 @@
+# syntax=docker/dockerfile:1.7
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+# Common dependencies for Argus Engine runtime
+RUN apk add --no-cache \
+    ca-certificates \
+    krb5-libs \
+    curl \
+    docker \
+    git

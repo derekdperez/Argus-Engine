@@ -17,6 +17,7 @@
     <ProjectReference Include="..\ArgusEngine.Workers.PortScan\ArgusEngine.Workers.PortScan.csproj" />
     <ProjectReference Include="..\ArgusEngine.Workers.HighValue\ArgusEngine.Workers.HighValue.csproj" />
     <ProjectReference Include="..\ArgusEngine.Workers.TechnologyIdentification\ArgusEngine.Workers.TechnologyIdentification.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Workers.HttpRequester\ArgusEngine.Workers.HttpRequester.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -6,8 +6,12 @@
 
 .ops-page-lite .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.75rem;
+}
+
+.ops-page-lite .ops-summary-grid {
+    align-items: stretch;
 }
 
 .ops-page-lite .ops-scope-grid {
@@ -39,19 +43,22 @@
 }
 
 .ops-page-lite .metric-card {
-    padding: 1rem;
+    padding: 0.75rem 0.85rem;
 }
 
 .ops-page-lite .metric-card span {
     display: block;
     color: var(--muted);
-    font-size: 0.85rem;
-    margin-bottom: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
 }
 
 .ops-page-lite .metric-card strong {
     color: var(--text);
-    font-size: 1.6rem;
+    font-size: 1.35rem;
     line-height: 1.2;
 }
 
@@ -201,6 +208,7 @@
     font-weight: 800;
     padding: 0;
     text-align: left;
+    white-space: nowrap;
 }
 
 .ops-page-lite .sort-header:hover {

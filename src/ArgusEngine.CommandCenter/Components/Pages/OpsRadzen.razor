@@ -16,6 +16,41 @@
         <div class="ops-alert">@_statusMessage</div>
     }
 
+    <section class="metrics-grid ops-summary-grid">
+        <article class="metric-card">
+            <span>Targets</span>
+            <strong>@FormatNumber(TotalTargets)</strong>
+        </article>
+        <article class="metric-card">
+            <span>Confirmed Assets</span>
+            <strong>@FormatNumber(ConfirmedAssets)</strong>
+        </article>
+        <article class="metric-card">
+            <span>Confirmed Subdomains</span>
+            <strong>@FormatNumber(ConfirmedSubdomains)</strong>
+        </article>
+        <article class="metric-card">
+            <span>Running Workers</span>
+            <strong>@FormatNumber(RunningWorkerCount)</strong>
+        </article>
+        <article class="metric-card">
+            <span>Failed / Errored Workers</span>
+            <strong>@FormatNumber(FailedWorkerCount)</strong>
+        </article>
+        <article class="metric-card">
+            <span>HTTP Queue</span>
+            <strong>@FormatNumber(HttpQueueCount)</strong>
+        </article>
+        <article class="metric-card">
+            <span>Message Bus Queues</span>
+            <strong>@FormatNumber(_rabbitQueues.Count)</strong>
+        </article>
+        <article class="metric-card">
+            <span>Published Events</span>
+            <strong>@FormatNumber(_events.Count)</strong>
+        </article>
+    </section>
+
     <section class="ops-scope-grid">
         <section class="panel scope-panel">
             <div class="section-heading">
@@ -45,11 +80,11 @@
                 <table class="ops-table targets-table">
                     <thead>
                         <tr>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("name"))">Target@SortIndicator(_targetSort, "name", _targetSortDescending)</button></th>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("depth"))">Depth@SortIndicator(_targetSort, "depth", _targetSortDescending)</button></th>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("subdomains"))">Subs@SortIndicator(_targetSort, "subdomains", _targetSortDescending)</button></th>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("assets"))">Assets@SortIndicator(_targetSort, "assets", _targetSortDescending)</button></th>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("lastRun"))">Last run@SortIndicator(_targetSort, "lastRun", _targetSortDescending)</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("name"))">Target</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("depth"))">Depth</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("subdomains"))">Subs</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("assets"))">Assets</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("lastRun"))">Last run</button></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -94,9 +129,9 @@
                 <table class="ops-table subdomains-table">
                     <thead>
                         <tr>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetSubdomainSort("name"))">Subdomain@SortIndicator(_subdomainSort, "name", _subdomainSortDescending)</button></th>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetSubdomainSort("discovered"))">Discovered@SortIndicator(_subdomainSort, "discovered", _subdomainSortDescending)</button></th>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetSubdomainSort("context"))">How found@SortIndicator(_subdomainSort, "context", _subdomainSortDescending)</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetSubdomainSort("name"))">Subdomain</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetSubdomainSort("discovered"))">Discovered</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetSubdomainSort("context"))">How found</button></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -150,12 +185,12 @@
             <table class="ops-table asset-table">
                 <thead>
                     <tr>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("discovered"))">Discovered@SortIndicator(_assetSort, "discovered", _assetSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("lastSeen"))">Last seen@SortIndicator(_assetSort, "lastSeen", _assetSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("kind"))">Kind@SortIndicator(_assetSort, "kind", _assetSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("category"))">Category@SortIndicator(_assetSort, "category", _assetSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("url"))">Final URL@SortIndicator(_assetSort, "url", _assetSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("context"))">How found@SortIndicator(_assetSort, "context", _assetSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("discovered"))">Discovered</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("lastSeen"))">Last seen</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("kind"))">Kind</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("category"))">Category</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("url"))">Final URL</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("context"))">How found</button></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -225,15 +260,15 @@
                 <thead>
                     <tr>
                         <th>Select</th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("created"))">Created@SortIndicator(_httpSort, "created", _httpSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("state"))">State@SortIndicator(_httpSort, "state", _httpSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("method"))">Method@SortIndicator(_httpSort, "method", _httpSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("url"))">URL@SortIndicator(_httpSort, "url", _httpSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("domain"))">Domain@SortIndicator(_httpSort, "domain", _httpSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("attempts"))">Attempts@SortIndicator(_httpSort, "attempts", _httpSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("status"))">Status@SortIndicator(_httpSort, "status", _httpSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("duration"))">Duration@SortIndicator(_httpSort, "duration", _httpSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("error"))">Error@SortIndicator(_httpSort, "error", _httpSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("created"))">Created</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("state"))">State</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("method"))">Method</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("url"))">URL</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("domain"))">Domain</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("attempts"))">Attempts</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("status"))">Status</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("duration"))">Duration</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("error"))">Error</button></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -293,11 +328,11 @@
                     <table class="ops-table bus-table">
                         <thead>
                             <tr>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("queue"))">Queue@SortIndicator(_rabbitSort, "queue", _rabbitSortDescending)</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("ready"))">Ready@SortIndicator(_rabbitSort, "ready", _rabbitSortDescending)</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("unacked"))">Unacked@SortIndicator(_rabbitSort, "unacked", _rabbitSortDescending)</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("consumers"))">Consumers@SortIndicator(_rabbitSort, "consumers", _rabbitSortDescending)</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("worker"))">Worker@SortIndicator(_rabbitSort, "worker", _rabbitSortDescending)</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("queue"))">Queue</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("ready"))">Ready</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("unacked"))">Unacked</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("consumers"))">Consumers</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("worker"))">Worker</button></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -335,12 +370,12 @@
                     <table class="ops-table event-table">
                         <thead>
                             <tr>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("published"))">Published@SortIndicator(_eventSort, "published", _eventSortDescending)</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("event"))">Event@SortIndicator(_eventSort, "event", _eventSortDescending)</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("producer"))">Producer@SortIndicator(_eventSort, "producer", _eventSortDescending)</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("host"))">Host@SortIndicator(_eventSort, "host", _eventSortDescending)</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("consumers"))">Consumers@SortIndicator(_eventSort, "consumers", _eventSortDescending)</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("payload"))">Payload@SortIndicator(_eventSort, "payload", _eventSortDescending)</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("published"))">Published</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("event"))">Event</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("producer"))">Producer</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("host"))">Host</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("consumers"))">Consumers</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("payload"))">Payload</button></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -435,13 +470,13 @@
             <table class="ops-table worker-table">
                 <thead>
                     <tr>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("host"))">Host@SortIndicator(_workerSort, "host", _workerSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("worker"))">Worker@SortIndicator(_workerSort, "worker", _workerSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("consumer"))">Consumer@SortIndicator(_workerSort, "consumer", _workerSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("health"))">Health@SortIndicator(_workerSort, "health", _workerSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("lastActive"))">Last active@SortIndicator(_workerSort, "lastActive", _workerSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("message"))">Message@SortIndicator(_workerSort, "message", _workerSortDescending)</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("duration"))">Duration@SortIndicator(_workerSort, "duration", _workerSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("host"))">Host</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("worker"))">Worker</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("consumer"))">Consumer</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("health"))">Health</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("lastActive"))">Last active</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("message"))">Message</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("duration"))">Duration</button></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -508,14 +543,19 @@
     private readonly HashSet<string> _selectedHttpIds = new(StringComparer.OrdinalIgnoreCase);
 
     private bool UsingEcsWorkers => _workerScaleTargets.Count > 0;
+    private long TotalTargets => _targets.Count;
+    private long ConfirmedAssets => _targets.Sum(t => Long(t, "confirmedAssetCount", "ConfirmedAssetCount"));
+    private long ConfirmedSubdomains => _targets.Sum(t => Long(t, "subdomainCount", "SubdomainCount"));
+    private long RunningWorkerCount => UsingEcsWorkers
+        ? _workerScaleTargets.Sum(w => Long(w, "runningCount", "RunningCount"))
+        : _workerInstances.Count;
+    private long FailedWorkerCount => _workerInstances.LongCount(IsFailedWorker);
+    private long HttpQueueCount => _queue.Count;
 
     private string WorkerHealthTitle => UsingEcsWorkers ? "ECS worker health" : "Local / EC2 worker health";
     private string WorkerHealthSubtitle => UsingEcsWorkers
         ? "ECS service scale targets and live worker activity"
         : "Workers running with the local or EC2 deployment";
-
-    private long SubdomainsConfirmed =>
-        _targets.Sum(t => Long(t, "subdomainCount", "SubdomainCount"));
 
     private string TopDomainLabel
     {
@@ -696,6 +736,16 @@
             "idle" => status.Contains("idle", StringComparison.OrdinalIgnoreCase),
             _ => true,
         };
+    }
+
+    private static bool IsFailedWorker(JsonElement worker)
+    {
+        var status = Text(worker, "status", "Status", "activityLabel", "ActivityLabel");
+        var error = Text(worker, "error", "Error");
+        return !string.IsNullOrWhiteSpace(error)
+            || status.Contains("error", StringComparison.OrdinalIgnoreCase)
+            || status.Contains("failed", StringComparison.OrdinalIgnoreCase)
+            || status.Contains("unhealthy", StringComparison.OrdinalIgnoreCase);
     }
 
     private string TargetSortKey(JsonElement target) =>
@@ -1137,11 +1187,6 @@
         sort = key;
         descending = false;
     }
-
-    private static string SortIndicator(string current, string key, bool descending) =>
-        current.Equals(key, StringComparison.OrdinalIgnoreCase)
-            ? (descending ? " v" : " ^")
-            : "";
 
     private static ICollection<JsonElement> MaterializeSorted(
         IEnumerable<JsonElement> rows,

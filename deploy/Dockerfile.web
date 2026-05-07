@@ -1,7 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
 # Build context: repository root. Optimized for incremental feedback-loop builds.
-
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 WORKDIR /src
@@ -17,14 +16,19 @@ COPY src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj src/ArgusEngine.Cont
 COPY src/ArgusEngine.Domain/ArgusEngine.Domain.csproj src/ArgusEngine.Domain/
 
 COPY src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj src/ArgusEngine.Infrastructure/
+
 COPY src/ArgusEngine.Harness.Core/ArgusEngine.Harness.Core.csproj src/ArgusEngine.Harness.Core/
+
 COPY src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj src/ArgusEngine.Gatekeeper/
+
 COPY src/ArgusEngine.Workers.Enumeration/ArgusEngine.Workers.Enumeration.csproj src/ArgusEngine.Workers.Enumeration/
 COPY src/ArgusEngine.Workers.Spider/ArgusEngine.Workers.Spider.csproj src/ArgusEngine.Workers.Spider/
-COPY src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj src/ArgusEngine.Workers.PortScan/
-COPY src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj src/ArgusEngine.Workers.HighValue/
-COPY src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj src/ArgusEngine.Workers.TechnologyIdentification/
 
+COPY src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj src/ArgusEngine.Workers.PortScan/
+
+COPY src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj src/ArgusEngine.Workers.HighValue/
+
+COPY src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj src/ArgusEngine.Workers.TechnologyIdentification/
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
  dotnet restore "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj"
 # Copy only the project dependency closure used by the web app.
@@ -39,12 +43,18 @@ COPY src/ArgusEngine.Contracts/ src/ArgusEngine.Contracts/
 COPY src/ArgusEngine.Domain/ src/ArgusEngine.Domain/
 
 COPY src/ArgusEngine.Infrastructure/ src/ArgusEngine.Infrastructure/
+
 COPY src/ArgusEngine.Harness.Core/ src/ArgusEngine.Harness.Core/
+
 COPY src/ArgusEngine.Gatekeeper/ src/ArgusEngine.Gatekeeper/
 COPY src/ArgusEngine.Workers.Enumeration/ src/ArgusEngine.Workers.Enumeration/
+
 COPY src/ArgusEngine.Workers.Spider/ src/ArgusEngine.Workers.Spider/
+
 COPY src/ArgusEngine.Workers.PortScan/ src/ArgusEngine.Workers.PortScan/
+
 COPY src/ArgusEngine.Workers.HighValue/ src/ArgusEngine.Workers.HighValue/
+
 COPY src/ArgusEngine.Workers.TechnologyIdentification/ src/ArgusEngine.Workers.TechnologyIdentification/
 
 COPY src/Resources/ src/Resources/
@@ -59,15 +69,21 @@ RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locke
  /p:InformationalVersion="${COMPONENT_VERSION}" \
  && test -s /app/publish/ArgusEngine.CommandCenter.dll \
  && if [ -s /app/publish/wwwroot/_framework/blazor.web.js ]; then \
- ! grep -q "^404: Not Found" /app/publish/wwwroot/_framework/blazor.web.js; \
- else \
- echo "blazor.web.js was not published as a physical wwwroot file; static web assets will be served by the app."; \
- fi
+      if grep -q "^404: Not Found" /app/publish/wwwroot/_framework/blazor.web.js; then \
+        echo "WARNING: published wwwroot/_framework/blazor.web.js contains a cached 404 response; removing the physical file so ASP.NET Core static web assets can serve the framework script."; \
+        rm -f /app/publish/wwwroot/_framework/blazor.web.js; \
+      else \
+        echo "blazor.web.js was published as a valid physical wwwroot file."; \
+      fi; \
+    else \
+      echo "blazor.web.js was not published as a physical wwwroot file; static web assets will be served by the app."; \
+    fi
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 # Npgsql can dlopen Kerberos for Postgres auth negotiation; slim runtime image omits it by default.
 
 # curl: Docker HEALTHCHECK + manual probes.
+
 # docker.io: CLI used by runtime container/image/log inspection and component update actions.
 # git: used by the Development page component updater to compare/pull GitHub main.
 
@@ -76,8 +92,8 @@ RUN sed -i 's/archive.ubuntu.com/mirrors.edge.kernel.org/g' /etc/apt/sources.lis
  && apt-get -o Acquire::Retries=5 update \
  && apt-get -o Acquire::Retries=5 install -y --no-install-recommends libgssapi-krb5-2 curl docker.io git \
  && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
 
+WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080
 # Blazor Server components call this app's own JSON endpoints from inside the container.
 
@@ -105,7 +121,5 @@ LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
 LABEL org.opencontainers.image.version="${COMPONENT_VERSION}"
 
 ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
-
 ENV ARGUS_COMPONENT_VERSION=${COMPONENT_VERSION}
-
 ENTRYPOINT ["dotnet", "ArgusEngine.CommandCenter.dll"]

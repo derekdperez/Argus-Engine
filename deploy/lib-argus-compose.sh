@@ -819,7 +819,20 @@ argus_note_built_services() {
   export argus_BUILT_SERVICES
 }
 
+argus_ensure_base_images() {
+  if [[ "${argus_DEPLOY_SKIP_BUILD:-0}" == "1" ]]; then
+    return 0
+  fi
+  if ! argus_docker image inspect argus-engine-base:local >/dev/null 2>&1 || \
+     ! argus_docker image inspect argus-recon-base:local >/dev/null 2>&1; then
+    echo "One or more Argus base images (argus-engine-base:local, argus-recon-base:local) are missing."
+    echo "Building base images now to satisfy dependencies..."
+    bash "$ROOT/deploy/build-base-images.sh"
+  fi
+}
+
 argus_compose_build_service_list() {
+  argus_ensure_base_images
   local args=(build)
   local built_services=("$@")
   [[ "${argus_PULL_IMAGES:-0}" == "1" || "${argus_DEPLOY_FRESH:-0}" == "1" ]] && args+=(--pull)

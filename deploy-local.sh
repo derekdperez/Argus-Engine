@@ -76,6 +76,7 @@ SCALE_WORKER_ENUM="${ARGUS_LOCAL_SCALE_WORKER_ENUM:-1}"
 SCALE_WORKER_PORTSCAN="${ARGUS_LOCAL_SCALE_WORKER_PORTSCAN:-1}"
 SCALE_WORKER_HIGHVALUE="${ARGUS_LOCAL_SCALE_WORKER_HIGHVALUE:-1}"
 SCALE_WORKER_TECHID="${ARGUS_LOCAL_SCALE_WORKER_TECHID:-1}"
+SCALE_WORKER_HTTP_REQUESTER="${ARGUS_LOCAL_SCALE_WORKER_HTTP_REQUESTER:-1}"
 
 APP_SERVICES=(
   command-center
@@ -85,6 +86,7 @@ APP_SERVICES=(
   worker-portscan
   worker-highvalue
   worker-techid
+  worker-http-requester
 )
 
 ALL_SERVICES=(
@@ -127,6 +129,7 @@ Options:
   --scale-highvalue N
                      Scale local high-value workers. Default: 1.
   --scale-techid N   Scale local technology-identification workers. Default: 1.
+  --scale-http-requester N Scale local http-requester workers. Default: 1.
   -h, --help         Show this help.
 
 Environment:
@@ -240,6 +243,11 @@ while [[ $# -gt 0 ]]; do
     --scale-techid)
       [[ $# -ge 2 ]] || die "--scale-techid requires a value"
       SCALE_WORKER_TECHID="$2"
+      shift 2
+      ;;
+    --scale-http-requester)
+      [[ $# -ge 2 ]] || die "--scale-http-requester requires a value"
+      SCALE_WORKER_HTTP_REQUESTER="$2"
       shift 2
       ;;
     -h|--help)
@@ -458,6 +466,7 @@ up_stack() {
     --scale "worker-portscan=$SCALE_WORKER_PORTSCAN"
     --scale "worker-highvalue=$SCALE_WORKER_HIGHVALUE"
     --scale "worker-techid=$SCALE_WORKER_TECHID"
+    --scale "worker-http-requester=$SCALE_WORKER_HTTP_REQUESTER"
   )
 
   info "Starting full local stack."

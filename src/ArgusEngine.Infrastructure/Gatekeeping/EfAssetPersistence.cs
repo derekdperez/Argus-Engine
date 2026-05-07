@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ArgusEngine.Application.Assets;
+using ArgusEngine.Contracts.Assets;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Application.HighValue;

@@ -125,6 +125,7 @@ argus_service_project_path() {
     worker-portscan) echo "src/ArgusEngine.Workers.PortScan" ;;
     worker-highvalue) echo "src/ArgusEngine.Workers.HighValue" ;;
     worker-techid) echo "src/ArgusEngine.Workers.TechnologyIdentification" ;;
+    worker-http-requester) echo "src/ArgusEngine.Workers.HttpRequester" ;;
     *) return 1 ;;
   esac
 }
@@ -138,6 +139,7 @@ argus_service_app_dll() {
     worker-portscan) echo "ArgusEngine.Workers.PortScan.dll" ;;
     worker-highvalue) echo "ArgusEngine.Workers.HighValue.dll" ;;
     worker-techid) echo "ArgusEngine.Workers.TechnologyIdentification.dll" ;;
+    worker-http-requester) echo "ArgusEngine.Workers.HttpRequester.dll" ;;
     *) return 1 ;;
   esac
 }
@@ -164,7 +166,8 @@ argus_all_dotnet_services() {
     worker-enum \
     worker-portscan \
     worker-highvalue \
-    worker-techid
+    worker-techid \
+    worker-http-requester
 }
 
 argus_common_source_inputs() {
@@ -200,6 +203,7 @@ argus_service_specific_source_inputs() {
         "src/ArgusEngine.Workers.PortScan"
         "src/ArgusEngine.Workers.HighValue"
         "src/ArgusEngine.Workers.TechnologyIdentification"
+        "src/ArgusEngine.Workers.HttpRequester"
         "src/Resources/Wordlists/high_value"
       )
       ;;
@@ -865,6 +869,7 @@ argus_compose_up_redeploy() {
       --scale worker-portscan=0
       --scale worker-highvalue=0
       --scale worker-techid=0
+      --scale worker-http-requester=0
     )
   else
     args+=(
@@ -885,7 +890,7 @@ argus_compose_force_recreate_services() {
     local candidate
     for candidate in "${services[@]}"; do
       case "$candidate" in
-        worker-spider | worker-enum | worker-portscan | worker-highvalue | worker-techid)
+        worker-spider | worker-enum | worker-portscan | worker-highvalue | worker-techid | worker-http-requester)
           ;;
         *)
           filtered+=("$candidate")

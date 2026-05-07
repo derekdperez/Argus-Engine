@@ -1,4 +1,5 @@
 using ArgusEngine.Application.Assets;
+using ArgusEngine.Contracts.Assets;
 using ArgusEngine.Contracts.Events;
 
 namespace ArgusEngine.Application.Gatekeeping;

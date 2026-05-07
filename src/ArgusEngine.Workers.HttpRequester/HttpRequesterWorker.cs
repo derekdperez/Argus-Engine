@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MassTransit;
 using ArgusEngine.Application.Assets;
+using ArgusEngine.Contracts.Assets;
 using ArgusEngine.Application.Http;
 using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;

@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using ArgusEngine.Application.Assets;
+using ArgusEngine.Contracts.Assets;
 
 namespace ArgusEngine.Application.HighValue;
 

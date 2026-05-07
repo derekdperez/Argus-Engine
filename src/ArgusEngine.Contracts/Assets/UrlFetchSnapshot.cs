@@ -1,4 +1,7 @@
-namespace ArgusEngine.Application.Assets;
+using System;
+using System.Collections.Generic;
+
+namespace ArgusEngine.Contracts.Assets;
 
 /// <summary>
 /// Captured HTTP exchange when a URL-class asset is confirmed.

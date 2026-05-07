@@ -1,5 +1,4 @@
-using ArgusEngine.Application.Assets;
-using ArgusEngine.Contracts.Events;
+using ArgusEngine.Contracts.Assets;
 
 namespace ArgusEngine.Contracts.Events;
 
@@ -17,6 +16,9 @@ public sealed record HttpResponseDownloaded(
     UrlFetchSnapshot Snapshot,
     DateTimeOffset OccurredAtUtc,
     Guid CorrelationId,
-    Guid? EventId = null,
-    Guid? CausationId = null,
-    string? Producer = null) : IEventEnvelope;
+    Guid EventId,
+    Guid CausationId,
+    string Producer = "worker-http-requester") : IEventEnvelope
+{
+    public string SchemaVersion => "1.0";
+}

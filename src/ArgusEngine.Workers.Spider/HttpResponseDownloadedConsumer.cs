@@ -2,6 +2,7 @@ using MassTransit;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Application.Assets;
+using ArgusEngine.Contracts.Assets;
 using ArgusEngine.Infrastructure.Persistence;
 using Microsoft.Extensions.Logging;
 

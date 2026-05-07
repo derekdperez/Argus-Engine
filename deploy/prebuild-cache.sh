@@ -19,6 +19,9 @@ source "$DEPLOY_DIR/lib-install-deps.sh"
 argus_ensure_runtime_dependencies
 argus_export_build_stamp "$ROOT"
 
+echo "Ensuring prebuilt base images are current..."
+bash "$DEPLOY_DIR/build-base-images.sh"
+
 # Build all service images once. Dockerfile cache mounts retain NuGet and Go package downloads.
 ARGUS_CHANGED_SERVICES="$(argus_all_dotnet_services | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 export ARGUS_CHANGED_SERVICES

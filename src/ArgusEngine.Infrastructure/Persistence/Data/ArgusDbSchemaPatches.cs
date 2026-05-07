@@ -363,6 +363,7 @@ public static partial class ArgusDbSchemaPatches
         LogExecutingBackfills(logger);
         await BackfillAssetCategoriesAndRootsAsync(db, logger, cancellationToken).ConfigureAwait(false);
         await BackfillAssetRelationshipsAsync(db, logger, cancellationToken).ConfigureAwait(false);
+        await EnsureHttpRequestQueueDefaultsAsync(db, logger, cancellationToken).ConfigureAwait(false);
         await BackfillHttpRequestQueueAsync(db, logger, cancellationToken).ConfigureAwait(false);
         await BackfillLegacyDiscoveredAssetsAsync(db, logger, cancellationToken).ConfigureAwait(false);
 
@@ -563,6 +564,35 @@ public static partial class ArgusDbSchemaPatches
             .ConfigureAwait(false);
     }
 
+    private static async Task EnsureHttpRequestQueueDefaultsAsync(ArgusDbContext db, ILogger logger, CancellationToken cancellationToken)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                ALTER TABLE http_request_queue
+                    ADD COLUMN IF NOT EXISTS attempt_count integer NOT NULL DEFAULT 0,
+                    ADD COLUMN IF NOT EXISTS max_attempts integer NOT NULL DEFAULT 3,
+                    ADD COLUMN IF NOT EXISTS redirect_count integer NOT NULL DEFAULT 0;
+
+                ALTER TABLE http_request_queue
+                    ALTER COLUMN attempt_count SET DEFAULT 0,
+                    ALTER COLUMN max_attempts SET DEFAULT 3,
+                    ALTER COLUMN redirect_count SET DEFAULT 0;
+
+                UPDATE http_request_queue
+                SET
+                    attempt_count = COALESCE(attempt_count, 0),
+                    max_attempts = COALESCE(max_attempts, 3),
+                    redirect_count = COALESCE(redirect_count, 0);
+
+                ALTER TABLE http_request_queue
+                    ALTER COLUMN attempt_count SET NOT NULL,
+                    ALTER COLUMN max_attempts SET NOT NULL,
+                    ALTER COLUMN redirect_count SET NOT NULL;
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private static async Task BackfillHttpRequestQueueAsync(ArgusDbContext db, ILogger logger, CancellationToken cancellationToken)
     {
         await db.Database.ExecuteSqlRawAsync(
@@ -587,9 +617,12 @@ public static partial class ArgusDbSchemaPatches
                     domain_key,
                     state,
                     priority,
+                    attempt_count,
+                    max_attempts,
                     created_at_utc,
                     updated_at_utc,
-                    next_attempt_at_utc
+                    next_attempt_at_utc,
+                    redirect_count
                 )
                 SELECT
                     gen_random_uuid(),
@@ -610,9 +643,12 @@ public static partial class ArgusDbSchemaPatches
                     ),
                     'Queued',
                     0,
+                    0,
+                    3,
                     COALESCE(a.discovered_at_utc, now()),
                     now(),
-                    now()
+                    now(),
+                    0
                 FROM asset_projection a
                 WHERE a.asset_id IS NOT NULL
                   AND a.target_id IS NOT NULL

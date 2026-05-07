@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -182,6 +183,11 @@ public sealed class HttpRequestQueueWorker(
                 await HarvestLinksAsync(asset, snapshot, ct).ConfigureAwait(false);
             }
         }
+        catch (HttpRequestException ex) when (IsNameResolutionFailure(ex))
+        {
+            concurrency.ReportResult(false);
+            await HandleRetryOrFailureAsync(item, DnsFailureMessage(item.RequestUrl), terminal: true, ct).ConfigureAwait(false);
+        }
         catch (Exception ex) when (IsHttpTransient(ex))
         {
             concurrency.ReportResult(false);
@@ -352,6 +358,16 @@ public sealed class HttpRequestQueueWorker(
 
     private static bool IsHttpTransient(Exception ex) =>
         ex is HttpRequestException or IOException or TaskCanceledException or OperationCanceledException;
+
+    private static bool IsNameResolutionFailure(HttpRequestException ex) =>
+        ex.InnerException is SocketException socketException
+        && socketException.SocketErrorCode is SocketError.HostNotFound or SocketError.NoData;
+
+    private static string DnsFailureMessage(string requestUrl)
+    {
+        var host = Uri.TryCreate(requestUrl, UriKind.Absolute, out var uri) ? uri.Host : requestUrl;
+        return $"DNS resolution failed for host {host}.";
+    }
 
     private static Dictionary<string, string> HeadersToDict(HttpHeaders headers)
     {

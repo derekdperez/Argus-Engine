@@ -15,6 +15,7 @@ using Microsoft.Extensions.Options;
 try
 {
     var builder = Host.CreateApplicationBuilder(args);
+    builder.Logging.AddFilter("System.Net.Http.HttpClient.spider", LogLevel.Warning);
 
     builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-spider");
     builder.Services.AddArgusDatabaseLogging("worker-spider");

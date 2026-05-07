@@ -3,9 +3,11 @@ using ArgusEngine.CommandCenter.Components;
 using ArgusEngine.CommandCenter.Endpoints;
 using ArgusEngine.CommandCenter.Startup;
 using ArgusEngine.Workers.Spider;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.AddFilter("System.Net.Http.HttpClient.spider", LogLevel.Warning);
 
 builder.Services.AddCommandCenterServices(builder.Configuration, builder.Environment);
 

@@ -57,7 +57,7 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
 
     [Parameter] public int SearchDebounceMilliseconds { get; set; } = 180;
 
-    [Parameter] public string SearchPlaceholder { get; set; } = "Search…";
+    [Parameter] public string SearchPlaceholder { get; set; } = "Search...";
 
     [Parameter] public bool ShowSearch { get; set; } = true;
 
@@ -102,7 +102,7 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
 
     [Parameter] public bool IsLoading { get; set; }
 
-    [Parameter] public string LoadingText { get; set; } = "Loading rows…";
+    [Parameter] public string LoadingText { get; set; } = "Loading rows...";
 
     [Parameter] public string EmptyText { get; set; } = "No rows to display.";
 

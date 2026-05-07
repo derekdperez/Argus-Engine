@@ -1,0 +1,42 @@
+{
+  "name": "Argus Engine",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:10.0-noble",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/go:1": {}
+  },
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+  "forwardPorts": [
+    8080,
+    15672
+  ],
+  "portsAttributes": {
+    "8080": {
+      "label": "Argus Command Center",
+      "onAutoForward": "openBrowser"
+    },
+    "15672": {
+      "label": "RabbitMQ Management",
+      "onAutoForward": "notify"
+    }
+  },
+  "containerEnv": {
+    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+    "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1"
+  },
+  "postCreateCommand": "bash ./deploy/prebuild-cache.sh || true",
+  "postAttachCommand": "echo 'Start Argus Engine with: ./deploy/run-local-codespace.sh --fresh'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-azuretools.vscode-docker",
+        "ms-dotnettools.csharp",
+        "golang.go"
+      ]
+    }
+  }
+}

@@ -1,0 +1,93 @@
+.tech-id-page {
+    gap: 14px;
+}
+
+.tech-id-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.tech-id-scope {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 14px;
+}
+
+.tech-id-panel {
+    border: 1px solid #d8e3f3;
+    background: #ffffff;
+}
+
+.tech-id-table-wrap {
+    max-height: 34vh;
+    overflow: auto;
+}
+
+.tech-id-tech-table-wrap {
+    max-height: 48vh;
+    overflow: auto;
+}
+
+.tech-id-targets-table th:nth-child(1) {
+    width: 46%;
+}
+
+.tech-id-targets-table th:nth-child(2),
+.tech-id-targets-table th:nth-child(3) {
+    width: 12%;
+}
+
+.tech-id-targets-table th:nth-child(4) {
+    width: 30%;
+}
+
+.tech-id-subdomains-table th:nth-child(1) {
+    width: 58%;
+}
+
+.tech-id-subdomains-table th:nth-child(2) {
+    width: 14%;
+}
+
+.tech-id-subdomains-table th:nth-child(3) {
+    width: 28%;
+}
+
+.tech-id-tech-table th:nth-child(1) {
+    width: 120px;
+}
+
+.tech-id-tech-table th:nth-child(2) {
+    width: 160px;
+}
+
+.tech-id-tech-table th:nth-child(3) {
+    width: 220px;
+}
+
+.tech-id-tech-table th:nth-child(4) {
+    width: 180px;
+}
+
+.tech-id-tech-table th:nth-child(5),
+.tech-id-tech-table th:nth-child(6),
+.tech-id-tech-table th:nth-child(7) {
+    width: 110px;
+}
+
+.tech-id-tech-table th:nth-child(8) {
+    min-width: 260px;
+}
+
+.tech-id-page .strong {
+    font-weight: 700;
+    color: #123d75;
+}
+
+@media (max-width: 1050px) {
+    .tech-id-summary,
+    .tech-id-scope {
+        grid-template-columns: 1fr;
+    }
+}

@@ -40,6 +40,10 @@
                 <div>
                     <p class="eyebrow">Inventory</p>
                     <h2>Targets</h2>
+                    @if (_targetsLoading)
+                    {
+                        <span class="loading-inline"><span class="spinner"></span> Loading...</span>
+                    }
                 </div>
                 <button type="button" class="btn" @onclick="ReloadAsync" disabled="@_loading">@(_loading ? "Loading..." : "Reload")</button>
             </div>
@@ -88,6 +92,10 @@
                 <div>
                     <p class="eyebrow">Inventory</p>
                     <h2>Subdomains</h2>
+                    @if (_subdomainsLoading)
+                    {
+                        <span class="loading-inline"><span class="spinner"></span> Loading...</span>
+                    }
                 </div>
                 @if (_selectedTargetId is not null)
                 {
@@ -138,6 +146,10 @@
             <div>
                 <p class="eyebrow">Detection</p>
                 <h2>Technologies</h2>
+                @if (_technologiesLoading)
+                {
+                    <span class="loading-inline"><span class="spinner"></span> Loading...</span>
+                }
             </div>
             <span class="muted">@ScopeLabel</span>
         </div>
@@ -198,7 +210,10 @@
     private readonly List<TechnologyIdentificationSubdomainDto> _subdomains = [];
     private readonly List<TechnologyIdentificationRowDto> _technologies = [];
 
-    private bool _loading;
+    private bool _targetsLoading;
+    private bool _subdomainsLoading;
+    private bool _technologiesLoading;
+    private bool _anyLoading => _targetsLoading || _subdomainsLoading || _technologiesLoading;
     private string? _statusMessage;
     private Guid? _selectedTargetId;
     private string? _selectedSubdomain;
@@ -280,25 +295,8 @@
 
     private async Task ReloadAsync()
     {
-        if (_loading)
-            return;
-
-        _loading = true;
         _statusMessage = null;
-        try
-        {
-            await LoadTargetsAsync().ConfigureAwait(false);
-            await LoadSubdomainsAsync().ConfigureAwait(false);
-            await LoadTechnologiesAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _statusMessage = $"Technology identification data could not be loaded: {ex.Message}";
-        }
-        finally
-        {
-            _loading = false;
-        }
+        await Task.WhenAll(ReloadTargetsAsync(), ReloadSubdomainsAsync(), ReloadTechnologiesAsync());
     }
 
     private async Task SelectTargetAsync(Guid targetId)
@@ -306,53 +304,94 @@
         _selectedTargetId = targetId;
         _selectedSubdomain = null;
         _subdomainSearch = "";
-        await LoadSubdomainsAsync().ConfigureAwait(false);
-        await LoadTechnologiesAsync().ConfigureAwait(false);
+        await ReloadSubdomainsAsync();
+        await ReloadTechnologiesAsync();
     }
 
     private async Task ClearTargetAsync()
     {
         _selectedTargetId = null;
         _selectedSubdomain = null;
-        await LoadSubdomainsAsync().ConfigureAwait(false);
-        await LoadTechnologiesAsync().ConfigureAwait(false);
+        await ReloadSubdomainsAsync();
+        await ReloadTechnologiesAsync();
     }
 
     private async Task SelectSubdomainAsync(string subdomain)
     {
         _selectedSubdomain = subdomain;
-        await LoadTechnologiesAsync().ConfigureAwait(false);
+        await ReloadTechnologiesAsync();
     }
 
     private async Task ClearSubdomainAsync()
     {
         _selectedSubdomain = null;
-        await LoadTechnologiesAsync().ConfigureAwait(false);
+        await ReloadTechnologiesAsync();
     }
 
-    private async Task LoadTargetsAsync()
+    private async Task ReloadTargetsAsync()
     {
-        var rows = await Http.GetFromJsonAsync<List<TechnologyIdentificationTargetDto>>("/api/technology-identification/targets")
-            .ConfigureAwait(false);
-        _targets.Clear();
-        if (rows is not null)
-            _targets.AddRange(rows);
+        _targetsLoading = true;
+        try
+        {
+            var targets = await Http.GetFromJsonAsync<List<TechnologyIdentificationTargetDto>>("/api/technology-identification/targets");
+            _targets.Clear();
+            if (targets is not null) _targets.AddRange(targets);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Failed to load targets: {ex.Message}";
+        }
+        finally
+        {
+            _targetsLoading = false;
+        }
     }
 
-    private async Task LoadSubdomainsAsync()
+    private async Task ReloadSubdomainsAsync()
     {
-        var url = _selectedTargetId is { } targetId
-            ? $"/api/technology-identification/subdomains?targetId={targetId}"
-            : "/api/technology-identification/subdomains";
+        _subdomainsLoading = true;
+        try
+        {
+            var url = _selectedTargetId is { } targetId
+                ? $"/api/technology-identification/subdomains?targetId={targetId}"
+                : "/api/technology-identification/subdomains";
 
-        var rows = await Http.GetFromJsonAsync<List<TechnologyIdentificationSubdomainDto>>(url)
-            .ConfigureAwait(false);
-        _subdomains.Clear();
-        if (rows is not null)
-            _subdomains.AddRange(rows);
+            var rows = await Http.GetFromJsonAsync<List<TechnologyIdentificationSubdomainDto>>(url);
+            _subdomains.Clear();
+            if (rows is not null)
+                _subdomains.AddRange(rows);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Failed to load subdomains: {ex.Message}";
+        }
+        finally
+        {
+            _subdomainsLoading = false;
+        }
     }
 
-    private async Task LoadTechnologiesAsync()
+    private async Task ReloadTechnologiesAsync()
+    {
+        _technologiesLoading = true;
+        try
+        {
+            var qs = BuildTechnologyQuery();
+            var techs = await Http.GetFromJsonAsync<List<TechnologyIdentificationRowDto>>($"/api/technology-identification/technologies{qs}");
+            _technologies.Clear();
+            if (techs is not null) _technologies.AddRange(techs);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Failed to load technologies: {ex.Message}";
+        }
+        finally
+        {
+            _technologiesLoading = false;
+        }
+    }
+
+    private string BuildTechnologyQuery()
     {
         var query = new List<string>();
         if (_selectedTargetId is { } targetId)
@@ -360,15 +399,7 @@
         if (!string.IsNullOrWhiteSpace(_selectedSubdomain))
             query.Add($"subdomain={Uri.EscapeDataString(_selectedSubdomain)}");
 
-        var url = "/api/technology-identification/technologies";
-        if (query.Count > 0)
-            url += "?" + string.Join("&", query);
-
-        var rows = await Http.GetFromJsonAsync<List<TechnologyIdentificationRowDto>>(url)
-            .ConfigureAwait(false);
-        _technologies.Clear();
-        if (rows is not null)
-            _technologies.AddRange(rows);
+        return query.Count > 0 ? "?" + string.Join("&", query) : "";
     }
 
     private void SetTargetSort(string key)

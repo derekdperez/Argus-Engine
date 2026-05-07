@@ -66,6 +66,10 @@
                 <div>
                     <p class="eyebrow">Scope</p>
                     <h2>Targets</h2>
+                    @if (_targetsLoading)
+                    {
+                        <span class="loading-inline"><span class="spinner"></span> Loading...</span>
+                    }
                 </div>
                 <span class="muted">@FormatNumber(TargetRows.Count)</span>
             </div>
@@ -129,6 +133,10 @@
                 <div>
                     <p class="eyebrow">Scope</p>
                     <h2>Subdomains</h2>
+                    @if (_targetsLoading)
+                    {
+                        <span class="loading-inline"><span class="spinner"></span> Loading...</span>
+                    }
                 </div>
                 <span class="muted">@SelectedTargetLabel - @FormatNumber(SubdomainRows.Count)</span>
             </div>
@@ -178,6 +186,10 @@
             <div>
                 <p class="eyebrow">Inventory</p>
                 <h2>Assets</h2>
+                @if (_assetsLoading)
+                {
+                    <span class="loading-inline"><span class="spinner"></span> Loading...</span>
+                }
             </div>
             <span class="muted">@FormatNumber(FilteredAssetRows.Count) visible assets</span>
         </div>
@@ -249,6 +261,10 @@
             <div>
                 <p class="eyebrow">HTTP</p>
                 <h2>HTTP Requests</h2>
+                @if (_httpLoading)
+                {
+                    <span class="loading-inline"><span class="spinner"></span> Loading...</span>
+                }
             </div>
             <span class="muted">@FormatNumber(HttpRows.Count) requests</span>
         </div>
@@ -324,6 +340,10 @@
             <div>
                 <p class="eyebrow">Message bus</p>
                 <h2>Published Events</h2>
+                @if (_eventsLoading || _busLoading)
+                {
+                    <span class="loading-inline"><span class="spinner"></span> Loading...</span>
+                }
             </div>
             <span class="muted">@FormatNumber(EventRows.Count) published events, @FormatNumber(RabbitQueueRows.Count) queues</span>
         </div>
@@ -423,6 +443,10 @@
             <div>
                 <p class="eyebrow">Workers</p>
                 <h2>@WorkerHealthTitle</h2>
+                @if (_workersLoading || _scaleLoading)
+                {
+                    <span class="loading-inline"><span class="spinner"></span> Loading...</span>
+                }
             </div>
             <span class="muted">@WorkerHealthSubtitle</span>
         </div>
@@ -531,6 +555,12 @@
     private readonly List<JsonElement> _events = [];
 
     private bool _assetsLoading;
+    private bool _targetsLoading;
+    private bool _httpLoading;
+    private bool _busLoading;
+    private bool _eventsLoading;
+    private bool _workersLoading;
+    private bool _scaleLoading;
     private string _targetSearch = "";
     private string _targetFilter = "";
     private string _targetSort = "name";
@@ -1053,8 +1083,16 @@
 
     private async Task ReloadTargetsAsync()
     {
-        Replace(_targets, await GetArrayAsync("/api/targets"));
-        EnsureSelection();
+        _targetsLoading = true;
+        try
+        {
+            Replace(_targets, await GetArrayAsync("/api/targets"));
+            EnsureSelection();
+        }
+        finally
+        {
+            _targetsLoading = false;
+        }
     }
 
     private async Task ReloadAssetsAsync()
@@ -1185,11 +1223,19 @@
 
     private async Task ReloadHttpQueueAsync()
     {
-        var state = string.IsNullOrWhiteSpace(_httpStateFilter) ? "" : $"state={Uri.EscapeDataString(_httpStateFilter)}";
-        var uri = string.IsNullOrWhiteSpace(state) ? "/api/http-request-queue" : $"/api/http-request-queue?{state}";
+        _httpLoading = true;
+        try
+        {
+            var state = string.IsNullOrWhiteSpace(_httpStateFilter) ? "" : $"state={Uri.EscapeDataString(_httpStateFilter)}";
+            var uri = string.IsNullOrWhiteSpace(state) ? "/api/http-request-queue" : $"/api/http-request-queue?{state}";
 
-        Replace(_queue, await GetArrayAsync(uri));
-        _selectedHttpIds.RemoveWhere(id => !_queue.Any(q => Text(q, "id", "Id").Equals(id, StringComparison.OrdinalIgnoreCase)));
+            Replace(_queue, await GetArrayAsync(uri));
+            _selectedHttpIds.RemoveWhere(id => !_queue.Any(q => Text(q, "id", "Id").Equals(id, StringComparison.OrdinalIgnoreCase)));
+        }
+        finally
+        {
+            _httpLoading = false;
+        }
     }
 
     private bool IsHttpRowSelected(string id) =>
@@ -1275,30 +1321,33 @@
 
     private async Task ReloadMessageBusAsync()
     {
+        _busLoading = true;
         try
         {
             Replace(_rabbitQueues, await GetArrayAsync("/api/ops/rabbit-queues"));
         }
-        catch
+        finally
         {
-            _rabbitQueues.Clear();
+            _busLoading = false;
         }
     }
 
     private async Task ReloadEventsAsync()
     {
+        _eventsLoading = true;
         try
         {
             Replace(_events, await GetArrayAsync("/api/events/live?all=true&includePayload=false"));
         }
-        catch
+        finally
         {
-            _events.Clear();
+            _eventsLoading = false;
         }
     }
 
     private async Task ReloadWorkersAsync()
     {
+        _workersLoading = true;
         try
         {
             var activity = await GetObjectAsync("/api/workers/activity");
@@ -1322,17 +1371,22 @@
         {
             _workerSummaries.Clear();
         }
+        finally
+        {
+            _workersLoading = false;
+        }
     }
 
     private async Task ReloadWorkerScaleAsync()
     {
+        _scaleLoading = true;
         try
         {
             Replace(_workerScaleTargets, await GetArrayAsync("/api/workers/scale"));
         }
-        catch
+        finally
         {
-            _workerScaleTargets.Clear();
+            _scaleLoading = false;
         }
     }
 

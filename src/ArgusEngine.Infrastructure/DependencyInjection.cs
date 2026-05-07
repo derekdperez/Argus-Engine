@@ -13,6 +13,7 @@ using ArgusEngine.Application.FileStore;
 using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Application.HighValue;
 using ArgusEngine.Application.TechnologyIdentification;
+using ArgusEngine.Application.Http;
 using ArgusEngine.Application.Workers;
 using ArgusEngine.Infrastructure.Caching;
 using ArgusEngine.Infrastructure.Configuration;
@@ -25,6 +26,7 @@ using ArgusEngine.Infrastructure.HighValue;
 using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Persistence;
 using ArgusEngine.Infrastructure.TechnologyIdentification;
+using ArgusEngine.Infrastructure.Http;
 using ArgusEngine.Infrastructure.Workers;
 
 namespace ArgusEngine.Infrastructure;
@@ -149,6 +151,8 @@ public static class DependencyInjection
         services.AddScoped<ITargetLookup, EfTargetLookup>();
         services.AddSingleton<IHttpRequestQueueStateMachine, DefaultHttpRequestQueueStateMachine>();
         services.AddOptions<SubdomainEnumerationOptions>().Bind(configuration.GetSection("SubdomainEnumeration"));
+        services.AddOptions<HttpRateLimitOptions>().Bind(configuration.GetArgusSection("HttpRateLimit"));
+        services.AddSingleton<IHttpRateLimiter, InMemoryHttpRateLimiter>();
         services.AddSingleton<ToolProcessRunner>();
         services.AddSingleton<IHostResolver, DefaultHostResolver>();
         services.AddSingleton<ISubdomainEnumerationProvider, SubfinderEnumerationProvider>();

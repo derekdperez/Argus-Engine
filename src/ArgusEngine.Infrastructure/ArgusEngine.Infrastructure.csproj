@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
+<!-- test -->
   <ItemGroup>
     <ProjectReference Include="..\ArgusEngine.Application\ArgusEngine.Application.csproj" />
     <ProjectReference Include="..\ArgusEngine.Domain\ArgusEngine.Domain.csproj" />

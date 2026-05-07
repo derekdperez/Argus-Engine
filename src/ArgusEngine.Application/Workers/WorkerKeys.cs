@@ -11,4 +11,5 @@ public static class WorkerKeys
     public const string HighValueRegex = "HighValueRegex";
     public const string HighValuePaths = "HighValuePaths";
     public const string TechnologyIdentification = "TechnologyIdentification";
+    public const string HttpRequester = "HttpRequester";
 }

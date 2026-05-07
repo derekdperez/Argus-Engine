@@ -8,35 +8,36 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MassTransit;
 using ArgusEngine.Application.Assets;
-using ArgusEngine.Application.Gatekeeping;
-using ArgusEngine.Application.Events;
+using ArgusEngine.Application.Http;
 using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Observability;
 
-namespace ArgusEngine.Workers.Spider;
+namespace ArgusEngine.Workers.HttpRequester;
 
-public sealed class HttpRequestQueueWorker(
+public sealed class HttpRequesterWorker(
     IServiceScopeFactory scopeFactory,
     IDbContextFactory<ArgusDbContext> dbFactory,
     IHttpClientFactory httpClientFactory,
-    IOptions<SpiderHttpOptions> options,
+    IOptions<HttpRequesterOptions> options,
     AdaptiveConcurrencyController concurrency,
-    ILogger<HttpRequestQueueWorker> logger) : BackgroundService
+    IHttpRateLimiter rateLimiter,
+    IPublishEndpoint publishEndpoint,
+    ILogger<HttpRequesterWorker> logger) : BackgroundService
 {
     private static readonly Action<ILogger, Exception?> LogWorkerStarted =
         LoggerMessage.Define(
             LogLevel.Information,
             new EventId(1, nameof(ExecuteAsync)),
-            "HttpRequestQueueWorker started.");
+            "HttpRequesterWorker started.");
 
     private static readonly Action<ILogger, Exception?> LogLoopFailed =
         LoggerMessage.Define(
             LogLevel.Error,
             new EventId(2, nameof(ExecuteAsync)),
-            "HTTP request queue worker loop failed.");
+            "HTTP requester worker loop failed.");
 
     private static readonly Action<ILogger, Guid, Guid, Exception?> LogAssetNotFound =
         LoggerMessage.Define<Guid, Guid>(
@@ -49,8 +50,6 @@ public sealed class HttpRequestQueueWorker(
             LogLevel.Warning,
             new EventId(4, nameof(ProcessItemAsync)),
             "Permanent failure for HTTP request queue item.");
-
-    private const int MaxLinksPerAsset = 250;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -95,7 +94,7 @@ public sealed class HttpRequestQueueWorker(
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
         var lockedUntil = now.AddSeconds(visibilitySeconds);
-        var lockId = $"spider-{Environment.MachineName}-{Guid.NewGuid():N}";
+        var lockId = $"requester-{Environment.MachineName}-{Guid.NewGuid():N}";
 
         var leased = await db.HttpRequestQueue
             .FromSqlInterpolated($"""
@@ -132,37 +131,18 @@ public sealed class HttpRequestQueueWorker(
         {
             ["QueueItemId"] = item.Id,
             ["Url"] = item.RequestUrl,
+            ["DomainKey"] = item.DomainKey,
         });
 
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         try
         {
-            StoredAsset? asset;
+            // Apply per-domain rate limiting
+            await rateLimiter.WaitAsync(item.DomainKey, ct).ConfigureAwait(false);
 
-            await using (var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false))
-            {
-                asset = await db.Assets
-                    .AsNoTracking()
-                    .Include(a => a.Target)
-                    .FirstOrDefaultAsync(a => a.Id == item.AssetId, ct)
-                    .ConfigureAwait(false);
-            }
-
-            if (asset is null)
-            {
-                LogAssetNotFound(logger, item.AssetId, item.Id, null);
-                await MarkFailedAsync(item.Id, "Asset not found", terminal: true, ct).ConfigureAwait(false);
-                return;
-            }
-
-            using var client = httpClientFactory.CreateClient("spider");
+            using var client = httpClientFactory.CreateClient("requester");
             using var request = new HttpRequestMessage(new HttpMethod(item.Method), item.RequestUrl);
-
-            if (!string.IsNullOrEmpty(item.RequestHeadersJson))
-            {
-                // Simple header application logic omitted for brevity in current implementation.
-            }
 
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             stopwatch.Stop();
@@ -176,26 +156,40 @@ public sealed class HttpRequestQueueWorker(
             }
 
             await MarkSucceededAsync(item.Id, snapshot, ct).ConfigureAwait(false);
+            
+            // Record rate limit success
+            rateLimiter.RecordCompletion(item.DomainKey, true, stopwatch.Elapsed);
             concurrency.ReportResult(true);
 
-            if (item.AssetKind == AssetKind.Url || item.AssetKind == AssetKind.Subdomain || item.AssetKind == AssetKind.Domain)
-            {
-                await HarvestLinksAsync(asset, snapshot, ct).ConfigureAwait(false);
-            }
+            // Publish event for spidering and other processing
+            await publishEndpoint.Publish(new HttpResponseDownloaded(
+                item.TargetId,
+                asset.Target?.RootDomain ?? string.Empty,
+                asset.Target?.GlobalMaxDepth ?? asset.Depth + 10,
+                item.AssetId,
+                asset.Depth,
+                item.AssetKind,
+                snapshot,
+                DateTimeOffset.UtcNow,
+                NewId.NextGuid(),
+                Producer: "worker-http-requester"), ct).ConfigureAwait(false);
         }
         catch (HttpRequestException ex) when (IsNameResolutionFailure(ex))
         {
             concurrency.ReportResult(false);
+            rateLimiter.RecordCompletion(item.DomainKey, false, stopwatch.Elapsed);
             await HandleRetryOrFailureAsync(item, DnsFailureMessage(item.RequestUrl), terminal: true, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsHttpTransient(ex))
         {
             concurrency.ReportResult(false);
+            rateLimiter.RecordCompletion(item.DomainKey, false, stopwatch.Elapsed);
             await HandleRetryOrFailureAsync(item, ex.Message, terminal: false, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             concurrency.ReportResult(false);
+            rateLimiter.RecordCompletion(item.DomainKey, false, stopwatch.Elapsed);
             LogPermanentFailure(logger, ex);
             await HandleRetryOrFailureAsync(item, ex.Message, terminal: true, ct).ConfigureAwait(false);
         }
@@ -308,54 +302,6 @@ public sealed class HttpRequestQueueWorker(
             .ConfigureAwait(false);
     }
 
-    private async Task HarvestLinksAsync(StoredAsset asset, UrlFetchSnapshot snapshot, CancellationToken ct)
-    {
-        var body = snapshot.ResponseBody ?? string.Empty;
-        var contentType = snapshot.ContentType ?? string.Empty;
-        var baseUrl = snapshot.FinalUrl ?? asset.RawValue;
-
-        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri))
-            return;
-
-        var links = LinkHarvest.Extract(body, contentType, baseUri, MaxLinksPerAsset);
-        if (links.Count == 0)
-            return;
-
-        var parentPage = baseUri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped);
-        var spiderContext = TruncateDiscoveryContext($"Spider: link extracted from fetched page {parentPage}");
-        var correlation = NewId.NextGuid();
-        var now = DateTimeOffset.UtcNow;
-        var targetRootDomain = asset.Target?.RootDomain ?? string.Empty;
-        var globalMaxDepth = asset.Target?.GlobalMaxDepth ?? asset.Depth + 10;
-        var nextDepth = asset.Depth + 1;
-        var events = new List<AssetDiscovered>(links.Count);
-
-        foreach (var link in links)
-        {
-            events.Add(
-                new AssetDiscovered(
-                    asset.TargetId,
-                    targetRootDomain,
-                    globalMaxDepth,
-                    nextDepth,
-                    LinkHarvest.GuessKindForUrl(link),
-                    link,
-                    "spider-worker",
-                    now,
-                    correlation,
-                    AssetAdmissionStage.Raw,
-                    null,
-                    spiderContext,
-                    EventId: NewId.NextGuid(),
-                    CausationId: correlation,
-                    Producer: "worker-spider"));
-        }
-
-        using var scope = scopeFactory.CreateScope();
-        var scopedOutbox = scope.ServiceProvider.GetRequiredService<IEventOutbox>();
-        await scopedOutbox.EnqueueBatchAsync(events, ct).ConfigureAwait(false);
-    }
-
     private static bool IsHttpTransient(Exception ex) =>
         ex is HttpRequestException or IOException or TaskCanceledException or OperationCanceledException;
 
@@ -383,7 +329,4 @@ public sealed class HttpRequestQueueWorker(
 
     private static string Truncate(string s, int maxChars) =>
         s.Length <= maxChars ? s : s[..maxChars];
-
-    private static string TruncateDiscoveryContext(string s, int maxChars = 512) =>
-        s.Length <= maxChars ? s : s[..(maxChars - 1)] + "…";
 }

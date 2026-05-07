@@ -24,6 +24,7 @@ COPY src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj src/Ar
 COPY src/ArgusEngine.Workers.Spider/ArgusEngine.Workers.Spider.csproj src/ArgusEngine.Workers.Spider/
 COPY src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj src/ArgusEngine.Workers.TechnologyIdentification/
 COPY src/ArgusEngine.Workers.Enumeration/ArgusEngine.Workers.Enumeration.csproj src/ArgusEngine.Workers.Enumeration/
+COPY src/ArgusEngine.Workers.HttpRequester/ArgusEngine.Workers.HttpRequester.csproj src/ArgusEngine.Workers.HttpRequester/
 COPY src/ArgusEngine.Harness.Core/ArgusEngine.Harness.Core.csproj src/ArgusEngine.Harness.Core/
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \

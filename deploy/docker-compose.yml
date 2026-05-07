@@ -144,6 +144,7 @@ services:
       ECS_TASK_EXECUTION_ROLE_ARN: ${ECS_TASK_EXECUTION_ROLE_ARN:-}
       ECS_TASK_ROLE_ARN: ${ECS_TASK_ROLE_ARN:-}
       WORKER_SPIDER_SERVICE: ${WORKER_SPIDER_SERVICE:-argus-worker-spider}
+      WORKER_HTTP_REQUESTER_SERVICE: ${WORKER_HTTP_REQUESTER_SERVICE:-argus-worker-http-requester}
       WORKER_ENUM_SERVICE: ${WORKER_ENUM_SERVICE:-argus-worker-enum}
       WORKER_PORTSCAN_SERVICE: ${WORKER_PORTSCAN_SERVICE:-argus-worker-portscan}
       WORKER_HIGHVALUE_SERVICE: ${WORKER_HIGHVALUE_SERVICE:-argus-worker-highvalue}
@@ -207,7 +208,6 @@ services:
     environment:
       <<: *common-env
       Argus__SkipStartupDatabase: "true"
-      Spider__Http__AllowInsecureSsl: "false"
       Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_SPIDER_POSTGRES_MAX_POOL_SIZE:-3}
       Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_SPIDER_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
@@ -220,7 +220,37 @@ services:
       rabbitmq:
         condition: service_healthy
     deploy:
-      replicas: ${ARGUS_WORKER_SPIDER_REPLICAS:-3}
+      replicas: ${ARGUS_WORKER_SPIDER_REPLICAS:-1}
+
+  worker-http-requester:
+    image: argus-engine/worker-http-requester:${ARGUS_ENGINE_VERSION:-2.6.3}
+    restart: unless-stopped
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
+      args:
+        <<: *dotnet-build-args
+        PROJECT_DIR: ArgusEngine.Workers.HttpRequester
+        APP_DLL: ArgusEngine.Workers.HttpRequester.dll
+    environment:
+      <<: *common-env
+      Argus__SkipStartupDatabase: "true"
+      HttpRequester__AllowInsecureSsl: "false"
+      HttpRateLimit__DefaultDelayMs: 500
+      HttpRateLimit__MaxDelayMs: 5000
+      Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_HTTP_REQUESTER_POSTGRES_MAX_POOL_SIZE:-5}
+      Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_HTTP_REQUESTER_FILESTORE_MAX_POOL_SIZE:-2}
+    depends_on:
+      command-center:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    deploy:
+      replicas: ${ARGUS_WORKER_HTTP_REQUESTER_REPLICAS:-3}
 
   worker-enum:
     image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.6.3}

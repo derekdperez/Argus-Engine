@@ -241,6 +241,12 @@ public sealed record HttpRequestQueueRowDto(
     int RedirectCount,
     string? RedirectChainJson);
 
+public sealed record HttpRequestQueueIdsRequest(IReadOnlyList<Guid> Ids);
+
+public sealed record HttpRequestQueueClearOlderThanRequest(DateTimeOffset CutoffUtc);
+
+public sealed record HttpRequestQueueMutationResult(string Operation, long RowsAffected);
+
 public sealed record AssetGridRowDto(
     Guid Id,
     Guid TargetId,

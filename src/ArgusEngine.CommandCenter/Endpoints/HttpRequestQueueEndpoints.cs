@@ -194,8 +194,95 @@ public static class HttpRequestQueueEndpoints
                 })
             .WithName("GetHttpRequestQueueMetrics");
 
+        app.MapPost(
+                "/api/http-request-queue/retry",
+                async (HttpRequestQueueIdsRequest body, ArgusDbContext db, CancellationToken ct) =>
+                {
+                    var ids = NormalizeIds(body.Ids);
+                    if (ids.Length == 0)
+                        return Results.BadRequest("ids is required.");
+
+                    var now = DateTimeOffset.UtcNow;
+                    var affected = await db.HttpRequestQueue
+                        .Where(q => ids.Contains(q.Id))
+                        .ExecuteUpdateAsync(
+                            setters => setters
+                                .SetProperty(q => q.State, HttpRequestQueueState.Queued)
+                                .SetProperty(q => q.NextAttemptAtUtc, (DateTimeOffset?)null)
+                                .SetProperty(q => q.StartedAtUtc, (DateTimeOffset?)null)
+                                .SetProperty(q => q.CompletedAtUtc, (DateTimeOffset?)null)
+                                .SetProperty(q => q.LockedBy, (string?)null)
+                                .SetProperty(q => q.LockedUntilUtc, (DateTimeOffset?)null)
+                                .SetProperty(q => q.LastError, (string?)null)
+                                .SetProperty(q => q.UpdatedAtUtc, now),
+                            ct)
+                        .ConfigureAwait(false);
+
+                    return Results.Ok(new HttpRequestQueueMutationResult("retry-selected", affected));
+                })
+            .WithName("RetrySelectedHttpRequestQueueRows");
+
+        app.MapPost(
+                "/api/http-request-queue/clear-selected",
+                async (HttpRequestQueueIdsRequest body, ArgusDbContext db, CancellationToken ct) =>
+                {
+                    var ids = NormalizeIds(body.Ids);
+                    if (ids.Length == 0)
+                        return Results.BadRequest("ids is required.");
+
+                    var affected = await db.HttpRequestQueue
+                        .Where(q => ids.Contains(q.Id))
+                        .ExecuteDeleteAsync(ct)
+                        .ConfigureAwait(false);
+
+                    return Results.Ok(new HttpRequestQueueMutationResult("clear-selected", affected));
+                })
+            .WithName("ClearSelectedHttpRequestQueueRows");
+
+        app.MapPost(
+                "/api/http-request-queue/clear-completed",
+                async (ArgusDbContext db, CancellationToken ct) =>
+                {
+                    var affected = await db.HttpRequestQueue
+                        .Where(q => q.State == HttpRequestQueueState.Succeeded)
+                        .ExecuteDeleteAsync(ct)
+                        .ConfigureAwait(false);
+
+                    return Results.Ok(new HttpRequestQueueMutationResult("clear-completed", affected));
+                })
+            .WithName("ClearCompletedHttpRequestQueueRows");
+
+        app.MapPost(
+                "/api/http-request-queue/clear-failed",
+                async (ArgusDbContext db, CancellationToken ct) =>
+                {
+                    var affected = await db.HttpRequestQueue
+                        .Where(q => q.State == HttpRequestQueueState.Failed)
+                        .ExecuteDeleteAsync(ct)
+                        .ConfigureAwait(false);
+
+                    return Results.Ok(new HttpRequestQueueMutationResult("clear-failed", affected));
+                })
+            .WithName("ClearFailedHttpRequestQueueRows");
+
+        app.MapPost(
+                "/api/http-request-queue/clear-older-than",
+                async (HttpRequestQueueClearOlderThanRequest body, ArgusDbContext db, CancellationToken ct) =>
+                {
+                    var affected = await db.HttpRequestQueue
+                        .Where(q => q.CreatedAtUtc < body.CutoffUtc)
+                        .ExecuteDeleteAsync(ct)
+                        .ConfigureAwait(false);
+
+                    return Results.Ok(new HttpRequestQueueMutationResult("clear-older-than-selected", affected));
+                })
+            .WithName("ClearHttpRequestQueueRowsOlderThanSelected");
+
         return app;
     }
+
+    private static Guid[] NormalizeIds(IReadOnlyList<Guid>? ids) =>
+        ids is null ? [] : ids.Where(id => id != Guid.Empty).Distinct().ToArray();
 
     public static void Map(WebApplication app) => app.MapHttpRequestQueueEndpoints();
 }

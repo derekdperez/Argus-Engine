@@ -109,12 +109,18 @@
                 </select>
             </label>
             <button type="button" class="btn" @onclick="ReloadHttpQueueAsync">Reload HTTP</button>
+            <button type="button" class="btn" @onclick="RetrySelectedHttpRowsAsync" disabled="@(!_selectedHttpIds.Any())">Retry Selected</button>
+            <button type="button" class="btn danger" @onclick="ClearSelectedHttpRowsAsync" disabled="@(!_selectedHttpIds.Any())">Clear Selected</button>
+            <button type="button" class="btn" @onclick="ClearCompletedHttpRowsAsync">Clear Completed</button>
+            <button type="button" class="btn" @onclick="ClearFailedHttpRowsAsync">Clear Failed</button>
+            <button type="button" class="btn danger" @onclick="ClearOlderThanSelectedHttpRowAsync" disabled="@(SelectedHttpCutoffUtc is null)">Clear Older Than Selected</button>
         </div>
 
         <div class="ops-table-wrap compact">
             <table class="ops-table http-table">
                 <thead>
                     <tr>
+                        <th>Select</th>
                         <th>Created</th>
                         <th>State</th>
                         <th>Method</th>
@@ -127,10 +133,15 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var q in _queue)
-                    {
-                        var requestUrl = Text(q, "requestUrl", "RequestUrl");
+                    <Virtualize TItem="JsonElement" Items="_queue" Context="q" ItemSize="48" OverscanCount="12" SpacerElement="tr">
+                        @{
+                            var requestUrl = Text(q, "requestUrl", "RequestUrl");
+                            var id = Text(q, "id", "Id");
+                        }
                         <tr>
+                            <td>
+                                <input type="checkbox" checked="@IsHttpRowSelected(id)" @onchange="args => ToggleHttpRow(id, args)" />
+                            </td>
                             <td>@FormatTime(Text(q, "createdAtUtc", "CreatedAtUtc"))</td>
                             <td><span class="queue-state @CssToken(Text(q, "state", "State"))">@DisplayOrDash(Text(q, "state", "State"))</span></td>
                             <td>@DisplayOrDash(Text(q, "method", "Method"))</td>
@@ -141,7 +152,7 @@
                             <td>@DurationLabel(q)</td>
                             <td class="clip" title="@Text(q, "lastError", "LastError")">@DisplayOrDash(Text(q, "lastError", "LastError"))</td>
                         </tr>
-                    }
+                    </Virtualize>
                 </tbody>
             </table>
         </div>
@@ -379,10 +390,11 @@
 
     private bool _assetsLoading;
     private string _assetSearch = "";
-    private string _httpStateFilter = "";
+    private string _httpStateFilter = "Queued";
     private string _statusMessage = "";
     private string? _selectedTargetId;
     private string? _selectedSubdomain;
+    private readonly HashSet<string> _selectedHttpIds = new(StringComparer.OrdinalIgnoreCase);
 
     private int TargetCount => _targets.Count;
     private int HttpQueueCount => _queue.Count;
@@ -441,6 +453,18 @@
             return string.IsNullOrWhiteSpace(label) ? "Select a target" : label;
         }
     }
+
+    private DateTimeOffset? SelectedHttpCutoffUtc => _queue
+        .Where(q => _selectedHttpIds.Contains(Text(q, "id", "Id")))
+        .Select(q => DateTimeOffset.TryParse(
+            Text(q, "createdAtUtc", "CreatedAtUtc"),
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal,
+            out var parsed)
+                ? parsed
+                : (DateTimeOffset?)null)
+        .Where(d => d is not null)
+        .Min();
 
     protected override async Task OnInitializedAsync()
     {
@@ -619,9 +643,96 @@
 
     private async Task ReloadHttpQueueAsync()
     {
-        var state = string.IsNullOrWhiteSpace(_httpStateFilter) ? "" : $"&state={Uri.EscapeDataString(_httpStateFilter)}";
-        Replace(_queue, await GetArrayAsync($"/api/http-request-queue?take=500{state}"));
+        var state = string.IsNullOrWhiteSpace(_httpStateFilter) ? "" : $"state={Uri.EscapeDataString(_httpStateFilter)}";
+        var take = _httpStateFilter.Equals("Queued", StringComparison.OrdinalIgnoreCase) ? "" : "take=500";
+        var separator = !string.IsNullOrWhiteSpace(state) && !string.IsNullOrWhiteSpace(take) ? "&" : "";
+        var query = string.Concat(take, separator, state);
+        var uri = string.IsNullOrWhiteSpace(query) ? "/api/http-request-queue" : $"/api/http-request-queue?{query}";
+
+        Replace(_queue, await GetArrayAsync(uri));
+        _selectedHttpIds.RemoveWhere(id => !_queue.Any(q => Text(q, "id", "Id").Equals(id, StringComparison.OrdinalIgnoreCase)));
     }
+
+    private bool IsHttpRowSelected(string id) =>
+        !string.IsNullOrWhiteSpace(id) && _selectedHttpIds.Contains(id);
+
+    private void ToggleHttpRow(string id, ChangeEventArgs args)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return;
+        }
+
+        if (args.Value is bool selected && selected)
+        {
+            _selectedHttpIds.Add(id);
+        }
+        else
+        {
+            _selectedHttpIds.Remove(id);
+        }
+    }
+
+    private async Task RetrySelectedHttpRowsAsync()
+    {
+        await MutateSelectedHttpRowsAsync("/api/http-request-queue/retry");
+    }
+
+    private async Task ClearSelectedHttpRowsAsync()
+    {
+        await MutateSelectedHttpRowsAsync("/api/http-request-queue/clear-selected");
+    }
+
+    private async Task MutateSelectedHttpRowsAsync(string uri)
+    {
+        var ids = SelectedHttpGuids();
+        if (ids.Length == 0)
+        {
+            return;
+        }
+
+        using var response = await Http.PostAsJsonAsync(uri, new { ids });
+        response.EnsureSuccessStatusCode();
+        _selectedHttpIds.Clear();
+        await ReloadHttpQueueAsync();
+    }
+
+    private async Task ClearCompletedHttpRowsAsync()
+    {
+        await MutateHttpRowsAsync("/api/http-request-queue/clear-completed");
+    }
+
+    private async Task ClearFailedHttpRowsAsync()
+    {
+        await MutateHttpRowsAsync("/api/http-request-queue/clear-failed");
+    }
+
+    private async Task ClearOlderThanSelectedHttpRowAsync()
+    {
+        if (SelectedHttpCutoffUtc is not { } cutoff)
+        {
+            return;
+        }
+
+        using var response = await Http.PostAsJsonAsync("/api/http-request-queue/clear-older-than", new { cutoffUtc = cutoff });
+        response.EnsureSuccessStatusCode();
+        _selectedHttpIds.Clear();
+        await ReloadHttpQueueAsync();
+    }
+
+    private async Task MutateHttpRowsAsync(string uri)
+    {
+        using var response = await Http.PostAsync(uri, content: null);
+        response.EnsureSuccessStatusCode();
+        _selectedHttpIds.Clear();
+        await ReloadHttpQueueAsync();
+    }
+
+    private Guid[] SelectedHttpGuids() =>
+        _selectedHttpIds
+            .Select(id => Guid.TryParse(id, out var parsed) ? parsed : Guid.Empty)
+            .Where(id => id != Guid.Empty)
+            .ToArray();
 
     private async Task ReloadMessageBusAsync()
     {

@@ -1,15 +1,16 @@
 using System.Net;
 using ArgusEngine.Application.Workers;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
 using ArgusEngine.Infrastructure;
 using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
 using ArgusEngine.Workers.Spider;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 try
 {
@@ -18,24 +19,43 @@ try
     builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-spider");
     builder.Services.AddArgusDatabaseLogging("worker-spider");
 
+    builder.Services.AddOptions<SpiderHttpOptions>()
+        .Bind(builder.Configuration.GetSection("Spider:Http"))
+        .Validate(options => options.MaxConcurrency > 0, "Spider:Http:MaxConcurrency must be greater than zero.")
+        .Validate(options => options.VisibilityTimeoutSeconds > 0, "Spider:Http:VisibilityTimeoutSeconds must be greater than zero.")
+        .Validate(options => options.PollIntervalSeconds > 0, "Spider:Http:PollIntervalSeconds must be greater than zero.")
+        .ValidateOnStart();
+
     builder.Services.AddSingleton<AdaptiveConcurrencyController>();
     builder.Services.AddHostedService<HttpRequestQueueWorker>();
 
     builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
     builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.Spider);
     builder.Services.AddScoped<IWorkerHealthCheck, SpiderWorkerHealthCheck>();
+
     builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });
 
     builder.Services.AddHttpClient("spider")
-        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
         {
-            AllowAutoRedirect = true,
-            MaxAutomaticRedirections = 10,
-            AutomaticDecompression = DecompressionMethods.All,
-            CheckCertificateRevocationList = false,
-#pragma warning disable CA5359 // Insecure SSL is intentional for wide-range reconnaissance
-            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            var options = serviceProvider.GetRequiredService<IOptions<SpiderHttpOptions>>().Value;
+
+            var handler = new HttpClientHandler
+            {
+                AllowAutoRedirect = true,
+                MaxAutomaticRedirections = 10,
+                AutomaticDecompression = DecompressionMethods.All,
+                CheckCertificateRevocationList = false,
+            };
+
+            if (options.AllowInsecureSsl)
+            {
+#pragma warning disable CA5359
+                handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
 #pragma warning restore CA5359
+            }
+
+            return handler;
         })
         .AddPolicyHandler(HttpRetryPolicies.SpiderRetryPolicy());
 
@@ -43,15 +63,14 @@ try
 
 #pragma warning disable CA1848
     var startupLog = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-
     if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
     {
         await ArgusDbBootstrap.InitializeAsync(
-                host.Services,
-                host.Services.GetRequiredService<IConfiguration>(),
-                startupLog,
-                includeFileStore: true,
-                host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping)
+            host.Services,
+            host.Services.GetRequiredService<IConfiguration>(),
+            startupLog,
+            includeFileStore: true,
+            host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping)
             .ConfigureAwait(false);
     }
     else

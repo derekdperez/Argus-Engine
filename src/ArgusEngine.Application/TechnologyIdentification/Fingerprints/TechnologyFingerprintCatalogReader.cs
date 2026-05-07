@@ -22,7 +22,24 @@ public static class TechnologyFingerprintCatalogReader
                 path);
         }
 
-        return LoadFromJson(File.ReadAllText(path), path);
+        using var hashStream = File.OpenRead(path);
+        var hash = Convert.ToHexString(SHA256.HashData(hashStream)).ToLowerInvariant();
+
+        using var jsonStream = File.OpenRead(path);
+        var fingerprints = JsonSerializer.Deserialize<List<TechnologyFingerprintDefinition>>(jsonStream, JsonOptions)
+            ?? throw new InvalidOperationException("Technology fingerprint catalog is empty or invalid.");
+
+        var validation = TechnologyFingerprintCatalogValidator.Validate(fingerprints);
+        if (!validation.IsValid)
+        {
+            throw new TechnologyFingerprintCatalogValidationException(validation);
+        }
+
+        return new LoadedTechnologyFingerprintCatalog(
+            hash,
+            fingerprints,
+            path,
+            validation);
     }
 
     public static LoadedTechnologyFingerprintCatalog LoadFromJson(string json, string resourcePath)

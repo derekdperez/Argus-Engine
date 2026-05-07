@@ -47,7 +47,7 @@
     width: 2.35rem;
     height: 2.35rem;
     border-radius: 0.85rem;
-    background: linear-gradient(135deg, #1d4ed8, #7c3aed);
+    background: #1d4ed8;
     color: #fff;
     font-weight: 900;
     letter-spacing: -0.05em;
@@ -104,14 +104,14 @@
 
 .app-nav .nav-button.active {
     color: #fff;
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    background: #2563eb;
     border-color: transparent;
 }
 
 .app-nav .nav-button.active:hover {
     color: #fff;
     border-color: transparent;
-    background: linear-gradient(135deg, #1d4ed8, #1e40af);
+    background: #1d4ed8;
 }
 
 .app-main {

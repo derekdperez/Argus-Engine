@@ -21,8 +21,7 @@
 html {
     min-height: 100%;
     background:
-        radial-gradient(circle at top left, rgba(37, 99, 235, 0.13), transparent 26rem),
-        radial-gradient(circle at top right, rgba(124, 58, 237, 0.12), transparent 24rem),
+        linear-gradient(180deg, rgba(37, 99, 235, 0.08), transparent 18rem),
         #f8fafc;
 }
 
@@ -79,7 +78,7 @@ button:disabled,
 button.primary,
 .btn.primary {
     border-color: transparent;
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    background: #2563eb;
     color: #fff;
 }
 
@@ -145,7 +144,6 @@ textarea:focus {
     inset: auto -8rem -10rem auto;
     width: 18rem;
     height: 18rem;
-    border-radius: 999px;
     background: rgba(37, 99, 235, 0.10);
     pointer-events: none;
 }

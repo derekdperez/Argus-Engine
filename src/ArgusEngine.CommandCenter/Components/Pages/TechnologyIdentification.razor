@@ -261,9 +261,21 @@
         }
     }
 
-    protected override async Task OnInitializedAsync()
+    private bool _initialLoadStarted;
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
     {
-        await ReloadAsync().ConfigureAwait(false);
+        if (firstRender && !_initialLoadStarted)
+        {
+            _initialLoadStarted = true;
+            _ = InvokeAsync(async () =>
+            {
+                await ReloadAsync().ConfigureAwait(false);
+                StateHasChanged();
+            });
+        }
+
+        return Task.CompletedTask;
     }
 
     private async Task ReloadAsync()

@@ -94,6 +94,14 @@ public static class OpsEndpoints
                     .LongCountAsync(a => a.Kind == AssetKind.Url && a.LifecycleStatus == AssetLifecycleStatus.Queued, ct)
                     .ConfigureAwait(false);
 
+                var technologyObservationCount = await db.TechnologyObservations.AsNoTracking()
+                    .LongCountAsync(ct)
+                    .ConfigureAwait(false);
+
+                var publishedEventCount = await db.BusJournal.AsNoTracking()
+                    .LongCountAsync(e => e.Direction == "Publish", ct)
+                    .ConfigureAwait(false);
+
                 // Top domain should count confirmed assets only.
                 var domainCounts = await db.Assets.AsNoTracking()
                     .Where(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed)
@@ -126,7 +134,9 @@ public static class OpsEndpoints
                         subdomainsConfirmed,
                         lastAssetCreatedAt,
                         lastWorkerEventPublishedAt,
-                        queuedHttpAssets));
+                        queuedHttpAssets,
+                        technologyObservationCount,
+                        publishedEventCount));
             })
             .WithName("OpsOverview");
 

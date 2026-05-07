@@ -5,8 +5,12 @@
 @using System.Globalization
 @using System.Net.Http.Json
 @using System.Text.Json
+@using ArgusEngine.CommandCenter.Realtime
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Web.Virtualization
+@implements IDisposable
 @inject HttpClient Http
+@inject DiscoveryRealtimeClient Realtime
 
 <PageTitle>Operations - Argus Engine</PageTitle>
 
@@ -22,12 +26,16 @@
             <strong>@FormatNumber(TotalTargets)</strong>
         </article>
         <article class="metric-card">
-            <span>Confirmed Assets</span>
+            <span>Assets</span>
             <strong>@FormatNumber(ConfirmedAssets)</strong>
         </article>
         <article class="metric-card">
-            <span>Confirmed Subdomains</span>
+            <span>Subdomains</span>
             <strong>@FormatNumber(ConfirmedSubdomains)</strong>
+        </article>
+        <article class="metric-card">
+            <span>Technologies Confirmed</span>
+            <strong>@FormatNumber(TechnologiesConfirmed)</strong>
         </article>
         <article class="metric-card">
             <span>Running Workers</span>
@@ -47,7 +55,7 @@
         </article>
         <article class="metric-card">
             <span>Published Events</span>
-            <strong>@FormatNumber(_events.Count)</strong>
+            <strong>@FormatNumber(PublishedEventCount)</strong>
         </article>
     </section>
 
@@ -62,6 +70,19 @@
             </div>
 
             <div class="ops-rz-toolbar simple dense-toolbar">
+                <label class="target-create">
+                    <span>New target</span>
+                    <input type="text" class="ops-filter" @bind="_newTargetRootDomain" @bind:event="oninput" placeholder="example.com" />
+                </label>
+                <label class="target-depth">
+                    <span>Depth</span>
+                    <input type="number" min="1" max="64" class="ops-filter compact-filter" @bind="_newTargetDepth" />
+                </label>
+                <button type="button" class="btn" @onclick="CreateTargetAsync" disabled="@(!CanCreateTarget)">Add Target</button>
+                <label class="file-import-button">
+                    <span>Import</span>
+                    <InputFile OnChange="ImportTargetsAsync" disabled="@_importingTargets" />
+                </label>
                 <label class="wide-search">
                     <span>Search</span>
                     <input type="search" class="ops-filter" @bind="_targetSearch" @bind:event="oninput" placeholder="Search targets..." />
@@ -540,12 +561,20 @@
     private string _statusMessage = "";
     private string? _selectedTargetId;
     private string? _selectedSubdomain;
+    private string _newTargetRootDomain = "";
+    private int _newTargetDepth = 12;
+    private bool _importingTargets;
+    private bool _initialLoadStarted;
+    private bool _liveRefreshRunning;
+    private readonly CancellationTokenSource _realtimeCts = new();
     private readonly HashSet<string> _selectedHttpIds = new(StringComparer.OrdinalIgnoreCase);
 
     private bool UsingEcsWorkers => _workerScaleTargets.Count > 0;
     private long TotalTargets => _targets.Count;
     private long ConfirmedAssets => _targets.Sum(t => Long(t, "confirmedAssetCount", "ConfirmedAssetCount"));
     private long ConfirmedSubdomains => _targets.Sum(t => Long(t, "subdomainCount", "SubdomainCount"));
+    private long TechnologiesConfirmed => OverviewLong("technologyObservationCount", "TechnologyObservationCount");
+    private long PublishedEventCount => Math.Max(_events.Count, OverviewLong("publishedEventCount", "PublishedEventCount"));
     private long RunningWorkerCount => UsingEcsWorkers
         ? _workerScaleTargets.Sum(w => Long(w, "runningCount", "RunningCount"))
         : _workerInstances.Count;
@@ -556,6 +585,9 @@
     private string WorkerHealthSubtitle => UsingEcsWorkers
         ? "ECS service scale targets and live worker activity"
         : "Workers running with the local or EC2 deployment";
+
+    private bool CanCreateTarget =>
+        !string.IsNullOrWhiteSpace(_newTargetRootDomain) && _newTargetDepth > 0;
 
     private string TopDomainLabel
     {
@@ -824,9 +856,95 @@
             _ => Text(worker, "workerKind", "WorkerKind"),
         };
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
-        await ReloadAllAsync();
+        Realtime.DomainEventReceived += OnRealtimeEvent;
+        Realtime.ConnectionStateChanged += OnRealtimeConnectionChanged;
+        return Task.CompletedTask;
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialLoadStarted)
+        {
+            _initialLoadStarted = true;
+            _ = InvokeAsync(InitializeAfterFirstRenderAsync);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task InitializeAfterFirstRenderAsync()
+    {
+        await ReloadAllAsync().ConfigureAwait(false);
+        await StartRealtimeAsync().ConfigureAwait(false);
+        _ = PollLiveAsync();
+        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+    }
+
+    private async Task StartRealtimeAsync()
+    {
+        try
+        {
+            await Realtime.EnsureStartedAsync(_realtimeCts.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            // One-second live polling remains active if the hub cannot connect.
+        }
+    }
+
+    private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
+    {
+        _ = InvokeAsync(ReloadLiveAsync);
+    }
+
+    private void OnRealtimeConnectionChanged(object? sender, EventArgs args)
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PollLiveAsync()
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            while (await timer.WaitForNextTickAsync(_realtimeCts.Token).ConfigureAwait(false))
+            {
+                await ReloadLiveAsync().ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task ReloadLiveAsync()
+    {
+        if (_liveRefreshRunning)
+        {
+            return;
+        }
+
+        _liveRefreshRunning = true;
+        try
+        {
+            await Task.WhenAll(
+                    ReloadOverviewAsync(),
+                    ReloadMessageBusAsync(),
+                    ReloadEventsAsync(),
+                    ReloadWorkersAsync())
+                .ConfigureAwait(false);
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Keep the current snapshot visible; the next tick/event will retry.
+        }
+        finally
+        {
+            _liveRefreshRunning = false;
+        }
     }
 
     private async Task ReloadAllAsync()
@@ -852,6 +970,66 @@
         finally
         {
             EnsureSelection();
+        }
+    }
+
+    private async Task CreateTargetAsync()
+    {
+        if (!CanCreateTarget)
+        {
+            return;
+        }
+
+        try
+        {
+            using var response = await Http.PostAsJsonAsync(
+                    "/api/targets",
+                    new { rootDomain = _newTargetRootDomain.Trim(), globalMaxDepth = _newTargetDepth },
+                    _realtimeCts.Token)
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            _newTargetRootDomain = "";
+            await ReloadTargetsAsync().ConfigureAwait(false);
+            await ReloadOverviewAsync().ConfigureAwait(false);
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Target could not be added: {ex.Message}";
+        }
+    }
+
+    private async Task ImportTargetsAsync(InputFileChangeEventArgs args)
+    {
+        if (args.FileCount == 0)
+        {
+            return;
+        }
+
+        _importingTargets = true;
+        try
+        {
+            await using var stream = args.File.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024, _realtimeCts.Token);
+            using var reader = new StreamReader(stream);
+            var text = await reader.ReadToEndAsync(_realtimeCts.Token).ConfigureAwait(false);
+            var domains = text.Split(['\r', '\n', ',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            using var response = await Http.PostAsJsonAsync(
+                    "/api/targets/bulk",
+                    new { domains, globalMaxDepth = _newTargetDepth },
+                    _realtimeCts.Token)
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            await ReloadTargetsAsync().ConfigureAwait(false);
+            await ReloadOverviewAsync().ConfigureAwait(false);
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Targets could not be imported: {ex.Message}";
+        }
+        finally
+        {
+            _importingTargets = false;
         }
     }
 
@@ -1377,4 +1555,12 @@
 
     private static string AssetKey(JsonElement element) =>
         DisplayOrDash(Text(element, "id", "Id", "canonicalKey", "CanonicalKey", "finalUrl", "FinalUrl"));
+
+    public void Dispose()
+    {
+        Realtime.DomainEventReceived -= OnRealtimeEvent;
+        Realtime.ConnectionStateChanged -= OnRealtimeConnectionChanged;
+        _realtimeCts.Cancel();
+        _realtimeCts.Dispose();
+    }
 }

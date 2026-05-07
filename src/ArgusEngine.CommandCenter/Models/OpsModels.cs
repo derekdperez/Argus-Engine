@@ -89,7 +89,9 @@ public sealed record OpsOverviewDto(
     long SubdomainsDiscovered,
     DateTimeOffset? LastAssetCreatedAtUtc,
     DateTimeOffset? LastWorkerEventPublishedAtUtc,
-    long HttpQueueQueuedAssetCount);
+    long HttpQueueQueuedAssetCount,
+    long TechnologyObservationCount,
+    long PublishedEventCount);
 
 public sealed record OpsSnapshotDto(
     IReadOnlyList<WorkerSwitchDto> Workers,

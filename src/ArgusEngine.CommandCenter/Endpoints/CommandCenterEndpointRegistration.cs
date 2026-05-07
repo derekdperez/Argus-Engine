@@ -30,6 +30,7 @@ public static class CommandCenterEndpointRegistration
         app.MapOpsEndpoints();
         app.MapTagEndpoints();
         app.MapTargetEndpoints();
+        app.MapTechnologyIdentificationEndpoints();
         app.MapToolRestartEndpoints();
         app.MapWorkerEndpoints();
         app.MapHub<DiscoveryHub>("/hubs/discovery");

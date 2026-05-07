@@ -4,68 +4,29 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 WORKDIR /src
-# Copy project files first so NuGet restore is cached when only .cs/.razor/css/js files change.
-
+# Copy all project files to perform a global restore. This is much faster and more cache-friendly
+# than restoring projects individually in each service Dockerfile.
 COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
+COPY src/*/*.csproj ./src/
+RUN for f in src/*.csproj; do \
+      p="${f#src/}"; \
+      p="${p%.csproj}"; \
+      mkdir -p "src/$p"; \
+      mv "$f" "src/$p/"; \
+    done
 
-COPY src/ArgusEngine.Application/ArgusEngine.Application.csproj src/ArgusEngine.Application/
-
-COPY src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj src/ArgusEngine.CommandCenter/
-
-COPY src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj src/ArgusEngine.Contracts/
-COPY src/ArgusEngine.Domain/ArgusEngine.Domain.csproj src/ArgusEngine.Domain/
-
-COPY src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj src/ArgusEngine.Infrastructure/
-
-COPY src/ArgusEngine.Harness.Core/ArgusEngine.Harness.Core.csproj src/ArgusEngine.Harness.Core/
-
-COPY src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj src/ArgusEngine.Gatekeeper/
-
-COPY src/ArgusEngine.Workers.Enumeration/ArgusEngine.Workers.Enumeration.csproj src/ArgusEngine.Workers.Enumeration/
-COPY src/ArgusEngine.Workers.Spider/ArgusEngine.Workers.Spider.csproj src/ArgusEngine.Workers.Spider/
-
-COPY src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj src/ArgusEngine.Workers.PortScan/
-
-COPY src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj src/ArgusEngine.Workers.HighValue/
-
-COPY src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj src/ArgusEngine.Workers.TechnologyIdentification/
-COPY src/ArgusEngine.Workers.HttpRequester/ArgusEngine.Workers.HttpRequester.csproj src/ArgusEngine.Workers.HttpRequester/
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
- dotnet restore "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj"
-# Copy only the project dependency closure used by the web app.
-# Unrelated worker edits no longer invalidate this layer.
+    dotnet restore "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj"
 
-COPY src/ArgusEngine.Application/ src/ArgusEngine.Application/
-
-COPY src/ArgusEngine.CommandCenter/ src/ArgusEngine.CommandCenter/
-
-COPY src/ArgusEngine.Contracts/ src/ArgusEngine.Contracts/
-
-COPY src/ArgusEngine.Domain/ src/ArgusEngine.Domain/
-
-COPY src/ArgusEngine.Infrastructure/ src/ArgusEngine.Infrastructure/
-
-COPY src/ArgusEngine.Harness.Core/ src/ArgusEngine.Harness.Core/
-
-COPY src/ArgusEngine.Gatekeeper/ src/ArgusEngine.Gatekeeper/
-COPY src/ArgusEngine.Workers.Enumeration/ src/ArgusEngine.Workers.Enumeration/
-
-COPY src/ArgusEngine.Workers.Spider/ src/ArgusEngine.Workers.Spider/
-
-COPY src/ArgusEngine.Workers.PortScan/ src/ArgusEngine.Workers.PortScan/
-
-COPY src/ArgusEngine.Workers.HighValue/ src/ArgusEngine.Workers.HighValue/
-
-COPY src/ArgusEngine.Workers.TechnologyIdentification/ src/ArgusEngine.Workers.TechnologyIdentification/
-
-COPY src/ArgusEngine.Workers.HttpRequester/ src/ArgusEngine.Workers.HttpRequester/
-
+# Copy the rest of the source
+COPY src/ src/
 COPY src/Resources/ src/Resources/
 
 ARG COMPONENT_VERSION=2.6.2
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
   dotnet publish "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj" \
     -c Release -o /app/publish /p:UseAppHost=false \
+    -p:maxcpucount -p:ParallelizePublish=true \
     /p:Version="${COMPONENT_VERSION}" \
     /p:AssemblyVersion="2.6.2.0" \
     /p:FileVersion="2.6.2.0" \

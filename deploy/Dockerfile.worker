@@ -12,39 +12,26 @@ ARG COMPONENT_VERSION=2.6.1
 
 WORKDIR /src
 
-# Copy project files first so NuGet restore is cached when only .cs files change.
+# Copy all project files to perform a global restore.
 COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
-COPY src/ArgusEngine.Application/ArgusEngine.Application.csproj src/ArgusEngine.Application/
-COPY src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj src/ArgusEngine.Contracts/
-COPY src/ArgusEngine.Domain/ArgusEngine.Domain.csproj src/ArgusEngine.Domain/
-COPY src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj src/ArgusEngine.Infrastructure/
-COPY src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj src/ArgusEngine.Gatekeeper/
-COPY src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj src/ArgusEngine.Workers.HighValue/
-COPY src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj src/ArgusEngine.Workers.PortScan/
-COPY src/ArgusEngine.Workers.Spider/ArgusEngine.Workers.Spider.csproj src/ArgusEngine.Workers.Spider/
-COPY src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj src/ArgusEngine.Workers.TechnologyIdentification/
-COPY src/ArgusEngine.Workers.Enumeration/ArgusEngine.Workers.Enumeration.csproj src/ArgusEngine.Workers.Enumeration/
-COPY src/ArgusEngine.Workers.HttpRequester/ArgusEngine.Workers.HttpRequester.csproj src/ArgusEngine.Workers.HttpRequester/
-COPY src/ArgusEngine.Harness.Core/ArgusEngine.Harness.Core.csproj src/ArgusEngine.Harness.Core/
+COPY src/*/*.csproj ./src/
+RUN for f in src/*.csproj; do \
+      dir="src/${f%.csproj}"; \
+      mkdir -p "$dir"; \
+      mv "$f" "$dir/"; \
+    done
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 
-# Copy only the shared projects and selected worker. Unrelated worker edits no longer invalidate this image.
-COPY src/ArgusEngine.Application/ src/ArgusEngine.Application/
-COPY src/ArgusEngine.Contracts/ src/ArgusEngine.Contracts/
-COPY src/ArgusEngine.Domain/ src/ArgusEngine.Domain/
-COPY src/ArgusEngine.Infrastructure/ src/ArgusEngine.Infrastructure/
-COPY src/ArgusEngine.Workers.Enumeration/ src/ArgusEngine.Workers.Enumeration/
-COPY src/ArgusEngine.Harness.Core/ src/ArgusEngine.Harness.Core/
-COPY src/${PROJECT_DIR}/ src/${PROJECT_DIR}/
-
-# High-value worker links content from src/Resources; copying it for all generic workers keeps the Dockerfile simple.
+# Copy the rest of the source
+COPY src/ src/
 COPY src/Resources/ src/Resources/
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
       -c Release -o /app/publish /p:UseAppHost=false \
+      -p:maxcpucount -p:ParallelizePublish=true \
       /p:Version="${COMPONENT_VERSION}" \
       /p:AssemblyVersion="2.6.1.0" \
       /p:FileVersion="2.6.1.0" \

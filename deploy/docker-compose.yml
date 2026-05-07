@@ -152,6 +152,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ..:/workspace
+      - ../src/ArgusEngine.CommandCenter/wwwroot:/app/wwwroot:ro
     ports:
       - "8080:8080"
     healthcheck:

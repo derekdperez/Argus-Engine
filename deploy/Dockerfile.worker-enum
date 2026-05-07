@@ -18,9 +18,10 @@ WORKDIR /src
 COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
 COPY src/*/*.csproj ./src/
 RUN for f in src/*.csproj; do \
-      dir="src/${f%.csproj}"; \
-      mkdir -p "$dir"; \
-      mv "$f" "$dir/"; \
+      p="${f#src/}"; \
+      p="${p%.csproj}"; \
+      mkdir -p "src/$p"; \
+      mv "$f" "src/$p/"; \
     done
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \

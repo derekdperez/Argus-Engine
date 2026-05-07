@@ -5,6 +5,7 @@
 @using System.Globalization
 @using System.Net.Http.Json
 @using System.Text.Json
+@using ArgusEngine.CommandCenter.Models
 @using ArgusEngine.CommandCenter.Realtime
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Web.Virtualization
@@ -566,6 +567,7 @@
     private bool _importingTargets;
     private bool _initialLoadStarted;
     private bool _liveRefreshRunning;
+    private DateTimeOffset _lastLiveRefreshUtc = DateTimeOffset.MinValue;
     private readonly CancellationTokenSource _realtimeCts = new();
     private readonly HashSet<string> _selectedHttpIds = new(StringComparer.OrdinalIgnoreCase);
 
@@ -896,6 +898,7 @@
 
     private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
     {
+        _ = evt;
         _ = InvokeAsync(ReloadLiveAsync);
     }
 
@@ -921,16 +924,19 @@
 
     private async Task ReloadLiveAsync()
     {
-        if (_liveRefreshRunning)
+        var now = DateTimeOffset.UtcNow;
+        if (_liveRefreshRunning || now - _lastLiveRefreshUtc < TimeSpan.FromSeconds(1))
         {
             return;
         }
 
         _liveRefreshRunning = true;
+        _lastLiveRefreshUtc = now;
         try
         {
             await Task.WhenAll(
                     ReloadOverviewAsync(),
+                    ReloadHttpQueueAsync(),
                     ReloadMessageBusAsync(),
                     ReloadEventsAsync(),
                     ReloadWorkersAsync())

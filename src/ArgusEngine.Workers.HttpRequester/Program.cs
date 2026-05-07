@@ -31,8 +31,7 @@ try
     builder.Services.AddHostedService<HttpRequesterWorker>();
 
     builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
-    builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.Spider); // Reusing Spider key for now or add a new one?
-    // Let's add a new key in Application.Workers.WorkerKeys if possible later.
+    builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.HttpRequester);
 
     builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });
 

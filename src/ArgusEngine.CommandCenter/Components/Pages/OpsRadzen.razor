@@ -5,6 +5,7 @@
 @using System.Globalization
 @using System.Net.Http.Json
 @using System.Text.Json
+@using Microsoft.AspNetCore.Components.Web.Virtualization
 @inject HttpClient Http
 
 <PageTitle>Operations - Argus Engine</PageTitle>
@@ -53,10 +54,48 @@
     <section class="panel">
         <div class="section-heading">
             <div>
+                <p class="eyebrow">Scope</p>
+                <h2>Targets</h2>
+            </div>
+            <span class="muted">@FormatNumber(TargetCount) configured targets</span>
+        </div>
+
+        <div class="ops-table-wrap compact">
+            <table class="ops-table targets-table">
+                <thead>
+                    <tr>
+                        <th>Root domain</th>
+                        <th>Max depth</th>
+                        <th>Confirmed subdomains</th>
+                        <th>Confirmed assets</th>
+                        <th>Confirmed URLs</th>
+                        <th>Last run</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in _targets)
+                    {
+                        <tr>
+                            <td class="clip" title="@Text(t, "rootDomain", "RootDomain")">@Text(t, "rootDomain", "RootDomain")</td>
+                            <td>@DisplayOrDash(Text(t, "globalMaxDepth", "GlobalMaxDepth"))</td>
+                            <td>@FormatNumber(Long(t, "subdomainCount", "SubdomainCount"))</td>
+                            <td>@FormatNumber(Long(t, "confirmedAssetCount", "ConfirmedAssetCount"))</td>
+                            <td>@FormatNumber(Long(t, "confirmedUrlCount", "ConfirmedUrlCount"))</td>
+                            <td>@FormatTime(Text(t, "lastRunAtUtc", "LastRunAtUtc"))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="section-heading">
+            <div>
                 <p class="eyebrow">Inventory</p>
                 <h2>Assets</h2>
             </div>
-            <span class="muted">Showing simplified default columns</span>
+            <span class="muted">@FormatNumber(FilteredAssetRows.Count) visible assets</span>
         </div>
 
         <div class="ops-rz-toolbar simple">
@@ -69,7 +108,7 @@
             </button>
         </div>
 
-        <div class="ops-table-wrap">
+        <div class="ops-table-wrap asset-table-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
@@ -86,11 +125,12 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var a in FilteredAssets)
-                    {
-                        var finalUrl = Text(a, "finalUrl", "FinalUrl");
-                        var href = TryHttpHref(finalUrl);
-                        <tr>
+                    <Virtualize Items="FilteredAssetRows" Context="a" ItemSize="48" OverscanCount="12" SpacerElement="tr">
+                        <tr @key="AssetKey(a)">
+                            @{
+                                var finalUrl = Text(a, "finalUrl", "FinalUrl");
+                                var href = TryHttpHref(finalUrl);
+                            }
                             <td>@FormatTime(Text(a, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
                             <td>@FormatTime(Text(a, "lastSeenAtUtc", "LastSeenAtUtc"))</td>
                             <td>@Text(a, "kind", "Kind")</td>
@@ -111,7 +151,7 @@
                             <td>@Text(a, "discoveredBy", "DiscoveredBy")</td>
                             <td class="clip" title="@Text(a, "discoveryContext", "DiscoveryContext")">@Text(a, "discoveryContext", "DiscoveryContext")</td>
                         </tr>
-                    }
+                    </Virtualize>
                 </tbody>
             </table>
         </div>
@@ -249,9 +289,9 @@
         }
     }
 
-    private IEnumerable<JsonElement> FilteredAssets => string.IsNullOrWhiteSpace(_assetSearch)
+    private IReadOnlyList<JsonElement> FilteredAssetRows => string.IsNullOrWhiteSpace(_assetSearch)
         ? _assets
-        : _assets.Where(a => Matches(a, _assetSearch));
+        : _assets.Where(a => Matches(a, _assetSearch)).ToArray();
 
     protected override async Task OnInitializedAsync()
     {
@@ -534,4 +574,7 @@
         var value = Text(element, "durationMs", "DurationMs");
         return string.IsNullOrWhiteSpace(value) ? "-" : $"{value}ms";
     }
+
+    private static string AssetKey(JsonElement element) =>
+        DisplayOrDash(Text(element, "id", "Id", "canonicalKey", "CanonicalKey", "finalUrl", "FinalUrl"));
 }

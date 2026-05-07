@@ -193,15 +193,15 @@
 }
 
 .argus-dg-host.short {
-    max-height: var(--dg-max-height, 240px);
+    height: var(--dg-max-height, 240px);
 }
 
 .argus-dg-host.mid {
-    max-height: var(--dg-max-height, 330px);
+    height: var(--dg-max-height, 330px);
 }
 
 .argus-dg-host.tall {
-    max-height: var(--dg-max-height, 520px);
+    height: var(--dg-max-height, 520px);
 }
 
 .argus-dg-host.vq {

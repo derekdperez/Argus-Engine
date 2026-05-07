@@ -30,7 +30,8 @@
 .ops-page-lite .scope-table-wrap {
     flex: 1 1 auto;
     min-height: 0;
-    max-height: none;
+    height: 100%;
+    overflow-y: scroll;
 }
 
 .ops-page-lite .metric-card,
@@ -162,12 +163,14 @@
 }
 
 .ops-page-lite .ops-table-wrap.asset-table-wrap {
-    max-height: 60vh;
+    height: 60vh;
     min-height: 16rem;
+    overflow-y: scroll;
 }
 
 .ops-page-lite .ops-table-wrap.compact {
-    max-height: min(28rem, 48vh);
+    height: min(28rem, 48vh);
+    overflow-y: scroll;
 }
 
 .ops-page-lite .ops-table {

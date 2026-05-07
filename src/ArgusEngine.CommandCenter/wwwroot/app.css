@@ -256,16 +256,16 @@ textarea:focus {
 
 .scroll {
     overflow: auto;
-    max-height: 320px;
+    height: 320px;
     border: 1px solid var(--border);
 }
 
 .scroll.tall {
-    max-height: 460px;
+    height: 460px;
 }
 
 .scroll.short {
-    max-height: 220px;
+    height: 220px;
 }
 
 .muted {
@@ -642,7 +642,7 @@ h1:focus {
 }
 
 .detail-scroll {
-    max-height: 500px;
+    height: 500px;
     overflow-y: auto;
     padding-right: 0.5rem;
 }

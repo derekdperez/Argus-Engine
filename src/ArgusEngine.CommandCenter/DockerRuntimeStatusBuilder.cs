@@ -141,7 +141,7 @@ internal static class DockerRuntimeStatusBuilder
         var combinedLogs = (logs.StdOut ?? "") + (logs.StdErr ?? "");
         var logLines = logs.Success
             ? EnumerateLines(combinedLogs).TakeLast(LogTailLines).ToList()
-            : [ $"[log retrieval failed] {(string.IsNullOrWhiteSpace(logs.StdErr) ? logs.StdOut : logs.StdErr).Trim()}" ];
+            : [ $"[log retrieval failed] {(string.IsNullOrWhiteSpace(logs.StdErr) ? logs.StdOut ?? "" : logs.StdErr).Trim()}" ];
 
         return new DockerContainerStatusDto(
             row.ID,

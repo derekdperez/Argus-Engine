@@ -47,7 +47,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
         string? cappedBody,
         string cappedSourceUrl,
         string? cappedFinalUrl,
-        IReadOnlyList<string> cappedScriptUrls,
+        string[] cappedScriptUrls,
         List<TechnologyScanResult> results)
     {
         switch (pattern.Source)
@@ -69,7 +69,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
                 break;
 
             case TechnologyConstants.ScriptSource:
-                for (var i = 0; i < cappedScriptUrls.Count; i++)
+                for (var i = 0; i < cappedScriptUrls.Length; i++)
                 {
                     MatchCandidate(pattern, null, cappedScriptUrls[i], results);
                 }
@@ -155,7 +155,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
         }
     }
 
-    private List<TechnologyScanResult> ApplyRequires(IReadOnlyList<TechnologyScanResult> results)
+    private List<TechnologyScanResult> ApplyRequires(List<TechnologyScanResult> results)
     {
         var current = CopyResults(results);
         var changed = true;
@@ -189,7 +189,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
         return current;
     }
 
-    private List<TechnologyScanResult> ApplyExcludes(IReadOnlyList<TechnologyScanResult> results)
+    private List<TechnologyScanResult> ApplyExcludes(List<TechnologyScanResult> results)
     {
         var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -221,7 +221,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
         return output;
     }
 
-    private List<TechnologyScanResult> ApplyImplies(IReadOnlyList<TechnologyScanResult> results)
+    private List<TechnologyScanResult> ApplyImplies(List<TechnologyScanResult> results)
     {
         var output = CopyResults(results);
         var present = BuildTechnologyNameSet(output);
@@ -258,7 +258,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
         return output;
     }
 
-    private static IReadOnlyList<TechnologyScanResult> DeduplicateAndSort(IReadOnlyList<TechnologyScanResult> results)
+    private static List<TechnologyScanResult> DeduplicateAndSort(List<TechnologyScanResult> results)
     {
         if (results.Count == 0)
             return [];
@@ -379,7 +379,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
         return output;
     }
 
-    private static List<TechnologyScanResult> CopyResults(IReadOnlyList<TechnologyScanResult> results)
+    private static List<TechnologyScanResult> CopyResults(List<TechnologyScanResult> results)
     {
         var output = new List<TechnologyScanResult>(results.Count);
 
@@ -391,7 +391,7 @@ public sealed class TechnologyScanner(TechnologyCatalog catalog)
         return output;
     }
 
-    private static HashSet<string> BuildTechnologyNameSet(IReadOnlyList<TechnologyScanResult> results)
+    private static HashSet<string> BuildTechnologyNameSet(List<TechnologyScanResult> results)
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

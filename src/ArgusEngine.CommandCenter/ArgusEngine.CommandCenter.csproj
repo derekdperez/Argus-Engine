@@ -2,6 +2,7 @@
   <PropertyGroup>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <Version>2.6.1</Version>
+    <NoWarn>$(NoWarn);CA1305;CA1822;CA1848;CA1859;CA1873;CA2016</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

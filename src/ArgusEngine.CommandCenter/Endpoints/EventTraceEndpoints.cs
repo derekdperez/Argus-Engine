@@ -12,17 +12,29 @@ public static class EventTraceEndpoints
     {
         app.MapGet(
                 "/api/events/live",
-                async (ArgusDbContext db, int? minutes, int? take, CancellationToken ct) =>
+                async (ArgusDbContext db, int? minutes, int? take, bool? all, CancellationToken ct) =>
                 {
+                    var loadAll = all == true;
                     var window = TimeSpan.FromMinutes(Math.Clamp(minutes ?? 15, 1, 240));
-                    var publishLimit = Math.Clamp(take ?? 250, 25, 1000);
-                    var journalLimit = Math.Clamp(publishLimit * 8, publishLimit, 6000);
+                    var publishLimit = take is > 0
+                        ? Math.Clamp(take.Value, 1, 1_000_000)
+                        : loadAll ? (int?)null : 250;
                     var since = DateTimeOffset.UtcNow - window;
 
-                    var journalRows = await db.BusJournal.AsNoTracking()
-                        .Where(e => e.OccurredAtUtc >= since)
-                        .OrderByDescending(e => e.Id)
-                        .Take(journalLimit)
+                    var journalQuery = db.BusJournal.AsNoTracking();
+                    if (!loadAll)
+                    {
+                        journalQuery = journalQuery.Where(e => e.OccurredAtUtc >= since);
+                    }
+
+                    IQueryable<ArgusEngine.Domain.Entities.BusJournalEntry> orderedJournalQuery =
+                        journalQuery.OrderByDescending(e => e.Id);
+                    if (publishLimit is { } limit)
+                    {
+                        orderedJournalQuery = orderedJournalQuery.Take(Math.Clamp(limit * 8, limit, 1_000_000));
+                    }
+
+                    var journalRows = await orderedJournalQuery
                         .Select(e => new
                         {
                             e.Id,
@@ -54,15 +66,17 @@ public static class EventTraceEndpoints
                     var publishes = parsedRows
                         .Where(r => r.IsPublish)
                         .OrderByDescending(r => r.OccurredAtUtc)
-                        .ThenByDescending(r => r.JournalId)
-                        .Take(publishLimit)
-                        .ToList();
+                        .ThenByDescending(r => r.JournalId);
+
+                    var publishRows = publishLimit is { } maxPublishes
+                        ? publishes.Take(maxPublishes).ToList()
+                        : publishes.ToList();
 
                     var followUpPublishes = parsedRows
                         .Where(r => r.IsPublish && r.CausationId is not null)
                         .ToList();
 
-                    var rows = publishes
+                    var rows = publishRows
                         .Select(p =>
                         {
                             var consumers = p.EventId is null

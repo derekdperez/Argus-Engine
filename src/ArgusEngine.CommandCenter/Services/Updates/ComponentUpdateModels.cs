@@ -2,7 +2,7 @@ namespace ArgusEngine.CommandCenter.Services.Updates;
 
 public sealed class ComponentUpdaterOptions
 {
-    public bool Enabled { get; set; } = false;
+    public bool Enabled { get; set; }
 
     public string RepositoryPath { get; set; } = "/workspace";
 

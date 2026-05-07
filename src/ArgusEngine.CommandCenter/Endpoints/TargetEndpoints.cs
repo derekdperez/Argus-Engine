@@ -24,7 +24,6 @@ public static class TargetEndpoints
                 {
                     var targets = await db.Targets.AsNoTracking()
                         .OrderByDescending(t => t.CreatedAtUtc)
-                        .Take(5000)
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
 

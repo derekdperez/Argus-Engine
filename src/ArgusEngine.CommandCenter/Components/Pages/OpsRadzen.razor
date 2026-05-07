@@ -23,23 +23,37 @@
                     <p class="eyebrow">Scope</p>
                     <h2>Targets</h2>
                 </div>
-                <span class="muted">@FormatNumber(TargetCount)</span>
+                <span class="muted">@FormatNumber(TargetRows.Count)</span>
+            </div>
+
+            <div class="ops-rz-toolbar simple dense-toolbar">
+                <label class="wide-search">
+                    <span>Search</span>
+                    <input type="search" class="ops-filter" @bind="_targetSearch" @bind:event="oninput" placeholder="Search targets..." />
+                </label>
+                <label>
+                    <span>Filter</span>
+                    <select class="ops-filter compact-filter" @bind="_targetFilter">
+                        <option value="">All</option>
+                        <option value="with-assets">With assets</option>
+                        <option value="with-subdomains">With subdomains</option>
+                    </select>
+                </label>
             </div>
 
             <div class="ops-table-wrap scope-table-wrap">
                 <table class="ops-table targets-table">
                     <thead>
                         <tr>
-                            <th>Target name</th>
-                            <th>Max depth</th>
-                            <th>Subdomains</th>
-                            <th>Confirmed assets</th>
-                            <th>Last run</th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("name"))">Target@SortIndicator(_targetSort, "name", _targetSortDescending)</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("depth"))">Depth@SortIndicator(_targetSort, "depth", _targetSortDescending)</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("subdomains"))">Subs@SortIndicator(_targetSort, "subdomains", _targetSortDescending)</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("assets"))">Assets@SortIndicator(_targetSort, "assets", _targetSortDescending)</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("lastRun"))">Last run@SortIndicator(_targetSort, "lastRun", _targetSortDescending)</button></th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var t in _targets)
-                        {
+                        <Virtualize TItem="JsonElement" Items="TargetRows" Context="t" ItemSize="30" OverscanCount="16" SpacerElement="tr">
                             <tr class="selectable-row @(IsSelectedTarget(t) ? "selected" : "")" @onclick="@(() => SelectTarget(t))">
                                 <td class="clip" title="@Text(t, "rootDomain", "RootDomain")">@Text(t, "rootDomain", "RootDomain")</td>
                                 <td>@DisplayOrDash(Text(t, "globalMaxDepth", "GlobalMaxDepth"))</td>
@@ -47,7 +61,7 @@
                                 <td>@FormatNumber(Long(t, "confirmedAssetCount", "ConfirmedAssetCount"))</td>
                                 <td>@FormatTime(Text(t, "lastRunAtUtc", "LastRunAtUtc"))</td>
                             </tr>
-                        }
+                        </Virtualize>
                     </tbody>
                 </table>
             </div>
@@ -59,28 +73,43 @@
                     <p class="eyebrow">Scope</p>
                     <h2>Subdomains</h2>
                 </div>
-                <span class="muted">@SelectedTargetLabel</span>
+                <span class="muted">@SelectedTargetLabel - @FormatNumber(SubdomainRows.Count)</span>
+            </div>
+
+            <div class="ops-rz-toolbar simple dense-toolbar">
+                <label class="wide-search">
+                    <span>Search</span>
+                    <input type="search" class="ops-filter" @bind="_subdomainSearch" @bind:event="oninput" placeholder="Search subdomains..." />
+                </label>
+                <label>
+                    <span>Filter</span>
+                    <select class="ops-filter compact-filter" @bind="_subdomainFilter">
+                        <option value="">All</option>
+                        <option value="selected">Selected</option>
+                    </select>
+                </label>
             </div>
 
             <div class="ops-table-wrap scope-table-wrap">
                 <table class="ops-table subdomains-table">
                     <thead>
                         <tr>
-                            <th>Subdomain</th>
-                            <th>Discovered</th>
-                            <th>How found</th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetSubdomainSort("name"))">Subdomain@SortIndicator(_subdomainSort, "name", _subdomainSortDescending)</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetSubdomainSort("discovered"))">Discovered@SortIndicator(_subdomainSort, "discovered", _subdomainSortDescending)</button></th>
+                            <th><button type="button" class="sort-header" @onclick="@(() => SetSubdomainSort("context"))">How found@SortIndicator(_subdomainSort, "context", _subdomainSortDescending)</button></th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var subdomain in SubdomainRows)
-                        {
-                            var name = SubdomainName(subdomain);
+                        <Virtualize TItem="JsonElement" Items="SubdomainRows" Context="subdomain" ItemSize="30" OverscanCount="16" SpacerElement="tr">
+                            @{
+                                var name = SubdomainName(subdomain);
+                            }
                             <tr class="selectable-row @(IsSelectedSubdomain(name) ? "selected" : "")" @onclick="@(() => SelectSubdomain(name))">
                                 <td class="clip" title="@name">@DisplayOrDash(name)</td>
                                 <td>@FormatTime(Text(subdomain, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
                                 <td class="clip" title="@Text(subdomain, "discoveryContext", "DiscoveryContext")">@DisplayOrDash(Text(subdomain, "discoveryContext", "DiscoveryContext"))</td>
                             </tr>
-                        }
+                        </Virtualize>
                     </tbody>
                 </table>
             </div>
@@ -90,17 +119,92 @@
     <section class="panel">
         <div class="section-heading">
             <div>
-                <p class="eyebrow">HTTP</p>
-                <h2>HTTP Requests</h2>
+                <p class="eyebrow">Inventory</p>
+                <h2>Assets</h2>
             </div>
-            <span class="muted">@FormatNumber(_queue.Count) recent requests</span>
+            <span class="muted">@FormatNumber(FilteredAssetRows.Count) visible assets</span>
         </div>
 
         <div class="ops-rz-toolbar simple">
+            <label class="wide-search">
+                <span>Search</span>
+                <input type="search" class="ops-filter" @bind="_assetSearch" @bind:event="oninput" placeholder="Search assets..." />
+            </label>
             <label>
-                <span>State</span>
+                <span>Filter</span>
+                <select class="ops-filter compact-filter" @bind="_assetFilter">
+                    <option value="">All kinds</option>
+                    <option value="Domain">Domain</option>
+                    <option value="Subdomain">Subdomain</option>
+                    <option value="Url">URL</option>
+                    <option value="IpAddress">IP address</option>
+                    <option value="OpenPort">Open port</option>
+                </select>
+            </label>
+            <button type="button" class="btn" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">
+                @(_assetsLoading ? "Loading..." : "Reload assets")
+            </button>
+        </div>
+
+        <div class="ops-table-wrap asset-table-wrap">
+            <table class="ops-table asset-table">
+                <thead>
+                    <tr>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("discovered"))">Discovered@SortIndicator(_assetSort, "discovered", _assetSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("lastSeen"))">Last seen@SortIndicator(_assetSort, "lastSeen", _assetSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("kind"))">Kind@SortIndicator(_assetSort, "kind", _assetSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("category"))">Category@SortIndicator(_assetSort, "category", _assetSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("url"))">Final URL@SortIndicator(_assetSort, "url", _assetSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("context"))">How found@SortIndicator(_assetSort, "context", _assetSortDescending)</button></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <Virtualize TItem="JsonElement" Items="FilteredAssetRows" Context="a" ItemSize="30" OverscanCount="16" SpacerElement="tr">
+                        <tr @key="AssetKey(a)">
+                            @{
+                                var finalUrl = Text(a, "finalUrl", "FinalUrl");
+                                var href = TryHttpHref(finalUrl);
+                            }
+                            <td>@FormatTime(Text(a, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
+                            <td>@FormatTime(Text(a, "lastSeenAtUtc", "LastSeenAtUtc"))</td>
+                            <td>@Text(a, "kind", "Kind")</td>
+                            <td>@Text(a, "category", "Category")</td>
+                            <td class="clip" title="@finalUrl">
+                                @if (href is null)
+                                {
+                                    <span>@DisplayOrDash(finalUrl)</span>
+                                }
+                                else
+                                {
+                                    <a href="@href" target="_blank" rel="noopener noreferrer">@finalUrl</a>
+                                }
+                            </td>
+                            <td class="clip" title="@Text(a, "discoveryContext", "DiscoveryContext")">@Text(a, "discoveryContext", "DiscoveryContext")</td>
+                        </tr>
+                    </Virtualize>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">HTTP</p>
+                <h2>HTTP Requests</h2>
+            </div>
+            <span class="muted">@FormatNumber(HttpRows.Count) requests</span>
+        </div>
+
+        <div class="ops-rz-toolbar simple">
+            <label class="wide-search">
+                <span>Search</span>
+                <input type="search" class="ops-filter" @bind="_httpSearch" @bind:event="oninput" placeholder="Search HTTP requests..." />
+            </label>
+            <label>
+                <span>Filter</span>
                 <select class="ops-filter compact-filter" @bind="_httpStateFilter" @bind:after="ReloadHttpQueueAsync">
-                    <option value="">All recent</option>
+                    <option value="">All states</option>
                     <option value="Queued">Queued</option>
                     <option value="InFlight">In flight</option>
                     <option value="Retry">Retry</option>
@@ -121,19 +225,19 @@
                 <thead>
                     <tr>
                         <th>Select</th>
-                        <th>Created</th>
-                        <th>State</th>
-                        <th>Method</th>
-                        <th>URL</th>
-                        <th>Domain</th>
-                        <th>Attempts</th>
-                        <th>Status</th>
-                        <th>Duration</th>
-                        <th>Error</th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("created"))">Created@SortIndicator(_httpSort, "created", _httpSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("state"))">State@SortIndicator(_httpSort, "state", _httpSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("method"))">Method@SortIndicator(_httpSort, "method", _httpSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("url"))">URL@SortIndicator(_httpSort, "url", _httpSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("domain"))">Domain@SortIndicator(_httpSort, "domain", _httpSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("attempts"))">Attempts@SortIndicator(_httpSort, "attempts", _httpSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("status"))">Status@SortIndicator(_httpSort, "status", _httpSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("duration"))">Duration@SortIndicator(_httpSort, "duration", _httpSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("error"))">Error@SortIndicator(_httpSort, "error", _httpSortDescending)</button></th>
                     </tr>
                 </thead>
                 <tbody>
-                    <Virtualize TItem="JsonElement" Items="_queue" Context="q" ItemSize="48" OverscanCount="12" SpacerElement="tr">
+                    <Virtualize TItem="JsonElement" Items="HttpRows" Context="q" ItemSize="30" OverscanCount="16" SpacerElement="tr">
                         @{
                             var requestUrl = Text(q, "requestUrl", "RequestUrl");
                             var id = Text(q, "id", "Id");
@@ -164,26 +268,40 @@
                 <p class="eyebrow">Message bus</p>
                 <h2>Published Events</h2>
             </div>
-            <span class="muted">@FormatNumber(_events.Count) published events, @FormatNumber(_rabbitQueues.Count) queues</span>
+            <span class="muted">@FormatNumber(EventRows.Count) published events, @FormatNumber(RabbitQueueRows.Count) queues</span>
         </div>
 
         <div class="ops-split-grid">
             <div>
                 <h3 class="subsection-title">RabbitMQ queues</h3>
+                <div class="ops-rz-toolbar simple dense-toolbar">
+                    <label class="wide-search">
+                        <span>Search</span>
+                        <input type="search" class="ops-filter" @bind="_rabbitSearch" @bind:event="oninput" placeholder="Search queues..." />
+                    </label>
+                    <label>
+                        <span>Filter</span>
+                        <select class="ops-filter compact-filter" @bind="_rabbitFilter">
+                            <option value="">All</option>
+                            <option value="with-messages">With messages</option>
+                            <option value="with-consumers">With consumers</option>
+                            <option value="no-consumers">No consumers</option>
+                        </select>
+                    </label>
+                </div>
                 <div class="ops-table-wrap compact">
                     <table class="ops-table bus-table">
                         <thead>
                             <tr>
-                                <th>Queue</th>
-                                <th>Ready</th>
-                                <th>Unacked</th>
-                                <th>Consumers</th>
-                                <th>Worker</th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("queue"))">Queue@SortIndicator(_rabbitSort, "queue", _rabbitSortDescending)</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("ready"))">Ready@SortIndicator(_rabbitSort, "ready", _rabbitSortDescending)</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("unacked"))">Unacked@SortIndicator(_rabbitSort, "unacked", _rabbitSortDescending)</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("consumers"))">Consumers@SortIndicator(_rabbitSort, "consumers", _rabbitSortDescending)</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("worker"))">Worker@SortIndicator(_rabbitSort, "worker", _rabbitSortDescending)</button></th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var queue in _rabbitQueues)
-                            {
+                            <Virtualize TItem="JsonElement" Items="RabbitQueueRows" Context="queue" ItemSize="30" OverscanCount="16" SpacerElement="tr">
                                 <tr>
                                     <td class="clip" title="@Text(queue, "name", "Name")">@Text(queue, "name", "Name")</td>
                                     <td>@FormatNumber(Long(queue, "messagesReady", "MessagesReady"))</td>
@@ -191,7 +309,7 @@
                                     <td>@DisplayOrDash(Text(queue, "consumers", "Consumers"))</td>
                                     <td>@DisplayOrDash(Text(queue, "likelyWorkerKey", "LikelyWorkerKey"))</td>
                                 </tr>
-                            }
+                            </Virtualize>
                         </tbody>
                     </table>
                 </div>
@@ -199,21 +317,34 @@
 
             <div>
                 <h3 class="subsection-title">Event trace</h3>
+                <div class="ops-rz-toolbar simple dense-toolbar">
+                    <label class="wide-search">
+                        <span>Search</span>
+                        <input type="search" class="ops-filter" @bind="_eventSearch" @bind:event="oninput" placeholder="Search events..." />
+                    </label>
+                    <label>
+                        <span>Filter</span>
+                        <select class="ops-filter compact-filter" @bind="_eventFilter">
+                            <option value="">All</option>
+                            <option value="consumed">Consumed</option>
+                            <option value="unconsumed">Unconsumed</option>
+                        </select>
+                    </label>
+                </div>
                 <div class="ops-table-wrap compact">
                     <table class="ops-table event-table">
                         <thead>
                             <tr>
-                                <th>Published</th>
-                                <th>Event</th>
-                                <th>Producer</th>
-                                <th>Host</th>
-                                <th>Consumers</th>
-                                <th>Payload</th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("published"))">Published@SortIndicator(_eventSort, "published", _eventSortDescending)</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("event"))">Event@SortIndicator(_eventSort, "event", _eventSortDescending)</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("producer"))">Producer@SortIndicator(_eventSort, "producer", _eventSortDescending)</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("host"))">Host@SortIndicator(_eventSort, "host", _eventSortDescending)</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("consumers"))">Consumers@SortIndicator(_eventSort, "consumers", _eventSortDescending)</button></th>
+                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("payload"))">Payload@SortIndicator(_eventSort, "payload", _eventSortDescending)</button></th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var evt in _events)
-                            {
+                            <Virtualize TItem="JsonElement" Items="EventRows" Context="evt" ItemSize="30" OverscanCount="16" SpacerElement="tr">
                                 <tr>
                                     <td>@FormatTime(Text(evt, "publishedAtUtc", "PublishedAtUtc"))</td>
                                     <td class="clip" title="@Text(evt, "eventName", "EventName")">@Text(evt, "eventName", "EventName")</td>
@@ -222,71 +353,11 @@
                                     <td>@DisplayOrDash(Text(evt, "consumerCount", "ConsumerCount"))</td>
                                     <td class="clip payload-cell" title="@Text(evt, "payloadPreview", "PayloadPreview")">@DisplayOrDash(Text(evt, "payloadPreview", "PayloadPreview"))</td>
                                 </tr>
-                            }
+                            </Virtualize>
                         </tbody>
                     </table>
                 </div>
             </div>
-        </div>
-    </section>
-
-    <section class="panel">
-        <div class="section-heading">
-            <div>
-                <p class="eyebrow">Inventory</p>
-                <h2>Assets</h2>
-            </div>
-            <span class="muted">@FormatNumber(FilteredAssetRows.Count) visible assets</span>
-        </div>
-
-        <div class="ops-rz-toolbar simple">
-            <label class="wide-search">
-                <span>Search</span>
-                <input type="search" class="ops-filter" @bind="_assetSearch" @bind:event="oninput" placeholder="Search kind, category, final URL, or discovery context..." />
-            </label>
-            <button type="button" class="btn" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">
-                @(_assetsLoading ? "Loading..." : "Reload assets")
-            </button>
-        </div>
-
-        <div class="ops-table-wrap asset-table-wrap">
-            <table class="ops-table">
-                <thead>
-                    <tr>
-                        <th>Discovered</th>
-                        <th>Last seen</th>
-                        <th>Kind</th>
-                        <th>Category</th>
-                        <th>Final URL</th>
-                        <th>How found</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <Virtualize TItem="JsonElement" Items="FilteredAssetRows" Context="a" ItemSize="48" OverscanCount="12" SpacerElement="tr">
-                        <tr @key="AssetKey(a)">
-                            @{
-                                var finalUrl = Text(a, "finalUrl", "FinalUrl");
-                                var href = TryHttpHref(finalUrl);
-                            }
-                            <td>@FormatTime(Text(a, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
-                            <td>@FormatTime(Text(a, "lastSeenAtUtc", "LastSeenAtUtc"))</td>
-                            <td>@Text(a, "kind", "Kind")</td>
-                            <td>@Text(a, "category", "Category")</td>
-                            <td class="clip" title="@finalUrl">
-                                @if (href is null)
-                                {
-                                    <span>@DisplayOrDash(finalUrl)</span>
-                                }
-                                else
-                                {
-                                    <a href="@href" target="_blank" rel="noopener noreferrer">@finalUrl</a>
-                                }
-                            </td>
-                            <td class="clip" title="@Text(a, "discoveryContext", "DiscoveryContext")">@Text(a, "discoveryContext", "DiscoveryContext")</td>
-                        </tr>
-                    </Virtualize>
-                </tbody>
-            </table>
         </div>
     </section>
 
@@ -345,22 +416,36 @@
         }
 
         <h3 class="subsection-title">Live worker instances</h3>
+        <div class="ops-rz-toolbar simple dense-toolbar">
+            <label class="wide-search">
+                <span>Search</span>
+                <input type="search" class="ops-filter" @bind="_workerSearch" @bind:event="oninput" placeholder="Search workers..." />
+            </label>
+            <label>
+                <span>Filter</span>
+                <select class="ops-filter compact-filter" @bind="_workerFilter">
+                    <option value="">All</option>
+                    <option value="healthy">Healthy</option>
+                    <option value="unhealthy">Unhealthy</option>
+                    <option value="idle">Idle</option>
+                </select>
+            </label>
+        </div>
         <div class="ops-table-wrap compact">
-            <table class="ops-table">
+            <table class="ops-table worker-table">
                 <thead>
                     <tr>
-                        <th>Host</th>
-                        <th>Worker</th>
-                        <th>Consumer</th>
-                        <th>Health</th>
-                        <th>Last active</th>
-                        <th>Message</th>
-                        <th>Duration</th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("host"))">Host@SortIndicator(_workerSort, "host", _workerSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("worker"))">Worker@SortIndicator(_workerSort, "worker", _workerSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("consumer"))">Consumer@SortIndicator(_workerSort, "consumer", _workerSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("health"))">Health@SortIndicator(_workerSort, "health", _workerSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("lastActive"))">Last active@SortIndicator(_workerSort, "lastActive", _workerSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("message"))">Message@SortIndicator(_workerSort, "message", _workerSortDescending)</button></th>
+                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("duration"))">Duration@SortIndicator(_workerSort, "duration", _workerSortDescending)</button></th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var i in _workerInstances)
-                    {
+                    <Virtualize TItem="JsonElement" Items="WorkerInstanceRows" Context="i" ItemSize="30" OverscanCount="16" SpacerElement="tr">
                         <tr>
                             <td>@Text(i, "hostName", "HostName")</td>
                             <td>@Text(i, "workerKind", "WorkerKind")</td>
@@ -370,7 +455,7 @@
                             <td class="clip" title="@Text(i, "messageType", "MessageType")">@Text(i, "messageType", "MessageType")</td>
                             <td>@DurationLabel(i)</td>
                         </tr>
-                    }
+                    </Virtualize>
                 </tbody>
             </table>
         </div>
@@ -389,15 +474,39 @@
     private readonly List<JsonElement> _events = [];
 
     private bool _assetsLoading;
+    private string _targetSearch = "";
+    private string _targetFilter = "";
+    private string _targetSort = "name";
+    private bool _targetSortDescending;
+    private string _subdomainSearch = "";
+    private string _subdomainFilter = "";
+    private string _subdomainSort = "name";
+    private bool _subdomainSortDescending;
     private string _assetSearch = "";
+    private string _assetFilter = "";
+    private string _assetSort = "discovered";
+    private bool _assetSortDescending = true;
+    private string _httpSearch = "";
+    private string _httpSort = "created";
+    private bool _httpSortDescending = true;
     private string _httpStateFilter = "Queued";
+    private string _rabbitSearch = "";
+    private string _rabbitFilter = "";
+    private string _rabbitSort = "queue";
+    private bool _rabbitSortDescending;
+    private string _eventSearch = "";
+    private string _eventFilter = "";
+    private string _eventSort = "published";
+    private bool _eventSortDescending = true;
+    private string _workerSearch = "";
+    private string _workerFilter = "";
+    private string _workerSort = "worker";
+    private bool _workerSortDescending;
     private string _statusMessage = "";
     private string? _selectedTargetId;
     private string? _selectedSubdomain;
     private readonly HashSet<string> _selectedHttpIds = new(StringComparer.OrdinalIgnoreCase);
 
-    private int TargetCount => _targets.Count;
-    private int HttpQueueCount => _queue.Count;
     private bool UsingEcsWorkers => _workerScaleTargets.Count > 0;
 
     private string WorkerHealthTitle => UsingEcsWorkers ? "ECS worker health" : "Local / EC2 worker health";
@@ -427,19 +536,49 @@
         }
     }
 
-    private ICollection<JsonElement> FilteredAssetRows => _assets
-        .Where(MatchesSelectedTarget)
-        .Where(MatchesSelectedSubdomain)
-        .Where(a => string.IsNullOrWhiteSpace(_assetSearch) || Matches(a, _assetSearch))
-        .ToArray();
+    private ICollection<JsonElement> TargetRows => MaterializeSorted(
+        _targets.Where(TargetMatchesFilter),
+        TargetSortKey,
+        _targetSortDescending);
 
-    private IEnumerable<JsonElement> SubdomainRows => _assets
-        .Where(MatchesSelectedTarget)
-        .Where(a => Text(a, "kind", "Kind").Equals("Subdomain", StringComparison.OrdinalIgnoreCase))
-        .GroupBy(SubdomainName, StringComparer.OrdinalIgnoreCase)
-        .Where(g => !string.IsNullOrWhiteSpace(g.Key))
-        .Select(g => g.OrderByDescending(a => Text(a, "discoveredAtUtc", "DiscoveredAtUtc"), StringComparer.Ordinal).First())
-        .OrderBy(SubdomainName, StringComparer.OrdinalIgnoreCase);
+    private ICollection<JsonElement> FilteredAssetRows => MaterializeSorted(
+        _assets
+            .Where(MatchesSelectedTarget)
+            .Where(MatchesSelectedSubdomain)
+            .Where(AssetMatchesFilter),
+        AssetSortKey,
+        _assetSortDescending);
+
+    private ICollection<JsonElement> SubdomainRows => MaterializeSorted(
+        _assets
+            .Where(MatchesSelectedTarget)
+            .Where(a => Text(a, "kind", "Kind").Equals("Subdomain", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(SubdomainName, StringComparer.OrdinalIgnoreCase)
+            .Where(g => !string.IsNullOrWhiteSpace(g.Key))
+            .Select(g => g.OrderByDescending(a => Text(a, "discoveredAtUtc", "DiscoveredAtUtc"), StringComparer.Ordinal).First())
+            .Where(SubdomainMatchesFilter),
+        SubdomainSortKey,
+        _subdomainSortDescending);
+
+    private ICollection<JsonElement> HttpRows => MaterializeSorted(
+        _queue.Where(HttpMatchesFilter),
+        HttpSortKey,
+        _httpSortDescending);
+
+    private ICollection<JsonElement> RabbitQueueRows => MaterializeSorted(
+        _rabbitQueues.Where(RabbitMatchesFilter),
+        RabbitSortKey,
+        _rabbitSortDescending);
+
+    private ICollection<JsonElement> EventRows => MaterializeSorted(
+        _events.Where(EventMatchesFilter),
+        EventSortKey,
+        _eventSortDescending);
+
+    private ICollection<JsonElement> WorkerInstanceRows => MaterializeSorted(
+        _workerInstances.Where(WorkerMatchesFilter),
+        WorkerSortKey,
+        _workerSortDescending);
 
     private string SelectedTargetLabel
     {
@@ -465,6 +604,175 @@
                 : (DateTimeOffset?)null)
         .Where(d => d is not null)
         .Min();
+
+    private bool TargetMatchesFilter(JsonElement target)
+    {
+        if (!string.IsNullOrWhiteSpace(_targetSearch) && !MatchesAny(target, _targetSearch, "rootDomain", "RootDomain"))
+        {
+            return false;
+        }
+
+        return _targetFilter switch
+        {
+            "with-assets" => Long(target, "confirmedAssetCount", "ConfirmedAssetCount") > 0,
+            "with-subdomains" => Long(target, "subdomainCount", "SubdomainCount") > 0,
+            _ => true,
+        };
+    }
+
+    private bool SubdomainMatchesFilter(JsonElement subdomain)
+    {
+        var name = SubdomainName(subdomain);
+        if (!string.IsNullOrWhiteSpace(_subdomainSearch) && !MatchesAny(subdomain, _subdomainSearch, "discoveryContext", "DiscoveryContext") && !name.Contains(_subdomainSearch, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return _subdomainFilter != "selected" || IsSelectedSubdomain(name);
+    }
+
+    private bool AssetMatchesFilter(JsonElement asset)
+    {
+        if (!string.IsNullOrWhiteSpace(_assetSearch) && !MatchesAsset(asset, _assetSearch))
+        {
+            return false;
+        }
+
+        return string.IsNullOrWhiteSpace(_assetFilter)
+            || Text(asset, "kind", "Kind").Equals(_assetFilter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool HttpMatchesFilter(JsonElement request) =>
+        string.IsNullOrWhiteSpace(_httpSearch)
+        || MatchesAny(request, _httpSearch, "createdAtUtc", "CreatedAtUtc", "state", "State", "method", "Method", "requestUrl", "RequestUrl", "domainKey", "DomainKey", "lastHttpStatus", "LastHttpStatus", "lastError", "LastError");
+
+    private bool RabbitMatchesFilter(JsonElement queue)
+    {
+        if (!string.IsNullOrWhiteSpace(_rabbitSearch) && !MatchesAny(queue, _rabbitSearch, "name", "Name", "likelyWorkerKey", "LikelyWorkerKey"))
+        {
+            return false;
+        }
+
+        var ready = Long(queue, "messagesReady", "MessagesReady");
+        var unacked = Long(queue, "messagesUnacknowledged", "MessagesUnacknowledged");
+        var consumers = Long(queue, "consumers", "Consumers");
+        return _rabbitFilter switch
+        {
+            "with-messages" => ready + unacked > 0,
+            "with-consumers" => consumers > 0,
+            "no-consumers" => consumers == 0,
+            _ => true,
+        };
+    }
+
+    private bool EventMatchesFilter(JsonElement evt)
+    {
+        if (!string.IsNullOrWhiteSpace(_eventSearch) && !MatchesAny(evt, _eventSearch, "publishedAtUtc", "PublishedAtUtc", "eventName", "EventName", "producer", "Producer", "hostName", "HostName", "payloadPreview", "PayloadPreview"))
+        {
+            return false;
+        }
+
+        var consumers = Long(evt, "consumerCount", "ConsumerCount");
+        return _eventFilter switch
+        {
+            "consumed" => consumers > 0,
+            "unconsumed" => consumers == 0,
+            _ => true,
+        };
+    }
+
+    private bool WorkerMatchesFilter(JsonElement worker)
+    {
+        if (!string.IsNullOrWhiteSpace(_workerSearch) && !MatchesAny(worker, _workerSearch, "hostName", "HostName", "workerKind", "WorkerKind", "consumerShortName", "ConsumerShortName", "status", "Status", "activityLabel", "ActivityLabel", "messageType", "MessageType"))
+        {
+            return false;
+        }
+
+        var status = Text(worker, "status", "Status", "activityLabel", "ActivityLabel");
+        return _workerFilter switch
+        {
+            "healthy" => status.Contains("healthy", StringComparison.OrdinalIgnoreCase),
+            "unhealthy" => status.Contains("unhealthy", StringComparison.OrdinalIgnoreCase),
+            "idle" => status.Contains("idle", StringComparison.OrdinalIgnoreCase),
+            _ => true,
+        };
+    }
+
+    private string TargetSortKey(JsonElement target) =>
+        _targetSort switch
+        {
+            "depth" => NumberSortKey(Long(target, "globalMaxDepth", "GlobalMaxDepth")),
+            "subdomains" => NumberSortKey(Long(target, "subdomainCount", "SubdomainCount")),
+            "assets" => NumberSortKey(Long(target, "confirmedAssetCount", "ConfirmedAssetCount")),
+            "lastRun" => Text(target, "lastRunAtUtc", "LastRunAtUtc"),
+            _ => Text(target, "rootDomain", "RootDomain"),
+        };
+
+    private string SubdomainSortKey(JsonElement subdomain) =>
+        _subdomainSort switch
+        {
+            "discovered" => Text(subdomain, "discoveredAtUtc", "DiscoveredAtUtc"),
+            "context" => Text(subdomain, "discoveryContext", "DiscoveryContext"),
+            _ => SubdomainName(subdomain),
+        };
+
+    private string AssetSortKey(JsonElement asset) =>
+        _assetSort switch
+        {
+            "lastSeen" => Text(asset, "lastSeenAtUtc", "LastSeenAtUtc"),
+            "kind" => Text(asset, "kind", "Kind"),
+            "category" => Text(asset, "category", "Category"),
+            "url" => Text(asset, "finalUrl", "FinalUrl"),
+            "context" => Text(asset, "discoveryContext", "DiscoveryContext"),
+            _ => Text(asset, "discoveredAtUtc", "DiscoveredAtUtc"),
+        };
+
+    private string HttpSortKey(JsonElement request) =>
+        _httpSort switch
+        {
+            "state" => Text(request, "state", "State"),
+            "method" => Text(request, "method", "Method"),
+            "url" => Text(request, "requestUrl", "RequestUrl"),
+            "domain" => Text(request, "domainKey", "DomainKey"),
+            "attempts" => NumberSortKey(Long(request, "attemptCount", "AttemptCount")),
+            "status" => NumberSortKey(Long(request, "lastHttpStatus", "LastHttpStatus")),
+            "duration" => NumberSortKey(Long(request, "durationMs", "DurationMs")),
+            "error" => Text(request, "lastError", "LastError"),
+            _ => Text(request, "createdAtUtc", "CreatedAtUtc"),
+        };
+
+    private string RabbitSortKey(JsonElement queue) =>
+        _rabbitSort switch
+        {
+            "ready" => NumberSortKey(Long(queue, "messagesReady", "MessagesReady")),
+            "unacked" => NumberSortKey(Long(queue, "messagesUnacknowledged", "MessagesUnacknowledged")),
+            "consumers" => NumberSortKey(Long(queue, "consumers", "Consumers")),
+            "worker" => Text(queue, "likelyWorkerKey", "LikelyWorkerKey"),
+            _ => Text(queue, "name", "Name"),
+        };
+
+    private string EventSortKey(JsonElement evt) =>
+        _eventSort switch
+        {
+            "event" => Text(evt, "eventName", "EventName"),
+            "producer" => Text(evt, "producer", "Producer"),
+            "host" => Text(evt, "hostName", "HostName"),
+            "consumers" => NumberSortKey(Long(evt, "consumerCount", "ConsumerCount")),
+            "payload" => Text(evt, "payloadPreview", "PayloadPreview"),
+            _ => Text(evt, "publishedAtUtc", "PublishedAtUtc"),
+        };
+
+    private string WorkerSortKey(JsonElement worker) =>
+        _workerSort switch
+        {
+            "host" => Text(worker, "hostName", "HostName"),
+            "consumer" => Text(worker, "consumerShortName", "ConsumerShortName"),
+            "health" => Text(worker, "status", "Status", "activityLabel", "ActivityLabel"),
+            "lastActive" => Text(worker, "lastCompletedAtUtc", "LastCompletedAtUtc"),
+            "message" => Text(worker, "messageType", "MessageType"),
+            "duration" => NumberSortKey(Long(worker, "durationMs", "DurationMs")),
+            _ => Text(worker, "workerKind", "WorkerKind"),
+        };
 
     protected override async Task OnInitializedAsync()
     {
@@ -644,10 +952,7 @@
     private async Task ReloadHttpQueueAsync()
     {
         var state = string.IsNullOrWhiteSpace(_httpStateFilter) ? "" : $"state={Uri.EscapeDataString(_httpStateFilter)}";
-        var take = _httpStateFilter.Equals("Queued", StringComparison.OrdinalIgnoreCase) ? "" : "take=500";
-        var separator = !string.IsNullOrWhiteSpace(state) && !string.IsNullOrWhiteSpace(take) ? "&" : "";
-        var query = string.Concat(take, separator, state);
-        var uri = string.IsNullOrWhiteSpace(query) ? "/api/http-request-queue" : $"/api/http-request-queue?{query}";
+        var uri = string.IsNullOrWhiteSpace(state) ? "/api/http-request-queue" : $"/api/http-request-queue?{state}";
 
         Replace(_queue, await GetArrayAsync(uri));
         _selectedHttpIds.RemoveWhere(id => !_queue.Any(q => Text(q, "id", "Id").Equals(id, StringComparison.OrdinalIgnoreCase)));
@@ -750,7 +1055,7 @@
     {
         try
         {
-            Replace(_events, await GetArrayAsync("/api/events/live?minutes=60&take=250"));
+            Replace(_events, await GetArrayAsync("/api/events/live?all=true"));
         }
         catch
         {
@@ -806,6 +1111,52 @@
 
         return Long(_overview.Value, names);
     }
+
+    private void SetTargetSort(string key) => ToggleSort(key, ref _targetSort, ref _targetSortDescending);
+
+    private void SetSubdomainSort(string key) => ToggleSort(key, ref _subdomainSort, ref _subdomainSortDescending);
+
+    private void SetAssetSort(string key) => ToggleSort(key, ref _assetSort, ref _assetSortDescending);
+
+    private void SetHttpSort(string key) => ToggleSort(key, ref _httpSort, ref _httpSortDescending);
+
+    private void SetRabbitSort(string key) => ToggleSort(key, ref _rabbitSort, ref _rabbitSortDescending);
+
+    private void SetEventSort(string key) => ToggleSort(key, ref _eventSort, ref _eventSortDescending);
+
+    private void SetWorkerSort(string key) => ToggleSort(key, ref _workerSort, ref _workerSortDescending);
+
+    private static void ToggleSort(string key, ref string sort, ref bool descending)
+    {
+        if (sort.Equals(key, StringComparison.OrdinalIgnoreCase))
+        {
+            descending = !descending;
+            return;
+        }
+
+        sort = key;
+        descending = false;
+    }
+
+    private static string SortIndicator(string current, string key, bool descending) =>
+        current.Equals(key, StringComparison.OrdinalIgnoreCase)
+            ? (descending ? " v" : " ^")
+            : "";
+
+    private static ICollection<JsonElement> MaterializeSorted(
+        IEnumerable<JsonElement> rows,
+        Func<JsonElement, string> sortKey,
+        bool descending)
+    {
+        var ordered = descending
+            ? rows.OrderByDescending(sortKey, StringComparer.OrdinalIgnoreCase)
+            : rows.OrderBy(sortKey, StringComparer.OrdinalIgnoreCase);
+
+        return ordered.ToArray();
+    }
+
+    private static string NumberSortKey(long value) =>
+        value.ToString("D20", CultureInfo.InvariantCulture);
 
     private static void Replace(List<JsonElement> target, IEnumerable<JsonElement> values)
     {
@@ -922,7 +1273,7 @@
             : 0;
     }
 
-    private static bool Matches(JsonElement element, string search)
+    private static bool MatchesAsset(JsonElement element, string search)
     {
         var terms = new[]
         {
@@ -934,6 +1285,9 @@
 
         return terms.Any(value => value.Contains(search, StringComparison.OrdinalIgnoreCase));
     }
+
+    private static bool MatchesAny(JsonElement element, string search, params string[] names) =>
+        names.Any(name => Text(element, name).Contains(search, StringComparison.OrdinalIgnoreCase));
 
     private static string FormatNumber(long value) =>
         value.ToString("N0", CultureInfo.InvariantCulture);

@@ -19,6 +19,8 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<AssetTag> AssetTags => Set<AssetTag>();
     public DbSet<TechnologyDetection> TechnologyDetections => Set<TechnologyDetection>();
+    public DbSet<TechnologyObservation> TechnologyObservations => Set<TechnologyObservation>();
+    public DbSet<TechnologyObservationEvidence> TechnologyObservationEvidence => Set<TechnologyObservationEvidence>();
     public DbSet<CloudResourceUsageSample> CloudResourceUsageSamples => Set<CloudResourceUsageSample>();
     public DbSet<WorkerScaleTarget> WorkerScaleTargets => Set<WorkerScaleTarget>();
     public DbSet<WorkerScalingSetting> WorkerScalingSettings => Set<WorkerScalingSetting>();
@@ -134,6 +136,49 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.HasIndex(x => new { x.AssetId, x.TagId, x.EvidenceHash }).IsUnique();
             e.HasIndex(x => new { x.TargetId, x.TagId });
             e.HasIndex(x => x.DetectedAtUtc);
+        });
+
+        modelBuilder.Entity<TechnologyObservation>(e =>
+        {
+            e.ToTable("technology_observations");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.RunId).HasColumnName("run_id");
+            e.Property(x => x.TargetId).HasColumnName("target_id");
+            e.Property(x => x.AssetId).HasColumnName("asset_id");
+            e.Property(x => x.FingerprintId).HasColumnName("fingerprint_id");
+            e.Property(x => x.CatalogHash).HasColumnName("catalog_hash");
+            e.Property(x => x.TechnologyName).HasColumnName("technology_name");
+            e.Property(x => x.Vendor).HasColumnName("vendor");
+            e.Property(x => x.Product).HasColumnName("product");
+            e.Property(x => x.Version).HasColumnName("version");
+            e.Property(x => x.ConfidenceScore).HasColumnName("confidence_score").HasPrecision(5, 4);
+            e.Property(x => x.SourceType).HasColumnName("source_type");
+            e.Property(x => x.DetectionMode).HasColumnName("detection_mode");
+            e.Property(x => x.DedupeKey).HasColumnName("dedupe_key");
+            e.Property(x => x.FirstSeenUtc).HasColumnName("first_seen_utc");
+            e.Property(x => x.LastSeenUtc).HasColumnName("last_seen_utc");
+            e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
+            e.HasIndex(x => new { x.TargetId, x.AssetId, x.DedupeKey }).IsUnique();
+            e.HasIndex(x => new { x.TargetId, x.TechnologyName });
+            e.HasIndex(x => new { x.AssetId, x.LastSeenUtc });
+        });
+
+        modelBuilder.Entity<TechnologyObservationEvidence>(e =>
+        {
+            e.ToTable("technology_observation_evidence");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ObservationId).HasColumnName("observation_id");
+            e.Property(x => x.SignalId).HasColumnName("signal_id");
+            e.Property(x => x.EvidenceType).HasColumnName("evidence_type");
+            e.Property(x => x.EvidenceKey).HasColumnName("evidence_key");
+            e.Property(x => x.MatchedValueRedacted).HasColumnName("matched_value_redacted");
+            e.Property(x => x.ArtifactId).HasColumnName("artifact_id");
+            e.Property(x => x.EvidenceHash).HasColumnName("evidence_hash");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.HasIndex(x => new { x.ObservationId, x.EvidenceHash }).IsUnique();
+            e.HasIndex(x => x.ObservationId);
         });
 
         modelBuilder.Entity<AssetRelationship>(e =>

@@ -21,4 +21,8 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Process" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\Resources\TechnologyDetection\argus_fingerprints.json" Link="Resources\TechnologyDetection\argus_fingerprints.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

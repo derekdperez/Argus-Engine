@@ -413,3 +413,41 @@ public sealed record TechnologyDetectionRowDto(
     string? MatchedText,
     decimal Confidence,
     DateTimeOffset DetectedAtUtc);
+
+public sealed record TechnologyIdentificationTargetDto(
+    Guid TargetId,
+    string TargetRootDomain,
+    int MaxDepth,
+    long SubdomainCount,
+    long TechnologyCount,
+    long ObservationCount,
+    DateTimeOffset? LastObservedAtUtc);
+
+public sealed record TechnologyIdentificationSubdomainDto(
+    Guid TargetId,
+    Guid SubdomainAssetId,
+    string Subdomain,
+    long TechnologyCount,
+    long ObservationCount,
+    DateTimeOffset? LastObservedAtUtc);
+
+public sealed record TechnologyIdentificationRowDto(
+    Guid Id,
+    Guid TargetId,
+    string TargetRootDomain,
+    Guid AssetId,
+    string AssetCanonicalKey,
+    string Subdomain,
+    string TechnologyName,
+    string? Vendor,
+    string? Product,
+    string? Version,
+    decimal Confidence,
+    string SourceType,
+    string DetectionMode,
+    string FingerprintId,
+    string CatalogHash,
+    DateTimeOffset FirstSeenUtc,
+    DateTimeOffset LastSeenUtc,
+    string? EvidenceSummary,
+    string DataSource);

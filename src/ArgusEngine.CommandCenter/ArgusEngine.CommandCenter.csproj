@@ -32,5 +32,6 @@
 
   <ItemGroup>
     <Content Include="..\Resources\Wordlists\high_value\*.txt" Link="Resources\Wordlists\high_value\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Resources\TechnologyDetection\argus_fingerprints.json" Link="Resources\TechnologyDetection\argus_fingerprints.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

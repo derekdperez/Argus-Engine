@@ -36,6 +36,9 @@ public static partial class ArgusDbSchemaPatches
     [LoggerMessage(Level = LogLevel.Debug, Message = "Ensuring tags and detections tables...")]
     static partial void LogEnsuringTagsAndDetections(ILogger logger);
 
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Ensuring technology fingerprint detection tables...")]
+    static partial void LogEnsuringTechnologyFingerprintTables(ILogger logger);
+
     [LoggerMessage(Level = LogLevel.Debug, Message = "Ensuring high_value_findings and outbox tables...")]
     static partial void LogEnsuringHighValueAndOutbox(ILogger logger);
 
@@ -238,6 +241,105 @@ public static partial class ArgusDbSchemaPatches
                     ON technology_detections (target_id, tag_id);
                 CREATE INDEX IF NOT EXISTS ix_technology_detections_detected_at
                     ON technology_detections (detected_at_utc DESC);
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        LogEnsuringTechnologyFingerprintTables(logger);
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS technology_catalog_loads (
+                    id uuid NOT NULL PRIMARY KEY,
+                    catalog_hash text NOT NULL,
+                    fingerprint_count integer NOT NULL,
+                    resource_path text NOT NULL,
+                    loaded_by_service text NOT NULL,
+                    loaded_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    validation_status text NOT NULL,
+                    validation_errors_json jsonb NOT NULL DEFAULT '[]'::jsonb
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_technology_catalog_loads_hash
+                    ON technology_catalog_loads (catalog_hash);
+                CREATE INDEX IF NOT EXISTS ix_technology_catalog_loads_loaded_at
+                    ON technology_catalog_loads (loaded_at_utc DESC);
+
+                CREATE TABLE IF NOT EXISTS technology_fingerprint_overrides (
+                    id uuid NOT NULL PRIMARY KEY,
+                    fingerprint_id text NOT NULL,
+                    tenant_id uuid NULL,
+                    enabled boolean NOT NULL DEFAULT true,
+                    confidence_adjustment numeric(5,4) NULL,
+                    reason text NULL,
+                    created_by text NOT NULL DEFAULT '',
+                    created_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    updated_at_utc timestamp with time zone NOT NULL DEFAULT now()
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_technology_fingerprint_overrides_scope
+                    ON technology_fingerprint_overrides (fingerprint_id, (COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid)));
+                CREATE INDEX IF NOT EXISTS ix_technology_fingerprint_overrides_fingerprint
+                    ON technology_fingerprint_overrides (fingerprint_id);
+
+                CREATE TABLE IF NOT EXISTS technology_detection_runs (
+                    id uuid NOT NULL PRIMARY KEY,
+                    target_id uuid NOT NULL REFERENCES recon_targets("Id") ON DELETE CASCADE,
+                    catalog_hash text NOT NULL,
+                    mode text NOT NULL,
+                    status text NOT NULL,
+                    created_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    started_at_utc timestamp with time zone NULL,
+                    completed_at_utc timestamp with time zone NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_technology_detection_runs_target_created
+                    ON technology_detection_runs (target_id, created_at_utc DESC);
+                CREATE INDEX IF NOT EXISTS ix_technology_detection_runs_status
+                    ON technology_detection_runs (status);
+
+                CREATE TABLE IF NOT EXISTS technology_observations (
+                    id uuid NOT NULL PRIMARY KEY,
+                    run_id uuid NOT NULL REFERENCES technology_detection_runs(id) ON DELETE CASCADE,
+                    target_id uuid NOT NULL REFERENCES recon_targets("Id") ON DELETE CASCADE,
+                    asset_id uuid NOT NULL REFERENCES stored_assets("Id") ON DELETE CASCADE,
+                    fingerprint_id text NOT NULL,
+                    catalog_hash text NOT NULL,
+                    technology_name text NOT NULL,
+                    vendor text NULL,
+                    product text NULL,
+                    version text NULL,
+                    confidence_score numeric(5,4) NOT NULL,
+                    source_type text NOT NULL,
+                    detection_mode text NOT NULL,
+                    dedupe_key text NOT NULL,
+                    first_seen_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    last_seen_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    metadata_json jsonb NULL
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_technology_observations_target_asset_dedupe
+                    ON technology_observations (target_id, asset_id, dedupe_key);
+                CREATE INDEX IF NOT EXISTS ix_technology_observations_target_name
+                    ON technology_observations (target_id, technology_name);
+                CREATE INDEX IF NOT EXISTS ix_technology_observations_asset_last_seen
+                    ON technology_observations (asset_id, last_seen_utc DESC);
+
+                CREATE TABLE IF NOT EXISTS technology_observation_evidence (
+                    id uuid NOT NULL PRIMARY KEY,
+                    observation_id uuid NOT NULL REFERENCES technology_observations(id) ON DELETE CASCADE,
+                    signal_id text NOT NULL,
+                    evidence_type text NOT NULL,
+                    evidence_key text NULL,
+                    matched_value_redacted text NULL,
+                    artifact_id uuid NULL,
+                    evidence_hash text NOT NULL,
+                    created_at_utc timestamp with time zone NOT NULL DEFAULT now()
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_technology_observation_evidence_hash
+                    ON technology_observation_evidence (observation_id, evidence_hash);
+                CREATE INDEX IF NOT EXISTS ix_technology_observation_evidence_observation
+                    ON technology_observation_evidence (observation_id);
                 """,
                 cancellationToken)
             .ConfigureAwait(false);

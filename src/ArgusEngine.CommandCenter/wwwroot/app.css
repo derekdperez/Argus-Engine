@@ -680,3 +680,31 @@ h1:focus {
     background: var(--border);
     margin: 1rem 0;
 }
+
+/* Global Loading Indicators */
+.spinner {
+    display: inline-block;
+    width: 0.95rem;
+    height: 0.95rem;
+    border: 2px solid rgba(37, 99, 235, 0.15);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: app-spin 0.7s linear infinite;
+    vertical-align: middle;
+}
+
+.loading-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--muted);
+    background: rgba(148, 163, 184, 0.08);
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+}
+
+@keyframes app-spin {
+    to { transform: rotate(360deg); }
+}

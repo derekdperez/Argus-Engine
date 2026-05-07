@@ -39,8 +39,12 @@ public sealed record FingerprintSignal(
     string? Protocol,
     string? Location,
     string? SourceField,
+    string? Key,
+    string? Selector,
+    string? Attribute,
     FingerprintMatch? Match,
     double? Confidence,
+    FingerprintVersionExtraction? Version,
     IReadOnlyList<FingerprintExtractor>? Extractors)
 {
     [JsonExtensionData]
@@ -72,6 +76,12 @@ public sealed record FingerprintExtractor(
     string? Type,
     string? Pattern,
     int? Group)
+{
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
+
+public sealed record FingerprintVersionExtraction(string? Template)
 {
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; init; }

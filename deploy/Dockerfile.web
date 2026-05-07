@@ -61,23 +61,13 @@ COPY src/Resources/ src/Resources/
 
 ARG COMPONENT_VERSION=2.6.2
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
- dotnet publish "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj" \
- -c Release -o /app/publish /p:UseAppHost=false \
- /p:Version="${COMPONENT_VERSION}" \
- /p:AssemblyVersion="2.6.2.0" \
- /p:FileVersion="2.6.2.0" \
- /p:InformationalVersion="${COMPONENT_VERSION}" \
- && test -s /app/publish/ArgusEngine.CommandCenter.dll \
- && if [ -s /app/publish/wwwroot/_framework/blazor.web.js ]; then \
-      if grep -q "^404: Not Found" /app/publish/wwwroot/_framework/blazor.web.js; then \
-        echo "WARNING: published wwwroot/_framework/blazor.web.js contains a cached 404 response; removing the physical file so ASP.NET Core static web assets can serve the framework script."; \
-        rm -f /app/publish/wwwroot/_framework/blazor.web.js; \
-      else \
-        echo "blazor.web.js was published as a valid physical wwwroot file."; \
-      fi; \
-    else \
-      echo "blazor.web.js was not published as a physical wwwroot file; static web assets will be served by the app."; \
-    fi
+  dotnet publish "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj" \
+    -c Release -o /app/publish /p:UseAppHost=false \
+    /p:Version="${COMPONENT_VERSION}" \
+    /p:AssemblyVersion="2.6.2.0" \
+    /p:FileVersion="2.6.2.0" \
+    /p:InformationalVersion="${COMPONENT_VERSION}" \
+  && test -s /app/publish/ArgusEngine.CommandCenter.dll
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 # Npgsql can dlopen Kerberos for Postgres auth negotiation; slim runtime image omits it by default.

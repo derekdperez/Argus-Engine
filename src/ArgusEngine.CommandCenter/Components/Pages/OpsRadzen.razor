@@ -92,6 +92,138 @@
     <section class="panel">
         <div class="section-heading">
             <div>
+                <p class="eyebrow">HTTP</p>
+                <h2>HTTP Requests</h2>
+            </div>
+            <span class="muted">@FormatNumber(_queue.Count) recent requests</span>
+        </div>
+
+        <div class="ops-rz-toolbar simple">
+            <label>
+                <span>State</span>
+                <select class="ops-filter compact-filter" @bind="_httpStateFilter" @bind:after="ReloadHttpQueueAsync">
+                    <option value="">All recent</option>
+                    <option value="Queued">Queued</option>
+                    <option value="InFlight">In flight</option>
+                    <option value="Retry">Retry</option>
+                    <option value="Succeeded">Completed</option>
+                    <option value="Failed">Failed</option>
+                </select>
+            </label>
+            <button type="button" class="btn" @onclick="ReloadHttpQueueAsync">Reload HTTP</button>
+        </div>
+
+        <div class="ops-table-wrap compact">
+            <table class="ops-table http-table">
+                <thead>
+                    <tr>
+                        <th>Created</th>
+                        <th>State</th>
+                        <th>Method</th>
+                        <th>URL</th>
+                        <th>Domain</th>
+                        <th>Attempts</th>
+                        <th>Status</th>
+                        <th>Duration</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var q in _queue)
+                    {
+                        var requestUrl = Text(q, "requestUrl", "RequestUrl");
+                        <tr>
+                            <td>@FormatTime(Text(q, "createdAtUtc", "CreatedAtUtc"))</td>
+                            <td><span class="queue-state @CssToken(Text(q, "state", "State"))">@DisplayOrDash(Text(q, "state", "State"))</span></td>
+                            <td>@DisplayOrDash(Text(q, "method", "Method"))</td>
+                            <td class="clip" title="@requestUrl">@DisplayOrDash(requestUrl)</td>
+                            <td class="clip" title="@Text(q, "domainKey", "DomainKey")">@DisplayOrDash(Text(q, "domainKey", "DomainKey"))</td>
+                            <td>@DisplayOrDash(Text(q, "attemptCount", "AttemptCount")) / @DisplayOrDash(Text(q, "maxAttempts", "MaxAttempts"))</td>
+                            <td>@DisplayOrDash(Text(q, "lastHttpStatus", "LastHttpStatus"))</td>
+                            <td>@DurationLabel(q)</td>
+                            <td class="clip" title="@Text(q, "lastError", "LastError")">@DisplayOrDash(Text(q, "lastError", "LastError"))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Message bus</p>
+                <h2>Published Events</h2>
+            </div>
+            <span class="muted">@FormatNumber(_events.Count) published events, @FormatNumber(_rabbitQueues.Count) queues</span>
+        </div>
+
+        <div class="ops-split-grid">
+            <div>
+                <h3 class="subsection-title">RabbitMQ queues</h3>
+                <div class="ops-table-wrap compact">
+                    <table class="ops-table bus-table">
+                        <thead>
+                            <tr>
+                                <th>Queue</th>
+                                <th>Ready</th>
+                                <th>Unacked</th>
+                                <th>Consumers</th>
+                                <th>Worker</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var queue in _rabbitQueues)
+                            {
+                                <tr>
+                                    <td class="clip" title="@Text(queue, "name", "Name")">@Text(queue, "name", "Name")</td>
+                                    <td>@FormatNumber(Long(queue, "messagesReady", "MessagesReady"))</td>
+                                    <td>@FormatNumber(Long(queue, "messagesUnacknowledged", "MessagesUnacknowledged"))</td>
+                                    <td>@DisplayOrDash(Text(queue, "consumers", "Consumers"))</td>
+                                    <td>@DisplayOrDash(Text(queue, "likelyWorkerKey", "LikelyWorkerKey"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="subsection-title">Event trace</h3>
+                <div class="ops-table-wrap compact">
+                    <table class="ops-table event-table">
+                        <thead>
+                            <tr>
+                                <th>Published</th>
+                                <th>Event</th>
+                                <th>Producer</th>
+                                <th>Host</th>
+                                <th>Consumers</th>
+                                <th>Payload</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var evt in _events)
+                            {
+                                <tr>
+                                    <td>@FormatTime(Text(evt, "publishedAtUtc", "PublishedAtUtc"))</td>
+                                    <td class="clip" title="@Text(evt, "eventName", "EventName")">@Text(evt, "eventName", "EventName")</td>
+                                    <td>@DisplayOrDash(Text(evt, "producer", "Producer"))</td>
+                                    <td>@DisplayOrDash(Text(evt, "hostName", "HostName"))</td>
+                                    <td>@DisplayOrDash(Text(evt, "consumerCount", "ConsumerCount"))</td>
+                                    <td class="clip payload-cell" title="@Text(evt, "payloadPreview", "PayloadPreview")">@DisplayOrDash(Text(evt, "payloadPreview", "PayloadPreview"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="section-heading">
+            <div>
                 <p class="eyebrow">Inventory</p>
                 <h2>Assets</h2>
             </div>
@@ -101,7 +233,7 @@
         <div class="ops-rz-toolbar simple">
             <label class="wide-search">
                 <span>Search</span>
-                <input type="search" class="ops-filter" @bind="_assetSearch" @bind:event="oninput" placeholder="Search kind, category, final URL, canonical key, pipeline, or discovery context…" />
+                <input type="search" class="ops-filter" @bind="_assetSearch" @bind:event="oninput" placeholder="Search kind, category, final URL, or discovery context..." />
             </label>
             <button type="button" class="btn" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">
                 @(_assetsLoading ? "Loading..." : "Reload assets")
@@ -116,11 +248,7 @@
                         <th>Last seen</th>
                         <th>Kind</th>
                         <th>Category</th>
-                        <th>Confidence</th>
-                        <th>Display name</th>
                         <th>Final URL</th>
-                        <th>Canonical</th>
-                        <th>Pipeline</th>
                         <th>How found</th>
                     </tr>
                 </thead>
@@ -135,8 +263,6 @@
                             <td>@FormatTime(Text(a, "lastSeenAtUtc", "LastSeenAtUtc"))</td>
                             <td>@Text(a, "kind", "Kind")</td>
                             <td>@Text(a, "category", "Category")</td>
-                            <td>@Text(a, "confidence", "Confidence")</td>
-                            <td class="clip" title="@Text(a, "displayName", "DisplayName")">@Text(a, "displayName", "DisplayName")</td>
                             <td class="clip" title="@finalUrl">
                                 @if (href is null)
                                 {
@@ -147,8 +273,6 @@
                                     <a href="@href" target="_blank" rel="noopener noreferrer">@finalUrl</a>
                                 }
                             </td>
-                            <td class="clip" title="@Text(a, "canonicalKey", "CanonicalKey")">@Text(a, "canonicalKey", "CanonicalKey")</td>
-                            <td>@Text(a, "discoveredBy", "DiscoveredBy")</td>
                             <td class="clip" title="@Text(a, "discoveryContext", "DiscoveryContext")">@Text(a, "discoveryContext", "DiscoveryContext")</td>
                         </tr>
                     </Virtualize>
@@ -252,10 +376,13 @@
     private readonly List<JsonElement> _workerSummaries = [];
     private readonly List<JsonElement> _workerInstances = [];
     private readonly List<JsonElement> _workerScaleTargets = [];
+    private readonly List<JsonElement> _rabbitQueues = [];
+    private readonly List<JsonElement> _events = [];
 
     private bool _loading;
     private bool _assetsLoading;
     private string _assetSearch = "";
+    private string _httpStateFilter = "";
     private string _statusMessage = "";
 
     private int TargetCount => _targets.Count;
@@ -310,6 +437,8 @@
                 ReloadTargetsAsync(),
                 ReloadAssetsAsync(),
                 ReloadHttpQueueAsync(),
+                ReloadMessageBusAsync(),
+                ReloadEventsAsync(),
                 ReloadWorkersAsync(),
                 ReloadWorkerScaleAsync());
         }
@@ -356,7 +485,32 @@
 
     private async Task ReloadHttpQueueAsync()
     {
-        Replace(_queue, await GetArrayAsync("/api/http-request-queue?state=Queued"));
+        var state = string.IsNullOrWhiteSpace(_httpStateFilter) ? "" : $"&state={Uri.EscapeDataString(_httpStateFilter)}";
+        Replace(_queue, await GetArrayAsync($"/api/http-request-queue?take=500{state}"));
+    }
+
+    private async Task ReloadMessageBusAsync()
+    {
+        try
+        {
+            Replace(_rabbitQueues, await GetArrayAsync("/api/ops/rabbit-queues"));
+        }
+        catch
+        {
+            _rabbitQueues.Clear();
+        }
+    }
+
+    private async Task ReloadEventsAsync()
+    {
+        try
+        {
+            Replace(_events, await GetArrayAsync("/api/events/live?minutes=60&take=250"));
+        }
+        catch
+        {
+            _events.Clear();
+        }
     }
 
     private async Task ReloadWorkersAsync()
@@ -529,10 +683,7 @@
         {
             Text(element, "kind", "Kind"),
             Text(element, "category", "Category"),
-            Text(element, "displayName", "DisplayName"),
             Text(element, "finalUrl", "FinalUrl"),
-            Text(element, "canonicalKey", "CanonicalKey"),
-            Text(element, "discoveredBy", "DiscoveredBy"),
             Text(element, "discoveryContext", "DiscoveryContext")
         };
 
@@ -574,6 +725,11 @@
         var value = Text(element, "durationMs", "DurationMs");
         return string.IsNullOrWhiteSpace(value) ? "-" : $"{value}ms";
     }
+
+    private static string CssToken(string value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? "unknown"
+            : new string(value.Trim().Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-').ToArray());
 
     private static string AssetKey(JsonElement element) =>
         DisplayOrDash(Text(element, "id", "Id", "canonicalKey", "CanonicalKey", "finalUrl", "FinalUrl"));

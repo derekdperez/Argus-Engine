@@ -391,6 +391,14 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.Property(x => x.PerDomainRequestsPerMinute).HasColumnName("per_domain_requests_per_minute");
             e.Property(x => x.MaxConcurrency).HasColumnName("max_concurrency");
             e.Property(x => x.RequestTimeoutSeconds).HasColumnName("request_timeout_seconds");
+            e.Property(x => x.RotateUserAgents).HasColumnName("rotate_user_agents");
+            e.Property(x => x.CustomUserAgentsJson).HasColumnName("custom_user_agents_json").HasColumnType("jsonb");
+            e.Property(x => x.RandomizeHeaderOrder).HasColumnName("randomize_header_order");
+            e.Property(x => x.UseRandomJitter).HasColumnName("use_random_jitter");
+            e.Property(x => x.MinJitterMs).HasColumnName("min_jitter_ms");
+            e.Property(x => x.MaxJitterMs).HasColumnName("max_jitter_ms");
+            e.Property(x => x.SpoofReferer).HasColumnName("spoof_referer");
+            e.Property(x => x.CustomHeadersJson).HasColumnName("custom_headers_json").HasColumnType("jsonb");
             e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
         });
 

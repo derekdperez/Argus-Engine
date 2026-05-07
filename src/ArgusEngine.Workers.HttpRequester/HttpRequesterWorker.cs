@@ -27,6 +27,17 @@ public sealed class HttpRequesterWorker(
     IPublishEndpoint publishEndpoint,
     ILogger<HttpRequesterWorker> logger) : BackgroundService
 {
+    private HttpRequestQueueSettings? _currentSettings;
+    private DateTimeOffset _lastSettingsFetch = DateTimeOffset.MinValue;
+    private static readonly string[] DefaultUserAgents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:125.0) Gecko/20100101 Firefox/125.0",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1"
+    ];
+
     private static readonly Action<ILogger, Exception?> LogWorkerStarted =
         LoggerMessage.Define(
             LogLevel.Information,
@@ -138,19 +149,42 @@ public sealed class HttpRequesterWorker(
 
         try
         {
+            var settings = await GetSettingsAsync(ct).ConfigureAwait(false);
+
             // Apply per-domain rate limiting
             await rateLimiter.WaitAsync(item.DomainKey, ct).ConfigureAwait(false);
 
+            // Apply Jitter
+            if (settings?.UseRandomJitter == true && settings.MaxJitterMs > settings.MinJitterMs)
+            {
+                var jitter = Random.Shared.Next(settings.MinJitterMs, settings.MaxJitterMs);
+                await Task.Delay(jitter, ct).ConfigureAwait(false);
+            }
+
             using var client = httpClientFactory.CreateClient("requester");
             using var request = new HttpRequestMessage(new HttpMethod(item.Method), item.RequestUrl);
+
+            // Apply Detection Evasion
+            ApplyEvasion(request, settings);
 
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             stopwatch.Stop();
 
             var snapshot = await CreateSnapshotAsync(item, response, stopwatch.Elapsed, ct).ConfigureAwait(false);
 
+            StoredAsset? asset = null;
             using (var scope = scopeFactory.CreateScope())
             {
+                var db = scope.ServiceProvider.GetRequiredService<ArgusDbContext>();
+                asset = await db.Assets.Include(a => a.Target).FirstOrDefaultAsync(a => a.Id == item.AssetId, ct).ConfigureAwait(false);
+                
+                if (asset == null)
+                {
+                    LogAssetNotFound(logger, item.AssetId, item.Id, null);
+                    await MarkFailedAsync(item.Id, "Asset not found", terminal: true, ct).ConfigureAwait(false);
+                    return;
+                }
+
                 var persistence = scope.ServiceProvider.GetRequiredService<IAssetPersistence>();
                 await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, Guid.Empty, ct).ConfigureAwait(false);
             }
@@ -302,31 +336,95 @@ public sealed class HttpRequesterWorker(
             .ConfigureAwait(false);
     }
 
+    private async Task<HttpRequestQueueSettings?> GetSettingsAsync(CancellationToken ct)
+    {
+        if (_currentSettings != null && DateTimeOffset.UtcNow - _lastSettingsFetch < TimeSpan.FromMinutes(1))
+        {
+            return _currentSettings;
+        }
+
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ArgusDbContext>();
+            _currentSettings = await db.HttpRequestQueueSettings.AsNoTracking().FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            _lastSettingsFetch = DateTimeOffset.UtcNow;
+            return _currentSettings;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to refresh HTTP request queue settings. Using cached or default.");
+            return _currentSettings;
+        }
+    }
+
+    private void ApplyEvasion(HttpRequestMessage request, HttpRequestQueueSettings? settings)
+    {
+        if (settings == null) return;
+
+        // User Agent Rotation
+        if (settings.RotateUserAgents)
+        {
+            string ua = DefaultUserAgents[Random.Shared.Next(DefaultUserAgents.Length)];
+            
+            if (!string.IsNullOrWhiteSpace(settings.CustomUserAgentsJson))
+            {
+                try
+                {
+                    var customUas = System.Text.Json.JsonSerializer.Deserialize<string[]>(settings.CustomUserAgentsJson);
+                    if (customUas != null && customUas.Length > 0)
+                    {
+                        ua = customUas[Random.Shared.Next(customUas.Length)];
+                    }
+                }
+                catch { /* Ignore invalid JSON */ }
+            }
+
+            request.Headers.UserAgent.Clear();
+            request.Headers.TryAddWithoutValidation("User-Agent", ua);
+        }
+
+        // Spoof Referer
+        if (settings.SpoofReferer)
+        {
+            string[] referers = [
+                "https://www.google.com/",
+                "https://www.bing.com/",
+                "https://duckduckgo.com/",
+                new Uri(request.RequestUri!).GetLeftPart(UriPartial.Authority) + "/"
+            ];
+            request.Headers.Referrer = new Uri(referers[Random.Shared.Next(referers.Length)]);
+        }
+
+        // Custom Headers
+        if (!string.IsNullOrWhiteSpace(settings.CustomHeadersJson))
+        {
+            try
+            {
+                var customHeaders = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(settings.CustomHeadersJson);
+                if (customHeaders != null)
+                {
+                    foreach (var kvp in customHeaders)
+                    {
+                        request.Headers.TryAddWithoutValidation(kvp.Key, kvp.Value);
+                    }
+                }
+            }
+            catch { /* Ignore invalid JSON */ }
+        }
+    }
+
+    private static Dictionary<string, string> HeadersToDict(HttpResponseHeaders headers) =>
+        headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value));
+
+    private static string Truncate(string? value, int max) =>
+        value?.Length > max ? value[..max] : (value ?? string.Empty);
+
     private static bool IsHttpTransient(Exception ex) =>
         ex is HttpRequestException or IOException or TaskCanceledException or OperationCanceledException;
 
     private static bool IsNameResolutionFailure(HttpRequestException ex) =>
-        ex.InnerException is SocketException socketException
-        && socketException.SocketErrorCode is SocketError.HostNotFound or SocketError.NoData;
+        ex.InnerException is SocketException { SocketErrorCode: SocketError.HostNotFound or SocketError.NoData };
 
-    private static string DnsFailureMessage(string requestUrl)
-    {
-        var host = Uri.TryCreate(requestUrl, UriKind.Absolute, out var uri) ? uri.Host : requestUrl;
-        return $"DNS resolution failed for host {host}.";
-    }
-
-    private static Dictionary<string, string> HeadersToDict(HttpHeaders headers)
-    {
-        var dictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var header in headers)
-        {
-            dictionary[header.Key] = string.Join(", ", header.Value);
-        }
-
-        return dictionary;
-    }
-
-    private static string Truncate(string s, int maxChars) =>
-        s.Length <= maxChars ? s : s[..maxChars];
+    private static string DnsFailureMessage(string url) => $"DNS resolution failed for {url}";
 }

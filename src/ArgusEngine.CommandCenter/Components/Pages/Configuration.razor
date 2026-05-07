@@ -1,0 +1,199 @@
+@page "/configuration"
+@using ArgusEngine.Domain.Entities
+@using ArgusEngine.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ArgusDbContext> DbFactory
+@inject NavigationManager Navigation
+
+<PageTitle>Configuration - Argus Engine</PageTitle>
+
+<div class="config-container">
+    <header class="config-header">
+        <h1>System Configuration</h1>
+        <p>Global settings and detection evasion parameters for the scanning fleet.</p>
+    </header>
+
+    @if (_settings == null)
+    {
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading configuration...</p>
+        </div>
+    }
+    else
+    {
+        <EditForm Model="@_settings" OnValidSubmit="HandleSave">
+            <div class="config-sections">
+                <!-- HTTP Requester Section -->
+                <section class="config-section">
+                    <div class="section-icon">🌐</div>
+                    <div class="section-content">
+                        <h2>HTTP Requester Settings</h2>
+                        <p>Global performance and timeout constraints for all HTTP-based workers.</p>
+                        
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="enabled">Worker Pool Enabled</label>
+                                <InputCheckbox id="enabled" @bind-Value="_settings.Enabled" />
+                            </div>
+
+                            <div class="form-group">
+                                <label for="maxConcurrency">Global Max Concurrency</label>
+                                <InputNumber id="maxConcurrency" @bind-Value="_settings.MaxConcurrency" class="form-control" />
+                                <small>Total simultaneous requests across the entire fleet.</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="timeout">Request Timeout (seconds)</label>
+                                <InputNumber id="timeout" @bind-Value="_settings.RequestTimeoutSeconds" class="form-control" />
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Detection Evasion Section -->
+                <section class="config-section highlight">
+                    <div class="section-icon">🕵️</div>
+                    <div class="section-content">
+                        <h2>Detection Evasion & Anti-Ban</h2>
+                        <p>Configure advanced techniques to mimic organic browser traffic and avoid automated scanning signatures.</p>
+
+                        <div class="form-grid">
+                            <div class="form-group full-width">
+                                <div class="checkbox-group">
+                                    <InputCheckbox id="rotateUa" @bind-Value="_settings.RotateUserAgents" />
+                                    <label for="rotateUa">Enable User-Agent Rotation</label>
+                                </div>
+                                <small>Randomly selects a modern browser string for every request.</small>
+                            </div>
+
+                            @if (_settings.RotateUserAgents)
+                            {
+                                <div class="form-group full-width">
+                                    <label for="uaList">Custom User Agents (JSON Array)</label>
+                                    <InputTextArea id="uaList" @bind-Value="_settings.CustomUserAgentsJson" class="form-control" rows="3" placeholder='["Mozilla/5.0...", "Mozilla/5.0..."]' />
+                                </div>
+                            }
+
+                            <div class="form-group">
+                                <div class="checkbox-group">
+                                    <InputCheckbox id="jitter" @bind-Value="_settings.UseRandomJitter" />
+                                    <label for="jitter">Enable Request Jitter</label>
+                                </div>
+                                <small>Adds a randomized delay between requests.</small>
+                            </div>
+
+                            @if (_settings.UseRandomJitter)
+                            {
+                                <div class="form-group">
+                                    <label>Jitter Range (ms)</label>
+                                    <div class="range-inputs">
+                                        <InputNumber @bind-Value="_settings.MinJitterMs" class="form-control" placeholder="Min" />
+                                        <span>to</span>
+                                        <InputNumber @bind-Value="_settings.MaxJitterMs" class="form-control" placeholder="Max" />
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="form-group">
+                                <div class="checkbox-group">
+                                    <InputCheckbox id="headers" @bind-Value="_settings.RandomizeHeaderOrder" />
+                                    <label for="headers">Randomize Header Order</label>
+                                </div>
+                                <small>Shuffles the order of HTTP headers to break scanner fingerprints.</small>
+                            </div>
+
+                            <div class="form-group">
+                                <div class="checkbox-group">
+                                    <InputCheckbox id="referer" @bind-Value="_settings.SpoofReferer" />
+                                    <label for="referer">Spoof Referer</label>
+                                </div>
+                                <small>Uses common search engines or root domains as the Referer.</small>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="customHeaders">Custom Additional Headers (JSON Object)</label>
+                                <InputTextArea id="customHeaders" @bind-Value="_settings.CustomHeadersJson" class="form-control" rows="2" placeholder='{"Accept-Language": "en-US,en;q=0.9"}' />
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="config-actions">
+                <button type="submit" class="btn btn-primary" disabled="@_isSaving">
+                    @if (_isSaving)
+                    {
+                        <span class="spinner-small"></span>
+                        <span>Saving...</span>
+                    }
+                    else
+                    {
+                        <span>Save Changes</span>
+                    }
+                </button>
+                @if (_showSuccess)
+                {
+                    <span class="success-msg">✓ Configuration updated successfully</span>
+                }
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private HttpRequestQueueSettings? _settings;
+    private bool _isSaving;
+    private bool _showSuccess;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSettings();
+    }
+
+    private async Task LoadSettings()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _settings = await db.HttpRequestQueueSettings.FirstOrDefaultAsync();
+
+        if (_settings == null)
+        {
+            _settings = new HttpRequestQueueSettings();
+            db.HttpRequestQueueSettings.Add(_settings);
+            await db.SaveChangesAsync();
+        }
+    }
+
+    private async Task HandleSave()
+    {
+        if (_settings == null) return;
+
+        _isSaving = true;
+        _showSuccess = false;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _settings.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            db.HttpRequestQueueSettings.Update(_settings);
+            await db.SaveChangesAsync();
+            _showSuccess = true;
+            
+            // Auto-hide success message after 3 seconds
+            _ = Task.Run(async () => {
+                await Task.Delay(3000);
+                _showSuccess = false;
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+        catch (Exception ex)
+        {
+            // Error handling could be more robust
+            Console.WriteLine($"Error saving configuration: {ex.Message}");
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+}

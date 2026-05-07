@@ -45,7 +45,7 @@
                         <span class="loading-inline"><span class="spinner"></span> Loading...</span>
                     }
                 </div>
-                <button type="button" class="btn" @onclick="ReloadAsync" disabled="@_loading">@(_loading ? "Loading..." : "Reload")</button>
+                <button type="button" class="btn" @onclick="ReloadAsync" disabled="@_anyLoading">@(_anyLoading ? "Loading..." : "Reload")</button>
             </div>
 
             <div class="ops-rz-toolbar simple dense-toolbar">

@@ -167,7 +167,7 @@ public static class TechnologyIdentificationEndpoints
         string? subdomain,
         CancellationToken ct)
     {
-        var observationQuery =
+        var query =
             from o in db.TechnologyObservations.AsNoTracking()
             join t in db.Targets.AsNoTracking() on o.TargetId equals t.Id
             join a in db.Assets.AsNoTracking() on o.AssetId equals a.Id
@@ -198,41 +198,12 @@ public static class TechnologyIdentificationEndpoints
                     .FirstOrDefault(),
                 "observation");
 
-        var legacyQuery =
-            from d in db.TechnologyDetections.AsNoTracking()
-            join t in db.Targets.AsNoTracking() on d.TargetId equals t.Id
-            join a in db.Assets.AsNoTracking() on d.AssetId equals a.Id
-            select new TechnologyRowProjection(
-                d.Id,
-                d.TargetId,
-                t.RootDomain,
-                d.AssetId,
-                a.Kind,
-                a.CanonicalKey,
-                a.RawValue,
-                a.FinalUrl,
-                d.TechnologyName,
-                null,
-                null,
-                d.Version,
-                d.Confidence,
-                "legacy",
-                d.EvidenceSource,
-                "",
-                "",
-                d.DetectedAtUtc,
-                d.DetectedAtUtc,
-                (d.EvidenceKey ?? d.EvidenceSource) + ": " + (d.MatchedText ?? "matched"),
-                "legacy");
-
         if (targetId is { } selectedTargetId)
         {
-            observationQuery = observationQuery.Where(x => x.TargetId == selectedTargetId);
-            legacyQuery = legacyQuery.Where(x => x.TargetId == selectedTargetId);
+            query = query.Where(x => x.TargetId == selectedTargetId);
         }
 
-        var projections = await observationQuery
-            .Concat(legacyQuery)
+        var projections = await query
             .ToListAsync(ct)
             .ConfigureAwait(false);
 

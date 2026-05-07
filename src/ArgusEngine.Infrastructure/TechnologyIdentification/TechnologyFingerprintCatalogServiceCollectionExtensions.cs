@@ -8,6 +8,7 @@ public static class TechnologyFingerprintCatalogServiceCollectionExtensions
     public static IServiceCollection AddArgusTechnologyFingerprintCatalog(this IServiceCollection services)
     {
         services.AddSingleton<ITechnologyFingerprintCatalog, ResourceTechnologyFingerprintCatalog>();
+        services.AddScoped<ITechnologyObservationWriter, EfTechnologyObservationWriter>();
         services.AddHostedService<TechnologyFingerprintCatalogAuditHostedService>();
 
         return services;

@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using ArgusEngine.Application.Workers;
 using ArgusEngine.Workers.TechnologyIdentification;
 using Microsoft.Extensions.Configuration;
-using ArgusEngine.Application.TechnologyIdentification;
 using ArgusEngine.Infrastructure;
 using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Data;
@@ -22,35 +21,7 @@ try
     builder.Services.AddArgusTechnologyFingerprintCatalog();
     builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.TechnologyIdentification);
     builder.Services.AddScoped<IWorkerHealthCheck, TechIdWorkerHealthCheck>();
-
-    builder.Services.AddSingleton<TechnologyCatalog>(sp =>
-    {
-        var logger = sp.GetRequiredService<ILogger<TechnologyCatalogLoader>>();
-        var loader = new TechnologyCatalogLoader(logger);
-        var config = sp.GetRequiredService<IConfiguration>();
-        var environment = sp.GetRequiredService<IHostEnvironment>();
-        var root = config.GetArgusValue("TechnologyDetection:RootPath")
-            ?? Path.Combine(environment.ContentRootPath, "Resources", "TechnologyDetection");
-
-        try
-        {
-            return loader.Load(root);
-        }
-        catch (DirectoryNotFoundException ex)
-        {
-            LegacyTechnologyCatalogLog.LogRootNotFound(logger, ex, root);
-
-            return new TechnologyCatalog(
-                new Dictionary<string, TechnologyDefinition>(StringComparer.OrdinalIgnoreCase),
-                new Dictionary<int, string>(),
-                FilesLoaded: 0,
-                PatternsCompiled: 0,
-                PatternsSkipped: 0);
-        }
-    });
-
-    builder.Services.AddSingleton<TechnologyScanner>();
-
+    builder.Services.AddSingleton<PassiveTechnologyFingerprintEngine>();
 
     builder.Services.AddArgusRabbitMq(
         builder.Configuration,
@@ -92,12 +63,3 @@ static bool ShouldSkipStartupDatabase(IConfiguration configuration) =>
     configuration.GetArgusValue("SkipStartupDatabase", false)
     || string.Equals(Environment.GetEnvironmentVariable("ARGUS_SKIP_STARTUP_DATABASE"), "1", StringComparison.OrdinalIgnoreCase)
     || string.Equals(Environment.GetEnvironmentVariable("NIGHTMARE_SKIP_STARTUP_DATABASE"), "1", StringComparison.OrdinalIgnoreCase);
-
-internal static partial class LegacyTechnologyCatalogLog
-{
-    [LoggerMessage(
-        EventId = 550020,
-        Level = LogLevel.Warning,
-        Message = "Legacy technology catalog root was not found at {Root}. The resource fingerprint catalog will still be loaded for SPEC-2 detection.")]
-    public static partial void LogRootNotFound(ILogger logger, Exception exception, string root);
-}

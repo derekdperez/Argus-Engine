@@ -152,7 +152,6 @@
                 <select class="ops-filter compact-filter" @bind="_technologySourceFilter">
                     <option value="">All</option>
                     <option value="observation">Observations</option>
-                    <option value="legacy">Legacy</option>
                 </select>
             </label>
             @if (_selectedSubdomain is not null)
@@ -474,5 +473,5 @@
     }
 
     private static string DisplaySource(TechnologyIdentificationRowDto row) =>
-        row.DataSource == "legacy" ? "Legacy" : row.DetectionMode;
+        row.DetectionMode;
 }

@@ -21,6 +21,18 @@ public sealed class TechnologyObservation
     public string? MetadataJson { get; set; }
 }
 
+public sealed class TechnologyDetectionRun
+{
+    public Guid Id { get; set; }
+    public Guid TargetId { get; set; }
+    public string CatalogHash { get; set; } = "";
+    public string Mode { get; set; } = "";
+    public string Status { get; set; } = "";
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset? StartedAtUtc { get; set; }
+    public DateTimeOffset? CompletedAtUtc { get; set; }
+}
+
 public sealed class TechnologyObservationEvidence
 {
     public Guid Id { get; set; }

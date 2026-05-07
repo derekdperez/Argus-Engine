@@ -8,6 +8,7 @@ using ArgusEngine.Application.Assets;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Application.FileStore;
 using ArgusEngine.Application.TechnologyIdentification;
+using ArgusEngine.Application.TechnologyIdentification.Fingerprints;
 using ArgusEngine.Application.Workers;
 using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
@@ -19,9 +20,9 @@ public sealed class TechnologyIdentificationConsumer(
     IDbContextFactory<ArgusDbContext> dbFactory,
     IInboxDeduplicator inbox,
     IWorkerToggleReader toggles,
-    TechnologyScanner scanner,
-    TechnologyCatalog catalog,
-    IAssetTagService tagService,
+    PassiveTechnologyFingerprintEngine passiveEngine,
+    ITechnologyFingerprintCatalog catalog,
+    ITechnologyObservationWriter observationWriter,
     IHttpArtifactReader artifactReader,
     IOptions<TechnologyIdentificationScanOptions> scanOptions,
     ILogger<TechnologyIdentificationConsumer> logger) : IConsumer<ScannableContentAvailable>
@@ -38,7 +39,7 @@ public sealed class TechnologyIdentificationConsumer(
         LoggerMessage.Define<Guid, long, int, int, int>(
             LogLevel.Information,
             new EventId(2, nameof(LogScanSummary)),
-            "TechnologyIdentification scanned asset {AssetId} in {ElapsedMs} ms: matches={MatchCount}, technologies={TechnologyCount}, tagsAttached={TagsAttached}");
+            "TechnologyIdentification scanned asset {AssetId} in {ElapsedMs} ms: observations={ObservationCount}, created={CreatedCount}, evidenceAdded={EvidenceAddedCount}");
 
     private static readonly Action<ILogger, Guid, Exception?> LogScanFailed =
         LoggerMessage.Define<Guid>(
@@ -100,7 +101,7 @@ public sealed class TechnologyIdentificationConsumer(
             var cookies = CookieExtractor.Extract(requestHeaders, responseHeaders);
             var scriptUrls = BuildScriptUrls(message.SourceUrl, snapshot.FinalUrl, snapshot.ContentType, signals.ScriptUrls);
 
-            var input = new TechnologyScanInput(
+            var input = new PassiveTechnologyFingerprintInput(
                 message.TargetId,
                 message.AssetId,
                 message.SourceUrl,
@@ -112,13 +113,11 @@ public sealed class TechnologyIdentificationConsumer(
                 signals.Meta,
                 scriptUrls);
 
-            var results = scanner.Scan(input);
-
-            var persisted = await tagService.UpsertTechnologyDetectionsAsync(
+            var observations = passiveEngine.Evaluate(input);
+            var persisted = await observationWriter.UpsertPassiveObservationsAsync(
                     message.TargetId,
-                    message.AssetId,
-                    results,
-                    catalog.Technologies,
+                    observations,
+                    catalog.CatalogHash,
                     ct)
                 .ConfigureAwait(false);
 
@@ -126,9 +125,9 @@ public sealed class TechnologyIdentificationConsumer(
                 logger,
                 message.AssetId,
                 stopwatch.ElapsedMilliseconds,
-                results.Count,
-                persisted.TechnologyCount,
-                persisted.TagsAttached,
+                observations.Count,
+                persisted.CreatedCount,
+                persisted.EvidenceAddedCount,
                 null);
         }
         catch (Exception ex)

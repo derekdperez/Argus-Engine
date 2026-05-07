@@ -20,6 +20,7 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
     public DbSet<AssetTag> AssetTags => Set<AssetTag>();
     public DbSet<TechnologyDetection> TechnologyDetections => Set<TechnologyDetection>();
     public DbSet<TechnologyObservation> TechnologyObservations => Set<TechnologyObservation>();
+    public DbSet<TechnologyDetectionRun> TechnologyDetectionRuns => Set<TechnologyDetectionRun>();
     public DbSet<TechnologyObservationEvidence> TechnologyObservationEvidence => Set<TechnologyObservationEvidence>();
     public DbSet<CloudResourceUsageSample> CloudResourceUsageSamples => Set<CloudResourceUsageSample>();
     public DbSet<WorkerScaleTarget> WorkerScaleTargets => Set<WorkerScaleTarget>();
@@ -162,6 +163,22 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.HasIndex(x => new { x.TargetId, x.AssetId, x.DedupeKey }).IsUnique();
             e.HasIndex(x => new { x.TargetId, x.TechnologyName });
             e.HasIndex(x => new { x.AssetId, x.LastSeenUtc });
+        });
+
+        modelBuilder.Entity<TechnologyDetectionRun>(e =>
+        {
+            e.ToTable("technology_detection_runs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TargetId).HasColumnName("target_id");
+            e.Property(x => x.CatalogHash).HasColumnName("catalog_hash");
+            e.Property(x => x.Mode).HasColumnName("mode");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.StartedAtUtc).HasColumnName("started_at_utc");
+            e.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc");
+            e.HasIndex(x => new { x.TargetId, x.CreatedAtUtc });
+            e.HasIndex(x => x.Status);
         });
 
         modelBuilder.Entity<TechnologyObservationEvidence>(e =>

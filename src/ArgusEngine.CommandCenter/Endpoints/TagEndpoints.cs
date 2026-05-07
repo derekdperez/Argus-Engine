@@ -72,22 +72,17 @@ public static class TagEndpoints
                 "/api/targets/{targetId:guid}/technologies",
                 async (Guid targetId, ArgusDbContext db, CancellationToken ct) =>
                 {
-                    var rows = await db.AssetTags.AsNoTracking()
-                        .Where(at => at.TargetId == targetId)
-                        .Join(
-                            db.Tags.AsNoTracking().Where(t => t.TagType == TechnologyConstants.TagType),
-                            at => at.TagId,
-                            tag => tag.Id,
-                            (at, tag) => new { AssetTag = at, Tag = tag })
-                        .GroupBy(x => new { x.Tag.Id, x.Tag.Slug, x.Tag.Name, x.Tag.TagType })
+                    var rows = await db.TechnologyObservations.AsNoTracking()
+                        .Where(o => o.TargetId == targetId)
+                        .GroupBy(o => new { o.TechnologyName, o.Vendor, o.Product })
                         .Select(g => new TargetTechnologyDto(
-                            g.Key.Id,
-                            g.Key.Slug,
-                            g.Key.Name,
-                            g.Key.TagType,
-                            g.LongCount(),
-                            g.Max(x => x.AssetTag.Confidence),
-                            g.Max(x => x.AssetTag.LastSeenAtUtc)))
+                            Guid.Empty,
+                            "",
+                            g.Key.TechnologyName,
+                            TechnologyConstants.TagType,
+                            g.Select(x => x.AssetId).Distinct().LongCount(),
+                            g.Max(x => x.ConfidenceScore),
+                            g.Max(x => x.LastSeenUtc)))
                         .OrderByDescending(x => x.AssetCount)
                         .ThenBy(x => x.Name)
                         .ToListAsync(ct)
@@ -101,29 +96,37 @@ public static class TagEndpoints
                 "/api/technologies",
                 async (ArgusDbContext db, int? take, CancellationToken ct) =>
                 {
-                    var maxRows = take ?? 10000;
-                    var q = from d in db.TechnologyDetections.AsNoTracking()
-                            join t in db.Targets.AsNoTracking() on d.TargetId equals t.Id
-                            join a in db.Assets.AsNoTracking() on d.AssetId equals a.Id
-                            join tag in db.Tags.AsNoTracking() on d.TagId equals tag.Id
+                    var maxRows = take is > 0 ? take.Value : int.MaxValue;
+                    var q = from o in db.TechnologyObservations.AsNoTracking()
+                            join t in db.Targets.AsNoTracking() on o.TargetId equals t.Id
+                            join a in db.Assets.AsNoTracking() on o.AssetId equals a.Id
                             select new ArgusEngine.CommandCenter.Models.TechnologyDetectionRowDto(
-                                d.Id,
+                                o.Id,
                                 t.Id,
                                 t.RootDomain,
                                 a.Id,
                                 a.CanonicalKey,
-                                d.TechnologyName,
-                                tag.Name, // Using tag.Name as Category name placeholder or just Tag Name if categories are embedded in metadata
-                                d.Version,
-                                d.EvidenceSource,
-                                d.EvidenceKey,
-                                d.Pattern,
-                                d.MatchedText,
-                                d.Confidence,
-                                d.DetectedAtUtc);
+                                o.TechnologyName,
+                                o.SourceType,
+                                o.Version,
+                                o.DetectionMode,
+                                o.FingerprintId,
+                                null,
+                                db.TechnologyObservationEvidence
+                                    .Where(e => e.ObservationId == o.Id)
+                                    .OrderByDescending(e => e.CreatedAtUtc)
+                                    .Select(e => e.MatchedValueRedacted)
+                                    .FirstOrDefault(),
+                                o.ConfidenceScore,
+                                o.LastSeenUtc);
 
-                    var rows = await q.OrderByDescending(x => x.DetectedAtUtc)
-                        .Take(maxRows)
+                    IQueryable<ArgusEngine.CommandCenter.Models.TechnologyDetectionRowDto> ordered = q.OrderByDescending(x => x.DetectedAtUtc);
+                    if (take is > 0)
+                    {
+                        ordered = ordered.Take(Math.Clamp(maxRows, 1, 1_000_000));
+                    }
+
+                    var rows = await ordered
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
 

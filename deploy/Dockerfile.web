@@ -29,6 +29,7 @@ COPY src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj src/Ar
 COPY src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj src/ArgusEngine.Workers.HighValue/
 
 COPY src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj src/ArgusEngine.Workers.TechnologyIdentification/
+COPY src/ArgusEngine.Workers.HttpRequester/ArgusEngine.Workers.HttpRequester.csproj src/ArgusEngine.Workers.HttpRequester/
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
  dotnet restore "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj"
 # Copy only the project dependency closure used by the web app.
@@ -57,6 +58,8 @@ COPY src/ArgusEngine.Workers.HighValue/ src/ArgusEngine.Workers.HighValue/
 
 COPY src/ArgusEngine.Workers.TechnologyIdentification/ src/ArgusEngine.Workers.TechnologyIdentification/
 
+COPY src/ArgusEngine.Workers.HttpRequester/ src/ArgusEngine.Workers.HttpRequester/
+
 COPY src/Resources/ src/Resources/
 
 ARG COMPONENT_VERSION=2.6.2
@@ -69,19 +72,15 @@ RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locke
     /p:InformationalVersion="${COMPONENT_VERSION}" \
   && test -s /app/publish/ArgusEngine.CommandCenter.dll
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS final
 # Npgsql can dlopen Kerberos for Postgres auth negotiation; slim runtime image omits it by default.
 
 # curl: Docker HEALTHCHECK + manual probes.
 
-# docker.io: CLI used by runtime container/image/log inspection and component update actions.
+# docker: CLI used by runtime container/image/log inspection and component update actions.
 # git: used by the Development page component updater to compare/pull GitHub main.
 
-RUN sed -i 's/archive.ubuntu.com/mirrors.edge.kernel.org/g' /etc/apt/sources.list 2>/dev/null || true \
- && sed -i 's/archive.ubuntu.com/mirrors.edge.kernel.org/g' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true \
- && apt-get -o Acquire::Retries=5 update \
- && apt-get -o Acquire::Retries=5 install -y --no-install-recommends libgssapi-krb5-2 curl docker.io git \
- && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache krb5-libs curl docker git
 
 WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080

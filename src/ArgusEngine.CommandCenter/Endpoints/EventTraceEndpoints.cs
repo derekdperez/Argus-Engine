@@ -12,9 +12,10 @@ public static class EventTraceEndpoints
     {
         app.MapGet(
                 "/api/events/live",
-                async (ArgusDbContext db, int? minutes, int? take, bool? all, CancellationToken ct) =>
+                async (ArgusDbContext db, int? minutes, int? take, bool? all, bool? includePayload, CancellationToken ct) =>
                 {
                     var loadAll = all == true;
+                    var returnPayload = includePayload == true;
                     var window = TimeSpan.FromMinutes(Math.Clamp(minutes ?? 15, 1, 240));
                     var publishLimit = take is > 0
                         ? Math.Clamp(take.Value, 1, 1_000_000)
@@ -120,7 +121,7 @@ public static class EventTraceEndpoints
                                 p.CorrelationId,
                                 p.CausationId,
                                 p.PayloadPreview,
-                                p.PayloadJson,
+                                returnPayload ? p.PayloadJson : "",
                                 consumers.Count,
                                 consumers,
                                 followUps);

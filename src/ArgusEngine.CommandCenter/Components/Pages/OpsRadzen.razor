@@ -1105,7 +1105,7 @@
     {
         try
         {
-            Replace(_events, await GetArrayAsync("/api/events/live?all=true"));
+            Replace(_events, await GetArrayAsync("/api/events/live?all=true&includePayload=false"));
         }
         catch
         {

@@ -125,7 +125,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <Virtualize Items="FilteredAssetRows" Context="a" ItemSize="48" OverscanCount="12" SpacerElement="tr">
+                    <Virtualize TItem="JsonElement" Items="FilteredAssetRows" Context="a" ItemSize="48" OverscanCount="12" SpacerElement="tr">
                         <tr @key="AssetKey(a)">
                             @{
                                 var finalUrl = Text(a, "finalUrl", "FinalUrl");
@@ -289,7 +289,7 @@
         }
     }
 
-    private IReadOnlyList<JsonElement> FilteredAssetRows => string.IsNullOrWhiteSpace(_assetSearch)
+    private ICollection<JsonElement> FilteredAssetRows => string.IsNullOrWhiteSpace(_assetSearch)
         ? _assets
         : _assets.Where(a => Matches(a, _assetSearch)).ToArray();
 

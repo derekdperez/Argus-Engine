@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.CommandCenter.Hubs;
 using ArgusEngine.CommandCenter.Contracts;
+using ArgusEngine.Application;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 
@@ -682,6 +683,7 @@ public static class Ec2WorkerEndpoints
             new LiveUiEventDto("Ec2WorkersChanged", null, null, "workers", message, DateTimeOffset.UtcNow),
             cancellationToken: ct);
 }
+
 
 
 

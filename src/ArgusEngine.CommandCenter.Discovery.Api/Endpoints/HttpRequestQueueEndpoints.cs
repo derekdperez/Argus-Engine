@@ -24,20 +24,13 @@ public static class HttpRequestQueueEndpoints
                         .ConfigureAwait(false)
                         ?? new HttpRequestQueueSettings();
 
-                    return Results.Ok(
-                        new HttpRequestQueueSettingsDto(
-                            row.Enabled,
-                            row.GlobalRequestsPerMinute,
-                            row.PerDomainRequestsPerMinute,
-                            row.MaxConcurrency,
-                            row.RequestTimeoutSeconds,
-                            row.UpdatedAtUtc));
+                    return Results.Ok(row);
                 })
             .WithName("GetHttpRequestQueueSettings");
 
         app.MapPut(
                 "/api/http-request-queue/settings",
-                async (HttpRequestQueueSettingsPatch body, ArgusDbContext db, IPublishEndpoint publishEndpoint, CancellationToken ct) =>
+                async (HttpRequestQueueSettings body, ArgusDbContext db, IPublishEndpoint publishEndpoint, CancellationToken ct) =>
                 {
                     var row = await db.HttpRequestQueueSettings.FirstOrDefaultAsync(s => s.Id == 1, ct).ConfigureAwait(false);
                     if (row is null)
@@ -51,6 +44,14 @@ public static class HttpRequestQueueEndpoints
                     row.PerDomainRequestsPerMinute = Math.Clamp(body.PerDomainRequestsPerMinute, 1, 10_000);
                     row.MaxConcurrency = Math.Clamp(body.MaxConcurrency, 1, 1_000);
                     row.RequestTimeoutSeconds = Math.Clamp(body.RequestTimeoutSeconds, 5, 300);
+                    row.RotateUserAgents = body.RotateUserAgents;
+                    row.CustomUserAgentsJson = body.CustomUserAgentsJson;
+                    row.RandomizeHeaderOrder = body.RandomizeHeaderOrder;
+                    row.UseRandomJitter = body.UseRandomJitter;
+                    row.MinJitterMs = Math.Clamp(body.MinJitterMs, 0, 60_000);
+                    row.MaxJitterMs = Math.Clamp(body.MaxJitterMs, row.MinJitterMs, 60_000);
+                    row.SpoofReferer = body.SpoofReferer;
+                    row.CustomHeadersJson = body.CustomHeadersJson;
                     row.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);

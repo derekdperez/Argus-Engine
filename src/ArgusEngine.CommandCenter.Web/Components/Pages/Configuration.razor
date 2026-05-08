@@ -1,8 +1,8 @@
 @page "/configuration"
 @using ArgusEngine.Domain.Entities
 @using ArgusEngine.CommandCenter.Web.Clients
-@using Microsoft.EntityFrameworkCore
-@inject MaintenanceApiClient MaintenanceApi
+@using System.Net.Http.Json
+@inject DiscoveryApiClient DiscoveryApi
 @inject NavigationManager Navigation
 
 <PageTitle>Configuration - Argus Engine</PageTitle>
@@ -153,15 +153,8 @@
 
     private async Task LoadSettings()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        _settings = await db.HttpRequestQueueSettings.FirstOrDefaultAsync();
-
-        if (_settings == null)
-        {
-            _settings = new HttpRequestQueueSettings();
-            db.HttpRequestQueueSettings.Add(_settings);
-            await db.SaveChangesAsync();
-        }
+        _settings = await DiscoveryApi.Client.GetFromJsonAsync<HttpRequestQueueSettings>("/api/http-request-queue/settings")
+            ?? new HttpRequestQueueSettings();
     }
 
     private async Task HandleSave()
@@ -173,10 +166,9 @@
 
         try
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
             _settings.UpdatedAtUtc = DateTimeOffset.UtcNow;
-            db.HttpRequestQueueSettings.Update(_settings);
-            await db.SaveChangesAsync();
+            using var response = await DiscoveryApi.Client.PutAsJsonAsync("/api/http-request-queue/settings", _settings);
+            response.EnsureSuccessStatusCode();
             _showSuccess = true;
             
             // Auto-hide success message after 3 seconds

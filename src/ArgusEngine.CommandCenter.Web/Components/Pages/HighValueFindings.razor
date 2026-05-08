@@ -395,7 +395,7 @@
 
         try
         {
-            using var response = await Http.PatchAsJsonAsync(
+            using var response = await DiscoveryApi.Client.PatchAsJsonAsync(
                     $"/api/high-value-findings/{row.FindingId}/status",
                     new HighValueFindingStatusPatch(status),
                     _pollCts.Token)

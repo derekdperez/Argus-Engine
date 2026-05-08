@@ -5,7 +5,7 @@ namespace ArgusEngine.RouteCompatibilityTests;
 public sealed class CommandCenterRouteSnapshotTests
 {
     [Fact]
-    public void Legacy_command_center_route_surface_matches_snapshot()
+    public void Split_command_center_route_surface_matches_snapshot()
     {
         var root = FindRepositoryRoot();
         var expectedPath = Path.Combine(
@@ -27,36 +27,48 @@ public sealed class CommandCenterRouteSnapshotTests
 
     private static string[] ExtractRoutes(string root)
     {
-        var commandCenterRoot = Path.Combine(root, "src", "ArgusEngine.CommandCenter");
         var routes = new SortedSet<string>(StringComparer.Ordinal);
-
-        foreach (var file in Directory.EnumerateFiles(commandCenterRoot, "*.*", SearchOption.AllDirectories)
-            .Where(path => path.EndsWith(".cs", StringComparison.Ordinal) || path.EndsWith(".razor", StringComparison.Ordinal))
-            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                && !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)))
+        var commandCenterRoots = new[]
         {
-            var relativePath = Path.GetRelativePath(root, file).Replace('\\', '/');
-            var text = File.ReadAllText(file);
-            var groups = Regex.Matches(text, @"var\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*[A-Za-z_][A-Za-z0-9_]*\.MapGroup\s*\(\s*""(?<route>[^""]+)""")
-                .ToDictionary(
-                    match => match.Groups["name"].Value,
-                    match => match.Groups["route"].Value,
-                    StringComparer.Ordinal);
+            Path.Combine(root, "src", "ArgusEngine.CommandCenter.Discovery.Api"),
+            Path.Combine(root, "src", "ArgusEngine.CommandCenter.Maintenance.Api"),
+            Path.Combine(root, "src", "ArgusEngine.CommandCenter.Operations.Api"),
+            Path.Combine(root, "src", "ArgusEngine.CommandCenter.WorkerControl.Api"),
+            Path.Combine(root, "src", "ArgusEngine.CommandCenter.Updates.Api"),
+            Path.Combine(root, "src", "ArgusEngine.CommandCenter.Realtime.Host"),
+            Path.Combine(root, "src", "ArgusEngine.CommandCenter.Web"),
+        };
 
-            foreach (Match match in Regex.Matches(text, @"(?<receiver>[A-Za-z_][A-Za-z0-9_]*)\.Map(?<method>Get|Post|Put|Delete|Patch)\s*\(\s*""(?<route>[^""]*)"""))
+        foreach (var commandCenterRoot in commandCenterRoots)
+        {
+            foreach (var file in Directory.EnumerateFiles(commandCenterRoot, "*.*", SearchOption.AllDirectories)
+                .Where(path => path.EndsWith(".cs", StringComparison.Ordinal) || path.EndsWith(".razor", StringComparison.Ordinal))
+                .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                    && !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)))
             {
-                var prefix = groups.GetValueOrDefault(match.Groups["receiver"].Value, string.Empty);
-                routes.Add($"{match.Groups["method"].Value.ToUpperInvariant()} {NormalizeRoute(prefix, match.Groups["route"].Value)} [{relativePath}]");
-            }
+                var relativePath = Path.GetRelativePath(root, file).Replace('\\', '/');
+                var text = File.ReadAllText(file);
+                var groups = Regex.Matches(text, @"var\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*[A-Za-z_][A-Za-z0-9_]*\.MapGroup\s*\(\s*""(?<route>[^""]+)""")
+                    .ToDictionary(
+                        match => match.Groups["name"].Value,
+                        match => match.Groups["route"].Value,
+                        StringComparer.Ordinal);
 
-            foreach (Match match in Regex.Matches(text, @"MapHub<(?<hub>[^>]+)>\s*\(\s*""(?<route>[^""]+)"""))
-            {
-                routes.Add($"HUB {match.Groups["route"].Value} [{relativePath}]");
-            }
+                foreach (Match match in Regex.Matches(text, @"(?<receiver>[A-Za-z_][A-Za-z0-9_]*)\.Map(?<method>Get|Post|Put|Delete|Patch)\s*\(\s*""(?<route>[^""]*)"""))
+                {
+                    var prefix = groups.GetValueOrDefault(match.Groups["receiver"].Value, string.Empty);
+                    routes.Add($"{match.Groups["method"].Value.ToUpperInvariant()} {NormalizeRoute(prefix, match.Groups["route"].Value)} [{relativePath}]");
+                }
 
-            foreach (Match match in Regex.Matches(text, @"@page\s+""(?<route>[^""]+)"""))
-            {
-                routes.Add($"PAGE {match.Groups["route"].Value} [{relativePath}]");
+                foreach (Match match in Regex.Matches(text, @"MapHub<(?<hub>[^>]+)>\s*\(\s*""(?<route>[^""]+)"""))
+                {
+                    routes.Add($"HUB {match.Groups["route"].Value} [{relativePath}]");
+                }
+
+                foreach (Match match in Regex.Matches(text, @"@page\s+""(?<route>[^""]+)"""))
+                {
+                    routes.Add($"PAGE {match.Groups["route"].Value} [{relativePath}]");
+                }
             }
         }
 

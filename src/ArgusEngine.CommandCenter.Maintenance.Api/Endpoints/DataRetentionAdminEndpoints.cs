@@ -5,7 +5,7 @@ using ArgusEngine.Application.DataRetention;
 using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.DataRetention;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Maintenance.Api.Endpoints;
 
 public static class DataRetentionAdminEndpoints
 {
@@ -83,3 +83,4 @@ public static class DataRetentionAdminEndpoints
 
     public sealed record DataRetentionRunRequest(string? Confirmation);
 }
+

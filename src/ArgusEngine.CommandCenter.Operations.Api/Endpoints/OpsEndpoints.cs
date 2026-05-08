@@ -1,11 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 
-using ArgusEngine.CommandCenter.Models;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 using AssetKind = ArgusEngine.Contracts.AssetKind;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Operations.Api.Endpoints;
 
 public static class OpsEndpoints
 {
@@ -239,3 +239,4 @@ public static class OpsEndpoints
 
     public static void Map(WebApplication app) => app.MapOpsEndpoints();
 }
+

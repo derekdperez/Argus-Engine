@@ -1,9 +1,9 @@
-using ArgusEngine.CommandCenter.Hubs;
+using ArgusEngine.CommandCenter.Realtime.Host.Hubs;
 using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.Infrastructure.Observability;
 using Microsoft.AspNetCore.SignalR;
 
-namespace ArgusEngine.CommandCenter.Realtime;
+namespace ArgusEngine.CommandCenter.Realtime.Host.Services;
 
 public sealed class SignalRRealtimeUpdatePublisher(IHubContext<DiscoveryHub> hubContext) : IRealtimeUpdatePublisher
 {
@@ -45,3 +45,4 @@ public sealed class SignalRRealtimeUpdatePublisher(IHubContext<DiscoveryHub> hub
             .ConfigureAwait(false);
     }
 }
+

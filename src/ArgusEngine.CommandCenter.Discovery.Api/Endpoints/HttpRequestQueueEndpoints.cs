@@ -1,12 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using ArgusEngine.CommandCenter.Hubs;
-using ArgusEngine.CommandCenter.Models;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.CommandCenter.Realtime;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Discovery.Api.Endpoints;
 
 public static class HttpRequestQueueEndpoints
 {
@@ -286,3 +286,4 @@ public static class HttpRequestQueueEndpoints
 
     public static void Map(WebApplication app) => app.MapHttpRequestQueueEndpoints();
 }
+

@@ -1,6 +1,6 @@
 using ArgusEngine.CommandCenter.Services.Updates;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Updates.Api.Endpoints;
 
 public static class ComponentUpdateEndpoints
 {
@@ -40,3 +40,4 @@ public static class ComponentUpdateEndpoints
         return app;
     }
 }
+

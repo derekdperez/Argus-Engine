@@ -1,4 +1,4 @@
-namespace ArgusEngine.CommandCenter.Models;
+namespace ArgusEngine.CommandCenter.Contracts;
 
 public sealed record EventConsumerTraceDto(
     long JournalId,
@@ -40,3 +40,4 @@ public sealed record BusJournalRowDto(
     DateTimeOffset OccurredAtUtc,
     string? ConsumerType,
     string? HostName);
+

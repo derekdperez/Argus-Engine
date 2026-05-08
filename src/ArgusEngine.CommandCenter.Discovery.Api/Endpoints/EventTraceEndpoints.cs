@@ -1,10 +1,10 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Application.Workers;
-using ArgusEngine.CommandCenter.Models;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.Infrastructure.Data;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Discovery.Api.Endpoints;
 
 public static class EventTraceEndpoints
 {
@@ -329,3 +329,4 @@ public static class EventTraceEndpoints
         public bool IsConsume => Direction.Equals("Consume", StringComparison.OrdinalIgnoreCase);
     }
 }
+

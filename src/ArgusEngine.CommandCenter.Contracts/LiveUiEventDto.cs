@@ -1,4 +1,4 @@
-namespace ArgusEngine.CommandCenter.Models;
+namespace ArgusEngine.CommandCenter.Contracts;
 
 /// <summary>
 /// Small, SignalR-friendly notification sent when the command center observes a domain event
@@ -11,3 +11,4 @@ public sealed record LiveUiEventDto(
     string Scope,
     string Summary,
     DateTimeOffset OccurredAtUtc);
+

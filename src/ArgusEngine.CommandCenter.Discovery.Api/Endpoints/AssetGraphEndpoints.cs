@@ -4,7 +4,7 @@ using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Infrastructure.Data;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Discovery.Api.Endpoints;
 
 public static class AssetGraphEndpoints
 {
@@ -185,3 +185,4 @@ public static class AssetGraphEndpoints
         long AssetsWithoutParents,
         long DuplicateRelationshipRows);
 }
+

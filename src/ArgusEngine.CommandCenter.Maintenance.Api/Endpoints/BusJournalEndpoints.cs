@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using ArgusEngine.CommandCenter.Models;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.Infrastructure.Data;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Maintenance.Api.Endpoints;
 
 public static class BusJournalEndpoints
 {
@@ -46,3 +46,4 @@ public static class BusJournalEndpoints
 
     public static void Map(WebApplication app) => app.MapBusJournalEndpoints();
 }
+

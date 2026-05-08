@@ -1,4 +1,4 @@
-namespace ArgusEngine.CommandCenter.Models;
+namespace ArgusEngine.CommandCenter.Contracts;
 
 public sealed record CreateTargetRequest(string RootDomain, int GlobalMaxDepth = 12);
 
@@ -22,3 +22,4 @@ public sealed record TargetSummary(
     long ConfirmedUrlCount = 0,
     long QueuedAssetCount = 0,
     DateTimeOffset? LastRunAtUtc = null);
+

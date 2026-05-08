@@ -1,6 +1,6 @@
 using ArgusEngine.Application.FileStore;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Discovery.Api.Endpoints;
 
 public static class FileStoreEndpoints
 {
@@ -73,3 +73,4 @@ public static class FileStoreEndpoints
 
     public static void Map(WebApplication app) => app.MapFileStoreEndpoints();
 }
+

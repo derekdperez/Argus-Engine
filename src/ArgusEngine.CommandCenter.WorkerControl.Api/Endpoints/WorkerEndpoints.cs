@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Application.Workers;
 using ArgusEngine.CommandCenter.Hubs;
-using ArgusEngine.CommandCenter.Models;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.CommandCenter.Realtime;
 using ArgusEngine.CommandCenter.Services.Aws;
 using ArgusEngine.CommandCenter.Services.Workers;
@@ -12,7 +12,7 @@ using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 using EcsService = Amazon.ECS.Model.Service;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.WorkerControl.Api.Endpoints;
 
 public static class WorkerEndpoints
 {
@@ -583,3 +583,4 @@ public static class WorkerEndpoints
 
     public static void Map(WebApplication app) => app.MapWorkerEndpoints();
 }
+

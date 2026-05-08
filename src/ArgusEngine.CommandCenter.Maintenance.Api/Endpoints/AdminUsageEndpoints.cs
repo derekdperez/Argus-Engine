@@ -4,12 +4,12 @@ using System.Text.Json;
 using Amazon;
 using Amazon.ECS;
 using Microsoft.EntityFrameworkCore;
-using ArgusEngine.CommandCenter.Models;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 using DescribeServicesRequest = Amazon.ECS.Model.DescribeServicesRequest;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Maintenance.Api.Endpoints;
 
 public static class AdminUsageEndpoints
 {
@@ -290,3 +290,4 @@ public static class AdminUsageEndpoints
         long AllTimeRequestBytes,
         long AllTimeResponseBytes);
 }
+

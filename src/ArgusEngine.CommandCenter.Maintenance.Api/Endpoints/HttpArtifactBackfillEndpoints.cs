@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using ArgusEngine.CommandCenter.DataMaintenance;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Maintenance.Api.Endpoints;
 
 public static class HttpArtifactBackfillEndpoints
 {
@@ -31,3 +31,4 @@ public static class HttpArtifactBackfillEndpoints
 
     public sealed record HttpArtifactBackfillRequest(string Confirmation);
 }
+

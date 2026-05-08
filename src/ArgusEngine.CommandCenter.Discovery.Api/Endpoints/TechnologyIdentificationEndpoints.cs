@@ -1,10 +1,10 @@
-using ArgusEngine.CommandCenter.Models;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.Contracts;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Discovery.Api.Endpoints;
 
 public static class TechnologyIdentificationEndpoints
 {
@@ -405,3 +405,4 @@ public static class TechnologyIdentificationEndpoints
         string? EvidenceSummary,
         string DataSource);
 }
+

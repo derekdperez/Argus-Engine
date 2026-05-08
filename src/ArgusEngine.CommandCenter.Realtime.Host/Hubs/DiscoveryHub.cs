@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 
-namespace ArgusEngine.CommandCenter.Hubs;
+namespace ArgusEngine.CommandCenter.Realtime.Host.Hubs;
 
 /// <summary>Real-time discovery channel (design §4.1 telemetry).</summary>
 public sealed class DiscoveryHub : Hub
@@ -11,3 +11,4 @@ public sealed class DiscoveryHub : Hub
     public Task UnsubscribeTarget(Guid targetId) =>
         Groups.RemoveFromGroupAsync(Context.ConnectionId, targetId.ToString("N"));
 }
+

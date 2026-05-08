@@ -5,7 +5,7 @@ using Microsoft.Extensions.Configuration;
 
 using Npgsql;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Discovery.Api.Endpoints;
 
 public static class AssetAdmissionDecisionEndpoints
 {
@@ -222,3 +222,4 @@ public static class AssetAdmissionDecisionEndpoints
         Guid? EventId,
         DateTimeOffset OccurredAtUtc);
 }
+

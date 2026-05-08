@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Application.TechnologyIdentification;
 using ArgusEngine.Infrastructure.Data;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Discovery.Api.Endpoints;
 
 public static class TagEndpoints
 {
@@ -136,3 +136,4 @@ public static class TagEndpoints
         return app;
     }
 }
+

@@ -1,4 +1,4 @@
-namespace ArgusEngine.CommandCenter.Models;
+namespace ArgusEngine.CommandCenter.Contracts;
 
 public sealed record MaintenanceStatusDto(bool Enabled, bool ApiKeyConfigured);
 
@@ -18,3 +18,4 @@ public sealed record MaintenanceQueueEnumerationJobBody(
     Guid TargetId,
     string Provider,
     string RequestedBy = "manual");
+

@@ -12,11 +12,11 @@ using MassTransit;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.CommandCenter.Hubs;
-using ArgusEngine.CommandCenter.Models;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.WorkerControl.Api.Endpoints;
 
 public static class Ec2WorkerEndpoints
 {
@@ -682,3 +682,4 @@ public static class Ec2WorkerEndpoints
             new LiveUiEventDto("Ec2WorkersChanged", null, null, "workers", message, DateTimeOffset.UtcNow),
             cancellationToken: ct);
 }
+

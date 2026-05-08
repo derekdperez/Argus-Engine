@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Application.Events;
 using ArgusEngine.CommandCenter.Hubs;
-using ArgusEngine.CommandCenter.Models;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.CommandCenter.Realtime;
 using ArgusEngine.CommandCenter.Services.Targets;
 using ArgusEngine.Contracts.Events;
@@ -12,7 +12,7 @@ using ArgusEngine.Infrastructure.Data;
 using AssetAdmissionStage = ArgusEngine.Contracts.AssetAdmissionStage;
 using AssetKind = ArgusEngine.Contracts.AssetKind;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.Discovery.Api.Endpoints;
 
 public static class TargetEndpoints
 {
@@ -428,3 +428,4 @@ public static class TargetEndpoints
 
     public static void Map(WebApplication app) => app.MapTargetEndpoints();
 }
+

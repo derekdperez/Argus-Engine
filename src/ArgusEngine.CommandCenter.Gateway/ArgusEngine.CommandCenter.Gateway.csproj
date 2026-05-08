@@ -7,4 +7,8 @@
     <ProjectReference Include="..\ArgusEngine.CommandCenter.Contracts\ArgusEngine.CommandCenter.Contracts.csproj" />
     <ProjectReference Include="..\ArgusEngine.Contracts\ArgusEngine.Contracts.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Yarp.ReverseProxy" />
+  </ItemGroup>
 </Project>

@@ -3,13 +3,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Application.Workers;
-using ArgusEngine.CommandCenter.Models;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.CommandCenter.Services.Targets;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 
-namespace ArgusEngine.CommandCenter.Endpoints;
+namespace ArgusEngine.CommandCenter.WorkerControl.Api.Endpoints;
 
 public static class ToolRestartEndpoints
 {
@@ -168,3 +168,4 @@ public static class ToolRestartEndpoints
 
     public static void Map(WebApplication app) => app.MapToolRestartEndpoints();
 }
+

@@ -2,7 +2,8 @@
 # Codespaces-friendly wrapper for the Argus Engine local deployment script.
 #
 # This wrapper intentionally keeps the deployment implementation in ./deploy-local.sh
-# and only adds GitHub Codespaces defaults plus forwarded-port URL reporting.
+# and only adds GitHub Codespaces defaults, forwarded-port URL reporting, and
+# Codespaces-specific recovery hints.
 
 set -Eeuo pipefail
 IFS=$'\n\t'
@@ -24,7 +25,8 @@ configure_codespace_defaults() {
   is_codespace || return 0
 
   # Smoke checks should use the in-container/local listener, not the external
-  # forwarded URL. The browser-facing URL is printed separately below.
+  # forwarded URL. deploy-local.sh also verifies that the rendered Blazor JS and
+  # CSS assets are served with executable/stylesheet MIME types.
   export ARGUS_LOCAL_BASE_URL="${ARGUS_LOCAL_BASE_URL:-http://127.0.0.1:8080}"
 
   # Keep the default Codespace footprint small. Developers can override these
@@ -39,6 +41,9 @@ configure_codespace_defaults() {
   # Compose build output is noisy in Codespaces and BuildKit is faster/more cacheable.
   export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
   export COMPOSE_BAKE="${COMPOSE_BAKE:-false}"
+
+  # Keep Codespaces startup predictable on small machines.
+  export ARGUS_LOCAL_READY_ATTEMPTS="${ARGUS_LOCAL_READY_ATTEMPTS:-120}"
 }
 
 codespace_url_for_port() {
@@ -75,14 +80,21 @@ is_start_command() {
 }
 
 print_codespace_urls() {
+  local command_center_url
+  command_center_url="$(codespace_url_for_port 8080)"
+
   echo ""
   echo "GitHub Codespaces forwarded URLs:"
-  echo "  Command Center: $(codespace_url_for_port 8080)"
+  echo "  Command Center: $command_center_url"
   echo "  RabbitMQ UI:    $(codespace_url_for_port 15672)"
   echo ""
   echo "Port visibility is controlled from the GitHub Codespaces Ports tab."
+  echo "If the page opens but CSS/JS are blocked, recreate command-center so it uses"
+  echo "the published static assets from the image:"
+  echo "  docker compose -f deploy/docker-compose.yml up -d --no-deps --force-recreate command-center"
   echo ""
   echo "Useful commands:"
+  echo "  ./deploy/run-local-codespace.sh smoke"
   echo "  ./deploy/run-local-codespace.sh status"
   echo "  ./deploy/run-local-codespace.sh logs --follow command-center"
   echo "  ./deploy/run-local-codespace.sh down"

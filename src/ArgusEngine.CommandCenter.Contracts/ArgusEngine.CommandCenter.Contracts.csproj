@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\ArgusEngine.Application\ArgusEngine.Application.csproj" />
+  </ItemGroup>
   <PropertyGroup>
     <Version>2.6.1</Version>
   </PropertyGroup>

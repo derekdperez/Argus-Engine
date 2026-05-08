@@ -1,7 +1,8 @@
+using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.Application.Workers;
-using ArgusEngine.CommandCenter.Contracts;
+using ArgusEngine.CommandCenter.Models;
 
-namespace ArgusEngine.Application;
+namespace ArgusEngine.CommandCenter.Contracts;
 
 public sealed record WorkerScaleDefinition(string ScaleKey, string DefaultServiceName, string DisplayName);
 
@@ -58,6 +59,7 @@ public sealed class WorkerScaleDefinitionProvider
         };
     }
 }
+
 
 
 

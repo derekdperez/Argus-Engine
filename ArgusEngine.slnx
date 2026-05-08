@@ -1,35 +1,34 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/ArgusEngine.Application/ArgusEngine.Application.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Bootstrapper/ArgusEngine.CommandCenter.Bootstrapper.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Contracts/ArgusEngine.CommandCenter.Contracts.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Discovery.Api/ArgusEngine.CommandCenter.Discovery.Api.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Gateway/ArgusEngine.CommandCenter.Gateway.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Maintenance.Api/ArgusEngine.CommandCenter.Maintenance.Api.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Operations.Api/ArgusEngine.CommandCenter.Operations.Api.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Realtime.Host/ArgusEngine.CommandCenter.Realtime.Host.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.SpiderDispatcher/ArgusEngine.CommandCenter.SpiderDispatcher.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Updates.Api/ArgusEngine.CommandCenter.Updates.Api.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Web/ArgusEngine.CommandCenter.Web.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.WorkerControl.Api/ArgusEngine.CommandCenter.WorkerControl.Api.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.Domain/ArgusEngine.Domain.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.Workers.Enumeration/ArgusEngine.Workers.Enumeration.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.Workers.Spider/ArgusEngine.Workers.Spider.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.Workers.HttpRequester/ArgusEngine.Workers.HttpRequester.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj" Type="C#" />
-    <Project Path="src/ArgusEngine.Harness/ArgusEngine.Harness.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.Application/ArgusEngine.Application.csproj" />
+    <Project Path="src/ArgusEngine.CommandCenter.Bootstrapper/ArgusEngine.CommandCenter.Bootstrapper.csproj" />
+    <Project Path="src/ArgusEngine.CommandCenter.Contracts/ArgusEngine.CommandCenter.Contracts.csproj" />
+    <Project Path="src/ArgusEngine.CommandCenter.Discovery.Api/ArgusEngine.CommandCenter.Discovery.Api.csproj" />
+    <Project Path="src/ArgusEngine.CommandCenter.Gateway/ArgusEngine.CommandCenter.Gateway.csproj" />
+    <Project Path="src/ArgusEngine.CommandCenter.Maintenance.Api/ArgusEngine.CommandCenter.Maintenance.Api.csproj" />
+    <Project Path="src/ArgusEngine.CommandCenter.Operations.Api/ArgusEngine.CommandCenter.Operations.Api.csproj" />
+    <Project Path="src/ArgusEngine.CommandCenter.Realtime.Host/ArgusEngine.CommandCenter.Realtime.Host.csproj" />
+    <Project Path="src/ArgusEngine.CommandCenter.SpiderDispatcher/ArgusEngine.CommandCenter.SpiderDispatcher.csproj" />
+    <Project Path="src/ArgusEngine.CommandCenter.Updates.Api/ArgusEngine.CommandCenter.Updates.Api.csproj" />
+    <Project Path="src/ArgusEngine.CommandCenter.Web/ArgusEngine.CommandCenter.Web.csproj" />
+    <Project Path="src/ArgusEngine.CommandCenter.WorkerControl.Api/ArgusEngine.CommandCenter.WorkerControl.Api.csproj" />
+    <Project Path="src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj" />
+    <Project Path="src/ArgusEngine.Domain/ArgusEngine.Domain.csproj" />
+    <Project Path="src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj" />
+    <Project Path="src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj" />
+    <Project Path="src/ArgusEngine.Workers.Enumeration/ArgusEngine.Workers.Enumeration.csproj" />
+    <Project Path="src/ArgusEngine.Workers.Spider/ArgusEngine.Workers.Spider.csproj" />
+    <Project Path="src/ArgusEngine.Workers.HttpRequester/ArgusEngine.Workers.HttpRequester.csproj" />
+    <Project Path="src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj" />
+    <Project Path="src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj" />
+    <Project Path="src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj" />
+    <Project Path="src/ArgusEngine.Harness/ArgusEngine.Harness.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="src/tests/ArgusEngine.ArchitectureTests/ArgusEngine.ArchitectureTests.csproj" Type="C#" />
-    <Project Path="src/tests/ArgusEngine.CommandCenter.Tests/ArgusEngine.CommandCenter.Tests.csproj" Type="C#" />
-    <Project Path="src/tests/ArgusEngine.Infrastructure.Tests/ArgusEngine.Infrastructure.Tests.csproj" Type="C#" />
-    <Project Path="src/tests/ArgusEngine.UnitTests/ArgusEngine.UnitTests.csproj" Type="C#" />
-    <Project Path="src/tests/ArgusEngine.IntegrationTests/ArgusEngine.IntegrationTests.csproj" Type="C#" />
-    <Project Path="src/tests/ArgusEngine.RouteCompatibilityTests/ArgusEngine.RouteCompatibilityTests.csproj" Type="C#" />
+    <Project Path="src/tests/ArgusEngine.ArchitectureTests/ArgusEngine.ArchitectureTests.csproj" />
+    <Project Path="src/tests/ArgusEngine.Infrastructure.Tests/ArgusEngine.Infrastructure.Tests.csproj" />
+    <Project Path="src/tests/ArgusEngine.UnitTests/ArgusEngine.UnitTests.csproj" />
+    <Project Path="src/tests/ArgusEngine.IntegrationTests/ArgusEngine.IntegrationTests.csproj" />
+    <Project Path="src/tests/ArgusEngine.RouteCompatibilityTests/ArgusEngine.RouteCompatibilityTests.csproj" />
   </Folder>
 </Solution>

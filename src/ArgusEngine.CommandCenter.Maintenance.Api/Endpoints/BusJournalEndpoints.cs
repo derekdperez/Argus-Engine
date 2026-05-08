@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.CommandCenter.Contracts;
+using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.Infrastructure.Data;
 
 namespace ArgusEngine.CommandCenter.Maintenance.Api.Endpoints;

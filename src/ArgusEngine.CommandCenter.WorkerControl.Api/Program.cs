@@ -14,6 +14,7 @@ builder.Services.AddSingleton<WorkerScaleDefinitionProvider>();
 builder.Services.AddSingleton<AwsRegionResolver>();
 builder.Services.AddSingleton<EcsServiceNameResolver>();
 builder.Services.AddSingleton<EcsWorkerServiceManager>();
+builder.Services.AddScoped<RootSpiderSeedService>();
 
 var app = builder.Build();
 

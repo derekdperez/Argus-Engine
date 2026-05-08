@@ -1,8 +1,8 @@
 using ArgusEngine.CommandCenter.Realtime.Host.Hubs;
 using ArgusEngine.CommandCenter.Models;
-using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.Infrastructure.Observability;
 using Microsoft.AspNetCore.SignalR;
+using DiscoveryHubEvents = ArgusEngine.CommandCenter.Contracts.DiscoveryHubEvents;
 
 namespace ArgusEngine.CommandCenter.Realtime.Host.Services;
 

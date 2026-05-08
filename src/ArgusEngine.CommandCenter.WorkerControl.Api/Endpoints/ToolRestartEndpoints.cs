@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Application.Workers;
 using ArgusEngine.CommandCenter.Contracts;
-using ArgusEngine.CommandCenter.Services.Targets;
+using ArgusEngine.CommandCenter.WorkerControl.Api.Services;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;

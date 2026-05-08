@@ -69,6 +69,7 @@ FORCE_RECREATE=0
 RUN_SMOKE=1
 FOLLOW_LOGS=0
 WITH_OBSERVABILITY=0
+ENABLE_COMMAND_CENTER_SPLIT="${ARGUS_LOCAL_ENABLE_COMMAND_CENTER_SPLIT:-0}"
 LOG_TAIL="${ARGUS_LOCAL_LOG_TAIL:-200}"
 
 SCALE_WORKER_SPIDER="${ARGUS_LOCAL_SCALE_WORKER_SPIDER:-1}"
@@ -121,6 +122,8 @@ Options:
   --no-smoke         Skip post-deploy health/API checks.
   --with-observability
                      Include deploy/docker-compose.observability.yml when present.
+  --with-command-center-split
+                     Also build/run the opt-in Command Center gateway and web shell.
   --follow, -f       Follow logs when using the logs command.
   --tail N           Number of log lines for logs command. Default: 200.
   --scale-spider N   Scale local spider workers. Default: 1.
@@ -136,6 +139,8 @@ Environment:
   ARGUS_ENGINE_VERSION                  Docker image/component version. Default: local-<git-sha>.
   ARGUS_DIAGNOSTICS_API_KEY             Diagnostics API key. Default: local-dev-diagnostics-key-change-me.
   ARGUS_LOCAL_BASE_URL                  Local base URL for smoke checks. Default: http://127.0.0.1:8080.
+  ARGUS_LOCAL_ENABLE_COMMAND_CENTER_SPLIT
+                                        Set to 1 to run gateway on 8081 and web shell on 8082.
   ARGUS_LOCAL_PUBLIC_HOST               Hostname/IP printed for EC2 browser access.
   ARGUS_LOCAL_SCALE_WORKER_SPIDER       Default spider worker scale.
   ARGUS_LOCAL_SCALE_WORKER_ENUM         Default enum worker scale.
@@ -211,6 +216,10 @@ while [[ $# -gt 0 ]]; do
       WITH_OBSERVABILITY=1
       shift
       ;;
+    --with-command-center-split)
+      ENABLE_COMMAND_CENTER_SPLIT=1
+      shift
+      ;;
     --follow|-f)
       FOLLOW_LOGS=1
       shift
@@ -265,6 +274,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 LOG_SERVICES=("$@")
+
+if [[ "$ENABLE_COMMAND_CENTER_SPLIT" == "1" ]]; then
+  APP_SERVICES+=(command-center-gateway command-center-web)
+  ALL_SERVICES+=(command-center-gateway command-center-web)
+fi
 
 [[ -f "$COMPOSE_FILE" ]] || die "Missing $COMPOSE_FILE. Run from the repo root or set ARGUS_LOCAL_REPO_ROOT=/path/to/argus-engine."
 
@@ -451,6 +465,10 @@ print_urls() {
   echo ""
   echo "Argus Engine local development stack is running."
   echo "  Command Center: http://localhost:8080/"
+  if [[ "$ENABLE_COMMAND_CENTER_SPLIT" == "1" ]]; then
+    echo "  CC Gateway:     http://localhost:8081/  (proxies legacy Command Center)"
+    echo "  CC Web Shell:   http://localhost:8082/"
+  fi
   if [[ "$host" != "localhost" ]]; then
     echo "  EC2/public URL: http://$host:8080/"
   fi

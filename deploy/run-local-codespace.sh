@@ -37,6 +37,7 @@ configure_codespace_defaults() {
   export ARGUS_LOCAL_SCALE_WORKER_HIGHVALUE="${ARGUS_LOCAL_SCALE_WORKER_HIGHVALUE:-1}"
   export ARGUS_LOCAL_SCALE_WORKER_TECHID="${ARGUS_LOCAL_SCALE_WORKER_TECHID:-1}"
   export ARGUS_LOCAL_SCALE_WORKER_HTTP_REQUESTER="${ARGUS_LOCAL_SCALE_WORKER_HTTP_REQUESTER:-1}"
+  export ARGUS_LOCAL_ENABLE_COMMAND_CENTER_SPLIT="${ARGUS_LOCAL_ENABLE_COMMAND_CENTER_SPLIT:-0}"
 
   # Compose build output is noisy in Codespaces and BuildKit is faster/more cacheable.
   export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
@@ -79,6 +80,16 @@ is_start_command() {
   [[ "$(command_for_args "$@")" == "up" ]]
 }
 
+enable_split_from_args() {
+  local arg
+  for arg in "$@"; do
+    if [[ "$arg" == "--with-command-center-split" ]]; then
+      export ARGUS_LOCAL_ENABLE_COMMAND_CENTER_SPLIT=1
+      return 0
+    fi
+  done
+}
+
 print_codespace_urls() {
   local command_center_url
   command_center_url="$(codespace_url_for_port 8080)"
@@ -86,6 +97,10 @@ print_codespace_urls() {
   echo ""
   echo "GitHub Codespaces forwarded URLs:"
   echo "  Command Center: $command_center_url"
+  if [[ "${ARGUS_LOCAL_ENABLE_COMMAND_CENTER_SPLIT:-0}" == "1" ]]; then
+    echo "  CC Gateway:     $(codespace_url_for_port 8081)"
+    echo "  CC Web Shell:   $(codespace_url_for_port 8082)"
+  fi
   echo "  RabbitMQ UI:    $(codespace_url_for_port 15672)"
   echo ""
   echo "Port visibility is controlled from the GitHub Codespaces Ports tab."
@@ -95,6 +110,7 @@ print_codespace_urls() {
   echo ""
   echo "Useful commands:"
   echo "  ./deploy/run-local-codespace.sh smoke"
+  echo "  ./deploy/run-local-codespace.sh --with-command-center-split"
   echo "  ./deploy/run-local-codespace.sh status"
   echo "  ./deploy/run-local-codespace.sh logs --follow command-center"
   echo "  ./deploy/run-local-codespace.sh down"
@@ -105,6 +121,7 @@ main() {
 
   local original_args=("$@")
   configure_codespace_defaults
+  enable_split_from_args "${original_args[@]}"
 
   bash "$DEPLOY_LOCAL" "${original_args[@]}"
   local exit_code=$?

@@ -19,6 +19,7 @@ using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Harness.Core;
 using ArgusEngine.Gatekeeper;
 using ArgusEngine.Workers.Enumeration;
+using ArgusEngine.Workers.HttpRequester;
 using ArgusEngine.Workers.PortScan;
 using ArgusEngine.Workers.HighValue;
 using ArgusEngine.Workers.TechnologyIdentification;
@@ -144,12 +145,12 @@ IHost CreateHarnessHost()
         });
     });
 
-    // Spider specific services
+    // HTTP requester services used by the local queue-processing harness path.
     builder.Services.AddSingleton<AdaptiveConcurrencyController>();
-    builder.Services.AddHostedService<HttpRequestQueueWorker>();
-    builder.Services.Configure<SpiderHttpOptions>(builder.Configuration.GetSection("Argus:Spider"));
+    builder.Services.AddHostedService<HttpRequesterWorker>();
+    builder.Services.Configure<HttpRequesterOptions>(builder.Configuration.GetSection("HttpRequester"));
 
-    builder.Services.AddHttpClient("spider")
+    builder.Services.AddHttpClient("requester")
         .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
         {
             AllowAutoRedirect = true,

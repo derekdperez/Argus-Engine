@@ -63,12 +63,12 @@ docker save argus-recon-base:local | gzip > deploy/artifacts/images/argus-recon-
 Then load them before deployment:
 
 ```bash
-docker load -i deploy/artifacts/images/argus-engine-base.local.tar.gz
-docker load -i deploy/artifacts/images/argus-recon-base.local.tar.gz
+./deploy/load-vendored-images.sh
 ```
 
-This is intentionally not automated by default because image tarballs are large.
-Prefer ECR or another registry cache when available.
+`deploy/deploy.sh` also tries this loader before rebuilding missing base images.
+This is intentionally opt-in because image tarballs are large. Prefer ECR or
+another registry cache when available.
 
 ## Recommended Commit Policy
 

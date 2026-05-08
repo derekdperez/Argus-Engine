@@ -391,11 +391,46 @@ api_get() {
   fi
 }
 
+check_asset() {
+  local label="$1"
+  local url="$2"
+  local expected_type="$3"
+  local tmp code content_type
+  tmp="$(mktemp)"
+  code="$(curl -k -sS -L -o "$tmp" -w '%{http_code}' --max-time 15 "$url" || true)"
+  content_type="$(curl -k -sS -L -o /dev/null -w '%{content_type}' --max-time 15 "$url" || true)"
+
+  if [[ "$code" != "200" || ! -s "$tmp" || "$content_type" != *"$expected_type"* ]]; then
+    rm -f "$tmp"
+    die "$label is not being served correctly: url=$url status=${code:-curl-failed} content-type=${content_type:-empty}"
+  fi
+
+  rm -f "$tmp"
+}
+
+check_static_assets() {
+  local base_url="${ARGUS_LOCAL_BASE_URL:-http://127.0.0.1:8080}"
+  local html script css
+  html="$(curl -k -fsS --max-time 15 "$base_url/")"
+  script="$(printf '%s' "$html" | grep -Eo 'src="[^"]*blazor\.web[^"]*\.js[^"]*"' | head -n 1 | sed -E 's/src="([^"]+)"/\1/')"
+  css="$(printf '%s' "$html" | grep -Eo 'href="[^"]*app[^"]*\.css[^"]*"' | head -n 1 | sed -E 's/href="([^"]+)"/\1/')"
+
+  [[ -n "$script" ]] || die "Could not find the rendered Blazor script asset on the home page."
+  [[ -n "$css" ]] || die "Could not find the rendered app stylesheet asset on the home page."
+
+  case "$script" in http://*|https://*) ;; /*) script="${base_url%/}$script" ;; *) script="${base_url%/}/$script" ;; esac
+  case "$css" in http://*|https://*) ;; /*) css="${base_url%/}$css" ;; *) css="${base_url%/}/$css" ;; esac
+
+  check_asset "Blazor framework script" "$script" "javascript"
+  check_asset "App stylesheet" "$css" "text/css"
+}
+
 smoke() {
   local base_url="${ARGUS_LOCAL_BASE_URL:-http://127.0.0.1:8080}"
 
   info "Running local smoke checks against $base_url"
   curl -fsS --max-time 15 "$base_url/health/ready" >/dev/null
+  check_static_assets
 
   for path in \
     /api/status/summary \

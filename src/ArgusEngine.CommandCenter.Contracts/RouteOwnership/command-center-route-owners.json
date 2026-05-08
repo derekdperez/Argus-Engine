@@ -1,688 +1,94 @@
-[
-  {
-    "method": "DELETE",
-    "path": "/api/ec2-workers/machines/{id:guid}",
-    "legacySource": "Ec2WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "DELETE",
-    "path": "/api/filestore/{id:guid}",
-    "legacySource": "FileStoreEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "DELETE",
-    "path": "/api/targets/{id:guid}",
-    "legacySource": "TargetEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "DELETE",
-    "path": "/api/targets/{targetId:guid}/asset-relationships/{relationshipId:guid}",
-    "legacySource": "AssetGraphEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "DELETE",
-    "path": "/api/workers/messages/{messageId}",
-    "legacySource": "WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/admin/data-retention/status",
-    "legacySource": "DataRetentionAdminEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/admin/usage",
-    "legacySource": "AdminUsageEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/asset-admission-decisions",
-    "legacySource": "AssetAdmissionDecisionEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/assets",
-    "legacySource": "AssetEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/assets/{assetId:guid}/tags",
-    "legacySource": "TagEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/bus/history",
-    "legacySource": "BusJournalEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/bus/live",
-    "legacySource": "BusJournalEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/development/components",
-    "legacySource": "ComponentUpdateEndpoints.cs",
-    "targetHost": "Updates.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/development/components/logs",
-    "legacySource": "ComponentUpdateEndpoints.cs",
-    "targetHost": "Updates.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/diagnostics/dependencies",
-    "legacySource": "DiagnosticsEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/diagnostics/self",
-    "legacySource": "DiagnosticsEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/ec2-workers/machines",
-    "legacySource": "Ec2WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/events/live",
-    "legacySource": "EventTraceEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/filestore/{id:guid}",
-    "legacySource": "FileStoreEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/filestore/{id:guid}/download",
-    "legacySource": "FileStoreEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/high-value-findings",
-    "legacySource": "HighValueFindingEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/http-request-queue",
-    "legacySource": "HttpRequestQueueEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/http-request-queue/metrics",
-    "legacySource": "HttpRequestQueueEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/http-request-queue/settings",
-    "legacySource": "HttpRequestQueueEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/maintenance/status",
-    "legacySource": "DataMaintenanceEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/ops/docker-status",
-    "legacySource": "OpsEndpoints.cs",
-    "targetHost": "Operations.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/ops/ecs-status",
-    "legacySource": "WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/ops/overview",
-    "legacySource": "OpsEndpoints.cs",
-    "targetHost": "Operations.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/ops/rabbit-queues",
-    "legacySource": "OpsEndpoints.cs",
-    "targetHost": "Operations.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/ops/reliability-slo",
-    "legacySource": "OpsEndpoints.cs",
-    "targetHost": "Operations.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/ops/snapshot",
-    "legacySource": "OpsEndpoints.cs",
-    "targetHost": "Operations.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/status/summary",
-    "legacySource": "CommandCenterStatusEndpoints.cs",
-    "targetHost": "Operations.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/tags",
-    "legacySource": "TagEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/targets",
-    "legacySource": "TargetEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/targets/{targetId:guid}/asset-admission-decisions",
-    "legacySource": "AssetAdmissionDecisionEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/targets/{targetId:guid}/asset-graph/metrics",
-    "legacySource": "AssetGraphEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/targets/{targetId:guid}/asset-tree",
-    "legacySource": "AssetGraphEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/targets/{targetId:guid}/assets/root",
-    "legacySource": "AssetGraphEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/targets/{targetId:guid}/assets/{assetId:guid}",
-    "legacySource": "AssetGraphEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/targets/{targetId:guid}/assets/{assetId:guid}/ancestors",
-    "legacySource": "AssetGraphEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/targets/{targetId:guid}/assets/{assetId:guid}/children",
-    "legacySource": "AssetGraphEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/targets/{targetId:guid}/assets/{assetId:guid}/descendants",
-    "legacySource": "AssetGraphEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/targets/{targetId:guid}/assets/{assetId:guid}/parents",
-    "legacySource": "AssetGraphEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/targets/{targetId:guid}/technologies",
-    "legacySource": "TagEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/technologies",
-    "legacySource": "TagEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/technology-identification/subdomains",
-    "legacySource": "TechnologyIdentificationEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/technology-identification/targets",
-    "legacySource": "TechnologyIdentificationEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/technology-identification/technologies",
-    "legacySource": "TechnologyIdentificationEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/workers",
-    "legacySource": "WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/workers/activity",
-    "legacySource": "WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/workers/capabilities",
-    "legacySource": "WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/workers/health",
-    "legacySource": "WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/workers/scale",
-    "legacySource": "WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/workers/scale-overrides",
-    "legacySource": "WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/api/workers/scaling-settings",
-    "legacySource": "WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/health",
-    "legacySource": "DiagnosticsEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "GET",
-    "path": "/health/ready",
-    "legacySource": "DiagnosticsEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "HUB",
-    "path": "/hubs/discovery",
-    "legacySource": "CommandCenterEndpointRegistration.cs",
-    "targetHost": "Realtime.Host",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PAGE",
-    "path": "/",
-    "legacySource": "OpsRadzen.razor",
-    "targetHost": "CommandCenter.Web",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PAGE",
-    "path": "/Error",
-    "legacySource": "Error.razor",
-    "targetHost": "CommandCenter.Web",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PAGE",
-    "path": "/admin",
-    "legacySource": "Admin.razor",
-    "targetHost": "CommandCenter.Web",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PAGE",
-    "path": "/asset-admission",
-    "legacySource": "AssetAdmission.razor",
-    "targetHost": "CommandCenter.Web",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PAGE",
-    "path": "/configuration",
-    "legacySource": "Configuration.razor",
-    "targetHost": "CommandCenter.Web",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PAGE",
-    "path": "/development",
-    "legacySource": "Development.razor",
-    "targetHost": "CommandCenter.Web",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PAGE",
-    "path": "/high-value-findings",
-    "legacySource": "HighValueFindings.razor",
-    "targetHost": "CommandCenter.Web",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PAGE",
-    "path": "/home",
-    "legacySource": "Home.razor",
-    "targetHost": "CommandCenter.Web",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PAGE",
-    "path": "/not-found",
-    "legacySource": "NotFound.razor",
-    "targetHost": "CommandCenter.Web",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PAGE",
-    "path": "/ops",
-    "legacySource": "OpsRadzen.razor",
-    "targetHost": "CommandCenter.Web",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PAGE",
-    "path": "/status",
-    "legacySource": "Status.razor",
-    "targetHost": "CommandCenter.Web",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PAGE",
-    "path": "/technology-identification",
-    "legacySource": "TechnologyIdentification.razor",
-    "targetHost": "CommandCenter.Web",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/admin/data-retention/run-now",
-    "legacySource": "DataRetentionAdminEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/admin/partitions/ensure",
-    "legacySource": "DataRetentionAdminEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/development/components/{componentKey}/update",
-    "legacySource": "ComponentUpdateEndpoints.cs",
-    "targetHost": "Updates.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/ec2-workers/machines",
-    "legacySource": "Ec2WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/filestore",
-    "legacySource": "FileStoreEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/http-request-queue/clear-completed",
-    "legacySource": "HttpRequestQueueEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/http-request-queue/clear-failed",
-    "legacySource": "HttpRequestQueueEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/http-request-queue/clear-older-than",
-    "legacySource": "HttpRequestQueueEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/http-request-queue/clear-selected",
-    "legacySource": "HttpRequestQueueEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/http-request-queue/retry",
-    "legacySource": "HttpRequestQueueEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/maintenance/backfill-http-artifacts",
-    "legacySource": "HttpArtifactBackfillEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/maintenance/clear-all-assets",
-    "legacySource": "DataMaintenanceEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/maintenance/clear-all-targets",
-    "legacySource": "DataMaintenanceEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/maintenance/clear-assets-filtered",
-    "legacySource": "DataMaintenanceEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/maintenance/clear-assets-for-domain",
-    "legacySource": "DataMaintenanceEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/maintenance/queue-enumeration-job",
-    "legacySource": "DataMaintenanceEndpoints.cs",
-    "targetHost": "Maintenance.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/ops/spider/restart",
-    "legacySource": "ToolRestartEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/ops/subdomain-enum/restart",
-    "legacySource": "ToolRestartEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/targets",
-    "legacySource": "TargetEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/targets/bulk",
-    "legacySource": "TargetEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "POST",
-    "path": "/api/targets/{targetId:guid}/asset-relationships",
-    "legacySource": "AssetGraphEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PUT",
-    "path": "/api/ec2-workers/machines/{id:guid}/scale",
-    "legacySource": "Ec2WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PUT",
-    "path": "/api/http-request-queue/settings",
-    "legacySource": "HttpRequestQueueEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PUT",
-    "path": "/api/targets/max-depth",
-    "legacySource": "TargetEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PUT",
-    "path": "/api/targets/{id:guid}",
-    "legacySource": "TargetEndpoints.cs",
-    "targetHost": "Discovery.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PUT",
-    "path": "/api/workers/scaling-settings/{scaleKey}",
-    "legacySource": "WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PUT",
-    "path": "/api/workers/{key}",
-    "legacySource": "WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  },
-  {
-    "method": "PUT",
-    "path": "/api/workers/{key}/scale",
-    "legacySource": "WorkerEndpoints.cs",
-    "targetHost": "WorkerControl.Api",
-    "status": "legacy-only"
-  }
-]
+{
+  "$schema": "https://argus-engine.local/schemas/command-center-route-owners.v1.json",
+  "legacyFallback": false,
+  "status": "cutover-blocked-until-owned-routes-are-implemented",
+  "owners": [
+    {
+      "owner": "command-center-web",
+      "type": "ui",
+      "prefixes": [
+        "/",
+        "/home",
+        "/ops",
+        "/status",
+        "/admin",
+        "/asset-admission",
+        "/configuration",
+        "/development",
+        "/high-value-findings",
+        "/technology-identification",
+        "/_framework",
+        "/_content",
+        "/css",
+        "/js"
+      ]
+    },
+    {
+      "owner": "command-center-discovery-api",
+      "type": "api",
+      "prefixes": [
+        "/api/targets",
+        "/api/assets",
+        "/api/asset-graph",
+        "/api/tags",
+        "/api/technologies",
+        "/api/asset-admission-decisions",
+        "/api/high-value-findings",
+        "/api/technology-identification",
+        "/api/http-request-queue",
+        "/api/filestore",
+        "/api/events",
+        "/api/discovery"
+      ],
+      "implementationStatus": "owner-wired-not-ported"
+    },
+    {
+      "owner": "command-center-operations-api",
+      "type": "api",
+      "prefixes": [
+        "/api/status",
+        "/api/ops"
+      ],
+      "implementationStatus": "partially-ported"
+    },
+    {
+      "owner": "command-center-worker-control-api",
+      "type": "api",
+      "prefixes": [
+        "/api/workers",
+        "/api/ec2-workers",
+        "/api/ops/ecs-status",
+        "/api/ops/spider/restart",
+        "/api/ops/subdomain-enum/restart"
+      ],
+      "implementationStatus": "owner-wired-not-ported"
+    },
+    {
+      "owner": "command-center-maintenance-api",
+      "type": "api",
+      "prefixes": [
+        "/api/admin",
+        "/api/maintenance",
+        "/api/diagnostics",
+        "/api/bus"
+      ],
+      "implementationStatus": "owner-wired-not-ported"
+    },
+    {
+      "owner": "command-center-updates-api",
+      "type": "api",
+      "prefixes": [
+        "/api/development/components"
+      ],
+      "implementationStatus": "owner-wired-not-ported"
+    },
+    {
+      "owner": "command-center-realtime",
+      "type": "signalr",
+      "prefixes": [
+        "/hubs/discovery"
+      ],
+      "implementationStatus": "skeleton"
+    }
+  ]
+}

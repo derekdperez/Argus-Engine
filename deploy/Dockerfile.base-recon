@@ -1,16 +1,30 @@
 # syntax=docker/dockerfile:1.7
+FROM scratch AS vendored
+COPY artifacts/recon-tools/linux-amd64/ /vendor/
+
 FROM golang:1.26.2-alpine AS build
 
 ARG SUBFINDER_PACKAGE=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.14.0
 ARG AMASS_PACKAGE=github.com/owasp-amass/amass/v5/cmd/amass@v5.1.1
+ARG ARGUS_RECON_VENDOR_MODE=auto
 
 ENV GOBIN=/out \
     CGO_ENABLED=0
 
-RUN apk add --no-cache git \
-    && mkdir -p /out \
-    && go install -v "${SUBFINDER_PACKAGE}" \
-    && go install -v "${AMASS_PACKAGE}" \
+COPY --from=vendored /vendor/ /vendor/
+
+RUN mkdir -p /out \
+    && if [ "${ARGUS_RECON_VENDOR_MODE}" != "off" ] \
+      && [ -s /vendor/subfinder ] \
+      && [ -s /vendor/amass ]; then \
+        cp /vendor/subfinder /out/subfinder; \
+        cp /vendor/amass /out/amass; \
+        chmod +x /out/subfinder /out/amass; \
+      else \
+        apk add --no-cache git; \
+        go install -v "${SUBFINDER_PACKAGE}"; \
+        go install -v "${AMASS_PACKAGE}"; \
+      fi \
     && test -x /out/subfinder \
     && test -x /out/amass
 

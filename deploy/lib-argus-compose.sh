@@ -235,7 +235,7 @@ argus_service_image_inputs() {
   )
 
   if [[ "$service" == "worker-enum" ]]; then
-    inputs+=("deploy/wordlists")
+    inputs+=("deploy/wordlists" "deploy/artifacts/recon-tools")
   fi
 
   printf '%s\n' "${inputs[@]}"
@@ -639,7 +639,15 @@ argus_commit_current_fingerprints() {
 argus_recipe_bundle_hash() {
   local root="${1:-}"
   [[ -n "$root" ]] || return 1
-  argus_sha256_file_list "$root" deploy/docker-compose.yml deploy/Dockerfile.web deploy/Dockerfile.worker deploy/Dockerfile.worker-enum deploy/wordlists
+  argus_sha256_file_list "$root" \
+    deploy/docker-compose.yml \
+    deploy/Dockerfile.web \
+    deploy/Dockerfile.worker \
+    deploy/Dockerfile.worker-enum \
+    deploy/Dockerfile.base-runtime \
+    deploy/Dockerfile.base-recon \
+    deploy/wordlists \
+    deploy/artifacts/recon-tools
 }
 
 argus_export_build_stamp() {

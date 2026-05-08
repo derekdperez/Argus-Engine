@@ -14,6 +14,11 @@ ARG COMPONENT_VERSION=2.6.1
 
 WORKDIR /src
 
+# Optional repo-vendored NuGet global packages. Populate with
+# deploy/vendor-nuget-packages.sh when cold deployment hosts should not
+# redownload packages from nuget.org.
+COPY deploy/artifacts/nuget/packages/ /opt/argus-nuget/packages/
+
 # Copy all project files to perform a global restore.
 COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
 COPY src/*/*.csproj ./src/
@@ -25,6 +30,7 @@ RUN for f in src/*.csproj; do \
     done
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
+    cp -an /opt/argus-nuget/packages/. /root/.nuget/packages/ 2>/dev/null || true; \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 
 # Copy the rest of the source

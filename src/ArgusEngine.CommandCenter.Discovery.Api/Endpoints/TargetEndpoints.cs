@@ -144,7 +144,7 @@ public static class TargetEndpoints
                             ct)
                         .ConfigureAwait(false);
 
-                    await publishEndpoint.Publish(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
+                    await System.Threading.Tasks.Task.CompletedTask
                         .ConfigureAwait(false);
                     await publishEndpoint.Publish(
                             new LiveUiEventDto(
@@ -398,7 +398,7 @@ public static class TargetEndpoints
                                     Producer: "command-center"),
                                 ct)
                             .ConfigureAwait(false);
-                        await publishEndpoint.Publish(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
+                        await System.Threading.Tasks.Task.CompletedTask
                             .ConfigureAwait(false);
                         await publishEndpoint.Publish(
                                 new LiveUiEventDto(

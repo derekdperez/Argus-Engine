@@ -1,0 +1,1026 @@
+@page "/status"
+@rendermode InteractiveServer
+@using System.Net.Http.Json
+@using ArgusEngine.CommandCenter.Models
+@using ArgusEngine.CommandCenter.Realtime
+
+@inject HttpClient Http
+@inject DiscoveryRealtimeClient Realtime
+@inject IJSRuntime Js
+
+@implements IDisposable
+
+<PageTitle>System Status</PageTitle>
+
+<section class="status-page">
+    <div class="status-hero">
+        <div>
+            <p class="eyebrow">Live operations</p>
+            <h1>System Status</h1>
+            <p class="muted">
+                Snapshot-driven Command Center health with realtime queue, worker, dependency, SLO, and alert signals.
+            </p>
+        </div>
+
+        <div class="hero-actions">
+            <span class="hero-badge @ToBadgeClass(_snapshot?.Color)">
+                @(_snapshot?.Status ?? "Loading")
+            </span>
+            <span class="connection-state">Realtime: @Realtime.State</span>
+            <button class="refresh-button" @onclick="ReloadAsync" disabled="@_loading">
+                @(_loading ? "Refreshing..." : "Refresh now")
+            </button>
+            <button class="refresh-button download-button"
+                    @onclick="CreateLogBundleAsync"
+                    disabled="@(!CanCreateLogBundle)"
+                    title="@LogBundleButtonTitle">
+                Create Log Bundle
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="alert alert-red">
+            @_error
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_logBundleMessage))
+    {
+        <div class="alert alert-blue">
+            @_logBundleMessage
+        </div>
+    }
+
+    @if (_snapshot is null)
+    {
+        <div class="empty-card">
+            Loading system status…
+        </div>
+    }
+    else
+    {
+        <div class="status-grid">
+            <article class="status-card">
+                <span class="label">Overall</span>
+                <strong>@_snapshot.Status</strong>
+                <span class="badge @ToBadgeClass(_snapshot.Color)">@_snapshot.Color</span>
+            </article>
+
+            <article class="status-card">
+                <span class="label">Version</span>
+                <strong>@_snapshot.Version</strong>
+                <span class="muted">Build @_snapshot.BuildStamp</span>
+            </article>
+
+            <article class="status-card">
+                <span class="label">Snapshot</span>
+                <strong>@AppTimeFormat.FormatCompact(_snapshot.AtUtc)</strong>
+                <span class="muted">Eastern Time</span>
+            </article>
+
+            <article class="status-card">
+                <span class="label">Alerts</span>
+                <strong>@_snapshot.Alerts.Count</strong>
+                <span class="muted">active operational alerts</span>
+            </article>
+        </div>
+
+        <section class="panel">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">SLOs</p>
+                    <h2>Service-level indicators</h2>
+                </div>
+            </div>
+
+            <div class="responsive-table">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Current</th>
+                        <th>Target</th>
+                        <th>Status</th>
+                        <th>Reason</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var indicator in _snapshot.Indicators)
+                    {
+                        <tr>
+                            <td>@indicator.Name</td>
+                            <td>@indicator.CurrentValue</td>
+                            <td>@indicator.Target</td>
+                            <td><span class="badge @ToBadgeClass(indicator.Color)">@indicator.Status</span></td>
+                            <td>@indicator.Reason</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Workers</p>
+                    <h2>Worker readiness</h2>
+                </div>
+            </div>
+
+            <div class="responsive-table">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Worker</th>
+                        <th>Desired</th>
+                        <th>Running</th>
+                        <th>Pending</th>
+                        <th>Status</th>
+                        <th>Reason</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var worker in _snapshot.Workers)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@worker.DisplayName</strong>
+                                <div class="muted">@worker.Key</div>
+                            </td>
+                            <td>@worker.DesiredCount</td>
+                            <td>@worker.RunningCount</td>
+                            <td>@worker.PendingCount</td>
+                            <td><span class="badge @ToBadgeClass(worker.Color)">@worker.Status</span></td>
+                            <td>@worker.Reason</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Queues</p>
+                    <h2>Backlog and age</h2>
+                </div>
+            </div>
+
+            <div class="responsive-table">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Queue</th>
+                        <th>Depth</th>
+                        <th>Oldest age</th>
+                        <th>Status</th>
+                        <th>Reason</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var queue in _snapshot.Queues)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@queue.DisplayName</strong>
+                                <div class="muted">@queue.Key</div>
+                            </td>
+                            <td>@FormatDepth(queue.Depth)</td>
+                            <td>@FormatAge(queue.OldestAgeSeconds)</td>
+                            <td><span class="badge @ToBadgeClass(queue.Color)">@queue.Status</span></td>
+                            <td>@queue.Reason</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Dependencies</p>
+                    <h2>Runtime dependencies</h2>
+                </div>
+            </div>
+
+            <div class="responsive-table">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Dependency</th>
+                        <th>Status</th>
+                        <th>Reason</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var dependency in _snapshot.Dependencies)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@dependency.DisplayName</strong>
+                                <div class="muted">@dependency.Key</div>
+                            </td>
+                            <td><span class="badge @ToBadgeClass(dependency.Color)">@dependency.Status</span></td>
+                            <td>@dependency.Reason</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Components</p>
+                    <h2>Component versions</h2>
+                </div>
+            </div>
+
+            <div class="responsive-table">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Component</th>
+                        <th>Version</th>
+                        <th>Status</th>
+                        <th>Reason</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var component in _snapshot.Components)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@component.DisplayName</strong>
+                                <div class="muted">@component.Key</div>
+                            </td>
+                            <td>@component.Version</td>
+                            <td><span class="badge @ToBadgeClass(component.Color)">@component.Status</span></td>
+                            <td>@component.Reason</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        @if (_dockerSnapshot is not null)
+        {
+            <section class="panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">Docker runtime</p>
+                        <h2>Container components</h2>
+                    </div>
+                    <span class="badge @ToBadgeClass(_dockerSnapshot.Color)">@_dockerSnapshot.Status</span>
+                </div>
+
+                @if (!_dockerSnapshot.DockerAvailable)
+                {
+                    <div class="empty-card">@(_dockerSnapshot.Error ?? "Docker runtime is unavailable.")</div>
+                }
+                else
+                {
+                    <div class="responsive-table">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>Component</th>
+                                <th>Version</th>
+                                <th>First released</th>
+                                <th>Status</th>
+                                <th>Reason</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var component in _dockerSnapshot.Components)
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@component.DisplayName</strong>
+                                        <div class="muted">@component.Key</div>
+                                    </td>
+                                    <td>@component.Version</td>
+                                    <td>@AppTimeFormat.FormatCompact(component.FirstReleasedAtUtc)</td>
+                                    <td><span class="badge @ToBadgeClass(component.Color)">@component.Status</span></td>
+                                    <td>@component.Reason</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+
+            @if (_dockerSnapshot.Containers.Count > 0)
+            {
+                <section class="panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow">Containers</p>
+                            <h2>Container health and recent logs</h2>
+                        </div>
+                        <button class="refresh-button download-button"
+                                @onclick="CreateLogBundleAsync"
+                                disabled="@(!CanCreateLogBundle)"
+                                title="@LogBundleButtonTitle">
+                            Create Log Bundle
+                        </button>
+                    </div>
+
+                    <div class="runtime-grid">
+                        @foreach (var container in _dockerSnapshot.Containers)
+                        {
+                            var visibleLogLines = GetVisibleLogLines(container);
+
+                            <article class="runtime-card">
+                                <div class="runtime-card-header">
+                                    <div>
+                                        <strong>@container.Name</strong>
+                                        <div class="muted">@container.Image</div>
+                                        <div class="worker-label">@ResolveWorkerName(container)</div>
+                                    </div>
+                                    <span class="badge @ToBadgeClass(container.Color)">@container.Status</span>
+                                </div>
+
+                                <div class="muted">
+                                    Version @container.Version · Docker @container.DockerStatusText · Health @container.HealthCheckStatus
+                                </div>
+
+                                @if (visibleLogLines.Count > 0)
+                                {
+                                    <pre class="log-tail">@string.Join(Environment.NewLine, visibleLogLines)</pre>
+                                }
+                            </article>
+                        }
+                    </div>
+                </section>
+            }
+        }
+
+        @if (_ecsSnapshot is not null)
+        {
+            <section class="panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">ECS</p>
+                        <h2>Worker service deployment state</h2>
+                    </div>
+                    <span class="badge @ToBadgeClass(_ecsSnapshot.Color)">@_ecsSnapshot.Status</span>
+                </div>
+
+                @if (!_ecsSnapshot.EcsAvailable)
+                {
+                    <div class="empty-card">@(_ecsSnapshot.Error ?? "ECS is not configured or unavailable.")</div>
+                }
+                else
+                {
+                    <div class="responsive-table">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>Worker</th>
+                                <th>Service</th>
+                                <th>Version</th>
+                                <th>Desired</th>
+                                <th>Running</th>
+                                <th>Pending</th>
+                                <th>Status</th>
+                                <th>Deployment</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var service in _ecsSnapshot.Services)
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@service.WorkerKey</strong>
+                                        <div class="muted">@AppTimeFormat.FormatCompact(service.FirstReleasedAtUtc)</div>
+                                    </td>
+                                    <td>@service.ServiceName</td>
+                                    <td>@service.Version</td>
+                                    <td>@service.DesiredCount</td>
+                                    <td>@service.RunningCount</td>
+                                    <td>@service.PendingCount</td>
+                                    <td><span class="badge @ToBadgeClass(service.Color)">@service.ServiceStatus</span></td>
+                                    <td>@service.DeploymentStatus</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        }
+
+        <section class="panel">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Alerts</p>
+                    <h2>Active operational alerts</h2>
+                </div>
+            </div>
+
+            @if (_snapshot.Alerts.Count == 0)
+            {
+                <div class="empty-card">No active operational alerts.</div>
+            }
+            else
+            {
+                <div class="alert-list">
+                    @foreach (var alert in _snapshot.Alerts)
+                    {
+                        <div class="alert-row">
+                            <span class="badge @ToBadgeClass(alert.Color)">@alert.Severity</span>
+                            <div>
+                                <strong>@alert.Scope</strong>
+                                <p>@alert.Message</p>
+                                <span class="muted">@AppTimeFormat.FormatCompact(alert.AtUtc)</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    }
+</section>
+
+<style>
+    .status-page {
+        display: grid;
+        gap: 1.25rem;
+    }
+
+    .status-hero,
+    .panel,
+    .empty-card,
+    .alert {
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 1.25rem;
+        background: rgba(15, 23, 42, 0.72);
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+    }
+
+    .status-hero {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.5rem;
+        align-items: flex-start;
+    }
+
+    .status-hero h1 {
+        margin: 0;
+        font-size: clamp(2rem, 5vw, 3.5rem);
+    }
+
+    .hero-actions {
+        display: flex;
+        align-items: flex-end;
+        flex-direction: column;
+        gap: .75rem;
+        min-width: 12rem;
+    }
+
+    .hero-badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: .45rem .8rem;
+        font-weight: 800;
+    }
+
+    .connection-state,
+    .muted {
+        color: #94a3b8;
+        font-size: .88rem;
+    }
+
+    .refresh-button {
+        border: 1px solid rgba(148, 163, 184, .35);
+        border-radius: 999px;
+        background: rgba(30, 41, 59, .82);
+        color: #e2e8f0;
+        padding: .55rem .9rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .refresh-button:disabled {
+        cursor: not-allowed;
+        opacity: .6;
+    }
+
+    .download-button {
+        background: rgba(14, 165, 233, .18);
+        border-color: rgba(56, 189, 248, .35);
+        color: #bae6fd;
+    }
+
+    .eyebrow,
+    .label {
+        color: #38bdf8;
+        font-size: .72rem;
+        font-weight: 800;
+        letter-spacing: .1em;
+        margin: 0 0 .35rem;
+        text-transform: uppercase;
+    }
+
+    .status-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .status-card {
+        display: grid;
+        gap: .45rem;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 1rem;
+        background: rgba(15, 23, 42, 0.58);
+        padding: 1rem;
+    }
+
+    .status-card strong {
+        font-size: 1.4rem;
+    }
+
+    .panel {
+        padding: 1.15rem;
+    }
+
+    .panel-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .panel h2 {
+        margin: 0;
+    }
+
+    .responsive-table {
+        overflow-x: auto;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    th,
+    td {
+        border-bottom: 1px solid rgba(148, 163, 184, .16);
+        padding: .8rem .65rem;
+        text-align: left;
+        vertical-align: top;
+    }
+
+    th {
+        color: #94a3b8;
+        font-size: .76rem;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        font-size: .75rem;
+        font-weight: 800;
+        padding: .28rem .6rem;
+    }
+
+    .badge-green {
+        background: rgba(34, 197, 94, .16);
+        color: #86efac;
+    }
+
+    .badge-yellow {
+        background: rgba(234, 179, 8, .16);
+        color: #fde68a;
+    }
+
+    .badge-red {
+        background: rgba(248, 113, 113, .16);
+        color: #fecaca;
+    }
+
+    .badge-gray {
+        background: rgba(148, 163, 184, .16);
+        color: #cbd5e1;
+    }
+
+    .alert {
+        padding: 1rem;
+    }
+
+    .alert-red {
+        border-color: rgba(248, 113, 113, .35);
+        color: #fecaca;
+    }
+
+    .alert-blue {
+        border-color: rgba(56, 189, 248, .35);
+        color: #bae6fd;
+    }
+
+    .empty-card {
+        padding: 1rem;
+        color: #cbd5e1;
+    }
+
+    .alert-list {
+        display: grid;
+        gap: .85rem;
+    }
+
+    .alert-row {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: .8rem;
+        align-items: flex-start;
+        border: 1px solid rgba(148, 163, 184, .18);
+        border-radius: 1rem;
+        padding: .8rem;
+    }
+
+    .alert-row p {
+        margin: .25rem 0;
+    }
+
+    .runtime-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    }
+
+    .runtime-card {
+        display: grid;
+        gap: .75rem;
+        border: 1px solid rgba(148, 163, 184, .18);
+        border-radius: 1rem;
+        background: rgba(15, 23, 42, .45);
+        padding: 1rem;
+    }
+
+    .runtime-card-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+    }
+
+    .worker-label {
+        color: #bae6fd;
+        font-size: .82rem;
+        font-weight: 700;
+        margin-top: .25rem;
+    }
+
+    .log-tail {
+        max-height: 18rem;
+        overflow: auto;
+        border-radius: .75rem;
+        background: rgba(2, 6, 23, .72);
+        color: #cbd5e1;
+        font-size: .76rem;
+        line-height: 1.35;
+        padding: .75rem;
+        white-space: pre-wrap;
+    }
+
+    @@media (max-width: 900px) {
+        .status-hero {
+            flex-direction: column;
+        }
+
+        .hero-actions {
+            align-items: flex-start;
+        }
+
+        .status-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @@media (max-width: 640px) {
+        .status-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+@code {
+    private readonly CancellationTokenSource _pollCts = new();
+
+    private CommandCenterStatusSnapshot? _snapshot;
+    private DockerRuntimeStatusDto? _dockerSnapshot;
+    private EcsRuntimeStatusDto? _ecsSnapshot;
+    private bool _loading = true;
+    private bool _initialLoadStarted;
+    private string? _error;
+    private string? _logBundleMessage;
+
+    private bool CanCreateLogBundle =>
+        _dockerSnapshot?.Containers.Any(container => GetVisibleLogLines(container).Count > 0) == true;
+
+    private string LogBundleButtonTitle =>
+        CanCreateLogBundle
+            ? "Download the log lines currently visible on this screen, grouped by worker/container."
+            : "No visible container log lines are currently loaded.";
+
+    protected override Task OnInitializedAsync()
+    {
+        Realtime.DomainEventReceived += OnDomainEventReceived;
+        Realtime.StatusChangedReceived += OnStatusChangedReceived;
+        Realtime.ConnectionStateChanged += OnConnectionStateChanged;
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _initialLoadStarted)
+        {
+            return;
+        }
+
+        _initialLoadStarted = true;
+        await LoadInitialAsync();
+    }
+
+    private async Task LoadInitialAsync()
+    {
+        await ReloadAsync();
+
+        try
+        {
+            await Realtime.EnsureStartedAsync(_pollCts.Token);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Realtime connection unavailable. Falling back to periodic refresh. {ex.Message}";
+        }
+
+        _ = PollWhenDisconnectedAsync(_pollCts.Token);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _error = null;
+        _logBundleMessage = null;
+
+        try
+        {
+            _snapshot = await Http.GetFromJsonAsync<CommandCenterStatusSnapshot>("/api/status/summary", _pollCts.Token);
+
+            try
+            {
+                _dockerSnapshot = await Http.GetFromJsonAsync<DockerRuntimeStatusDto>("/api/ops/docker-status", _pollCts.Token);
+            }
+            catch
+            {
+                _dockerSnapshot = null;
+            }
+
+            try
+            {
+                _ecsSnapshot = await Http.GetFromJsonAsync<EcsRuntimeStatusDto>("/api/ops/ecs-status", _pollCts.Token);
+            }
+            catch
+            {
+                _ecsSnapshot = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unable to load system status. {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task CreateLogBundleAsync()
+    {
+        _error = null;
+        _logBundleMessage = null;
+
+        try
+        {
+            var bundleText = BuildLogBundle();
+
+            if (string.IsNullOrWhiteSpace(bundleText))
+            {
+                _logBundleMessage = "No visible container log lines are currently loaded on the System Status screen.";
+                return;
+            }
+
+            var fileName = $"argus-system-status-log-bundle-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.txt";
+
+            await Js.InvokeVoidAsync(
+                "argusUi.downloadTextFile",
+                fileName,
+                bundleText,
+                "text/plain;charset=utf-8");
+
+            _logBundleMessage = $"Created log bundle {fileName}.";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unable to create log bundle. {ex.Message}";
+        }
+    }
+
+    private string BuildLogBundle()
+    {
+        if (_dockerSnapshot is null || _dockerSnapshot.Containers.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var entries = _dockerSnapshot.Containers
+            .Select(container => new
+            {
+                Container = container,
+                WorkerName = ResolveWorkerName(container),
+                Lines = GetVisibleLogLines(container)
+            })
+            .Where(entry => entry.Lines.Count > 0)
+            .OrderBy(entry => entry.WorkerName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(entry => entry.Container.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (entries.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        var generatedUtc = DateTimeOffset.UtcNow;
+
+        sb.AppendLine("Argus Engine System Status Log Bundle");
+        sb.AppendLine("====================================");
+        sb.AppendLine($"GeneratedUtc: {generatedUtc:O}");
+        sb.AppendLine($"SystemStatusSnapshotUtc: {_snapshot?.AtUtc.ToString("O") ?? "unavailable"}");
+        sb.AppendLine($"DockerSnapshotUtc: {_dockerSnapshot.AtUtc:O}");
+        sb.AppendLine($"DockerStatus: {_dockerSnapshot.Status}");
+        sb.AppendLine($"ContainersWithVisibleLogs: {entries.Count:N0}");
+        sb.AppendLine($"VisibleLogLinesPerContainer: 25");
+        sb.AppendLine($"TotalVisibleLogLines: {entries.Sum(entry => entry.Lines.Count):N0}");
+        sb.AppendLine();
+
+        foreach (var entry in entries)
+        {
+            var container = entry.Container;
+
+            sb.AppendLine("--------------------------------------------------------------------------------");
+            sb.AppendLine($"Worker: {entry.WorkerName}");
+            sb.AppendLine($"Container: {container.Name}");
+            sb.AppendLine($"ContainerId: {container.Id}");
+            sb.AppendLine($"Image: {container.Image}");
+            sb.AppendLine($"Version: {container.Version}");
+            sb.AppendLine($"ContainerStatus: {container.Status}");
+            sb.AppendLine($"DockerStatus: {container.DockerStatusText}");
+            sb.AppendLine($"HealthCheckStatus: {container.HealthCheckStatus}");
+            sb.AppendLine($"VisibleLogLineCount: {entry.Lines.Count:N0}");
+            sb.AppendLine("--------------------------------------------------------------------------------");
+
+            foreach (var line in entry.Lines)
+            {
+                sb.AppendLine(line);
+            }
+
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    private string ResolveWorkerName(DockerContainerStatusDto container)
+    {
+        if (_snapshot is not null)
+        {
+            foreach (var worker in _snapshot.Workers)
+            {
+                if (ContainsOrdinal(container.Name, worker.Key)
+                    || ContainsOrdinal(container.Name, worker.DisplayName)
+                    || ContainsOrdinal(container.Image, worker.Key)
+                    || ContainsOrdinal(container.Image, worker.DisplayName))
+                {
+                    return $"{worker.DisplayName} ({worker.Key})";
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(container.Name))
+        {
+            return container.Name;
+        }
+
+        return !string.IsNullOrWhiteSpace(container.Id)
+            ? container.Id
+            : "Unknown worker";
+    }
+
+    private static IReadOnlyList<string> GetVisibleLogLines(DockerContainerStatusDto container)
+    {
+        return container.LogTail.Count <= 25
+            ? container.LogTail
+            : container.LogTail.TakeLast(25).ToArray();
+    }
+
+    private static bool ContainsOrdinal(string? value, string? match)
+    {
+        return !string.IsNullOrWhiteSpace(value)
+            && !string.IsNullOrWhiteSpace(match)
+            && value.Contains(match, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task PollWhenDisconnectedAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+
+                if (!Realtime.IsConnected)
+                {
+                    await ReloadAsync();
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    private void OnDomainEventReceived(object? sender, LiveUiEventDto evt)
+    {
+        if (evt.Scope is "workers" or "http" or "assets" or "targets" or "status" or "ops")
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await ReloadAsync();
+                StateHasChanged();
+            });
+        }
+    }
+
+    private void OnStatusChangedReceived(object? sender, CommandCenterStatusSnapshot snapshot)
+    {
+        _snapshot = snapshot;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnConnectionStateChanged(object? sender, EventArgs args)
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private static string FormatAge(double? seconds)
+    {
+        return seconds is null ? "—" : AppTimeFormat.FormatDuration(TimeSpan.FromSeconds(Math.Max(0, seconds.Value)));
+    }
+
+    private static string FormatDepth(long? depth)
+    {
+        return depth?.ToString("N0") ?? "—";
+    }
+
+    private static string ToBadgeClass(string? color)
+    {
+        return color?.ToLowerInvariant() switch
+        {
+            "green" => "badge-green",
+            "yellow" => "badge-yellow",
+            "red" => "badge-red",
+            _ => "badge-gray"
+        };
+    }
+
+    public void Dispose()
+    {
+        Realtime.DomainEventReceived -= OnDomainEventReceived;
+        Realtime.StatusChangedReceived -= OnStatusChangedReceived;
+        Realtime.ConnectionStateChanged -= OnConnectionStateChanged;
+        _pollCts.Cancel();
+        _pollCts.Dispose();
+    }
+}

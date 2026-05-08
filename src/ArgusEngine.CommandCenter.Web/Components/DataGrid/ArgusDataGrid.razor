@@ -1,0 +1,213 @@
+@typeparam TGridItem
+@using Microsoft.AspNetCore.Components.QuickGrid
+@using ArgusEngine.CommandCenter
+
+<div @attributes="AdditionalAttributes"
+     class="argus-dg @DensityCssClass @CssClass"
+     aria-busy="@IsLoading"
+     data-grid-key="@PersistKey">
+    @if (ToolbarVisible)
+    {
+        <div class="argus-dg-toolbar">
+            <div class="argus-dg-toolbar-main">
+                @if (ShowSearch)
+                {
+                    <label class="argus-dg-search-wrap">
+                        <span class="sr-only">@SearchPlaceholder</span>
+                        <input type="search"
+                               class="argus-dg-search ops-filter"
+                               placeholder="@SearchPlaceholder"
+                               value="@_searchInputText"
+                               @oninput="OnSearchInput" />
+                    </label>
+                }
+
+                @if (ShowPageSizePicker && CanPage)
+                {
+                    <label class="argus-dg-page-size">
+                        <span>Rows</span>
+                        <select value="@ActivePagination.ItemsPerPage" @onchange="OnPageSizeChanged">
+                            @foreach (var option in NormalizedPageSizeOptions)
+                            {
+                                <option value="@option">@option</option>
+                            }
+                        </select>
+                    </label>
+                }
+
+                @if (ShowDensityPicker)
+                {
+                    <label class="argus-dg-page-size">
+                        <span>Density</span>
+                        <select value="@Density.ToString()" @onchange="OnDensityChanged">
+                            <option value="@nameof(ArgusDataGridDensity.Compact)">Compact</option>
+                            <option value="@nameof(ArgusDataGridDensity.Comfortable)">Comfortable</option>
+                            <option value="@nameof(ArgusDataGridDensity.Relaxed)">Relaxed</option>
+                        </select>
+                    </label>
+                }
+
+                @ToolbarTemplate
+
+                @if (HasConfiguration)
+                {
+                    <details class="argus-dg-config">
+                        <summary>
+                            Configure
+                            @if (ActiveFilterCount > 0)
+                            {
+                                <span class="argus-dg-badge">@ActiveFilterCount</span>
+                            }
+                        </summary>
+                        <div class="argus-dg-config-body">
+                            @ConfigurationTemplate
+                        </div>
+                    </details>
+                }
+
+                @if (ShowClearFiltersButton && (HasAnyActiveFilter || ClearFiltersRequested.HasDelegate))
+                {
+                    <button type="button" class="btn ghost small" @onclick="ClearAllFiltersAsync" disabled="@IsLoading">
+                        Clear sorting / filtering
+                    </button>
+                }
+            </div>
+
+            <div class="argus-dg-toolbar-actions">
+                @if (LastUpdatedUtc is not null)
+                {
+                    <span class="argus-dg-updated muted small">Updated @AppTimeFormat.Format(LastUpdatedUtc)</span>
+                }
+
+                @if (EnableCsvExport)
+                {
+                    <button type="button" class="btn small" @onclick="ExportCsvAsync" disabled="@(_visibleRowCount == 0 || IsLoading)">
+                        Export CSV
+                    </button>
+                }
+
+                @if (CanPage)
+                {
+                    <div class="argus-dg-pager">
+                        <Paginator State="ActivePagination" />
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (ShowRowCount)
+    {
+        <div class="argus-dg-rowcount muted small" aria-live="polite">
+            @if (_searchInputText != SearchText)
+            {
+                <span>Filtering...</span>
+            }
+            else if (_visibleRowCount == _totalRowCount)
+            {
+                <span>@_visibleRowCount.ToString("N0") rows</span>
+            }
+            else
+            {
+                <span>@_visibleRowCount.ToString("N0") of @_totalRowCount.ToString("N0") rows</span>
+            }
+
+            @if (HasAnyActiveFilter)
+            {
+                <span class="argus-dg-mode">@EffectiveActiveFilterCount active filter@(EffectiveActiveFilterCount == 1 ? "" : "s")</span>
+            }
+            @if (EffectiveVirtualize)
+            {
+                <span class="argus-dg-mode">virtualized</span>
+            }
+            else if (Pagination is not null && GroupKeySelector is null)
+            {
+                <span class="argus-dg-mode">paged</span>
+            }
+            @if (GroupKeySelector is not null)
+            {
+                <span class="argus-dg-mode">grouped</span>
+            }
+            @if (EnableCsvExport && _visibleRowCount > MaxExportRows)
+            {
+                <span class="argus-dg-mode">export caps at @MaxExportRows.ToString("N0")</span>
+            }
+        </div>
+    }
+
+    @if (IsLoading)
+    {
+        <div class="argus-dg-loading" role="status">
+            @if (LoadingTemplate is null)
+            {
+                <span class="argus-dg-spinner" aria-hidden="true"></span>
+                <span>@LoadingText</span>
+            }
+            else
+            {
+                @LoadingTemplate
+            }
+        </div>
+    }
+
+    @if (_visibleRowCount == 0 && !IsLoading)
+    {
+        <div class="@HostCssClasses argus-dg-empty" style="@EffectiveHostStyle" tabindex="@HostTabIndex">
+            @if (EmptyTemplate is null)
+            {
+                @EmptyText
+            }
+            else
+            {
+                @EmptyTemplate
+            }
+        </div>
+    }
+    else if (GroupKeySelector is null)
+    {
+        <div class="@HostCssClasses" style="@EffectiveHostStyle" tabindex="@HostTabIndex">
+            <QuickGrid Items="@EffectiveItems"
+                       Class="@GridTableClass"
+                       Theme="@Theme"
+                       Virtualize="@EffectiveVirtualize"
+                       ItemSize="@EffectiveItemSize"
+                       ItemKey="@ItemKey"
+                       OverscanCount="@OverscanCount"
+                       Pagination="@EffectivePagination">
+                @ChildContent
+            </QuickGrid>
+        </div>
+    }
+    else if (_groups is { Count: > 0 })
+    {
+        <div class="argus-dg-groups">
+            @foreach (var group in _groups)
+            {
+                <details @key="group.Key" class="argus-dg-group" open="@GroupsInitiallyExpanded">
+                    <summary class="argus-dg-group-summary">
+                        <span>@group.Key</span>
+                        <span class="muted">(@group.Items.Count.ToString("N0"))</span>
+                    </summary>
+                    <div class="@HostCssClasses" style="@EffectiveHostStyle">
+                        <QuickGrid Items="@group.Query"
+                                   Class="@GridTableClass"
+                                   Theme="@Theme"
+                                   Virtualize="false"
+                                   ItemSize="@EffectiveItemSize"
+                                   ItemKey="@ItemKey"
+                                   OverscanCount="@OverscanCount">
+                            @ChildContent
+                        </QuickGrid>
+                    </div>
+                </details>
+            }
+        </div>
+    }
+
+    @if (CanPage && ShowBottomPager)
+    {
+        <div class="argus-dg-bottom-pager">
+            <Paginator State="ActivePagination" />
+        </div>
+    }
+</div>

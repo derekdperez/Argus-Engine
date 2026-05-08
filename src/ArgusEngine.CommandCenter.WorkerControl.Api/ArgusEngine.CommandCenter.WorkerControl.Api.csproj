@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <Version>2.6.3</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ArgusEngine.Application\ArgusEngine.Application.csproj" />
+    <ProjectReference Include="..\ArgusEngine.CommandCenter.Contracts\ArgusEngine.CommandCenter.Contracts.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Contracts\ArgusEngine.Contracts.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Domain\ArgusEngine.Domain.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Gatekeeper\ArgusEngine.Gatekeeper.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Harness.Core\ArgusEngine.Harness.Core.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Infrastructure\ArgusEngine.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.EC2" />
+    <PackageReference Include="AWSSDK.ECS" />
+    <PackageReference Include="AWSSDK.SimpleSystemsManagement" />
+  </ItemGroup>
+</Project>

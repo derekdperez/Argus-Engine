@@ -229,6 +229,187 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  command-center-discovery-api:
+    image: argus-engine/command-center-discovery-api:${ARGUS_ENGINE_VERSION:-2.6.3}
+    profiles: ["command-center-split"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.commandcenter-host
+      args:
+        <<: *dotnet-build-args
+        PROJECT_DIR: ArgusEngine.CommandCenter.Discovery.Api
+        APP_DLL: ArgusEngine.CommandCenter.Discovery.Api.dll
+    environment:
+      <<: *common-env
+      ASPNETCORE_URLS: http://+:8080
+      Argus__Postgres__MaxPoolSize: ${ARGUS_DISCOVERY_API_POSTGRES_MAX_POOL_SIZE:-4}
+    ports:
+      - "8084:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  command-center-worker-control-api:
+    image: argus-engine/command-center-worker-control-api:${ARGUS_ENGINE_VERSION:-2.6.3}
+    profiles: ["command-center-split"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.commandcenter-host
+      args:
+        <<: *dotnet-build-args
+        PROJECT_DIR: ArgusEngine.CommandCenter.WorkerControl.Api
+        APP_DLL: ArgusEngine.CommandCenter.WorkerControl.Api.dll
+    environment:
+      <<: *common-env
+      ASPNETCORE_URLS: http://+:8080
+      Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_CONTROL_API_POSTGRES_MAX_POOL_SIZE:-4}
+      AWS_REGION: ${AWS_REGION:-}
+      ECS_CLUSTER: ${ECS_CLUSTER:-argus-engine}
+    ports:
+      - "8085:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  command-center-maintenance-api:
+    image: argus-engine/command-center-maintenance-api:${ARGUS_ENGINE_VERSION:-2.6.3}
+    profiles: ["command-center-split"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.commandcenter-host
+      args:
+        <<: *dotnet-build-args
+        PROJECT_DIR: ArgusEngine.CommandCenter.Maintenance.Api
+        APP_DLL: ArgusEngine.CommandCenter.Maintenance.Api.dll
+    environment:
+      <<: *common-env
+      ASPNETCORE_URLS: http://+:8080
+      Argus__Postgres__MaxPoolSize: ${ARGUS_MAINTENANCE_API_POSTGRES_MAX_POOL_SIZE:-4}
+    ports:
+      - "8086:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  command-center-updates-api:
+    image: argus-engine/command-center-updates-api:${ARGUS_ENGINE_VERSION:-2.6.3}
+    profiles: ["command-center-split"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.commandcenter-host
+      args:
+        <<: *dotnet-build-args
+        PROJECT_DIR: ArgusEngine.CommandCenter.Updates.Api
+        APP_DLL: ArgusEngine.CommandCenter.Updates.Api.dll
+    environment:
+      <<: *common-env
+      ASPNETCORE_URLS: http://+:8080
+    ports:
+      - "8087:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  command-center-realtime:
+    image: argus-engine/command-center-realtime:${ARGUS_ENGINE_VERSION:-2.6.3}
+    profiles: ["command-center-split"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.commandcenter-host
+      args:
+        <<: *dotnet-build-args
+        PROJECT_DIR: ArgusEngine.CommandCenter.Realtime.Host
+        APP_DLL: ArgusEngine.CommandCenter.Realtime.Host.dll
+    environment:
+      <<: *common-env
+      ASPNETCORE_URLS: http://+:8080
+    ports:
+      - "8088:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  command-center-bootstrapper:
+    image: argus-engine/command-center-bootstrapper:${ARGUS_ENGINE_VERSION:-2.6.3}
+    profiles: ["command-center-split"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
+      args:
+        <<: *dotnet-build-args
+        PROJECT_DIR: ArgusEngine.CommandCenter.Bootstrapper
+        APP_DLL: ArgusEngine.CommandCenter.Bootstrapper.dll
+    environment:
+      <<: *common-env
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      filestore-db-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  command-center-spider-dispatcher:
+    image: argus-engine/command-center-spider-dispatcher:${ARGUS_ENGINE_VERSION:-2.6.3}
+    profiles: ["command-center-split"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
+      args:
+        <<: *dotnet-build-args
+        PROJECT_DIR: ArgusEngine.CommandCenter.SpiderDispatcher
+        APP_DLL: ArgusEngine.CommandCenter.SpiderDispatcher.dll
+    environment:
+      <<: *common-env
+      Argus__SkipStartupDatabase: "true"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
   command-center-web:
     image: argus-engine/command-center-web:${ARGUS_ENGINE_VERSION:-2.6.3}
     profiles: ["command-center-split"]

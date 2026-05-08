@@ -276,8 +276,30 @@ done
 LOG_SERVICES=("$@")
 
 if [[ "$ENABLE_COMMAND_CENTER_SPLIT" == "1" ]]; then
-  APP_SERVICES+=(command-center-gateway command-center-web command-center-operations-api)
-  ALL_SERVICES+=(command-center-gateway command-center-web command-center-operations-api)
+  APP_SERVICES+=(
+    command-center-gateway
+    command-center-web
+    command-center-discovery-api
+    command-center-operations-api
+    command-center-worker-control-api
+    command-center-maintenance-api
+    command-center-updates-api
+    command-center-realtime
+    command-center-bootstrapper
+    command-center-spider-dispatcher
+  )
+  ALL_SERVICES+=(
+    command-center-gateway
+    command-center-web
+    command-center-discovery-api
+    command-center-operations-api
+    command-center-worker-control-api
+    command-center-maintenance-api
+    command-center-updates-api
+    command-center-realtime
+    command-center-bootstrapper
+    command-center-spider-dispatcher
+  )
 fi
 
 [[ -f "$COMPOSE_FILE" ]] || die "Missing $COMPOSE_FILE. Run from the repo root or set ARGUS_LOCAL_REPO_ROOT=/path/to/argus-engine."
@@ -469,6 +491,11 @@ print_urls() {
     echo "  CC Gateway:     http://localhost:8081/  (proxies legacy Command Center)"
     echo "  CC Web Shell:   http://localhost:8082/"
     echo "  CC Operations:  http://localhost:8083/"
+    echo "  CC Discovery:   http://localhost:8084/"
+    echo "  CC Workers:     http://localhost:8085/"
+    echo "  CC Maintenance: http://localhost:8086/"
+    echo "  CC Updates:     http://localhost:8087/"
+    echo "  CC Realtime:    http://localhost:8088/"
   fi
   if [[ "$host" != "localhost" ]]; then
     echo "  EC2/public URL: http://$host:8080/"

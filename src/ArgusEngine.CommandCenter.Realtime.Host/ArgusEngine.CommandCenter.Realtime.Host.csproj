@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <Version>2.6.3</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ArgusEngine.CommandCenter.Contracts\ArgusEngine.CommandCenter.Contracts.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Contracts\ArgusEngine.Contracts.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Infrastructure\ArgusEngine.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

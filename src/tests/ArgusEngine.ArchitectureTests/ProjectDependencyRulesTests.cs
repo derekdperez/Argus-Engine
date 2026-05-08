@@ -94,6 +94,49 @@ public sealed class ProjectDependencyRulesTests
     }
 
     [Fact]
+    public void Split_command_center_hosts_do_not_reference_legacy_command_center_project()
+    {
+        var graph = ProjectGraph.Load();
+        var splitHosts = new[]
+        {
+            "ArgusEngine.CommandCenter.Bootstrapper",
+            "ArgusEngine.CommandCenter.Discovery.Api",
+            "ArgusEngine.CommandCenter.Gateway",
+            "ArgusEngine.CommandCenter.Maintenance.Api",
+            "ArgusEngine.CommandCenter.Operations.Api",
+            "ArgusEngine.CommandCenter.Realtime.Host",
+            "ArgusEngine.CommandCenter.SpiderDispatcher",
+            "ArgusEngine.CommandCenter.Updates.Api",
+            "ArgusEngine.CommandCenter.Web",
+            "ArgusEngine.CommandCenter.WorkerControl.Api",
+        };
+
+        var violations = splitHosts
+            .SelectMany(host => graph.ProjectReferences(host).Select(reference => $"{host} -> {reference}"))
+            .Where(edge => edge.EndsWith(" -> ArgusEngine.CommandCenter", StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void Only_spider_dispatcher_references_spider_worker_until_worker_core_split_exists()
+    {
+        var graph = ProjectGraph.Load();
+
+        var violations = graph.Edges
+            .Where(edge => edge.From.StartsWith("ArgusEngine.CommandCenter.", StringComparison.Ordinal))
+            .Where(edge => edge.To == "ArgusEngine.Workers.Spider")
+            .Where(edge => edge.From != "ArgusEngine.CommandCenter.SpiderDispatcher")
+            .Select(edge => $"{edge.From} -> {edge.To}")
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
     public void Current_legacy_command_center_worker_references_are_documented_until_migration_finishes()
     {
         var graph = ProjectGraph.Load(includeTests: false);

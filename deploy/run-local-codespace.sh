@@ -101,6 +101,11 @@ print_codespace_urls() {
     echo "  CC Gateway:     $(codespace_url_for_port 8081)"
     echo "  CC Web Shell:   $(codespace_url_for_port 8082)"
     echo "  CC Operations:  $(codespace_url_for_port 8083)"
+    echo "  CC Discovery:   $(codespace_url_for_port 8084)"
+    echo "  CC Workers:     $(codespace_url_for_port 8085)"
+    echo "  CC Maintenance: $(codespace_url_for_port 8086)"
+    echo "  CC Updates:     $(codespace_url_for_port 8087)"
+    echo "  CC Realtime:    $(codespace_url_for_port 8088)"
   fi
   echo "  RabbitMQ UI:    $(codespace_url_for_port 15672)"
   echo ""

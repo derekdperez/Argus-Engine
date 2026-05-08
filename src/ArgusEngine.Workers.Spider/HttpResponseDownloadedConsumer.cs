@@ -1,4 +1,5 @@
 using MassTransit;
+using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Application.Assets;
@@ -49,7 +50,7 @@ public sealed class HttpResponseDownloadedConsumer(
 
         var parentPage = baseUri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped);
         var spiderContext = $"Spider: link extracted from fetched page {parentPage}";
-        if (spiderContext.Length > 512) spiderContext = spiderContext[..511] + "…";
+        if (spiderContext.Length > 512) spiderContext = spiderContext[..509] + "...";
 
         var correlation = message.CorrelationId;
         var now = DateTimeOffset.UtcNow;

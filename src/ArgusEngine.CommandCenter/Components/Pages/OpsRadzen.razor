@@ -35,28 +35,16 @@
             <strong>@FormatNumber(ConfirmedSubdomains)</strong>
         </article>
         <article class="metric-card">
-            <span>Technologies Confirmed</span>
-            <strong>@FormatNumber(TechnologiesConfirmed)</strong>
-        </article>
-        <article class="metric-card">
-            <span>Running Workers</span>
-            <strong>@FormatNumber(RunningWorkerCount)</strong>
-        </article>
-        <article class="metric-card">
-            <span>Failed / Errored Workers</span>
-            <strong>@FormatNumber(FailedWorkerCount)</strong>
+            <span>Unique Technologies</span>
+            <strong>@FormatNumber(UniqueTechnologies)</strong>
         </article>
         <article class="metric-card">
             <span>HTTP Queue</span>
-            <strong>@FormatNumber(HttpQueueCount)</strong>
+            <strong>@FormatNumber(HttpQueueQueuedCount) queued / @FormatNumber(HttpRequestsSentPerMinute) sent/min</strong>
         </article>
         <article class="metric-card">
-            <span>Message Bus Queues</span>
-            <strong>@FormatNumber(_rabbitQueues.Count)</strong>
-        </article>
-        <article class="metric-card">
-            <span>Published Events</span>
-            <strong>@FormatNumber(PublishedEventCount)</strong>
+            <span>High Value Assets</span>
+            <strong>@FormatNumber(HighValueAssetsCount)</strong>
         </article>
     </section>
 
@@ -153,6 +141,9 @@
                         <option value="selected">Selected</option>
                     </select>
                 </label>
+                <button type="button" class="btn" @onclick="SpiderSelectedDomainsAsync" disabled="@(!CanSpiderSelectedDomains)">
+                    Spider
+                </button>
             </div>
 
             <div class="ops-table-wrap scope-table-wrap">
@@ -219,6 +210,7 @@
             <table class="ops-table asset-table">
                 <thead>
                     <tr>
+                        <th>Info</th>
                         <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("discovered"))">Discovered</button></th>
                         <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("lastSeen"))">Last seen</button></th>
                         <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("kind"))">Kind</button></th>
@@ -234,6 +226,9 @@
                                 var finalUrl = Text(a, "finalUrl", "FinalUrl");
                                 var href = TryHttpHref(finalUrl);
                             }
+                            <td>
+                                <button type="button" class="btn ghost small" title="Show admission decision" @onclick="() => OpenAssetDecisionAsync(a)">?</button>
+                            </td>
                             <td>@FormatTime(Text(a, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
                             <td>@FormatTime(Text(a, "lastSeenAtUtc", "LastSeenAtUtc"))</td>
                             <td>@Text(a, "kind", "Kind")</td>
@@ -285,7 +280,6 @@
                     <option value="Failed">Failed</option>
                 </select>
             </label>
-            <button type="button" class="btn" @onclick="ReloadHttpQueueAsync">Reload HTTP</button>
             <button type="button" class="btn" @onclick="RetrySelectedHttpRowsAsync" disabled="@(!_selectedHttpIds.Any())">Retry Selected</button>
             <button type="button" class="btn danger" @onclick="ClearSelectedHttpRowsAsync" disabled="@(!_selectedHttpIds.Any())">Clear Selected</button>
             <button type="button" class="btn" @onclick="ClearCompletedHttpRowsAsync">Clear Completed</button>
@@ -335,213 +329,34 @@
         </div>
     </section>
 
-    <section class="panel">
-        <div class="section-heading">
-            <div>
-                <p class="eyebrow">Message bus</p>
-                <h2>Published Events</h2>
-                @if (_eventsLoading || _busLoading)
-                {
-                    <span class="loading-inline"><span class="spinner"></span> Loading...</span>
-                }
-            </div>
-            <span class="muted">@FormatNumber(EventRows.Count) published events, @FormatNumber(RabbitQueueRows.Count) queues</span>
-        </div>
-
-        <div class="ops-split-grid">
-            <div>
-                <h3 class="subsection-title">RabbitMQ queues</h3>
-                <div class="ops-rz-toolbar simple dense-toolbar">
-                    <label class="wide-search">
-                        <span>Search</span>
-                        <input type="search" class="ops-filter" @bind="_rabbitSearch" @bind:event="oninput" placeholder="Search queues..." />
-                    </label>
-                    <label>
-                        <span>Filter</span>
-                        <select class="ops-filter compact-filter" @bind="_rabbitFilter">
-                            <option value="">All</option>
-                            <option value="with-messages">With messages</option>
-                            <option value="with-consumers">With consumers</option>
-                            <option value="no-consumers">No consumers</option>
-                        </select>
-                    </label>
-                </div>
-                <div class="ops-table-wrap compact">
-                    <table class="ops-table bus-table">
-                        <thead>
-                            <tr>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("queue"))">Queue</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("ready"))">Ready</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("unacked"))">Unacked</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("consumers"))">Consumers</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetRabbitSort("worker"))">Worker</button></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <Virtualize TItem="JsonElement" Items="RabbitQueueRows" Context="queue" ItemSize="30" OverscanCount="16" SpacerElement="tr">
-                                <tr>
-                                    <td class="clip" title="@Text(queue, "name", "Name")">@Text(queue, "name", "Name")</td>
-                                    <td>@FormatNumber(Long(queue, "messagesReady", "MessagesReady"))</td>
-                                    <td>@FormatNumber(Long(queue, "messagesUnacknowledged", "MessagesUnacknowledged"))</td>
-                                    <td>@DisplayOrDash(Text(queue, "consumers", "Consumers"))</td>
-                                    <td>@DisplayOrDash(Text(queue, "likelyWorkerKey", "LikelyWorkerKey"))</td>
-                                </tr>
-                            </Virtualize>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div>
-                <h3 class="subsection-title">Event trace</h3>
-                <div class="ops-rz-toolbar simple dense-toolbar">
-                    <label class="wide-search">
-                        <span>Search</span>
-                        <input type="search" class="ops-filter" @bind="_eventSearch" @bind:event="oninput" placeholder="Search events..." />
-                    </label>
-                    <label>
-                        <span>Filter</span>
-                        <select class="ops-filter compact-filter" @bind="_eventFilter">
-                            <option value="">All</option>
-                            <option value="consumed">Consumed</option>
-                            <option value="unconsumed">Unconsumed</option>
-                        </select>
-                    </label>
-                </div>
-                <div class="ops-table-wrap compact">
-                    <table class="ops-table event-table">
-                        <thead>
-                            <tr>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("published"))">Published</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("event"))">Event</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("producer"))">Producer</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("host"))">Host</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("consumers"))">Consumers</button></th>
-                                <th><button type="button" class="sort-header" @onclick="@(() => SetEventSort("payload"))">Payload</button></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <Virtualize TItem="JsonElement" Items="EventRows" Context="evt" ItemSize="30" OverscanCount="16" SpacerElement="tr">
-                                <tr>
-                                    <td>@FormatTime(Text(evt, "publishedAtUtc", "PublishedAtUtc"))</td>
-                                    <td class="clip" title="@Text(evt, "eventName", "EventName")">@Text(evt, "eventName", "EventName")</td>
-                                    <td>@DisplayOrDash(Text(evt, "producer", "Producer"))</td>
-                                    <td>@DisplayOrDash(Text(evt, "hostName", "HostName"))</td>
-                                    <td>@DisplayOrDash(Text(evt, "consumerCount", "ConsumerCount"))</td>
-                                    <td class="clip payload-cell" title="@Text(evt, "payloadPreview", "PayloadPreview")">@DisplayOrDash(Text(evt, "payloadPreview", "PayloadPreview"))</td>
-                                </tr>
-                            </Virtualize>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="panel">
-        <div class="section-heading">
-            <div>
-                <p class="eyebrow">Workers</p>
-                <h2>@WorkerHealthTitle</h2>
-                @if (_workersLoading || _scaleLoading)
-                {
-                    <span class="loading-inline"><span class="spinner"></span> Loading...</span>
-                }
-            </div>
-            <span class="muted">@WorkerHealthSubtitle</span>
-        </div>
-
-        @if (UsingEcsWorkers)
-        {
-            <div class="worker-health-grid">
-                @foreach (var scale in _workerScaleTargets)
-                {
-                    var workerKey = Text(scale, "workerKey", "WorkerKey", "scaleKey", "ScaleKey");
-                    <article class="worker-card">
-                        <h3>@DisplayOrDash(workerKey)</h3>
-                        <dl>
-                            <dt>Desired</dt>
-                            <dd>@DisplayOrDash(Text(scale, "desiredCount", "DesiredCount"))</dd>
-                            <dt>Running</dt>
-                            <dd>@DisplayOrDash(Text(scale, "runningCount", "RunningCount"))</dd>
-                            <dt>Pending</dt>
-                            <dd>@DisplayOrDash(Text(scale, "pendingCount", "PendingCount"))</dd>
-                            <dt>Manual desired</dt>
-                            <dd>@DisplayOrDash(Text(scale, "manualDesiredCount", "ManualDesiredCount"))</dd>
-                        </dl>
-                    </article>
-                }
-            </div>
-        }
-        else
-        {
-            <div class="worker-health-grid">
-                @foreach (var worker in _workerSummaries)
-                {
-                    var workerKey = Text(worker, "workerKey", "WorkerKey");
-                    <article class="worker-card">
-                        <h3>@DisplayOrDash(workerKey)</h3>
-                        <dl>
-                            <dt>Enabled</dt>
-                            <dd>@DisplayOrDash(Text(worker, "toggleEnabled", "ToggleEnabled"))</dd>
-                            <dt>Instances</dt>
-                            <dd>@DisplayOrDash(Text(worker, "instanceCount", "InstanceCount"))</dd>
-                            <dt>Last activity</dt>
-                            <dd>@FormatTime(Text(worker, "lastActivityUtc", "LastActivityUtc"))</dd>
-                            <dt>Rollup</dt>
-                            <dd>@DisplayOrDash(Text(worker, "rollupActivityLabel", "RollupActivityLabel"))</dd>
-                        </dl>
-                    </article>
-                }
-            </div>
-        }
-
-        <h3 class="subsection-title">Live worker instances</h3>
-        <div class="ops-rz-toolbar simple dense-toolbar">
-            <label class="wide-search">
-                <span>Search</span>
-                <input type="search" class="ops-filter" @bind="_workerSearch" @bind:event="oninput" placeholder="Search workers..." />
-            </label>
-            <label>
-                <span>Filter</span>
-                <select class="ops-filter compact-filter" @bind="_workerFilter">
-                    <option value="">All</option>
-                    <option value="healthy">Healthy</option>
-                    <option value="unhealthy">Unhealthy</option>
-                    <option value="idle">Idle</option>
-                </select>
-            </label>
-        </div>
-        <div class="ops-table-wrap compact">
-            <table class="ops-table worker-table">
-                <thead>
-                    <tr>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("host"))">Host</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("worker"))">Worker</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("consumer"))">Consumer</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("health"))">Health</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("lastActive"))">Last active</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("message"))">Message</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetWorkerSort("duration"))">Duration</button></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <Virtualize TItem="JsonElement" Items="WorkerInstanceRows" Context="i" ItemSize="30" OverscanCount="16" SpacerElement="tr">
-                        <tr>
-                            <td>@Text(i, "hostName", "HostName")</td>
-                            <td>@Text(i, "workerKind", "WorkerKind")</td>
-                            <td>@Text(i, "consumerShortName", "ConsumerShortName")</td>
-                            <td>@DisplayOrDash(Text(i, "status", "Status", "activityLabel", "ActivityLabel"))</td>
-                            <td>@FormatTime(Text(i, "lastCompletedAtUtc", "LastCompletedAtUtc"))</td>
-                            <td class="clip" title="@Text(i, "messageType", "MessageType")">@Text(i, "messageType", "MessageType")</td>
-                            <td>@DurationLabel(i)</td>
-                        </tr>
-                    </Virtualize>
-                </tbody>
-            </table>
-        </div>
-    </section>
 </div>
+
+@if (_assetDecisionModal is not null)
+{
+    <div class="modal-backdrop" @onclick="CloseAssetDecisionModal">
+        <section class="modal-card decision-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Asset admission decision">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Asset Admission</p>
+                    <h2>Decision reason</h2>
+                </div>
+                <button type="button" class="btn ghost small" @onclick="CloseAssetDecisionModal">Close</button>
+            </div>
+            <dl class="decision-details">
+                <dt>Decision</dt>
+                <dd>@DisplayOrDash(Text(_assetDecisionModal.Value, "decision", "Decision"))</dd>
+                <dt>Reason</dt>
+                <dd>@DisplayOrDash(Text(_assetDecisionModal.Value, "reasonCode", "ReasonCode"))</dd>
+                <dt>Detail</dt>
+                <dd>@DisplayOrDash(Text(_assetDecisionModal.Value, "reasonDetail", "ReasonDetail"))</dd>
+                <dt>Discovered by</dt>
+                <dd>@DisplayOrDash(Text(_assetDecisionModal.Value, "discoveredBy", "DiscoveredBy"))</dd>
+                <dt>Discovery context</dt>
+                <dd>@DisplayOrDash(Text(_assetDecisionModal.Value, "discoveryContext", "DiscoveryContext"))</dd>
+            </dl>
+        </section>
+    </div>
+}
 
 @code {
     private JsonElement? _overview;
@@ -576,7 +391,7 @@
     private string _httpSearch = "";
     private string _httpSort = "created";
     private bool _httpSortDescending = true;
-    private string _httpStateFilter = "Queued";
+    private string _httpStateFilter = "";
     private string _rabbitSearch = "";
     private string _rabbitFilter = "";
     private string _rabbitSort = "queue";
@@ -600,18 +415,22 @@
     private DateTimeOffset _lastLiveRefreshUtc = DateTimeOffset.MinValue;
     private readonly CancellationTokenSource _realtimeCts = new();
     private readonly HashSet<string> _selectedHttpIds = new(StringComparer.OrdinalIgnoreCase);
+    private JsonElement? _assetDecisionModal;
 
     private bool UsingEcsWorkers => _workerScaleTargets.Count > 0;
     private long TotalTargets => _targets.Count;
     private long ConfirmedAssets => _targets.Sum(t => Long(t, "confirmedAssetCount", "ConfirmedAssetCount"));
     private long ConfirmedSubdomains => _targets.Sum(t => Long(t, "subdomainCount", "SubdomainCount"));
-    private long TechnologiesConfirmed => OverviewLong("technologyObservationCount", "TechnologyObservationCount");
-    private long PublishedEventCount => Math.Max(_events.Count, OverviewLong("publishedEventCount", "PublishedEventCount"));
+    private long UniqueTechnologies => OverviewLong("uniqueTechnologyCount", "UniqueTechnologyCount");
+    private long HighValueAssetsCount => OverviewLong("highValueAssetCount", "HighValueAssetCount");
+    private long HttpRequestsSentPerMinute => OverviewLong("httpRequestsSentLastMinuteCount", "HttpRequestsSentLastMinuteCount");
+    private long HttpQueueQueuedCount => OverviewLong("httpQueueQueuedAssetCount", "HttpQueueQueuedAssetCount");
     private long RunningWorkerCount => UsingEcsWorkers
         ? _workerScaleTargets.Sum(w => Long(w, "runningCount", "RunningCount"))
         : _workerInstances.Count;
     private long FailedWorkerCount => _workerInstances.LongCount(IsFailedWorker);
     private long HttpQueueCount => _queue.Count;
+    private bool CanSpiderSelectedDomains => !string.IsNullOrWhiteSpace(_selectedTargetId);
 
     private string WorkerHealthTitle => UsingEcsWorkers ? "ECS worker health" : "Local / EC2 worker health";
     private string WorkerHealthSubtitle => UsingEcsWorkers
@@ -966,10 +785,7 @@
         {
             await Task.WhenAll(
                     ReloadOverviewAsync(),
-                    ReloadHttpQueueAsync(),
-                    ReloadMessageBusAsync(),
-                    ReloadEventsAsync(),
-                    ReloadWorkersAsync())
+                    ReloadHttpQueueAsync())
                 .ConfigureAwait(false);
             await InvokeAsync(StateHasChanged).ConfigureAwait(false);
         }
@@ -993,11 +809,7 @@
                 ReloadOverviewAsync(),
                 ReloadTargetsAsync(),
                 ReloadAssetsAsync(),
-                ReloadHttpQueueAsync(),
-                ReloadMessageBusAsync(),
-                ReloadEventsAsync(),
-                ReloadWorkersAsync(),
-                ReloadWorkerScaleAsync());
+                ReloadHttpQueueAsync());
         }
         catch (Exception ex)
         {
@@ -1068,6 +880,71 @@
             _importingTargets = false;
         }
     }
+
+    private async Task SpiderSelectedDomainsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedTargetId))
+        {
+            return;
+        }
+
+        try
+        {
+            using var response = await Http.PostAsJsonAsync(
+                    "/api/ops/spider/restart",
+                    new RestartToolRequest([_selectedTargetId], AllTargets: false),
+                    _realtimeCts.Token)
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            _statusMessage = $"Spider queued for {SelectedTargetLabel}.";
+            await ReloadHttpQueueAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Spider could not be queued: {ex.Message}";
+        }
+    }
+
+    private async Task OpenAssetDecisionAsync(JsonElement asset)
+    {
+        try
+        {
+            var targetId = Text(asset, "targetId", "TargetId");
+            var canonicalKey = Text(asset, "canonicalKey", "CanonicalKey");
+            var rawValue = Text(asset, "rawValue", "RawValue");
+            var query = new List<string> { "take=1" };
+            if (!string.IsNullOrWhiteSpace(targetId))
+                query.Add($"targetId={Uri.EscapeDataString(targetId)}");
+            if (!string.IsNullOrWhiteSpace(canonicalKey))
+                query.Add($"canonicalKey={Uri.EscapeDataString(canonicalKey)}");
+            else if (!string.IsNullOrWhiteSpace(rawValue))
+                query.Add($"rawContains={Uri.EscapeDataString(rawValue)}");
+
+            var rows = await GetArrayAsync($"/api/asset-admission-decisions?{string.Join("&", query)}")
+                .ConfigureAwait(false);
+            _assetDecisionModal = rows.FirstOrDefault();
+
+            if (_assetDecisionModal.Value.ValueKind != JsonValueKind.Object)
+            {
+                _assetDecisionModal = JsonSerializer.SerializeToElement(new
+                {
+                    decision = DisplayOrDash(Text(asset, "lifecycleStatus", "LifecycleStatus")),
+                    reasonCode = "No admission decision row found",
+                    reasonDetail = "The asset row has discovery details, but no persisted admission decision matched it.",
+                    discoveredBy = Text(asset, "discoveredBy", "DiscoveredBy"),
+                    discoveryContext = Text(asset, "discoveryContext", "DiscoveryContext")
+                });
+            }
+
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Asset decision could not be loaded: {ex.Message}";
+        }
+    }
+
+    private void CloseAssetDecisionModal() => _assetDecisionModal = null;
 
     private async Task ReloadOverviewAsync()
     {

@@ -247,6 +247,7 @@
 
 ::deep table.argus-qg {
     width: 100%;
+    table-layout: fixed;
     font-size: 12px;
     border-collapse: separate;
     border-spacing: 0;
@@ -276,6 +277,9 @@
     position: sticky;
     top: 0;
     z-index: 2;
+    overflow: hidden;
+    resize: horizontal;
+    min-width: 5rem;
     background: linear-gradient(#f8fafc, #eef2f7);
     box-shadow: 0 1px 0 rgba(15, 23, 42, 0.10);
     color: #334155;

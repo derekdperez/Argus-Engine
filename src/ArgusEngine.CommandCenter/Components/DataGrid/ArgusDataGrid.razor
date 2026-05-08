@@ -68,7 +68,7 @@
                 @if (ShowClearFiltersButton && (HasAnyActiveFilter || ClearFiltersRequested.HasDelegate))
                 {
                     <button type="button" class="btn ghost small" @onclick="ClearAllFiltersAsync" disabled="@IsLoading">
-                        Reset filters
+                        Clear sorting / filtering
                     </button>
                 }
             </div>

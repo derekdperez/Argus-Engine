@@ -80,13 +80,14 @@
                 <button type="button" class="btn small" @onclick="ReloadAsync" disabled="@_loading">@(_loading ? "Refreshing..." : "Refresh")</button>
             </ToolbarTemplate>
 
-            <TemplateColumn Title="Selected" Class="select-col">
+            <ChildContent>
+            <TemplateColumn Title="Selected" Context="context" Class="select-col">
                 <input type="checkbox"
                        checked="@IsSelected(context.AssetId)"
                        @onchange="args => ToggleSelected(context.AssetId, args)" />
             </TemplateColumn>
 
-            <TemplateColumn Title="Actions" Class="action-col">
+            <TemplateColumn Title="Actions" Context="context" Class="action-col">
                 <button type="button"
                         class="btn ghost small"
                         @onclick="() => MarkFalsePositiveAsync(context)"
@@ -101,13 +102,13 @@
             }
             @if (ColumnVisible("lastSeen"))
             {
-                <TemplateColumn Title="Last Seen" SortBy="@SortLastSeen">
+                <TemplateColumn Title="Last Seen" Context="context" SortBy="@SortLastSeen">
                     @FormatTime(context.LastSeenAtUtc)
                 </TemplateColumn>
             }
             @if (ColumnVisible("status"))
             {
-                <TemplateColumn Title="Investigation Status" SortBy="@SortInvestigationStatus">
+                <TemplateColumn Title="Investigation Status" Context="context" SortBy="@SortInvestigationStatus">
                     <select class="ops-filter compact-filter"
                             value="@context.InvestigationStatus"
                             @onchange="args => UpdateInvestigationStatusAsync(context, args.Value?.ToString())">
@@ -132,7 +133,7 @@
             }
             @if (ColumnVisible("url"))
             {
-                <TemplateColumn Title="Final URL" SortBy="@SortFinalUrl" Class="wide-col">
+                <TemplateColumn Title="Final URL" Context="context" SortBy="@SortFinalUrl" Class="wide-col">
                     @{
                         var finalUrl = BestAssetUrl(context);
                         var href = TryHttpHref(finalUrl);
@@ -149,7 +150,7 @@
             }
             @if (ColumnVisible("howFound"))
             {
-                <TemplateColumn Title="How Found" SortBy="@SortDiscoveryContext" Class="wide-col">
+                <TemplateColumn Title="How Found" Context="context" SortBy="@SortDiscoveryContext" Class="wide-col">
                     <span class="argus-dg-clip" title="@context.DiscoveryContext">@DisplayOrDash(context.DiscoveryContext)</span>
                 </TemplateColumn>
             }
@@ -167,16 +168,17 @@
             }
             @if (ColumnVisible("pattern"))
             {
-                <TemplateColumn Title="Pattern" SortBy="@SortPattern" Class="wide-col">
+                <TemplateColumn Title="Pattern" Context="context" SortBy="@SortPattern" Class="wide-col">
                     <code class="argus-dg-clip" title="@context.PatternName">@DisplayOrDash(context.PatternName)</code>
                 </TemplateColumn>
             }
             @if (ColumnVisible("matched"))
             {
-                <TemplateColumn Title="Matched Text" SortBy="@SortMatchedText" Class="wide-col">
+                <TemplateColumn Title="Matched Text" Context="context" SortBy="@SortMatchedText" Class="wide-col">
                     <span class="argus-dg-clip" title="@context.MatchedText">@DisplayOrDash(context.MatchedText)</span>
                 </TemplateColumn>
             }
+            </ChildContent>
         </ArgusDataGrid>
     </section>
 </div>

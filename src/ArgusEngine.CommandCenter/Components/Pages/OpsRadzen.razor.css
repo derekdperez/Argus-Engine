@@ -63,6 +63,44 @@
     line-height: 1.2;
 }
 
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, 0.42);
+}
+
+.modal-card {
+    width: min(34rem, 100%);
+    max-height: min(42rem, calc(100vh - 2rem));
+    overflow: auto;
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.14);
+    border-radius: 0.85rem;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+    padding: 1rem;
+}
+
+.decision-details {
+    display: grid;
+    grid-template-columns: 9rem minmax(0, 1fr);
+    gap: 0.6rem 0.85rem;
+}
+
+.decision-details dt {
+    color: var(--muted);
+    font-weight: 800;
+}
+
+.decision-details dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
 .ops-page-lite .metric-card.wide {
     grid-column: span 2;
 }

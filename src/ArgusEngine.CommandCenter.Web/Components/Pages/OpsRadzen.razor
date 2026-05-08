@@ -10,7 +10,8 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @implements IDisposable
-@inject HttpClient Http
+@using ArgusEngine.CommandCenter.Web.Clients
+@inject WorkerControlApiClient WorkerApi
 @inject DiscoveryRealtimeClient Realtime
 
 <PageTitle>Operations - Argus Engine</PageTitle>
@@ -830,7 +831,7 @@
 
         try
         {
-            using var response = await Http.PostAsJsonAsync(
+            using var response = await WorkerApi.Client.PostAsJsonAsync(
                     "/api/targets",
                     new { rootDomain = _newTargetRootDomain.Trim(), globalMaxDepth = _newTargetDepth },
                     _realtimeCts.Token)
@@ -861,7 +862,7 @@
             using var reader = new StreamReader(stream);
             var text = await reader.ReadToEndAsync(_realtimeCts.Token).ConfigureAwait(false);
             var domains = text.Split(['\r', '\n', ',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            using var response = await Http.PostAsJsonAsync(
+            using var response = await WorkerApi.Client.PostAsJsonAsync(
                     "/api/targets/bulk",
                     new { domains, globalMaxDepth = _newTargetDepth },
                     _realtimeCts.Token)
@@ -890,7 +891,7 @@
 
         try
         {
-            using var response = await Http.PostAsJsonAsync(
+            using var response = await WorkerApi.Client.PostAsJsonAsync(
                     "/api/ops/spider/restart",
                     new RestartToolRequest([_selectedTargetId], AllTargets: false),
                     _realtimeCts.Token)
@@ -1153,7 +1154,7 @@
             return;
         }
 
-        using var response = await Http.PostAsJsonAsync(uri, new { ids });
+        using var response = await WorkerApi.Client.PostAsJsonAsync(uri, new { ids });
         response.EnsureSuccessStatusCode();
         _selectedHttpIds.Clear();
         await ReloadHttpQueueAsync();
@@ -1176,7 +1177,7 @@
             return;
         }
 
-        using var response = await Http.PostAsJsonAsync("/api/http-request-queue/clear-older-than", new { cutoffUtc = cutoff });
+        using var response = await WorkerApi.Client.PostAsJsonAsync("/api/http-request-queue/clear-older-than", new { cutoffUtc = cutoff });
         response.EnsureSuccessStatusCode();
         _selectedHttpIds.Clear();
         await ReloadHttpQueueAsync();
@@ -1184,7 +1185,7 @@
 
     private async Task MutateHttpRowsAsync(string uri)
     {
-        using var response = await Http.PostAsync(uri, content: null);
+        using var response = await WorkerApi.Client.PostAsync(uri, content: null);
         response.EnsureSuccessStatusCode();
         _selectedHttpIds.Clear();
         await ReloadHttpQueueAsync();
@@ -1326,7 +1327,7 @@
 
     private async Task<JsonElement?> GetObjectAsync(string uri)
     {
-        using var response = await Http.GetAsync(uri);
+        using var response = await WorkerApi.Client.GetAsync(uri);
         if (!response.IsSuccessStatusCode)
         {
             return null;
@@ -1342,7 +1343,7 @@
 
     private async Task<List<JsonElement>> GetArrayAsync(string uri)
     {
-        using var response = await Http.GetAsync(uri);
+        using var response = await WorkerApi.Client.GetAsync(uri);
         if (!response.IsSuccessStatusCode)
         {
             return [];
@@ -1501,3 +1502,5 @@
         _realtimeCts.Dispose();
     }
 }
+
+

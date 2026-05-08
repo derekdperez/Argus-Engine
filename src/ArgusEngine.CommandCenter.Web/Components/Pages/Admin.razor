@@ -3,7 +3,8 @@
 @page "/admin"
 @rendermode InteractiveServer
 @using System.Net.Http.Json
-@inject HttpClient Http
+@using ArgusEngine.CommandCenter.Web.Clients
+@inject MaintenanceApiClient MaintenanceApi
 
 <PageTitle>Admin - Nightmare v2</PageTitle>
 
@@ -204,8 +205,8 @@
         _error = string.Empty;
         try
         {
-            _snapshot = await Http.GetFromJsonAsync<AdminUsageSnapshotDto>("/api/admin/usage").ConfigureAwait(false);
-            var settings = await Http.GetFromJsonAsync<List<WorkerScalingSettingsDto>>("/api/workers/scaling-settings").ConfigureAwait(false);
+            _snapshot = await MaintenanceApi.Client.GetFromJsonAsync<AdminUsageSnapshotDto>("/api/admin/usage").ConfigureAwait(false);
+            var settings = await MaintenanceApi.Client.GetFromJsonAsync<List<WorkerScalingSettingsDto>>("/api/workers/scaling-settings").ConfigureAwait(false);
             _scalingSettings.Clear();
             if (settings is not null)
                 _scalingSettings.AddRange(settings.Select(EditableWorkerScalingSetting.FromDto));
@@ -228,7 +229,7 @@
         _scalingMessage = "";
         try
         {
-            var response = await Http.PutAsJsonAsync(
+            var response = await MaintenanceApi.Client.PutAsJsonAsync(
                     $"/api/workers/scaling-settings/{Uri.EscapeDataString(row.ScaleKey)}",
                     new WorkerScalingSettingsPatchDto(row.MinTasks, row.MaxTasks, row.TargetBacklogPerTask))
                 .ConfigureAwait(false);
@@ -298,3 +299,5 @@
         }
     }
 }
+
+

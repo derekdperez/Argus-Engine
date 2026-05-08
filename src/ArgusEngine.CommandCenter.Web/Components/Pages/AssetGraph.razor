@@ -2,7 +2,8 @@
 @using ArgusEngine.Application.Assets
 @using ArgusEngine.Application.TechnologyIdentification
 @using ArgusEngine.CommandCenter.Models
-@inject HttpClient Http
+@using ArgusEngine.CommandCenter.Web.Clients
+@inject DiscoveryApiClient DiscoveryApi
 
 <PageTitle>Asset graph</PageTitle>
 
@@ -123,8 +124,8 @@
         _error = null;
         try
         {
-            _targets = await Http.GetFromJsonAsync<List<TargetSummary>>("/api/targets") ?? [];
-            _technologyTags = await Http.GetFromJsonAsync<List<TechnologyTagOption>>("/api/tags?type=Technology") ?? [];
+            _targets = await DiscoveryApi.Client.GetFromJsonAsync<List<TargetSummary>>("/api/targets") ?? [];
+            _technologyTags = await DiscoveryApi.Client.GetFromJsonAsync<List<TechnologyTagOption>>("/api/tags?type=Technology") ?? [];
             if (string.IsNullOrWhiteSpace(_selectedTargetIdText) && _targets.Count > 0)
                 _selectedTargetIdText = _targets[0].Id.ToString();
 
@@ -150,8 +151,8 @@
         if (!Guid.TryParse(_selectedTargetIdText, out var targetId))
             return;
 
-        _tree = await Http.GetFromJsonAsync<List<AssetTreeNodeDto>>($"/api/targets/{targetId}/asset-tree?maxDepth=5") ?? [];
-        _metrics = await Http.GetFromJsonAsync<AssetGraphMetrics>($"/api/targets/{targetId}/asset-graph/metrics");
+        _tree = await DiscoveryApi.Client.GetFromJsonAsync<List<AssetTreeNodeDto>>($"/api/targets/{targetId}/asset-tree?maxDepth=5") ?? [];
+        _metrics = await DiscoveryApi.Client.GetFromJsonAsync<AssetGraphMetrics>($"/api/targets/{targetId}/asset-graph/metrics");
         await LoadAssetTagsForTreeAsync(_tree);
         await ApplyTechnologyFilterAsync();
     }
@@ -171,7 +172,7 @@
         }
 
         var tag = Uri.EscapeDataString(_selectedTechnologyTagSlug);
-        var matches = await Http.GetFromJsonAsync<List<AssetMatch>>($"/api/assets?targetId={targetId}&tag={tag}&take=5000") ?? [];
+        var matches = await DiscoveryApi.Client.GetFromJsonAsync<List<AssetMatch>>($"/api/assets?targetId={targetId}&tag={tag}&take=5000") ?? [];
         var matchedIds = matches.Select(x => x.Id).ToHashSet();
         _visibleTree = FilterTree(_tree, matchedIds);
     }
@@ -180,7 +181,7 @@
     {
         foreach (var assetId in Flatten(nodes).Select(n => n.Asset.Id).Distinct())
         {
-            var tags = await Http.GetFromJsonAsync<List<AssetTagDto>>($"/api/assets/{assetId}/tags") ?? [];
+            var tags = await DiscoveryApi.Client.GetFromJsonAsync<List<AssetTagDto>>($"/api/assets/{assetId}/tags") ?? [];
             if (tags.Count > 0)
                 _assetTags[assetId] = tags;
         }
@@ -229,3 +230,5 @@
         long AssetsWithoutParents,
         long DuplicateRelationshipRows);
 }
+
+

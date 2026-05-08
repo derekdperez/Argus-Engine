@@ -3,7 +3,8 @@
 @using System.Net.Http.Json
 @using ArgusEngine.CommandCenter.Models
 @using ArgusEngine.CommandCenter.Realtime
-@inject HttpClient Http
+@using ArgusEngine.CommandCenter.Web.Clients
+@inject OperationsApiClient OperationsApi
 @inject DiscoveryRealtimeClient Realtime
 @implements IDisposable
 
@@ -251,11 +252,11 @@
 
         try
         {
-            _snapshot = await Http.GetFromJsonAsync<CommandCenterStatusSnapshot>("/api/status/summary", _pollCts.Token);
+            _snapshot = await OperationsApi.Client.GetFromJsonAsync<CommandCenterStatusSnapshot>("/api/status/summary", _pollCts.Token);
 
             try
             {
-                _dockerSnapshot = await Http.GetFromJsonAsync<DockerRuntimeStatusDto>("/api/ops/docker-status", _pollCts.Token);
+                _dockerSnapshot = await OperationsApi.Client.GetFromJsonAsync<DockerRuntimeStatusDto>("/api/ops/docker-status", _pollCts.Token);
             }
             catch
             {
@@ -264,7 +265,7 @@
 
             try
             {
-                _ecsSnapshot = await Http.GetFromJsonAsync<EcsRuntimeStatusDto>("/api/ops/ecs-status", _pollCts.Token);
+                _ecsSnapshot = await OperationsApi.Client.GetFromJsonAsync<EcsRuntimeStatusDto>("/api/ops/ecs-status", _pollCts.Token);
             }
             catch
             {
@@ -581,3 +582,5 @@
 
     private sealed record StateOverview(int Healthy, int Warning, int Critical, int Unknown);
 }
+
+

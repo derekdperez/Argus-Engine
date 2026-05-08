@@ -4,11 +4,12 @@
 @using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.AspNetCore.Components.QuickGrid
 @using Microsoft.JSInterop
-@using ArgusEngine.CommandCenter.Components.DataGrid
-@using ArgusEngine.CommandCenter.Components.DataGrid.Cells
+@using ArgusEngine.CommandCenter.Web.Components.DataGrid
+@using ArgusEngine.CommandCenter.Web.Components.DataGrid.Cells
 @using ArgusEngine.CommandCenter.Models
 @using ArgusEngine.CommandCenter.Realtime
-@inject HttpClient Http
+@using ArgusEngine.CommandCenter.Web.Clients
+@inject DiscoveryApiClient DiscoveryApi
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject DiscoveryRealtimeClient Realtime
@@ -246,7 +247,7 @@ else
         _loading = true;
         try
         {
-            var list = await Http.GetFromJsonAsync<List<TargetSummary>>("/api/targets");
+            var list = await DiscoveryApi.Client.GetFromJsonAsync<List<TargetSummary>>("/api/targets");
             _rows.Clear();
             if (list is not null)
                 _rows.AddRange(list);
@@ -272,7 +273,7 @@ else
         _createBusy = true;
         try
         {
-            var response = await Http.PostAsJsonAsync("/api/targets", new CreateTargetRequest(Form.RootDomain, Form.GlobalMaxDepth));
+            var response = await DiscoveryApi.Client.PostAsJsonAsync("/api/targets", new CreateTargetRequest(Form.RootDomain, Form.GlobalMaxDepth));
             if (response.StatusCode == HttpStatusCode.BadRequest || response.StatusCode == HttpStatusCode.Conflict)
             {
                 _status = await ReadResponseMessageAsync(response, "Target could not be created.");
@@ -312,7 +313,7 @@ else
         _status = null;
         try
         {
-            var response = await Http.PutAsJsonAsync($"/api/targets/{_editing.Id}", new UpdateTargetRequest(_editing.RootDomain, _editing.GlobalMaxDepth));
+            var response = await DiscoveryApi.Client.PutAsJsonAsync($"/api/targets/{_editing.Id}", new UpdateTargetRequest(_editing.RootDomain, _editing.GlobalMaxDepth));
             if (response.StatusCode == HttpStatusCode.Conflict)
             {
                 _status = await ReadResponseMessageAsync(response, "Root domain is already in use.");
@@ -338,7 +339,7 @@ else
         _status = null;
         try
         {
-            var response = await Http.DeleteAsync($"/api/targets/{row.Id}");
+            var response = await DiscoveryApi.Client.DeleteAsync($"/api/targets/{row.Id}");
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 _status = "Target was already removed.";
@@ -385,7 +386,7 @@ else
         _bulkDepthBusy = true;
         try
         {
-            var response = await Http.PutAsJsonAsync(
+            var response = await DiscoveryApi.Client.PutAsJsonAsync(
                 "/api/targets/max-depth",
                 new UpdateTargetMaxDepthRequest(_bulkMaxDepth, targetIds, allTargets));
             if (response.StatusCode == HttpStatusCode.BadRequest)
@@ -535,3 +536,5 @@ else
     }
 
 }
+
+

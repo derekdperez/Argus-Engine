@@ -5,7 +5,8 @@
 @using System.Net.Http.Json
 @using System.Text.Json
 @using ArgusEngine.CommandCenter.Models
-@inject HttpClient Http
+@using ArgusEngine.CommandCenter.Web.Clients
+@inject DiscoveryApiClient DiscoveryApi
 
 <PageTitle>Technology Identification - Argus Engine</PageTitle>
 
@@ -419,7 +420,7 @@
         _targetsLoading = true;
         try
         {
-            var targets = await Http.GetFromJsonAsync<List<TechnologyIdentificationTargetDto>>("/api/technology-identification/targets");
+            var targets = await DiscoveryApi.Client.GetFromJsonAsync<List<TechnologyIdentificationTargetDto>>("/api/technology-identification/targets");
             _targets.Clear();
             if (targets is not null)
                 _targets.AddRange(targets);
@@ -443,7 +444,7 @@
                 ? $"/api/technology-identification/subdomains?targetId={targetId}"
                 : "/api/technology-identification/subdomains";
 
-            var rows = await Http.GetFromJsonAsync<List<TechnologyIdentificationSubdomainDto>>(url);
+            var rows = await DiscoveryApi.Client.GetFromJsonAsync<List<TechnologyIdentificationSubdomainDto>>(url);
             _subdomains.Clear();
             if (rows is not null)
                 _subdomains.AddRange(rows);
@@ -463,7 +464,7 @@
         _technologiesLoading = true;
         try
         {
-            var techs = await Http.GetFromJsonAsync<List<TechnologyIdentificationRowDto>>($"/api/technology-identification/technologies{BuildTechnologyQuery()}");
+            var techs = await DiscoveryApi.Client.GetFromJsonAsync<List<TechnologyIdentificationRowDto>>($"/api/technology-identification/technologies{BuildTechnologyQuery()}");
             _technologies.Clear();
             if (techs is not null)
                 _technologies.AddRange(techs);
@@ -486,7 +487,7 @@
             var url = _selectedTargetId is { } targetId
                 ? $"/api/technology-identification/usage?targetId={targetId}"
                 : "/api/technology-identification/usage";
-            var usage = await Http.GetFromJsonAsync<List<TechnologyUsageDto>>(url);
+            var usage = await DiscoveryApi.Client.GetFromJsonAsync<List<TechnologyUsageDto>>(url);
             _usage.Clear();
             if (usage is not null)
                 _usage.AddRange(usage);
@@ -596,3 +597,5 @@
 
     private static string DisplayOrDash(string? value) => string.IsNullOrWhiteSpace(value) ? "-" : value;
 }
+
+

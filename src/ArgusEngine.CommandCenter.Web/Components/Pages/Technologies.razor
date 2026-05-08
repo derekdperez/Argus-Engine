@@ -2,7 +2,8 @@
 @using ArgusEngine.CommandCenter.Models
 @using ArgusEngine.CommandCenter.Realtime
 @implements IDisposable
-@inject HttpClient Http
+@using ArgusEngine.CommandCenter.Web.Clients
+@inject DiscoveryApiClient DiscoveryApi
 @inject DiscoveryRealtimeClient Realtime
 
 @rendermode InteractiveServer
@@ -196,7 +197,7 @@
         _loading = true;
         try
         {
-            var list = await Http.GetFromJsonAsync<List<TechnologyDetectionRowDto>>($"/api/technologies?take=10000")
+            var list = await DiscoveryApi.Client.GetFromJsonAsync<List<TechnologyDetectionRowDto>>($"/api/technologies?take=10000")
                 .ConfigureAwait(false);
             _rows.Clear();
             if (list is not null)
@@ -233,3 +234,5 @@
         _pollCts.Dispose();
     }
 }
+
+

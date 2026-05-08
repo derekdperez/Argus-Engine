@@ -1,4 +1,4 @@
-namespace ArgusEngine.CommandCenter.Components.DataGrid;
+namespace ArgusEngine.CommandCenter.Web.Components.DataGrid;
 
 public enum ArgusDataGridDensity
 {
@@ -6,3 +6,4 @@ public enum ArgusDataGridDensity
     Comfortable,
     Relaxed
 }
+

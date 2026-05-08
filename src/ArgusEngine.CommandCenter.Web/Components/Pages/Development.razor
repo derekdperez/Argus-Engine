@@ -10,12 +10,12 @@
 @using Microsoft.Extensions.Hosting
 @using ArgusEngine.Harness.Core
 @using ArgusEngine.Domain.Entities
-@using ArgusEngine.Infrastructure.Data
-@using Microsoft.EntityFrameworkCore
+@using ArgusEngine.CommandCenter.Web.Clients
+
 @using Microsoft.Extensions.Logging
 @using Microsoft.JSInterop
-@inject IDbContextFactory<ArgusDbContext> DbFactory
-@inject HarnessRunner Harness
+@inject MaintenanceApiClient MaintenanceApi
+
 @inject IJSRuntime Js
 @inject ILogger<Development> Logger
 @inject IConfiguration Configuration
@@ -366,12 +366,7 @@
     {
         try
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-
-            _errors = await db.SystemErrors
-                .OrderByDescending(e => e.Timestamp)
-                .Take(500)
-                .ToListAsync();
+            _errors = await MaintenanceApi.Client.GetFromJsonAsync<List<SystemError>>("/api/diagnostics/system-errors") ?? new();
 
             if (_selectedError is not null)
             {
@@ -393,8 +388,7 @@
 
         try
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            await db.Database.ExecuteSqlRawAsync("TRUNCATE TABLE system_errors");
+            await MaintenanceApi.Client.DeleteAsync("/api/diagnostics/system-errors");
             _selectedError = null;
             await RefreshErrorsAsync();
         }
@@ -414,7 +408,7 @@
         try
         {
             await Task.Delay(500);
-            _result = await Harness.RunAllAsync(default);
+            _result = await MaintenanceApi.Client.GetFromJsonAsync<HarnessResultDto>("/api/diagnostics/harness");
         }
         catch (Exception ex)
         {
@@ -939,3 +933,5 @@
         _devPollCts.Dispose();
     }
 }
+
+

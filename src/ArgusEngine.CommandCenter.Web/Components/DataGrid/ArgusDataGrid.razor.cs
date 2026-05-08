@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.QuickGrid;
 using Microsoft.JSInterop;
 
-namespace ArgusEngine.CommandCenter.Components.DataGrid;
+namespace ArgusEngine.CommandCenter.Web.Components.DataGrid;
 
 /// <summary>
 /// Shared data grid wrapper around <see cref="QuickGrid{TGridItem}"/>.
@@ -578,3 +578,4 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
 
     private sealed record GridPreferences(string? SearchText, int? PageSize, string? Density);
 }
+

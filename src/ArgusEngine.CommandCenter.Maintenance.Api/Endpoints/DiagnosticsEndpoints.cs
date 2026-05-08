@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Infrastructure.Data;
 using StackExchange.Redis;
 
-namespace ArgusEngine.CommandCenter.Diagnostics;
+namespace ArgusEngine.CommandCenter.Maintenance.Api.Endpoints;
 
 public static class DiagnosticsEndpoints
 {
@@ -283,3 +283,4 @@ public static class DiagnosticsEndpoints
         }
     }
 }
+

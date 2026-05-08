@@ -6,7 +6,8 @@
 @using ArgusEngine.CommandCenter.Models
 @using ArgusEngine.CommandCenter.Realtime
 @implements IDisposable
-@inject HttpClient Http
+@using ArgusEngine.CommandCenter.Web.Clients
+@inject DiscoveryApiClient DiscoveryApi
 @inject DiscoveryRealtimeClient Realtime
 
 <PageTitle>High Value Assets - Argus Engine</PageTitle>
@@ -353,7 +354,7 @@
         _statusMessage = null;
         try
         {
-            var rows = await Http.GetFromJsonAsync<List<HighValueAssetRowDto>>("/api/high-value-assets?includeResolved=true", _pollCts.Token)
+            var rows = await DiscoveryApi.Client.GetFromJsonAsync<List<HighValueAssetRowDto>>("/api/high-value-assets?includeResolved=true", _pollCts.Token)
                 .ConfigureAwait(false);
 
             _rows.Clear();
@@ -376,7 +377,7 @@
     {
         try
         {
-            using var response = await Http.PostAsync($"/api/high-value-assets/{row.AssetId}/false-positive", null, _pollCts.Token)
+            using var response = await DiscoveryApi.Client.PostAsync($"/api/high-value-assets/{row.AssetId}/false-positive", null, _pollCts.Token)
                 .ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             await ReloadAsync().ConfigureAwait(false);
@@ -502,3 +503,5 @@
 
     private sealed record GridColumnChoice(string Key, string Label);
 }
+
+

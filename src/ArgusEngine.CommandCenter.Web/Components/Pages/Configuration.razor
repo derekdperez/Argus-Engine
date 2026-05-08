@@ -1,8 +1,8 @@
 @page "/configuration"
 @using ArgusEngine.Domain.Entities
-@using ArgusEngine.Infrastructure.Data
+@using ArgusEngine.CommandCenter.Web.Clients
 @using Microsoft.EntityFrameworkCore
-@inject IDbContextFactory<ArgusDbContext> DbFactory
+@inject MaintenanceApiClient MaintenanceApi
 @inject NavigationManager Navigation
 
 <PageTitle>Configuration - Argus Engine</PageTitle>
@@ -197,3 +197,5 @@
         }
     }
 }
+
+

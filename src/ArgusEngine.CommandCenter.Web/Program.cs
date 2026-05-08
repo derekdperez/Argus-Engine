@@ -1,4 +1,5 @@
-using ArgusEngine.CommandCenter.Components;
+using ArgusEngine.CommandCenter.Web.Components;
+using ArgusEngine.CommandCenter.Web.Clients;
 using ArgusEngine.CommandCenter.Realtime;
 using Microsoft.AspNetCore.Components;
 using Radzen;
@@ -9,12 +10,13 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddRadzenComponents();
 builder.Services.AddScoped<DiscoveryRealtimeClient>();
-builder.Services.AddScoped(
-    sp =>
-    {
-        var navigation = sp.GetRequiredService<NavigationManager>();
-        return new HttpClient { BaseAddress = new Uri(navigation.BaseUri) };
-    });
+builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri) });
+builder.Services.AddHttpClient<DiscoveryApiClient>((sp, c) => c.BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri));
+builder.Services.AddHttpClient<OperationsApiClient>((sp, c) => c.BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri));
+builder.Services.AddHttpClient<WorkerControlApiClient>((sp, c) => c.BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri));
+builder.Services.AddHttpClient<MaintenanceApiClient>((sp, c) => c.BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri));
+builder.Services.AddHttpClient<UpdatesApiClient>((sp, c) => c.BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri));
+builder.Services.AddHttpClient<RealtimeApiClient>((sp, c) => c.BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri));
 
 var app = builder.Build();
 
@@ -36,3 +38,4 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 await app.RunAsync().ConfigureAwait(false);
+

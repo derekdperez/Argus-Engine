@@ -1,4 +1,4 @@
-namespace ArgusEngine.CommandCenter.Components.DataGrid;
+namespace ArgusEngine.CommandCenter.Web.Components.DataGrid;
 
 public static class GridTextFilter
 {
@@ -22,3 +22,4 @@ public static class GridTextFilter
         return true;
     }
 }
+

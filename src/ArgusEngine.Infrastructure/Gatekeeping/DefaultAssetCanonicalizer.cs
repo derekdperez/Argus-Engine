@@ -69,7 +69,7 @@ public sealed class DefaultAssetCanonicalizer : IAssetCanonicalizer
                     return Uri.EscapeDataString(decoded.ToLowerInvariant());
                 });
 
-        var normalized = "/" + string.Join('/', segments);
+        var normalized = "/" + string.Join("/", segments);
         return path.EndsWith('/', StringComparison.Ordinal) ? normalized + "/" : normalized;
     }
 

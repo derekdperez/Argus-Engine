@@ -71,3 +71,4 @@ amass_sha="$(sha256sum "$out_dir/amass" | awk '{print $1}')"
 
 echo "Wrote $manifest"
 echo "Vendored recon binaries are in deploy/artifacts/recon-tools/linux-amd64"
+rm -rf "$work_dir"

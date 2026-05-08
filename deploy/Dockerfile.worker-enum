@@ -4,6 +4,8 @@
 
 ARG PROJECT_DIR=ArgusEngine.Workers.Enumeration
 ARG APP_DLL=ArgusEngine.Workers.Enumeration.dll
+ARG SUBFINDER_VERSION=2.14.0
+ARG AMASS_VERSION=5.1.1
 
 
 

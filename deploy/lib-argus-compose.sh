@@ -279,9 +279,7 @@ argus_service_image_metadata() {
   if [[ "$service" == "worker-enum" ]]; then
     printf '%s\n' \
       "SUBFINDER_VERSION=${SUBFINDER_VERSION:-2.14.0}" \
-      "AMASS_VERSION=${AMASS_VERSION:-5.1.1}" \
-      "SUBFINDER_PACKAGE=${SUBFINDER_PACKAGE:-github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.14.0}" \
-      "AMASS_PACKAGE=${AMASS_PACKAGE:-github.com/owasp-amass/amass/v5/cmd/amass@v5.1.1}"
+      "AMASS_VERSION=${AMASS_VERSION:-5.1.1}"
   fi
 }
 

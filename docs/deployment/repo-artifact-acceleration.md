@@ -36,15 +36,17 @@ Run:
 ./deploy/vendor-recon-tools.sh
 ```
 
-This builds the pinned `subfinder` and `amass` packages once and writes the
-Linux amd64 binaries to:
+This downloads the pinned `subfinder` and `amass` release archives, verifies the
+published checksums, and writes the Linux amd64 binaries to:
 
 ```text
 deploy/artifacts/recon-tools/linux-amd64/
 ```
 
-`deploy/Dockerfile.base-recon` uses these binaries when both are present. If
-either binary is missing, it falls back to `go install`.
+`deploy/Dockerfile.worker-enum` copies these binaries directly into the enum
+worker image. `deploy/Dockerfile.base-recon` is also zero-download and only
+packages these committed binaries. If either binary is missing, the Docker build
+fails immediately instead of compiling Go projects during deployment.
 
 Tradeoff: committed binaries must be refreshed when the pinned Go package
 versions change.

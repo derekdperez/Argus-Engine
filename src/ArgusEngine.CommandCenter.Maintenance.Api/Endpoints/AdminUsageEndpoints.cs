@@ -5,6 +5,7 @@ using Amazon;
 using Amazon.ECS;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.CommandCenter.Contracts;
+using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 using DescribeServicesRequest = Amazon.ECS.Model.DescribeServicesRequest;

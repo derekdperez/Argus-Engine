@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
+builder.Services.AddSingleton<HttpQueueArtifactBackfillService>();
 
 var app = builder.Build();
 

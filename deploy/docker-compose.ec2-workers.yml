@@ -5,8 +5,8 @@ x-dotnet-build-args: &dotnet-build-args
 
 x-enum-build-args: &enum-build-args
   <<: *dotnet-build-args
-  SUBFINDER_PACKAGE: ${SUBFINDER_PACKAGE:-github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.14.0}
-  AMASS_PACKAGE: ${AMASS_PACKAGE:-github.com/owasp-amass/amass/v5/cmd/amass@v5.1.1}
+  SUBFINDER_VERSION: ${SUBFINDER_VERSION:-2.14.0}
+  AMASS_VERSION: ${AMASS_VERSION:-5.1.1}
 
 x-worker-env: &worker-env
   ConnectionStrings__Postgres: ${NIGHTMARE_POSTGRES:?Set NIGHTMARE_POSTGRES}

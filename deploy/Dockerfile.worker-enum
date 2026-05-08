@@ -57,8 +57,8 @@ ENV SubdomainEnumeration__Amass__WordlistPath=data/wordlists/subdomains-high-val
 
 WORKDIR /app
 
-COPY --from=argus-recon-base:local /subfinder /usr/local/bin/subfinder
-COPY --from=argus-recon-base:local /amass /usr/local/bin/amass
+COPY --chmod=0755 deploy/artifacts/recon-tools/linux-amd64/subfinder /usr/local/bin/subfinder
+COPY --chmod=0755 deploy/artifacts/recon-tools/linux-amd64/amass /usr/local/bin/amass
 COPY deploy/wordlists/subdomains.txt /opt/argus/wordlists/subdomains.txt
 COPY --from=build /app/publish .
 

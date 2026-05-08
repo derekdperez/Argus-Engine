@@ -679,23 +679,27 @@ public static partial class ArgusDbSchemaPatches
                 ALTER TABLE http_request_queue
                     ADD COLUMN IF NOT EXISTS attempt_count integer NOT NULL DEFAULT 0,
                     ADD COLUMN IF NOT EXISTS max_attempts integer NOT NULL DEFAULT 3,
-                    ADD COLUMN IF NOT EXISTS redirect_count integer NOT NULL DEFAULT 0;
+                    ADD COLUMN IF NOT EXISTS redirect_count integer NOT NULL DEFAULT 0,
+                    ADD COLUMN IF NOT EXISTS response_body_truncated boolean NOT NULL DEFAULT false;
 
                 ALTER TABLE http_request_queue
                     ALTER COLUMN attempt_count SET DEFAULT 0,
                     ALTER COLUMN max_attempts SET DEFAULT 3,
-                    ALTER COLUMN redirect_count SET DEFAULT 0;
+                    ALTER COLUMN redirect_count SET DEFAULT 0,
+                    ALTER COLUMN response_body_truncated SET DEFAULT false;
 
                 UPDATE http_request_queue
                 SET
                     attempt_count = COALESCE(attempt_count, 0),
                     max_attempts = COALESCE(max_attempts, 3),
-                    redirect_count = COALESCE(redirect_count, 0);
+                    redirect_count = COALESCE(redirect_count, 0),
+                    response_body_truncated = COALESCE(response_body_truncated, false);
 
                 ALTER TABLE http_request_queue
                     ALTER COLUMN attempt_count SET NOT NULL,
                     ALTER COLUMN max_attempts SET NOT NULL,
-                    ALTER COLUMN redirect_count SET NOT NULL;
+                    ALTER COLUMN redirect_count SET NOT NULL,
+                    ALTER COLUMN response_body_truncated SET NOT NULL;
                 """,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -730,7 +734,8 @@ public static partial class ArgusDbSchemaPatches
                     created_at_utc,
                     updated_at_utc,
                     next_attempt_at_utc,
-                    redirect_count
+                    redirect_count,
+                    response_body_truncated
                 )
                 SELECT
                     gen_random_uuid(),
@@ -740,13 +745,13 @@ public static partial class ArgusDbSchemaPatches
                     'GET',
                     CASE
                         WHEN a.asset_kind IN (0, 1) THEN 'https://' || trim(trailing '/' from a.raw_value) || '/'
-                        WHEN position('://' in a.raw_value) > 0 THEN a.raw_value
+                        WHEN a.raw_value ~* '^https?://' THEN a.raw_value
                         ELSE 'https://' || a.raw_value
                     END,
                     lower(
                         CASE
                             WHEN a.asset_kind IN (0, 1) THEN trim(trailing '/' from a.raw_value)
-                            ELSE regexp_replace(regexp_replace(a.raw_value, '^[a-zA-Z][a-zA-Z0-9+.-]*://', ''), '[:/].*$', '')
+                            ELSE regexp_replace(regexp_replace(a.raw_value, '^https?://', '', 'i'), '[:/].*$', '')
                         END
                     ),
                     'Queued',
@@ -756,7 +761,8 @@ public static partial class ArgusDbSchemaPatches
                     COALESCE(a.discovered_at_utc, now()),
                     now(),
                     now(),
-                    0
+                    0,
+                    false
                 FROM asset_projection a
                 WHERE a.asset_id IS NOT NULL
                   AND a.target_id IS NOT NULL
@@ -764,6 +770,11 @@ public static partial class ArgusDbSchemaPatches
                   AND a.raw_value IS NOT NULL
                   AND a.lifecycle_status = 'Queued'
                   AND a.asset_kind IN (0, 1, 10, 11, 12, 33)
+                  AND (
+                      a.asset_kind IN (0, 1)
+                      OR a.raw_value ~* '^https?://'
+                      OR a.raw_value !~* '^[a-zA-Z][a-zA-Z0-9+.-]*:'
+                  )
                   AND NOT EXISTS (
                       SELECT 1 FROM http_request_queue q WHERE q.asset_id = a.asset_id
                   );

@@ -21,6 +21,7 @@ try
     builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: true);
     builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.Spider);
     builder.Services.AddScoped<IWorkerHealthCheck, SpiderWorkerHealthCheck>();
+    builder.Services.AddHttpClient();
 
     builder.Services.AddArgusRabbitMq(builder.Configuration, bus =>
     {

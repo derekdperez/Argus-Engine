@@ -372,6 +372,7 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.Property(x => x.FinalUrl).HasColumnName("final_url").HasMaxLength(4096);
             e.Property(x => x.RedirectCount).HasColumnName("redirect_count");
             e.Property(x => x.RedirectChainJson).HasColumnName("redirect_chain_json").HasColumnType("jsonb");
+            e.Property(x => x.ResponseBodyTruncated).HasColumnName("response_body_truncated").HasDefaultValue(false);
             e.HasIndex(x => x.AssetId).IsUnique();
             e.HasIndex(x => new { x.State, x.NextAttemptAtUtc });
             e.HasIndex(x => new { x.DomainKey, x.StartedAtUtc });

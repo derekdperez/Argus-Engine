@@ -134,37 +134,37 @@ argus_verify_command_center_blazor_static_assets() {
   echo "Verifying Command Center Blazor static assets..."
 
   local cid
-  cid="$(compose ps -q command-center | tail -n 1 || true)"
+  cid="$(compose ps -q command-center-web | tail -n 1 || true)"
   if [[ -z "$cid" ]]; then
-    echo "ERROR: command-center container was not found after deployment." >&2
+    echo "ERROR: command-center-web container was not found after deployment." >&2
     echo "Run: docker compose -f deploy/docker-compose.yml ps" >&2
     exit 1
   fi
 
   if ! argus_docker inspect "$cid" >/dev/null 2>&1; then
-    echo "ERROR: command-center container id '$cid' is not inspectable." >&2
+    echo "ERROR: command-center-web container id '$cid' is not inspectable." >&2
     exit 1
   fi
 
   local running
   running="$(argus_docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || echo false)"
   if [[ "$running" != "true" ]]; then
-    echo "ERROR: command-center container is not running." >&2
-    compose ps command-center >&2 || true
-    compose logs --tail=150 command-center >&2 || true
+    echo "ERROR: command-center-web container is not running." >&2
+    compose ps command-center-web >&2 || true
+    compose logs --tail=150 command-center-web >&2 || true
     exit 1
   fi
 
   if ! argus_docker exec "$cid" sh -lc 'test -s /app/wwwroot/_framework/blazor.web.js'; then
-    echo "command-center is missing /app/wwwroot/_framework/blazor.web.js; attempting automatic recovery..." >&2
+    echo "command-center-web is missing /app/wwwroot/_framework/blazor.web.js; attempting automatic recovery..." >&2
     if ! argus_recover_command_center_blazor_script "$cid"; then
       echo "ERROR: automatic recovery failed for /app/wwwroot/_framework/blazor.web.js." >&2
       argus_docker exec "$cid" sh -lc 'echo "Contents of /app/wwwroot:"; ls -la /app/wwwroot 2>/dev/null || true; echo "Contents of /app/wwwroot/_framework:"; ls -la /app/wwwroot/_framework 2>/dev/null || true' >&2 || true
       exit 1
     fi
-    cid="$(compose ps -q command-center | tail -n 1 || true)"
+    cid="$(compose ps -q command-center-web | tail -n 1 || true)"
     if [[ -z "$cid" ]] || ! argus_docker exec "$cid" sh -lc 'test -s /app/wwwroot/_framework/blazor.web.js'; then
-      echo "ERROR: command-center still does not have /app/wwwroot/_framework/blazor.web.js after recovery." >&2
+      echo "ERROR: command-center-web still does not have /app/wwwroot/_framework/blazor.web.js after recovery." >&2
       exit 1
     fi
   fi
@@ -172,19 +172,19 @@ argus_verify_command_center_blazor_static_assets() {
   local tmp
   tmp="$(mktemp)"
   if ! curl -fsS --max-time 20 "http://127.0.0.1:8080/_framework/blazor.web.js" -o "$tmp"; then
-    echo "command-center failed to serve /_framework/blazor.web.js; attempting automatic recovery..." >&2
+    echo "command-center-web failed to serve /_framework/blazor.web.js; attempting automatic recovery..." >&2
     if ! argus_recover_command_center_blazor_script "$cid"; then
       rm -f "$tmp"
       echo "ERROR: automatic recovery failed and /_framework/blazor.web.js still returns non-200." >&2
-      compose logs --tail=150 command-center >&2 || true
+      compose logs --tail=150 command-center-web >&2 || true
       exit 1
     fi
-    cid="$(compose ps -q command-center | tail -n 1 || true)"
+    cid="$(compose ps -q command-center-web | tail -n 1 || true)"
     rm -f "$tmp"
     if ! curl -fsS --max-time 20 "http://127.0.0.1:8080/_framework/blazor.web.js" -o "$tmp"; then
       rm -f "$tmp"
       echo "ERROR: /_framework/blazor.web.js still does not return HTTP 200 after recovery." >&2
-      compose logs --tail=150 command-center >&2 || true
+      compose logs --tail=150 command-center-web >&2 || true
       exit 1
     fi
   fi
@@ -232,20 +232,20 @@ argus_recover_command_center_blazor_script() {
     return 0
   fi
 
-  echo "Recovery step 2/2: publish command-center and hot-copy fresh output..." >&2
-  if ! argus_publish_service_for_hot_swap "command-center"; then
-    echo "Command-center hot publish failed during recovery." >&2
+  echo "Recovery step 2/2: publish command-center-web and hot-copy fresh output..." >&2
+  if ! argus_publish_service_for_hot_swap "command-center-web"; then
+    echo "command-center-web hot publish failed during recovery." >&2
     return 1
   fi
 
-  local out_abs="$ROOT/deploy/.hot-publish/command-center"
+  local out_abs="$ROOT/deploy/.hot-publish/command-center-web"
   if [[ ! -s "$out_abs/wwwroot/_framework/blazor.web.js" ]]; then
     echo "Hot publish output is missing blazor.web.js; cannot recover safely." >&2
     return 1
   fi
 
-  argus_hot_copy_publish_output_to_container "command-center" "$cid" "$out_abs"
-  compose restart command-center
+  argus_hot_copy_publish_output_to_container "command-center-web" "$cid" "$out_abs"
+  compose restart command-center-web
   return 0
 }
 
@@ -363,3 +363,4 @@ if [[ "$argus_ECS_WORKERS" == "1" ]]; then
 fi
 echo "(or docker-compose -f deploy/docker-compose.yml ... if you use V1)"
 echo ""
+

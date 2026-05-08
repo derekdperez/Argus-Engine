@@ -20,3 +20,4 @@ public sealed record AdminOperationRequested(
     string? TargetType,
     string? TargetId,
     string? CorrelationId);
+

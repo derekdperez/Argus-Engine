@@ -1,4 +1,4 @@
-namespace ArgusEngine.CommandCenter.Contracts;
+namespace ArgusEngine.CommandCenter.Models;
 
 public sealed record EventConsumerTraceDto(
     long JournalId,

@@ -61,3 +61,4 @@ public sealed record CommandCenterAlert(
     string Message,
     DateTimeOffset AtUtc,
     string Color);
+

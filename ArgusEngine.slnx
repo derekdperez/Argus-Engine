@@ -1,36 +1,35 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/ArgusEngine.Application/ArgusEngine.Application.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Bootstrapper/ArgusEngine.CommandCenter.Bootstrapper.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Contracts/ArgusEngine.CommandCenter.Contracts.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Discovery.Api/ArgusEngine.CommandCenter.Discovery.Api.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Gateway/ArgusEngine.CommandCenter.Gateway.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Maintenance.Api/ArgusEngine.CommandCenter.Maintenance.Api.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Operations.Api/ArgusEngine.CommandCenter.Operations.Api.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Realtime.Host/ArgusEngine.CommandCenter.Realtime.Host.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.SpiderDispatcher/ArgusEngine.CommandCenter.SpiderDispatcher.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Updates.Api/ArgusEngine.CommandCenter.Updates.Api.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.Web/ArgusEngine.CommandCenter.Web.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.CommandCenter.WorkerControl.Api/ArgusEngine.CommandCenter.WorkerControl.Api.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.Domain/ArgusEngine.Domain.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.Workers.Enumeration/ArgusEngine.Workers.Enumeration.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.Workers.Spider/ArgusEngine.Workers.Spider.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.Workers.HttpRequester/ArgusEngine.Workers.HttpRequester.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj" Type="Classic C#" />
-    <Project Path="src/ArgusEngine.Harness/ArgusEngine.Harness.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.Application/ArgusEngine.Application.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.CommandCenter.Bootstrapper/ArgusEngine.CommandCenter.Bootstrapper.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.CommandCenter.Contracts/ArgusEngine.CommandCenter.Contracts.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.CommandCenter.Discovery.Api/ArgusEngine.CommandCenter.Discovery.Api.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.CommandCenter.Gateway/ArgusEngine.CommandCenter.Gateway.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.CommandCenter.Maintenance.Api/ArgusEngine.CommandCenter.Maintenance.Api.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.CommandCenter.Operations.Api/ArgusEngine.CommandCenter.Operations.Api.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.CommandCenter.Realtime.Host/ArgusEngine.CommandCenter.Realtime.Host.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.CommandCenter.SpiderDispatcher/ArgusEngine.CommandCenter.SpiderDispatcher.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.CommandCenter.Updates.Api/ArgusEngine.CommandCenter.Updates.Api.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.CommandCenter.Web/ArgusEngine.CommandCenter.Web.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.CommandCenter.WorkerControl.Api/ArgusEngine.CommandCenter.WorkerControl.Api.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.Domain/ArgusEngine.Domain.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.Infrastructure/ArgusEngine.Infrastructure.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.Workers.Enumeration/ArgusEngine.Workers.Enumeration.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.Workers.Spider/ArgusEngine.Workers.Spider.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.Workers.HttpRequester/ArgusEngine.Workers.HttpRequester.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj" Type="C#" />
+    <Project Path="src/ArgusEngine.Harness/ArgusEngine.Harness.csproj" Type="C#" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="src/tests/ArgusEngine.ArchitectureTests/ArgusEngine.ArchitectureTests.csproj" Type="Classic C#" />
-    <Project Path="src/tests/ArgusEngine.CommandCenter.Tests/ArgusEngine.CommandCenter.Tests.csproj" Type="Classic C#" />
-    <Project Path="src/tests/ArgusEngine.Infrastructure.Tests/ArgusEngine.Infrastructure.Tests.csproj" Type="Classic C#" />
-    <Project Path="src/tests/ArgusEngine.UnitTests/ArgusEngine.UnitTests.csproj" Type="Classic C#" />
-    <Project Path="src/tests/ArgusEngine.IntegrationTests/ArgusEngine.IntegrationTests.csproj" Type="Classic C#" />
-    <Project Path="src/tests/ArgusEngine.RouteCompatibilityTests/ArgusEngine.RouteCompatibilityTests.csproj" Type="Classic C#" />
+    <Project Path="src/tests/ArgusEngine.ArchitectureTests/ArgusEngine.ArchitectureTests.csproj" Type="C#" />
+    <Project Path="src/tests/ArgusEngine.CommandCenter.Tests/ArgusEngine.CommandCenter.Tests.csproj" Type="C#" />
+    <Project Path="src/tests/ArgusEngine.Infrastructure.Tests/ArgusEngine.Infrastructure.Tests.csproj" Type="C#" />
+    <Project Path="src/tests/ArgusEngine.UnitTests/ArgusEngine.UnitTests.csproj" Type="C#" />
+    <Project Path="src/tests/ArgusEngine.IntegrationTests/ArgusEngine.IntegrationTests.csproj" Type="C#" />
+    <Project Path="src/tests/ArgusEngine.RouteCompatibilityTests/ArgusEngine.RouteCompatibilityTests.csproj" Type="C#" />
   </Folder>
 </Solution>

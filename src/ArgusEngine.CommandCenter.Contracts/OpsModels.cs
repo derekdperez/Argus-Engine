@@ -504,3 +504,4 @@ public sealed record TechnologyUsageLocationDto(
     Guid TargetId,
     string TargetRootDomain,
     string Subdomain);
+

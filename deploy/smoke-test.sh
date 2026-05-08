@@ -78,3 +78,4 @@ check_diagnostics "Diagnostics self" "/api/diagnostics/self"
 check_diagnostics "Dependency diagnostics" "/api/diagnostics/dependencies"
 
 pass "Smoke test complete"
+

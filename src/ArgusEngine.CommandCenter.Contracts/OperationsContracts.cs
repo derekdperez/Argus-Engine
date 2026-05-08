@@ -168,3 +168,4 @@ public sealed record DockerContainerStatusDto(
     string Status,
     string Color,
     IReadOnlyList<string> LogTail);
+

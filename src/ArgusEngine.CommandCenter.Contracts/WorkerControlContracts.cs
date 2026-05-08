@@ -25,3 +25,4 @@ public sealed record WorkerScaleResponse(
     string Status,
     string CorrelationId,
     DateTimeOffset AcceptedAtUtc);
+

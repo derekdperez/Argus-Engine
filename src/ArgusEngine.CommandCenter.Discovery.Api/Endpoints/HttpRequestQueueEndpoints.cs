@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
-using ArgusEngine.CommandCenter.Hubs;
+using MassTransit;
 using ArgusEngine.CommandCenter.Contracts;
-using ArgusEngine.CommandCenter.Realtime;
+using ArgusEngine.CommandCenter.Contracts;
+using MassTransit;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 
@@ -34,7 +36,7 @@ public static class HttpRequestQueueEndpoints
 
         app.MapPut(
                 "/api/http-request-queue/settings",
-                async (HttpRequestQueueSettingsPatch body, ArgusDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (HttpRequestQueueSettingsPatch body, ArgusDbContext db, IPublishEndpoint publishEndpoint, CancellationToken ct) =>
                 {
                     var row = await db.HttpRequestQueueSettings.FirstOrDefaultAsync(s => s.Id == 1, ct).ConfigureAwait(false);
                     if (row is null)
@@ -286,5 +288,6 @@ public static class HttpRequestQueueEndpoints
 
     public static void Map(WebApplication app) => app.MapHttpRequestQueueEndpoints();
 }
+
 
 

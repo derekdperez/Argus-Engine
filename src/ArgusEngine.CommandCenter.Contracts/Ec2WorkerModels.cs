@@ -33,3 +33,4 @@ public record Ec2WorkerMachineCreateRequest(
 
 public record Ec2WorkerMachineScaleRequest(
     Ec2WorkerCountsDto? Workers);
+

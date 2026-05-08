@@ -1,4 +1,4 @@
-namespace ArgusEngine.CommandCenter.Contracts;
+namespace ArgusEngine.CommandCenter.Models;
 
 /// <summary>
 /// Small, SignalR-friendly notification sent when the command center observes a domain event

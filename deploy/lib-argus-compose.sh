@@ -118,7 +118,7 @@ argus_sha256_file_list() {
 
 argus_service_project_path() {
   case "$1" in
-    command-center) echo "src/ArgusEngine.CommandCenter" ;;
+    command-center-web) echo "src/ArgusEngine.CommandCenter" ;;
     gatekeeper) echo "src/ArgusEngine.Gatekeeper" ;;
     worker-spider) echo "src/ArgusEngine.Workers.Spider" ;;
     worker-enum) echo "src/ArgusEngine.Workers.Enumeration" ;;
@@ -132,7 +132,7 @@ argus_service_project_path() {
 
 argus_service_app_dll() {
   case "$1" in
-    command-center) echo "ArgusEngine.CommandCenter.dll" ;;
+    command-center-web) echo "ArgusEngine.CommandCenter.dll" ;;
     gatekeeper) echo "ArgusEngine.Gatekeeper.dll" ;;
     worker-spider) echo "ArgusEngine.Workers.Spider.dll" ;;
     worker-enum) echo "ArgusEngine.Workers.Enumeration.dll" ;;
@@ -152,7 +152,7 @@ argus_service_csproj() {
 
 argus_service_dockerfile() {
   case "$1" in
-    command-center) echo "deploy/Dockerfile.web" ;;
+    command-center-web) echo "deploy/Dockerfile.web" ;;
     worker-enum) echo "deploy/Dockerfile.worker-enum" ;;
     *) echo "deploy/Dockerfile.worker" ;;
   esac
@@ -160,7 +160,7 @@ argus_service_dockerfile() {
 
 argus_all_dotnet_services() {
   printf '%s\n' \
-    command-center \
+    command-center-web \
     gatekeeper \
     worker-spider \
     worker-enum \
@@ -194,7 +194,7 @@ argus_service_specific_source_inputs() {
   )
 
   case "$service" in
-    command-center)
+    command-center-web)
       inputs+=(
         "src/ArgusEngine.Harness.Core"
         "src/ArgusEngine.Gatekeeper"
@@ -985,7 +985,7 @@ argus_publish_service_for_hot_swap() {
     -e DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
     -e NUGET_PACKAGES=/workspace/.nuget/packages \
     mcr.microsoft.com/dotnet/sdk:10.0 \
-    sh -lc "dotnet restore '$csproj' && dotnet publish '$csproj' -c Release -o '$out_rel' --no-restore /p:UseAppHost=false && if [ '$service' = 'command-center' ]; then test -s '$out_rel/wwwroot/_framework/blazor.web.js' && ! grep -q '^404: Not Found' '$out_rel/wwwroot/_framework/blazor.web.js'; fi"
+    sh -lc "dotnet restore '$csproj' && dotnet publish '$csproj' -c Release -o '$out_rel' --no-restore /p:UseAppHost=false && if [ '$service' = 'command-center-web' ]; then test -s '$out_rel/wwwroot/_framework/blazor.web.js' && ! grep -q '^404: Not Found' '$out_rel/wwwroot/_framework/blazor.web.js'; fi"
 }
 
 argus_hot_swap_services() {
@@ -1070,7 +1070,7 @@ argus_compose_deploy_all() {
     argus_compose_build
     argus_compose_up_redeploy
     # docker compose up does not always recreate a running container when the image tag is stable
-    # (for example argus-v2/command-center:local). Force only rebuilt services to use the
+    # (for example argus-v2/command-center-web:local). Force only rebuilt services to use the
     # image that was just produced so website/UI changes are visible after a normal deploy.
     # shellcheck disable=SC2206
     local rebuilt_services=( ${argus_BUILT_SERVICES:-} )
@@ -1084,3 +1084,4 @@ argus_compose_deploy_all() {
 argus_compose_full_redeploy() {
   argus_compose_deploy_all
 }
+

@@ -2,9 +2,11 @@ using MassTransit;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Application.Events;
-using ArgusEngine.CommandCenter.Hubs;
+using MassTransit;
 using ArgusEngine.CommandCenter.Contracts;
-using ArgusEngine.CommandCenter.Realtime;
+using ArgusEngine.CommandCenter.Contracts;
+using MassTransit;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.CommandCenter.Discovery.Api.Services;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Domain.Entities;
@@ -100,7 +102,7 @@ public static class TargetEndpoints
                     ArgusDbContext db,
                     IEventOutbox outbox,
                     RootSpiderSeedService rootSpiderSeedService,
-                    IHubContext<DiscoveryHub> hub,
+                    IPublishEndpoint publishEndpoint,
                     CancellationToken ct) =>
                 {
                     if (!TargetRootNormalization.TryNormalize(dto.RootDomain, out var root))
@@ -161,7 +163,7 @@ public static class TargetEndpoints
 
         app.MapPut(
                 "/api/targets/{id:guid}",
-                async (Guid id, UpdateTargetRequest dto, ArgusDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (Guid id, UpdateTargetRequest dto, ArgusDbContext db, IPublishEndpoint publishEndpoint, CancellationToken ct) =>
                 {
                     if (!TargetRootNormalization.TryNormalize(dto.RootDomain, out var root))
                         return Results.BadRequest("root domain required");
@@ -199,7 +201,7 @@ public static class TargetEndpoints
 
         app.MapPut(
                 "/api/targets/max-depth",
-                async (UpdateTargetMaxDepthRequest dto, ArgusDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (UpdateTargetMaxDepthRequest dto, ArgusDbContext db, IPublishEndpoint publishEndpoint, CancellationToken ct) =>
                 {
                     if (dto.GlobalMaxDepth <= 0)
                         return Results.BadRequest("globalMaxDepth must be greater than zero");
@@ -240,7 +242,7 @@ public static class TargetEndpoints
 
         app.MapDelete(
                 "/api/targets/{id:guid}",
-                async (Guid id, ArgusDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (Guid id, ArgusDbContext db, IPublishEndpoint publishEndpoint, CancellationToken ct) =>
                 {
                     var target = await db.Targets.FirstOrDefaultAsync(t => t.Id == id, ct).ConfigureAwait(false);
                     if (target is null)
@@ -270,7 +272,7 @@ public static class TargetEndpoints
                     ArgusDbContext db,
                     IEventOutbox outbox,
                     RootSpiderSeedService rootSpiderSeedService,
-                    IHubContext<DiscoveryHub> hub,
+                    IPublishEndpoint publishEndpoint,
                     CancellationToken ct) =>
                 {
                     const int maxLines = 50_000;
@@ -428,5 +430,6 @@ public static class TargetEndpoints
 
     public static void Map(WebApplication app) => app.MapTargetEndpoints();
 }
+
 
 

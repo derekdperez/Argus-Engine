@@ -15,6 +15,7 @@ using ArgusEngine.Contracts.Events;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Observability;
+using ArgusEngine.Workers.Spider;
 
 namespace ArgusEngine.Workers.HttpRequester;
 

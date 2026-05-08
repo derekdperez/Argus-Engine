@@ -6,6 +6,7 @@ using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
 using ArgusEngine.Workers.HttpRequester;
+using ArgusEngine.Workers.Spider;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

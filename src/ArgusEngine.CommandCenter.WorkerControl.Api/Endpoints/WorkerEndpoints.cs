@@ -1,13 +1,11 @@
 using Amazon.ECS;
 using Amazon.Runtime;
-using Microsoft.AspNetCore.SignalR;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Application.Workers;
-using ArgusEngine.CommandCenter.Hubs;
 using ArgusEngine.CommandCenter.Contracts;
-using ArgusEngine.CommandCenter.Realtime;
 using ArgusEngine.CommandCenter.WorkerControl.Api.Services;
-using ArgusEngine.CommandCenter.WorkerControl.Api.Services;
+using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 using EcsService = Amazon.ECS.Model.Service;
@@ -302,7 +300,7 @@ public static class WorkerEndpoints
                     WorkerScalingSettingsPatchDto body,
                     ArgusDbContext db,
                     WorkerScaleDefinitionProvider workerDefinitions,
-                    IHubContext<DiscoveryHub> hub,
+                    IPublishEndpoint publishEndpoint,
                     CancellationToken ct) =>
                 {
                     if (!workerDefinitions.WorkerScaleDefinitions.Any(d => string.Equals(d.ScaleKey, scaleKey, StringComparison.Ordinal)))
@@ -329,10 +327,9 @@ public static class WorkerEndpoints
                     row.UpdatedAtUtc = now;
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
+                    await publishEndpoint.Publish(
                             new LiveUiEventDto("WorkerScalingSettingsChanged", null, null, "workers", $"{scaleKey} scaling settings updated", now),
-                            cancellationToken: ct)
+                            ct)
                         .ConfigureAwait(false);
 
                     var displayName = workerDefinitions.WorkerScaleDefinitions.First(d => d.ScaleKey == scaleKey).DisplayName;
@@ -440,7 +437,7 @@ public static class WorkerEndpoints
 
         app.MapPut(
                 "/api/workers/{key}",
-                async (string key, WorkerPatchRequest body, ArgusDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (string key, WorkerPatchRequest body, ArgusDbContext db, IPublishEndpoint publishEndpoint, CancellationToken ct) =>
                 {
                     var row = await db.WorkerSwitches.FirstOrDefaultAsync(w => w.WorkerKey == key, ct).ConfigureAwait(false);
                     if (row is null)
@@ -451,8 +448,7 @@ public static class WorkerEndpoints
                     row.IsEnabled = body.Enabled;
                     row.UpdatedAtUtc = DateTimeOffset.UtcNow;
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
+                    await publishEndpoint.Publish(
                             new LiveUiEventDto(
                                 "WorkerToggleChanged",
                                 null,
@@ -460,7 +456,7 @@ public static class WorkerEndpoints
                                 "workers",
                                 $"{row.WorkerKey} {(row.IsEnabled ? "enabled" : "disabled")}",
                                 row.UpdatedAtUtc),
-                            cancellationToken: ct)
+                            ct)
                         .ConfigureAwait(false);
                     return Results.NoContent();
                 })
@@ -477,7 +473,7 @@ public static class WorkerEndpoints
                     AwsRegionResolver regionResolver,
                     EcsServiceNameResolver serviceNameResolver,
                     EcsWorkerServiceManager ecsWorkerServices,
-                    IHubContext<DiscoveryHub> hub,
+                    IPublishEndpoint publishEndpoint,
                     CancellationToken ct) =>
                 {
                     var target = workerDefinitions.GetScaleTargetForWorkerKey(key);
@@ -533,8 +529,7 @@ public static class WorkerEndpoints
                         }
                     }
 
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
+                    await publishEndpoint.Publish(
                             new LiveUiEventDto(
                                 "WorkerScaleChanged",
                                 null,
@@ -542,7 +537,7 @@ public static class WorkerEndpoints
                                 "workers",
                                 $"{scaleKey} desired count set to {body.DesiredCount}",
                                 now),
-                            cancellationToken: ct)
+                            ct)
                         .ConfigureAwait(false);
 
                     return Results.Ok(new WorkerScaleUpdateResult(key, scaleKey, body.DesiredCount, ecsUpdated, message));
@@ -551,7 +546,7 @@ public static class WorkerEndpoints
 
         app.MapDelete(
                 "/api/workers/messages/{messageId}",
-                async (Guid messageId, ArgusDbContext db, IHubContext<DiscoveryHub> hub, CancellationToken ct) =>
+                async (Guid messageId, ArgusDbContext db, IPublishEndpoint publishEndpoint, CancellationToken ct) =>
                 {
                     var cancellation = new WorkerCancellation
                     {
@@ -562,8 +557,7 @@ public static class WorkerEndpoints
                     db.WorkerCancellations.Add(cancellation);
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
+                    await publishEndpoint.Publish(
                             new LiveUiEventDto(
                                 "MessageCancellationRequested",
                                 null,
@@ -571,7 +565,7 @@ public static class WorkerEndpoints
                                 "workers",
                                 $"Cancellation requested for message {messageId}",
                                 cancellation.RequestedAtUtc),
-                            cancellationToken: ct)
+                            ct)
                         .ConfigureAwait(false);
 
                     return Results.NoContent();

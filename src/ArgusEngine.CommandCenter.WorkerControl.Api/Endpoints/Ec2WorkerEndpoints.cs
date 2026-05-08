@@ -9,11 +9,10 @@ using Amazon.Runtime;
 using Amazon.SimpleSystemsManagement;
 using Amazon.SimpleSystemsManagement.Model;
 using MassTransit;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using ArgusEngine.CommandCenter.Hubs;
 using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.Application;
+using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 
@@ -678,10 +677,9 @@ public static class Ec2WorkerEndpoints
         "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
 
     private static Task NotifyChangedAsync(IPublishEndpoint publishEndpoint, string message, CancellationToken ct) =>
-        hub.Clients.All.SendAsync(
-            DiscoveryHubEvents.DomainEvent,
+        publishEndpoint.Publish(
             new LiveUiEventDto("Ec2WorkersChanged", null, null, "workers", message, DateTimeOffset.UtcNow),
-            cancellationToken: ct);
+            ct);
 }
 
 

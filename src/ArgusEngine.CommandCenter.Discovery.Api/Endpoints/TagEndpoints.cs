@@ -102,7 +102,7 @@ public static class TagEndpoints
                     var q = from o in db.TechnologyObservations.AsNoTracking()
                             join t in db.Targets.AsNoTracking() on o.TargetId equals t.Id
                             join a in db.Assets.AsNoTracking() on o.AssetId equals a.Id
-                            select new ArgusEngine.CommandCenter.Models.TechnologyDetectionRowDto(
+                            select new TechnologyDetectionRowDto(
                                 o.Id,
                                 t.Id,
                                 t.RootDomain,
@@ -122,7 +122,7 @@ public static class TagEndpoints
                                 o.ConfidenceScore,
                                 o.LastSeenUtc);
 
-                    IQueryable<ArgusEngine.CommandCenter.Models.TechnologyDetectionRowDto> ordered = q.OrderByDescending(x => x.DetectedAtUtc);
+                    IQueryable<TechnologyDetectionRowDto> ordered = q.OrderByDescending(x => x.DetectedAtUtc);
                     if (take is > 0)
                     {
                         ordered = ordered.Take(Math.Clamp(maxRows, 1, 1_000_000));

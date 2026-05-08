@@ -9,14 +9,15 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddRadzenComponents();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<DiscoveryRealtimeClient>();
-builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri) });
-builder.Services.AddHttpClient<DiscoveryApiClient>((sp, c) => c.BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri));
-builder.Services.AddHttpClient<OperationsApiClient>((sp, c) => c.BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri));
-builder.Services.AddHttpClient<WorkerControlApiClient>((sp, c) => c.BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri));
-builder.Services.AddHttpClient<MaintenanceApiClient>((sp, c) => c.BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri));
-builder.Services.AddHttpClient<UpdatesApiClient>((sp, c) => c.BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri));
-builder.Services.AddHttpClient<RealtimeApiClient>((sp, c) => c.BaseAddress = new Uri(sp.GetRequiredService<NavigationManager>().BaseUri));
+builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveRequestBaseAddress(sp) });
+builder.Services.AddHttpClient<DiscoveryApiClient>((sp, c) => c.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<OperationsApiClient>((sp, c) => c.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<WorkerControlApiClient>((sp, c) => c.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<MaintenanceApiClient>((sp, c) => c.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<UpdatesApiClient>((sp, c) => c.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<RealtimeApiClient>((sp, c) => c.BaseAddress = ResolveRequestBaseAddress(sp));
 
 var app = builder.Build();
 
@@ -38,4 +39,17 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 await app.RunAsync().ConfigureAwait(false);
+
+static Uri ResolveRequestBaseAddress(IServiceProvider services)
+{
+    var request = services.GetRequiredService<IHttpContextAccessor>().HttpContext?.Request;
+    if (request is not null)
+    {
+        var pathBase = request.PathBase.HasValue ? request.PathBase.Value : "";
+        return new Uri($"{request.Scheme}://{request.Host}{pathBase}/");
+    }
+
+    var navigation = services.GetRequiredService<NavigationManager>();
+    return new Uri(navigation.BaseUri);
+}
 

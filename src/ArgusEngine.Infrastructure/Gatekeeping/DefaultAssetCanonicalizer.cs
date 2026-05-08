@@ -70,7 +70,7 @@ public sealed class DefaultAssetCanonicalizer : IAssetCanonicalizer
                 });
 
         var normalized = "/" + string.Join("/", segments);
-        return path.EndsWith('/', StringComparison.Ordinal) ? normalized + "/" : normalized;
+        return path.EndsWith("/", StringComparison.Ordinal) ? normalized + "/" : normalized;
     }
 
     private static string NormalizeQuery(string query)

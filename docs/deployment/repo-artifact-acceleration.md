@@ -48,8 +48,8 @@ worker image. `deploy/Dockerfile.base-recon` is also zero-download and only
 packages these committed binaries. If either binary is missing, the Docker build
 fails immediately instead of compiling Go projects during deployment.
 
-Tradeoff: committed binaries must be refreshed when the pinned Go package
-versions change.
+Tradeoff: committed binaries must be refreshed when the pinned release versions
+change.
 
 ## Useful But Heavier Option
 

@@ -228,7 +228,7 @@ New deployments should prefer `autoscale-ecs-workers.sh` because it scales spide
 
 ## Subdomain enumeration tooling
 
-`deploy/Dockerfile.worker` builds `subfinder` and `amass` into every worker image so the `worker-enum` ECS service can run both tools without host-level installation.
+`deploy/Dockerfile.worker-enum` copies committed `subfinder` and `amass` Linux binaries into the `worker-enum` image so ECS builds do not compile or download the tool projects during deployment.
 
 Defaults:
 
@@ -236,11 +236,12 @@ Defaults:
 - `amass` runs active enumeration with brute-force enabled against the bundled wordlist at `/opt/argus/wordlists/subdomains.txt`.
 - DNS fallback remains enabled so basic enumeration still works if a tool fails or times out.
 
-When changing tool versions, set these before running `deploy/aws/build-push-ecr.sh`:
+When changing tool versions, refresh and commit the vendored artifacts before running `deploy/aws/build-push-ecr.sh`:
 
 ```bash
-export SUBFINDER_PACKAGE=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-export AMASS_PACKAGE=github.com/owasp-amass/amass/v5/cmd/amass@main
+export SUBFINDER_VERSION=2.14.0
+export AMASS_VERSION=5.1.1
+./deploy/vendor-recon-tools.sh
 ```
 
 For ECS, copy the `Enumeration__*` variables from `deploy/aws/service-env.example` into the `worker-enum` task definition.

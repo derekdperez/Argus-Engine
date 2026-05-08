@@ -55,6 +55,8 @@ tar -xzf "$work_dir/$amass_archive" -C "$work_dir/extract/amass"
 
 find "$work_dir/extract/subfinder" -type f -name subfinder -exec cp '{}' "$out_dir/subfinder" ';'
 find "$work_dir/extract/amass" -type f -path '*/amass' -exec cp '{}' "$out_dir/amass" ';'
+test -s "$out_dir/subfinder"
+test -s "$out_dir/amass"
 chmod +x "$out_dir/subfinder" "$out_dir/amass"
 
 subfinder_sha="$(sha256sum "$out_dir/subfinder" | awk '{print $1}')"

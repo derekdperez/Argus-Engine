@@ -27,8 +27,8 @@
 #   argus_BUILD_TIMEOUT_MIN=0  Max minutes for a compose build invocation; 0 disables timeout.
 #   argus_BUILD_SEQUENTIAL=0   Build selected services one-by-one for clearer progress/isolation.
 #   argus_BUILD_PROGRESS=auto  Build progress style: auto|plain|tty.
-#   SUBFINDER_PACKAGE=...  Optional go install package for the worker image subfinder binary.
-#   AMASS_PACKAGE=...      Optional go install package for the worker image amass binary.
+#   SUBFINDER_VERSION=...  Pinned vendored subfinder release version.
+#   AMASS_VERSION=...      Pinned vendored amass release version.
 #   COMPOSE_BAKE=true|false    Multi-service compose builds may use "bake"; scripts default to false for stability.
 #   argus_ECS_WORKERS=1     Deploy core stack locally on EC2 and deploy workers as ECS services.
 #

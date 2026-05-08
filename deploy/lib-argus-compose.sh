@@ -831,17 +831,15 @@ argus_ensure_base_images() {
   if [[ "${argus_DEPLOY_SKIP_BUILD:-0}" == "1" ]]; then
     return 0
   fi
-  if ! argus_docker image inspect argus-engine-base:local >/dev/null 2>&1 || \
-     ! argus_docker image inspect argus-recon-base:local >/dev/null 2>&1; then
-    echo "One or more Argus base images (argus-engine-base:local, argus-recon-base:local) are missing."
+  if ! argus_docker image inspect argus-engine-base:local >/dev/null 2>&1; then
+    echo "Argus runtime base image (argus-engine-base:local) is missing."
     if [[ -f "$ROOT/deploy/load-vendored-images.sh" ]]; then
       bash "$ROOT/deploy/load-vendored-images.sh"
     fi
   fi
-  if ! argus_docker image inspect argus-engine-base:local >/dev/null 2>&1 || \
-     ! argus_docker image inspect argus-recon-base:local >/dev/null 2>&1; then
-    echo "Building base images now to satisfy dependencies..."
-    bash "$ROOT/deploy/build-base-images.sh"
+  if ! argus_docker image inspect argus-engine-base:local >/dev/null 2>&1; then
+    echo "Building runtime base image now to satisfy dependencies..."
+    argus_docker build -t argus-engine-base:local -f "$ROOT/deploy/Dockerfile.base-runtime" "$ROOT/deploy/"
   fi
 }
 

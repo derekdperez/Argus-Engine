@@ -18,8 +18,8 @@
 #   NIGHTMARE_NO_CACHE=1   docker compose build --no-cache
 #   NIGHTMARE_SKIP_INSTALL=1   Do not auto-install Docker; fail if missing
 #   NIGHTMARE_DEPLOY_FRESH=1   Same as -fresh
-#   SUBFINDER_PACKAGE=...  Optional go install package for the worker image subfinder binary.
-#   AMASS_PACKAGE=...      Optional go install package for the worker image amass binary.
+#   SUBFINDER_VERSION=...  Pinned vendored subfinder release version.
+#   AMASS_VERSION=...      Pinned vendored amass release version.
 #   COMPOSE_BAKE=true|false   deploy/lib-argus-compose.sh defaults to false (see docker-compose.yml header).
 #
 # Requires: Docker Engine + Compose V2 ("docker compose") or V1 ("docker-compose").

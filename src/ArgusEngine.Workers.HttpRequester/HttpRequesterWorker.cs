@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MassTransit;
 using ArgusEngine.Application.Assets;
+using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Contracts.Assets;
 using ArgusEngine.Application.Http;
 using ArgusEngine.Contracts;
@@ -175,6 +176,7 @@ public sealed class HttpRequesterWorker(
             var snapshot = await CreateSnapshotAsync(item, response, stopwatch.Elapsed, ct).ConfigureAwait(false);
 
             StoredAsset? asset = null;
+            var correlationId = NewId.NextGuid();
             using (var scope = scopeFactory.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<ArgusDbContext>();
@@ -188,7 +190,7 @@ public sealed class HttpRequesterWorker(
                 }
 
                 var persistence = scope.ServiceProvider.GetRequiredService<IAssetPersistence>();
-                await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, Guid.Empty, ct).ConfigureAwait(false);
+                await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, correlationId, ct).ConfigureAwait(false);
             }
 
             await MarkSucceededAsync(item.Id, snapshot, ct).ConfigureAwait(false);
@@ -207,7 +209,9 @@ public sealed class HttpRequesterWorker(
                 item.AssetKind,
                 snapshot,
                 DateTimeOffset.UtcNow,
-                NewId.NextGuid(),
+                correlationId,
+                EventId: NewId.NextGuid(),
+                CausationId: item.Id,
                 Producer: "worker-http-requester"), ct).ConfigureAwait(false);
         }
         catch (HttpRequestException ex) when (IsNameResolutionFailure(ex))
@@ -295,7 +299,7 @@ public sealed class HttpRequesterWorker(
             using (var scope = scopeFactory.CreateScope())
             {
                 var persistence = scope.ServiceProvider.GetRequiredService<IAssetPersistence>();
-                await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, Guid.Empty, ct).ConfigureAwait(false);
+                await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, NewId.NextGuid(), ct).ConfigureAwait(false);
             }
 
             await MarkFailedAsync(item.Id, error, terminal: true, ct).ConfigureAwait(false);
@@ -393,7 +397,7 @@ public sealed class HttpRequesterWorker(
                 "https://www.google.com/",
                 "https://www.bing.com/",
                 "https://duckduckgo.com/",
-                new Uri(request.RequestUri!).GetLeftPart(UriPartial.Authority) + "/"
+                request.RequestUri!.GetLeftPart(UriPartial.Authority) + "/"
             ];
             request.Headers.Referrer = new Uri(referers[Random.Shared.Next(referers.Length)]);
         }

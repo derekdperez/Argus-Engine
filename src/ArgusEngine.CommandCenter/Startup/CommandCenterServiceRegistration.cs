@@ -206,8 +206,6 @@ public static class CommandCenterServiceRegistration
 
  services.Configure<SubdomainEnumerationOptions>(configuration.GetSection("Enumeration"));
 
- services.Configure<SpiderHttpOptions>(configuration.GetSection("Spider"));
-
  return services;
 
  }

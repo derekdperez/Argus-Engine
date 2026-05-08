@@ -43,6 +43,16 @@ DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 cd "$ROOT"
 
+if [[ "${ARGUS_NO_DEPLOY_LOG:-0}" != "1" ]]; then
+  mkdir -p "$ROOT/deploy/logs"
+  LOG_FILE="$ROOT/deploy/logs/deploy_summary_$(date +'%Y-%m-%d_%H-%M-%S').log"
+  echo "Logging deployment to $LOG_FILE"
+  # exec with process substitution requires bash, which deploy.sh is
+  exec > >(tee -i "$LOG_FILE") 2>&1
+  export PS4='+ [$(date "+%Y-%m-%d %H:%M:%S.%3N")] '
+  set -x
+fi
+
 argus_DEPLOY_FRESH="${argus_DEPLOY_FRESH:-0}"
 argus_DEPLOY_MODE="${argus_DEPLOY_MODE:-image}"
 argus_ECS_WORKERS="${argus_ECS_WORKERS:-0}"
@@ -363,4 +373,5 @@ if [[ "$argus_ECS_WORKERS" == "1" ]]; then
 fi
 echo "(or docker-compose -f deploy/docker-compose.yml ... if you use V1)"
 echo ""
+
 

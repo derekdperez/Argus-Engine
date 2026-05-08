@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ArgusEngine.Application.Assets;
@@ -20,6 +21,8 @@ public sealed class EfAssetPersistence(
     IAssetGraphService graph,
     ILogger<EfAssetPersistence> logger) : IAssetPersistence
 {
+    private static readonly Regex IntegerSegment = new(@"^\d+$", RegexOptions.Compiled);
+    private static readonly Regex GuidSegment = new(@"^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$", RegexOptions.Compiled);
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false };
 
     private static readonly Action<ILogger, Guid, Exception?> LogHttpRequestQueueAlreadyExists =
@@ -263,9 +266,30 @@ public sealed class EfAssetPersistence(
         var scheme = uri.Scheme.ToLowerInvariant();
         var host = uri.IdnHost.ToLowerInvariant();
         var port = uri.IsDefaultPort ? "" : ":" + uri.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var path = string.IsNullOrWhiteSpace(uri.AbsolutePath) ? "/" : uri.AbsolutePath;
+        var path = NormalizeCanonicalUrlPath(uri.AbsolutePath);
         var query = NormalizeQuery(uri.Query);
         return $"url:{scheme}://{host}{port}{path}{query}";
+    }
+
+    private static string NormalizeCanonicalUrlPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path == "/")
+            return "/";
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Select(
+                segment =>
+                {
+                    var decoded = Uri.UnescapeDataString(segment);
+                    if (GuidSegment.IsMatch(decoded))
+                        return "{guid}";
+                    if (IntegerSegment.IsMatch(decoded))
+                        return "{id}";
+                    return Uri.EscapeDataString(decoded.ToLowerInvariant());
+                });
+
+        var normalized = "/" + string.Join('/', segments);
+        return path.EndsWith('/', StringComparison.Ordinal) ? normalized + "/" : normalized;
     }
 
     private static string NormalizeQuery(string query)

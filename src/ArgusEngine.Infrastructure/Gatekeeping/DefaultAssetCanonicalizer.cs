@@ -66,10 +66,11 @@ public sealed class DefaultAssetCanonicalizer : IAssetCanonicalizer
                         return "{guid}";
                     if (IntegerSegment.IsMatch(decoded))
                         return "{id}";
-                    return segment;
+                    return Uri.EscapeDataString(decoded.ToLowerInvariant());
                 });
 
-        return "/" + string.Join('/', segments);
+        var normalized = "/" + string.Join('/', segments);
+        return path.EndsWith('/', StringComparison.Ordinal) ? normalized + "/" : normalized;
     }
 
     private static string NormalizeQuery(string query)

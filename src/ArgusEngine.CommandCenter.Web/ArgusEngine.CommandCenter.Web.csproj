@@ -5,10 +5,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ArgusEngine.CommandCenter.Contracts\ArgusEngine.CommandCenter.Contracts.csproj" />
+    <ProjectReference Include="..\ArgusEngine.Contracts\ArgusEngine.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Radzen.Blazor" />
     <PackageReference Include="Microsoft.AspNetCore.Components.QuickGrid" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
   </ItemGroup>
 </Project>

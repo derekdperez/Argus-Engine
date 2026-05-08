@@ -15,7 +15,7 @@ public static class OpsEndpoints
             "/api/ops/snapshot",
             async (ArgusDbContext db, IHttpClientFactory httpFactory, IConfiguration configuration, CancellationToken ct) =>
             {
-                var snap = await OpsSnapshotBuilder.BuildAsync(db, httpFactory, configuration, ct).ConfigureAwait(false);
+                var snap = await OperationsSnapshotBuilder.BuildAsync(db, httpFactory, configuration, ct).ConfigureAwait(false);
                 return Results.Ok(snap);
             })
             .WithName("OpsSnapshot");
@@ -24,7 +24,7 @@ public static class OpsEndpoints
             "/api/ops/rabbit-queues",
             async (IHttpClientFactory httpFactory, IConfiguration configuration, CancellationToken ct) =>
             {
-                var (queues, _) = await OpsSnapshotBuilder.LoadRabbitQueuesAsync(httpFactory, configuration, ct).ConfigureAwait(false);
+                var (queues, _) = await OperationsSnapshotBuilder.LoadRabbitQueuesAsync(httpFactory, configuration, ct).ConfigureAwait(false);
                 return Results.Ok(queues);
             })
             .WithName("OpsRabbitQueues");

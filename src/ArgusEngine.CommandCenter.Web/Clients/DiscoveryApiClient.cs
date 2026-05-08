@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using ArgusEngine.CommandCenter.Contracts;
+using ArgusEngine.CommandCenter.Models;
 
 namespace ArgusEngine.CommandCenter.Web.Clients;
 

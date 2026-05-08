@@ -2,47 +2,39 @@ using System.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHttpClient(
-    "legacy-command-center",
-    (serviceProvider, client) =>
-    {
-        var configuration = serviceProvider.GetRequiredService<IConfiguration>();
-        var legacyBaseUrl = configuration["CommandCenter:LegacyBaseUrl"]
-            ?? configuration["Argus:CommandCenter:LegacyBaseUrl"]
-            ?? "http://command-center:8080/";
-        client.BaseAddress = new Uri(legacyBaseUrl, UriKind.Absolute);
-        client.Timeout = TimeSpan.FromMinutes(5);
-    });
-builder.Services.AddHttpClient(
-    "operations-api",
-    (serviceProvider, client) =>
-    {
-        var configuration = serviceProvider.GetRequiredService<IConfiguration>();
-        var operationsBaseUrl = configuration["CommandCenter:OperationsBaseUrl"]
-            ?? configuration["Argus:CommandCenter:OperationsBaseUrl"];
-        if (!string.IsNullOrWhiteSpace(operationsBaseUrl))
-        {
-            client.BaseAddress = new Uri(operationsBaseUrl, UriKind.Absolute);
-        }
+builder.Services.AddHttpClient("command-center-web", (sp, c) => ConfigureClient(sp, c, "Web"));
+builder.Services.AddHttpClient("command-center-discovery-api", (sp, c) => ConfigureClient(sp, c, "Discovery"));
+builder.Services.AddHttpClient("command-center-operations-api", (sp, c) => ConfigureClient(sp, c, "Operations"));
+builder.Services.AddHttpClient("command-center-worker-control-api", (sp, c) => ConfigureClient(sp, c, "WorkerControl"));
+builder.Services.AddHttpClient("command-center-maintenance-api", (sp, c) => ConfigureClient(sp, c, "Maintenance"));
+builder.Services.AddHttpClient("command-center-updates-api", (sp, c) => ConfigureClient(sp, c, "Updates"));
+builder.Services.AddHttpClient("command-center-realtime", (sp, c) => ConfigureClient(sp, c, "Realtime"));
 
-        client.Timeout = TimeSpan.FromMinutes(5);
-    });
+static void ConfigureClient(IServiceProvider sp, HttpClient c, string serviceName)
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var url = config[$"CommandCenter:Gateway:Services:{serviceName}"]
+        ?? config[$"Argus:CommandCenter:Gateway:Services:{serviceName}"]
+        ?? $"http://command-center-{serviceName.ToLowerInvariant()}:8080/";
+    c.BaseAddress = new Uri(url, UriKind.Absolute);
+    c.Timeout = TimeSpan.FromMinutes(5);
+}
 
 var app = builder.Build();
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", () => Results.Ok(new { status = "ready" }));
 
-app.Map("/{**path}", ForwardToLegacyCommandCenterAsync);
+app.Map("/{**path}", ForwardToSplitHostAsync);
 
 await app.RunAsync().ConfigureAwait(false);
 
-static async Task<IResult> ForwardToLegacyCommandCenterAsync(
+static async Task<IResult> ForwardToSplitHostAsync(
     HttpContext context,
     IHttpClientFactory httpClientFactory,
     CancellationToken cancellationToken)
 {
-    var clientName = SelectClientName(context, httpClientFactory);
+    var clientName = SelectClientName(context);
     using var request = CreateForwardRequest(context);
     using var response = await httpClientFactory
         .CreateClient(clientName)
@@ -58,20 +50,62 @@ static async Task<IResult> ForwardToLegacyCommandCenterAsync(
     return Results.Empty;
 }
 
-static string SelectClientName(HttpContext context, IHttpClientFactory httpClientFactory)
+static string SelectClientName(HttpContext context)
 {
     var path = context.Request.Path;
-    if (path.StartsWithSegments("/api/ops", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/api/status/summary", StringComparison.OrdinalIgnoreCase))
+
+    if (path.StartsWithSegments("/api/status", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/ops", StringComparison.OrdinalIgnoreCase))
     {
-        var operations = httpClientFactory.CreateClient("operations-api");
-        if (operations.BaseAddress is not null)
+        if (path.StartsWithSegments("/api/ops/spider/restart", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWithSegments("/api/ops/subdomain-enum/restart", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWithSegments("/api/ops/ecs-status", StringComparison.OrdinalIgnoreCase))
         {
-            return "operations-api";
+            return "command-center-worker-control-api";
         }
+        return "command-center-operations-api";
     }
 
-    return "legacy-command-center";
+    if (path.StartsWithSegments("/api/targets", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/assets", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/tags", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/technologies", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/technology-identification", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/http-request-queue", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/high-value-findings", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/asset-admission-decisions", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/filestore", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/events", StringComparison.OrdinalIgnoreCase))
+    {
+        return "command-center-discovery-api";
+    }
+
+    if (path.StartsWithSegments("/api/admin", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/maintenance", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/diagnostics", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/bus", StringComparison.OrdinalIgnoreCase))
+    {
+        return "command-center-maintenance-api";
+    }
+
+    if (path.StartsWithSegments("/api/workers", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/ec2-workers", StringComparison.OrdinalIgnoreCase))
+    {
+        return "command-center-worker-control-api";
+    }
+
+    if (path.StartsWithSegments("/api/development/components", StringComparison.OrdinalIgnoreCase))
+    {
+        return "command-center-updates-api";
+    }
+
+    if (path.StartsWithSegments("/hubs/discovery", StringComparison.OrdinalIgnoreCase))
+    {
+        return "command-center-realtime";
+    }
+
+    // Default to Web for pages and static assets
+    return "command-center-web";
 }
 
 static HttpRequestMessage CreateForwardRequest(HttpContext context)

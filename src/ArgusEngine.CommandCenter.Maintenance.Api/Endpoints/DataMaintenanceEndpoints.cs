@@ -3,6 +3,7 @@ using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Application.Events;
 using ArgusEngine.CommandCenter;
 using ArgusEngine.CommandCenter.Contracts;
+using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Infrastructure.Data;

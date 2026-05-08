@@ -418,6 +418,9 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.Property(x => x.WorkerName).HasColumnName("worker_name").HasMaxLength(128).IsRequired();
             e.Property(x => x.ImportanceScore).HasColumnName("importance_score");
             e.Property(x => x.DiscoveredAtUtc).HasColumnName("discovered_at_utc");
+            e.Property(x => x.IsHighValue).HasColumnName("is_high_value");
+            e.Property(x => x.InvestigationStatus).HasColumnName("investigation_status").HasMaxLength(32).IsRequired();
+            e.Property(x => x.InvestigationUpdatedAtUtc).HasColumnName("investigation_updated_at_utc");
             e.HasIndex(x => x.TargetId);
             e.HasIndex(x => x.DiscoveredAtUtc);
             e.HasOne(x => x.Target)

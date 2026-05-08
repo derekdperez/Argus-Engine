@@ -1,3 +1,7 @@
+@page "/high-value-findings"
+@rendermode InteractiveServer
+
+@using System.Globalization
 @using System.Net.Http.Json
 @using ArgusEngine.CommandCenter.Models
 @using ArgusEngine.CommandCenter.Realtime
@@ -5,132 +9,270 @@
 @inject HttpClient Http
 @inject DiscoveryRealtimeClient Realtime
 
-@page "/high-value-findings"
-@rendermode InteractiveServer
+<PageTitle>High Value Assets - Argus Engine</PageTitle>
 
-<PageTitle>High value findings · Nightmare v2</PageTitle>
+<div class="page-shell ops-page ops-page-lite">
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <div class="ops-alert">@_statusMessage</div>
+    }
 
-<div class="page-shell ops-page">
-    <section class="page-hero ops-hero">
-        <div>
-            <p class="eyebrow">Detection</p>
-            <h1>High value findings</h1>
-            <p class="hero-copy">Regex matches and sensitive path confirmations from stored HTTP responses. URL findings use the final destination after redirects.</p>
-            <div class="hero-meta">
-                <span class="live-pill @LiveStateCss">@Realtime.State</span>
-                <span>@(_lastLoadedAtUtc is null ? "Not loaded" : $"Last refresh {_lastLoadedAtUtc:yyyy-MM-dd HH:mm:ss} UTC")</span>
-                <span>@FilteredFindings.Count().ToString("N0") rows</span>
-            </div>
-        </div>
-        <div class="hero-actions">
-            <label class="ops-inline-check">
-                <input type="checkbox" @bind="_criticalOnly" @bind:after="ReloadAsync" />
-                <span>Critical only</span>
-            </label>
-            <button type="button" class="btn" @onclick="ReloadAsync" disabled="@_loading">@(_loading ? "Refreshing..." : "Refresh")</button>
-        </div>
+    <section class="metrics-grid ops-summary-grid">
+        <article class="metric-card">
+            <span>High Value Assets</span>
+            <strong>@_rows.Count(r => r.IsHighValue).ToString("N0", CultureInfo.InvariantCulture)</strong>
+        </article>
+        <article class="metric-card">
+            <span>Valid Findings</span>
+            <strong>@ValidFindingCount.ToString("N0", CultureInfo.InvariantCulture)</strong>
+        </article>
+        <article class="metric-card">
+            <span>False Positives</span>
+            <strong>@FalsePositiveCount.ToString("N0", CultureInfo.InvariantCulture)</strong>
+        </article>
+        <article class="metric-card">
+            <span>Actual Finding Rate</span>
+            <strong>@ActualFindingRate</strong>
+        </article>
     </section>
 
-    <section class="panel ops-rz-panel">
-        <div class="ops-grid-toolbar">
-            <input type="text" class="ops-filter wide" placeholder="Search severity, pattern, final URL, original URL, worker, snippet..." @bind="_search" @bind:event="oninput" />
-            <input type="text" class="ops-filter" placeholder="Severity" @bind="_severityFilter" @bind:event="oninput" />
-            <input type="text" class="ops-filter" placeholder="Type" @bind="_typeFilter" @bind:event="oninput" />
-            <input type="text" class="ops-filter" placeholder="Pattern" @bind="_patternFilter" @bind:event="oninput" />
-            <input type="text" class="ops-filter" placeholder="Target" @bind="_targetFilter" @bind:event="oninput" />
-            <button type="button" class="btn ghost" @onclick="ClearFilters">Clear filters</button>
+    <section class="panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Inventory</p>
+                <h2>High Value Assets</h2>
+                @if (_loading)
+                {
+                    <span class="loading-inline"><span class="spinner"></span> Loading...</span>
+                }
+            </div>
+            <span class="muted">@FilteredRows.Count().ToString("N0", CultureInfo.InvariantCulture) visible assets</span>
         </div>
 
-        @if (_lastLoadedAtUtc is null)
-        {
-            <section class="panel">
-                <p class="muted">Loading high value findings...</p>
-            </section>
-        }
-        else
-        {
-        <RadzenDataGrid TItem="HighValueFindingRowDto"
-                        Data="@FilteredFindings"
-                        Count="@FilteredFindings.Count()"
-                        AllowSorting="true"
-                        AllowFiltering="false"
-                        AllowPaging="false"
-                        AllowVirtualization="true"
-                        Style="height: 860px"
-                        Density="Density.Compact"
-                        GridLines="DataGridGridLines.Both"
-                        IsLoading="@_loading"
-                        ColumnWidth="180px">
-            <Columns>
-                <RadzenDataGridColumn TItem="HighValueFindingRowDto" Property="DiscoveredAtUtc" Title="Discovered" Width="180px" SortOrder="SortOrder.Descending">
-                    <Template Context="r">@r.DiscoveredAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="HighValueFindingRowDto" Property="Severity" Title="Severity" Width="120px">
-                    <Template Context="r"><strong>@r.Severity</strong></Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="HighValueFindingRowDto" Property="FindingType" Title="Type" Width="150px" />
-                <RadzenDataGridColumn TItem="HighValueFindingRowDto" Property="PatternName" Title="Pattern" Width="240px">
-                    <Template Context="r"><code>@r.PatternName</code></Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="HighValueFindingRowDto" Property="TargetRootDomain" Title="Target" Width="220px" />
-                <RadzenDataGridColumn TItem="HighValueFindingRowDto" Property="SourceUrl" Title="Final URL" Width="460px">
-                    <Template Context="r">
-                        @if (TryHttpHref(r.SourceUrl) is { } href)
+        <ArgusDataGrid TGridItem="HighValueAssetRowDto"
+                       Items="@FilteredRows.AsQueryable()"
+                       RowMatches="HighValueAssetMatches"
+                       SearchText="@_search"
+                       SearchTextChanged="@((string value) => _search = value)"
+                       SearchPlaceholder="Search high value assets by target, URL, worker, pattern, or evidence..."
+                       IsLoading="@_loading"
+                       EmptyText="No high value assets match the current filters."
+                       PersistKey="high-value-assets"
+                       EnableCsvExport="true"
+                       ExportFileName="high-value-assets.csv"
+                       ActiveFilterCount="@ActiveFilterCount"
+                       ClearFiltersRequested="ClearFilters"
+                       StickyFirstColumn="true"
+                       VirtualizedHeightPixels="760">
+            <ToolbarTemplate>
+                <label class="argus-dg-page-size">
+                    <span>Status</span>
+                    <select value="@_statusFilter" @onchange="OnStatusFilterChanged">
+                        <option value="Active">Active</option>
+                        <option value="">All statuses</option>
+                        <option value="Pending">Pending</option>
+                        <option value="In Process">In Process</option>
+                        <option value="False Positive">False Positive</option>
+                        <option value="Valid Finding">Valid Finding</option>
+                    </select>
+                </label>
+                <button type="button" class="btn small" @onclick="() => _showColumnsModal = true">Columns</button>
+                <button type="button" class="btn small" @onclick="ReloadAsync" disabled="@_loading">@(_loading ? "Refreshing..." : "Refresh")</button>
+            </ToolbarTemplate>
+
+            <TemplateColumn Title="Selected" Class="select-col">
+                <input type="checkbox"
+                       checked="@IsSelected(context.AssetId)"
+                       @onchange="args => ToggleSelected(context.AssetId, args)" />
+            </TemplateColumn>
+
+            <TemplateColumn Title="Actions" Class="action-col">
+                <button type="button"
+                        class="btn ghost small"
+                        @onclick="() => MarkFalsePositiveAsync(context)"
+                        disabled="@_loading">
+                    False Positive
+                </button>
+            </TemplateColumn>
+
+            @if (ColumnVisible("discovered"))
+            {
+                <PropertyColumn Title="Discovered" Property="@(row => row.DiscoveredAtUtc)" Format="yyyy-MM-dd HH:mm:ss" Sortable="true" />
+            }
+            @if (ColumnVisible("lastSeen"))
+            {
+                <TemplateColumn Title="Last Seen" SortBy="@SortLastSeen">
+                    @FormatTime(context.LastSeenAtUtc)
+                </TemplateColumn>
+            }
+            @if (ColumnVisible("status"))
+            {
+                <TemplateColumn Title="Investigation Status" SortBy="@SortInvestigationStatus">
+                    <select class="ops-filter compact-filter"
+                            value="@context.InvestigationStatus"
+                            @onchange="args => UpdateInvestigationStatusAsync(context, args.Value?.ToString())">
+                        @foreach (var status in InvestigationStatuses)
                         {
-                            <a href="@href" target="_blank" rel="noopener noreferrer"><span class="ops-rz-clip" title="@r.SourceUrl">@r.SourceUrl</span></a>
+                            <option value="@status">@status</option>
                         }
-                        else
-                        {
-                            <span class="ops-rz-clip" title="@r.SourceUrl">@r.SourceUrl</span>
-                        }
-                    </Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="HighValueFindingRowDto" Property="OriginalSourceUrl" Title="Original URL" Width="460px">
-                    <Template Context="r"><span class="ops-rz-clip" title="@r.OriginalSourceUrl">@r.OriginalSourceUrl</span></Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="HighValueFindingRowDto" Property="RedirectCount" Title="Redirects" Width="120px" />
-                <RadzenDataGridColumn TItem="HighValueFindingRowDto" Property="WorkerName" Title="Worker" Width="180px" />
-                <RadzenDataGridColumn TItem="HighValueFindingRowDto" Property="ImportanceScore" Title="Score" Width="110px" />
-                <RadzenDataGridColumn TItem="HighValueFindingRowDto" Property="MatchedText" Title="Snippet" Width="420px">
-                    <Template Context="r"><span class="ops-rz-clip" title="@r.MatchedText">@r.MatchedText</span></Template>
-                </RadzenDataGridColumn>
-            </Columns>
-        </RadzenDataGrid>
-        }
+                    </select>
+                </TemplateColumn>
+            }
+            @if (ColumnVisible("target"))
+            {
+                <PropertyColumn Title="Target" Property="@(row => row.TargetRootDomain)" Sortable="true" />
+            }
+            @if (ColumnVisible("kind"))
+            {
+                <PropertyColumn Title="Kind" Property="@(row => row.Kind)" Sortable="true" />
+            }
+            @if (ColumnVisible("category"))
+            {
+                <PropertyColumn Title="Category" Property="@(row => row.Category)" Sortable="true" />
+            }
+            @if (ColumnVisible("url"))
+            {
+                <TemplateColumn Title="Final URL" SortBy="@SortFinalUrl" Class="wide-col">
+                    @{
+                        var finalUrl = BestAssetUrl(context);
+                        var href = TryHttpHref(finalUrl);
+                    }
+                    @if (href is null)
+                    {
+                        <span class="argus-dg-clip" title="@finalUrl">@DisplayOrDash(finalUrl)</span>
+                    }
+                    else
+                    {
+                        <a href="@href" target="_blank" rel="noopener noreferrer" class="argus-dg-clip" title="@finalUrl">@finalUrl</a>
+                    }
+                </TemplateColumn>
+            }
+            @if (ColumnVisible("howFound"))
+            {
+                <TemplateColumn Title="How Found" SortBy="@SortDiscoveryContext" Class="wide-col">
+                    <span class="argus-dg-clip" title="@context.DiscoveryContext">@DisplayOrDash(context.DiscoveryContext)</span>
+                </TemplateColumn>
+            }
+            @if (ColumnVisible("worker"))
+            {
+                <PropertyColumn Title="Worker" Property="@(row => row.WorkerName)" Sortable="true" />
+            }
+            @if (ColumnVisible("finding"))
+            {
+                <PropertyColumn Title="Finding" Property="@(row => row.FindingType)" Sortable="true" />
+            }
+            @if (ColumnVisible("severity"))
+            {
+                <PropertyColumn Title="Severity" Property="@(row => row.Severity)" Sortable="true" />
+            }
+            @if (ColumnVisible("pattern"))
+            {
+                <TemplateColumn Title="Pattern" SortBy="@SortPattern" Class="wide-col">
+                    <code class="argus-dg-clip" title="@context.PatternName">@DisplayOrDash(context.PatternName)</code>
+                </TemplateColumn>
+            }
+            @if (ColumnVisible("matched"))
+            {
+                <TemplateColumn Title="Matched Text" SortBy="@SortMatchedText" Class="wide-col">
+                    <span class="argus-dg-clip" title="@context.MatchedText">@DisplayOrDash(context.MatchedText)</span>
+                </TemplateColumn>
+            }
+        </ArgusDataGrid>
     </section>
 </div>
 
+@if (_showColumnsModal)
+{
+    <div class="modal-backdrop" @onclick="() => _showColumnsModal = false">
+        <section class="modal-card column-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="High value asset columns">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Grid</p>
+                    <h2>Columns</h2>
+                </div>
+                <button type="button" class="btn ghost small" @onclick="() => _showColumnsModal = false">Close</button>
+            </div>
+            <div class="column-picker">
+                @foreach (var column in Columns)
+                {
+                    <label>
+                        <input type="checkbox"
+                               checked="@ColumnVisible(column.Key)"
+                               @onchange="args => ToggleColumn(column.Key, args)" />
+                        <span>@column.Label</span>
+                    </label>
+                }
+            </div>
+        </section>
+    </div>
+}
+
 @code {
+    private static readonly IReadOnlyList<string> InvestigationStatuses = ["Pending", "In Process", "False Positive", "Valid Finding"];
+    private static readonly IReadOnlyList<GridColumnChoice> Columns =
+    [
+        new("discovered", "Discovered"),
+        new("lastSeen", "Last Seen"),
+        new("status", "Investigation Status"),
+        new("target", "Target"),
+        new("kind", "Kind"),
+        new("category", "Category"),
+        new("url", "Final URL"),
+        new("howFound", "How Found"),
+        new("worker", "Worker"),
+        new("finding", "Finding"),
+        new("severity", "Severity"),
+        new("pattern", "Pattern"),
+        new("matched", "Matched Text"),
+    ];
+
     private readonly CancellationTokenSource _pollCts = new();
-    private readonly List<HighValueFindingRowDto> _rows = [];
+    private readonly List<HighValueAssetRowDto> _rows = [];
+    private readonly HashSet<Guid> _selectedAssetIds = [];
+    private readonly HashSet<string> _visibleColumns = Columns.Select(c => c.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
     private bool _initialLoadStarted;
-    private bool _criticalOnly;
-    private bool _loading = true;
-    private DateTimeOffset? _lastLoadedAtUtc;
+    private bool _loading;
+    private bool _showColumnsModal;
     private string _search = "";
-    private string _severityFilter = "";
-    private string _typeFilter = "";
-    private string _patternFilter = "";
-    private string _targetFilter = "";
+    private string _statusFilter = "Active";
+    private string? _statusMessage;
 
-    private string LiveStateCss => Realtime.IsConnected ? "ok" : "warn";
+    private long ValidFindingCount => _rows.LongCount(r => r.InvestigationStatus == "Valid Finding");
+    private long FalsePositiveCount => _rows.LongCount(r => r.InvestigationStatus == "False Positive" || !r.IsHighValue);
 
-    private IEnumerable<HighValueFindingRowDto> FilteredFindings => _rows.Where(r =>
-        Matches(r.Severity, _severityFilter)
-        && Matches(r.FindingType, _typeFilter)
-        && Matches(r.PatternName, _patternFilter)
-        && Matches(r.TargetRootDomain, _targetFilter)
-        && (
-            Matches(r.Severity, _search)
-            || Matches(r.FindingType, _search)
-            || Matches(r.PatternName, _search)
-            || Matches(r.Category, _search)
-            || Matches(r.TargetRootDomain, _search)
-            || Matches(r.SourceUrl, _search)
-            || Matches(r.OriginalSourceUrl, _search)
-            || Matches(r.FinalSourceUrl, _search)
-            || Matches(r.WorkerName, _search)
-            || Matches(r.MatchedText, _search)));
+    private string ActualFindingRate
+    {
+        get
+        {
+            var totalClassified = ValidFindingCount + FalsePositiveCount;
+            return totalClassified == 0
+                ? "-"
+                : (ValidFindingCount / (decimal)totalClassified).ToString("P0", CultureInfo.InvariantCulture);
+        }
+    }
+
+    private int ActiveFilterCount =>
+        string.IsNullOrWhiteSpace(_statusFilter) ? 0 : 1;
+
+    private IEnumerable<HighValueAssetRowDto> FilteredRows => _rows.Where(StatusMatches);
+
+    private static readonly GridSort<HighValueAssetRowDto> SortLastSeen =
+        GridSort<HighValueAssetRowDto>.ByDescending(static row => row.LastSeenAtUtc);
+
+    private static readonly GridSort<HighValueAssetRowDto> SortInvestigationStatus =
+        GridSort<HighValueAssetRowDto>.ByAscending(static row => row.InvestigationStatus);
+
+    private static readonly GridSort<HighValueAssetRowDto> SortFinalUrl =
+        GridSort<HighValueAssetRowDto>.ByAscending(static row => row.FinalUrl ?? row.DisplayName ?? row.RawValue);
+
+    private static readonly GridSort<HighValueAssetRowDto> SortDiscoveryContext =
+        GridSort<HighValueAssetRowDto>.ByAscending(static row => row.DiscoveryContext);
+
+    private static readonly GridSort<HighValueAssetRowDto> SortPattern =
+        GridSort<HighValueAssetRowDto>.ByAscending(static row => row.PatternName);
+
+    private static readonly GridSort<HighValueAssetRowDto> SortMatchedText =
+        GridSort<HighValueAssetRowDto>.ByAscending(static row => row.MatchedText);
 
     protected override Task OnInitializedAsync()
     {
@@ -206,20 +348,21 @@
             return;
 
         _loading = true;
+        _statusMessage = null;
         try
         {
-            var qs = _criticalOnly ? "?criticalOnly=true" : "";
-            var list = await Http.GetFromJsonAsync<List<HighValueFindingRowDto>>($"/api/high-value-findings{qs}")
+            var rows = await Http.GetFromJsonAsync<List<HighValueAssetRowDto>>("/api/high-value-assets?includeResolved=true", _pollCts.Token)
                 .ConfigureAwait(false);
-            _rows.Clear();
-            if (list is not null)
-                _rows.AddRange(list);
 
-            _lastLoadedAtUtc = DateTimeOffset.UtcNow;
-        }
-        catch
-        {
             _rows.Clear();
+            if (rows is not null)
+                _rows.AddRange(rows);
+
+            _selectedAssetIds.RemoveWhere(id => _rows.All(r => r.AssetId != id));
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"High value assets could not be loaded: {ex.Message}";
         }
         finally
         {
@@ -227,23 +370,122 @@
         }
     }
 
-    private void ClearFilters()
+    private async Task MarkFalsePositiveAsync(HighValueAssetRowDto row)
     {
-        _search = "";
-        _severityFilter = "";
-        _typeFilter = "";
-        _patternFilter = "";
-        _targetFilter = "";
+        try
+        {
+            using var response = await Http.PostAsync($"/api/high-value-assets/{row.AssetId}/false-positive", null, _pollCts.Token)
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            await ReloadAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Could not mark asset as false positive: {ex.Message}";
+        }
     }
 
-    private static bool Matches(string? value, string? filter) =>
-        string.IsNullOrWhiteSpace(filter)
-        || (!string.IsNullOrWhiteSpace(value) && value.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase));
+    private async Task UpdateInvestigationStatusAsync(HighValueAssetRowDto row, string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status) || status == row.InvestigationStatus)
+            return;
+
+        try
+        {
+            using var response = await Http.PatchAsJsonAsync(
+                    $"/api/high-value-findings/{row.FindingId}/status",
+                    new HighValueFindingStatusPatch(status),
+                    _pollCts.Token)
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            await ReloadAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Could not update investigation status: {ex.Message}";
+        }
+    }
+
+    private Task OnStatusFilterChanged(ChangeEventArgs args)
+    {
+        _statusFilter = args.Value?.ToString() ?? "";
+        return Task.CompletedTask;
+    }
+
+    private Task ClearFilters()
+    {
+        _search = "";
+        _statusFilter = "Active";
+        return Task.CompletedTask;
+    }
+
+    private bool StatusMatches(HighValueAssetRowDto row) =>
+        _statusFilter switch
+        {
+            "Active" => row.IsHighValue && row.InvestigationStatus is not ("False Positive" or "Valid Finding"),
+            "" => true,
+            _ => string.Equals(row.InvestigationStatus, _statusFilter, StringComparison.OrdinalIgnoreCase),
+        };
+
+    private static bool HighValueAssetMatches(HighValueAssetRowDto row, string search)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+            return true;
+
+        return Matches(row.TargetRootDomain, search)
+            || Matches(row.Kind, search)
+            || Matches(row.Category, search)
+            || Matches(row.FinalUrl, search)
+            || Matches(row.RawValue, search)
+            || Matches(row.DisplayName, search)
+            || Matches(row.DiscoveredBy, search)
+            || Matches(row.DiscoveryContext, search)
+            || Matches(row.WorkerName, search)
+            || Matches(row.FindingType, search)
+            || Matches(row.Severity, search)
+            || Matches(row.PatternName, search)
+            || Matches(row.MatchedText, search)
+            || Matches(row.InvestigationStatus, search);
+    }
+
+    private static bool Matches(string? value, string search) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private bool IsSelected(Guid assetId) => _selectedAssetIds.Contains(assetId);
+
+    private void ToggleSelected(Guid assetId, ChangeEventArgs args)
+    {
+        if (args.Value is bool selected && selected)
+            _selectedAssetIds.Add(assetId);
+        else
+            _selectedAssetIds.Remove(assetId);
+    }
+
+    private bool ColumnVisible(string key) => _visibleColumns.Contains(key);
+
+    private void ToggleColumn(string key, ChangeEventArgs args)
+    {
+        if (args.Value is bool visible && visible)
+            _visibleColumns.Add(key);
+        else
+            _visibleColumns.Remove(key);
+    }
+
+    private static string BestAssetUrl(HighValueAssetRowDto row) =>
+        row.FinalUrl ?? row.DisplayName ?? row.RawValue;
+
+    private static string DisplayOrDash(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    private static string FormatTime(DateTimeOffset? value) =>
+        value is null ? "-" : value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
     private static string? TryHttpHref(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
             return null;
+
         return Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
             ? uri.ToString()
             : null;
@@ -255,4 +497,6 @@
         _pollCts.Cancel();
         _pollCts.Dispose();
     }
+
+    private sealed record GridColumnChoice(string Key, string Label);
 }

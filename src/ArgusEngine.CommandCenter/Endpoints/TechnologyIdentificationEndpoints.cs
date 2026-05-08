@@ -19,6 +19,9 @@ public static class TechnologyIdentificationEndpoints
         app.MapGet("/api/technology-identification/technologies", QueryTechnologiesAsync)
             .WithName("ListTechnologyIdentificationRows");
 
+        app.MapGet("/api/technology-identification/usage", QueryTechnologyUsageAsync)
+            .WithName("ListTechnologyUsage");
+
         return app;
     }
 
@@ -161,13 +164,50 @@ public static class TechnologyIdentificationEndpoints
         return Results.Ok(rows.OrderByDescending(x => x.LastSeenUtc).ThenBy(x => x.TechnologyName).ToArray());
     }
 
+    private static async Task<IResult> QueryTechnologyUsageAsync(
+        ArgusDbContext db,
+        Guid? targetId,
+        CancellationToken ct)
+    {
+        var rows = await QueryTechnologyRowsAsync(db, targetId, null, ct).ConfigureAwait(false);
+        var usage = rows
+            .GroupBy(r => new
+            {
+                Name = NormalizeTechnologyName(r.TechnologyName),
+                Version = NormalizeVersion(r.Version)
+            })
+            .Select(g =>
+            {
+                var locations = g
+                    .Select(r => new TechnologyUsageLocationDto(r.TargetId, r.TargetRootDomain, NormalizeHostLike(r.Subdomain)))
+                    .Where(x => !string.IsNullOrWhiteSpace(x.Subdomain))
+                    .DistinctBy(x => $"{x.TargetId:N}|{x.Subdomain}", StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(x => x.TargetRootDomain, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(x => x.Subdomain, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                return new TechnologyUsageDto(
+                    g.Key.Name,
+                    string.IsNullOrWhiteSpace(g.Key.Version) ? null : g.Key.Version,
+                    locations.Select(x => x.TargetId).Distinct().LongCount(),
+                    locations.LongLength,
+                    locations);
+            })
+            .OrderByDescending(x => x.SubdomainCount)
+            .ThenBy(x => x.TechnologyName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return Results.Ok(usage);
+    }
+
     private static async Task<IReadOnlyList<TechnologyIdentificationRowDto>> QueryTechnologyRowsAsync(
         ArgusDbContext db,
         Guid? targetId,
         string? subdomain,
         CancellationToken ct)
     {
-        var query =
+        var observationQuery =
             from o in db.TechnologyObservations.AsNoTracking()
             join t in db.Targets.AsNoTracking() on o.TargetId equals t.Id
             join a in db.Assets.AsNoTracking() on o.AssetId equals a.Id
@@ -200,12 +240,46 @@ public static class TechnologyIdentificationEndpoints
 
         if (targetId is { } selectedTargetId)
         {
-            query = query.Where(x => x.TargetId == selectedTargetId);
+            observationQuery = observationQuery.Where(x => x.TargetId == selectedTargetId);
         }
 
-        var projections = await query
+        var projections = await observationQuery
             .ToListAsync(ct)
             .ConfigureAwait(false);
+
+        var legacyQuery =
+            from d in db.TechnologyDetections.AsNoTracking()
+            join t in db.Targets.AsNoTracking() on d.TargetId equals t.Id
+            join a in db.Assets.AsNoTracking() on d.AssetId equals a.Id
+            select new TechnologyRowProjection(
+                d.Id,
+                d.TargetId,
+                t.RootDomain,
+                d.AssetId,
+                a.Kind,
+                a.CanonicalKey,
+                a.RawValue,
+                a.FinalUrl,
+                d.TechnologyName,
+                null,
+                d.TechnologyName,
+                d.Version,
+                d.Confidence,
+                d.EvidenceSource,
+                "legacy-detection",
+                d.Pattern ?? d.EvidenceHash,
+                "",
+                d.DetectedAtUtc,
+                d.DetectedAtUtc,
+                d.MatchedText ?? d.EvidenceKey,
+                "legacy-detection");
+
+        if (targetId is { } legacyTargetId)
+        {
+            legacyQuery = legacyQuery.Where(x => x.TargetId == legacyTargetId);
+        }
+
+        projections.AddRange(await legacyQuery.ToListAsync(ct).ConfigureAwait(false));
 
         var rows = projections
             .Select(x =>
@@ -296,7 +370,13 @@ public static class TechnologyIdentificationEndpoints
             : value.Trim().TrimEnd('.').ToLowerInvariant();
 
     private static string TechnologyIdentityKey(string technologyName, string? version) =>
-        string.IsNullOrWhiteSpace(version) ? technologyName : $"{technologyName}|{version}";
+        string.IsNullOrWhiteSpace(version) ? NormalizeTechnologyName(technologyName) : $"{NormalizeTechnologyName(technologyName)}|{NormalizeVersion(version)}";
+
+    private static string NormalizeTechnologyName(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "Unknown" : value.Trim();
+
+    private static string NormalizeVersion(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "" : value.Trim();
 
     private static bool Contains(string? value, string search) =>
         !string.IsNullOrWhiteSpace(value)

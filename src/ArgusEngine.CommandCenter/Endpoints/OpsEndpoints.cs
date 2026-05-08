@@ -98,6 +98,29 @@ public static class OpsEndpoints
                     .LongCountAsync(ct)
                     .ConfigureAwait(false);
 
+                var uniqueTechnologyObservationCount = await db.TechnologyObservations.AsNoTracking()
+                    .GroupBy(o => new { o.TechnologyName, o.Version })
+                    .LongCountAsync(ct)
+                    .ConfigureAwait(false);
+
+                var uniqueLegacyTechnologyCount = await db.TechnologyDetections.AsNoTracking()
+                    .GroupBy(d => new { d.TechnologyName, d.Version })
+                    .LongCountAsync(ct)
+                    .ConfigureAwait(false);
+
+                var highValueAssetCount = await db.HighValueFindings.AsNoTracking()
+                    .Where(f => f.IsHighValue && f.SourceAssetId != null)
+                    .Select(f => f.SourceAssetId!.Value)
+                    .Distinct()
+                    .LongCountAsync(ct)
+                    .ConfigureAwait(false);
+
+                var httpRequestsSentLastMinute = await db.HttpRequestQueue.AsNoTracking()
+                    .LongCountAsync(
+                        q => q.StartedAtUtc != null && q.StartedAtUtc >= DateTimeOffset.UtcNow.AddMinutes(-1),
+                        ct)
+                    .ConfigureAwait(false);
+
                 var publishedEventCount = await db.BusJournal.AsNoTracking()
                     .LongCountAsync(e => e.Direction == "Publish", ct)
                     .ConfigureAwait(false);
@@ -136,7 +159,10 @@ public static class OpsEndpoints
                         lastWorkerEventPublishedAt,
                         queuedHttpAssets,
                         technologyObservationCount,
-                        publishedEventCount));
+                        publishedEventCount,
+                        uniqueTechnologyObservationCount + uniqueLegacyTechnologyCount,
+                        highValueAssetCount,
+                        httpRequestsSentLastMinute));
             })
             .WithName("OpsOverview");
 

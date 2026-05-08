@@ -363,6 +363,12 @@ public static partial class ArgusDbSchemaPatches
                 );
                 CREATE INDEX IF NOT EXISTS ix_high_value_findings_target_id ON high_value_findings (target_id);
                 CREATE INDEX IF NOT EXISTS ix_high_value_findings_discovered_at ON high_value_findings (discovered_at_utc DESC);
+                ALTER TABLE high_value_findings
+                    ADD COLUMN IF NOT EXISTS is_high_value boolean NOT NULL DEFAULT true;
+                ALTER TABLE high_value_findings
+                    ADD COLUMN IF NOT EXISTS investigation_status character varying(32) NOT NULL DEFAULT 'Pending';
+                ALTER TABLE high_value_findings
+                    ADD COLUMN IF NOT EXISTS investigation_updated_at_utc timestamp with time zone NULL;
                 """,
                 cancellationToken)
             .ConfigureAwait(false);

@@ -1,0 +1,46 @@
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, 0.42);
+}
+
+.modal-card {
+    width: min(32rem, 100%);
+    max-height: min(42rem, calc(100vh - 2rem));
+    overflow: auto;
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.14);
+    border-radius: 0.85rem;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+    padding: 1rem;
+}
+
+.column-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 0.55rem;
+}
+
+.column-picker label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2rem;
+    color: var(--text);
+}
+
+::deep .select-col {
+    width: 5rem;
+}
+
+::deep .action-col {
+    width: 9rem;
+}
+
+::deep .wide-col {
+    min-width: 18rem;
+}

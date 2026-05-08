@@ -91,7 +91,10 @@ public sealed record OpsOverviewDto(
     DateTimeOffset? LastWorkerEventPublishedAtUtc,
     long HttpQueueQueuedAssetCount,
     long TechnologyObservationCount,
-    long PublishedEventCount);
+    long PublishedEventCount,
+    long UniqueTechnologyCount,
+    long HighValueAssetCount,
+    long HttpRequestsSentLastMinuteCount);
 
 public sealed record OpsSnapshotDto(
     IReadOnlyList<WorkerSwitchDto> Workers,
@@ -286,7 +289,43 @@ public sealed record HighValueFindingRowDto(
     string WorkerName,
     int? ImportanceScore,
     DateTimeOffset DiscoveredAtUtc,
-    string? TargetRootDomain);
+    string? TargetRootDomain,
+    string InvestigationStatus,
+    bool IsHighValue);
+
+public sealed record HighValueFindingStatusPatch(string InvestigationStatus);
+
+public sealed record HighValueAssetRowDto(
+    Guid AssetId,
+    Guid FindingId,
+    Guid TargetId,
+    string Kind,
+    string Category,
+    string CanonicalKey,
+    string RawValue,
+    string? DisplayName,
+    int Depth,
+    string DiscoveredBy,
+    string DiscoveryContext,
+    DateTimeOffset DiscoveredAtUtc,
+    DateTimeOffset? LastSeenAtUtc,
+    decimal Confidence,
+    string LifecycleStatus,
+    string? TypeDetailsJson,
+    string? FinalUrl,
+    int RedirectCount,
+    string? RedirectChainJson,
+    string? TargetRootDomain,
+    string FindingType,
+    string Severity,
+    string PatternName,
+    string CategoryName,
+    string MatchedText,
+    string WorkerName,
+    int? ImportanceScore,
+    DateTimeOffset FindingDiscoveredAtUtc,
+    string InvestigationStatus,
+    bool IsHighValue);
 
 public sealed record ReliabilitySloSnapshotDto(
     DateTimeOffset AtUtc,
@@ -453,3 +492,15 @@ public sealed record TechnologyIdentificationRowDto(
     DateTimeOffset LastSeenUtc,
     string? EvidenceSummary,
     string DataSource);
+
+public sealed record TechnologyUsageDto(
+    string TechnologyName,
+    string? Version,
+    long TargetCount,
+    long SubdomainCount,
+    IReadOnlyList<TechnologyUsageLocationDto> Locations);
+
+public sealed record TechnologyUsageLocationDto(
+    Guid TargetId,
+    string TargetRootDomain,
+    string Subdomain);

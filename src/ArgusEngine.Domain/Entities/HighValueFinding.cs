@@ -15,4 +15,7 @@ public sealed class HighValueFinding
     public string WorkerName { get; set; } = "";
     public int? ImportanceScore { get; set; }
     public DateTimeOffset DiscoveredAtUtc { get; set; }
+    public bool IsHighValue { get; set; } = true;
+    public string InvestigationStatus { get; set; } = "Pending";
+    public DateTimeOffset? InvestigationUpdatedAtUtc { get; set; }
 }

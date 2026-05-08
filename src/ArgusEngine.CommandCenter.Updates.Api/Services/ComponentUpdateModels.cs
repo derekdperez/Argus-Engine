@@ -1,4 +1,4 @@
-namespace ArgusEngine.CommandCenter.Services.Updates;
+namespace ArgusEngine.CommandCenter.Updates.Api.Services;
 
 public sealed class ComponentUpdaterOptions
 {
@@ -72,3 +72,4 @@ internal sealed record CommandResult(
 }
 
 internal sealed record ComposeTool(string FileName, string[] PrefixArguments);
+

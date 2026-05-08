@@ -4,7 +4,7 @@ using ArgusEngine.Contracts.Events;
 using AssetAdmissionStage = ArgusEngine.Contracts.AssetAdmissionStage;
 using AssetKind = ArgusEngine.Contracts.AssetKind;
 
-namespace ArgusEngine.CommandCenter.Services.Targets;
+namespace ArgusEngine.CommandCenter.Discovery.Api.Services;
 
 public sealed class RootSpiderSeedService(IEventOutbox outbox)
 {
@@ -55,3 +55,4 @@ public sealed class RootSpiderSeedService(IEventOutbox outbox)
         yield return $"http://{host}/";
     }
 }
+

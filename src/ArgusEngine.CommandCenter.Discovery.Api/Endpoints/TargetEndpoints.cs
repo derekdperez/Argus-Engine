@@ -5,7 +5,7 @@ using ArgusEngine.Application.Events;
 using ArgusEngine.CommandCenter.Hubs;
 using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.CommandCenter.Realtime;
-using ArgusEngine.CommandCenter.Services.Targets;
+using ArgusEngine.CommandCenter.Discovery.Api.Services;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
@@ -428,4 +428,5 @@ public static class TargetEndpoints
 
     public static void Map(WebApplication app) => app.MapTargetEndpoints();
 }
+
 

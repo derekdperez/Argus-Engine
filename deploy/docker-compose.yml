@@ -114,65 +114,9 @@ services:
       retries: 10
       start_period: 30s
 
-  command-center:
-    image: argus-engine/command-center:${ARGUS_ENGINE_VERSION:-2.6.3}
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.web
-      args:
-        <<: *dotnet-build-args
-    environment:
-      <<: *common-env
-      # Command Center is interactive and can tolerate a larger pool than workers.
-      Argus__Postgres__MaxPoolSize: ${ARGUS_COMMAND_CENTER_POSTGRES_MAX_POOL_SIZE:-8}
-      Argus__FileStore__MaxPoolSize: ${ARGUS_COMMAND_CENTER_FILESTORE_MAX_POOL_SIZE:-2}
-      ASPNETCORE_URLS: http://+:8080
-      Argus__ListenPlainHttp: "true"
-      Argus__Diagnostics__Enabled: "true"
-      Argus__ComponentUpdater__Enabled: ${ARGUS_COMPONENT_UPDATER_ENABLED:-true}
-      Argus__ComponentUpdater__RepositoryPath: /workspace
-      Argus__ComponentUpdater__ComposeFilePath: /workspace/deploy/docker-compose.yml
-      Argus__ComponentUpdater__GitRemote: ${ARGUS_COMPONENT_UPDATER_GIT_REMOTE:-origin}
-      Argus__ComponentUpdater__MainBranch: ${ARGUS_COMPONENT_UPDATER_MAIN_BRANCH:-main}
-      Argus__ComponentUpdater__RequireCleanWorkingTree: ${ARGUS_COMPONENT_UPDATER_REQUIRE_CLEAN_TREE:-true}
-      AWS_REGION: ${AWS_REGION:-}
-      ECS_CLUSTER: ${ECS_CLUSTER:-argus-engine}
-      ECS_SUBNETS: ${ECS_SUBNETS:-}
-      ECS_SECURITY_GROUPS: ${ECS_SECURITY_GROUPS:-}
-      ECS_LAUNCH_TYPE: ${ECS_LAUNCH_TYPE:-FARGATE}
-      ECS_ASSIGN_PUBLIC_IP: ${ECS_ASSIGN_PUBLIC_IP:-ENABLED}
-      ECS_TASK_EXECUTION_ROLE_ARN: ${ECS_TASK_EXECUTION_ROLE_ARN:-}
-      ECS_TASK_ROLE_ARN: ${ECS_TASK_ROLE_ARN:-}
-      WORKER_SPIDER_SERVICE: ${WORKER_SPIDER_SERVICE:-argus-worker-spider}
-      WORKER_HTTP_REQUESTER_SERVICE: ${WORKER_HTTP_REQUESTER_SERVICE:-argus-worker-http-requester}
-      WORKER_ENUM_SERVICE: ${WORKER_ENUM_SERVICE:-argus-worker-enum}
-      WORKER_PORTSCAN_SERVICE: ${WORKER_PORTSCAN_SERVICE:-argus-worker-portscan}
-      WORKER_HIGHVALUE_SERVICE: ${WORKER_HIGHVALUE_SERVICE:-argus-worker-highvalue}
-      WORKER_TECHID_SERVICE: ${WORKER_TECHID_SERVICE:-argus-worker-techid}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ..:/workspace
-    ports:
-      - "8080:8080"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 60s
-    depends_on:
-      postgres:
-        condition: service_healthy
-      filestore-db-init:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-
   command-center-gateway:
     image: argus-engine/command-center-gateway:${ARGUS_ENGINE_VERSION:-2.6.3}
-    profiles: ["command-center-split"]
+
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -194,14 +138,14 @@ services:
       retries: 3
       start_period: 30s
     depends_on:
-      command-center:
+      command-center-gateway:
         condition: service_healthy
       command-center-operations-api:
         condition: service_healthy
 
   command-center-operations-api:
     image: argus-engine/command-center-operations-api:${ARGUS_ENGINE_VERSION:-2.6.3}
-    profiles: ["command-center-split"]
+
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -231,7 +175,7 @@ services:
 
   command-center-discovery-api:
     image: argus-engine/command-center-discovery-api:${ARGUS_ENGINE_VERSION:-2.6.3}
-    profiles: ["command-center-split"]
+
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -261,7 +205,7 @@ services:
 
   command-center-worker-control-api:
     image: argus-engine/command-center-worker-control-api:${ARGUS_ENGINE_VERSION:-2.6.3}
-    profiles: ["command-center-split"]
+
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -293,7 +237,7 @@ services:
 
   command-center-maintenance-api:
     image: argus-engine/command-center-maintenance-api:${ARGUS_ENGINE_VERSION:-2.6.3}
-    profiles: ["command-center-split"]
+
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -323,7 +267,7 @@ services:
 
   command-center-updates-api:
     image: argus-engine/command-center-updates-api:${ARGUS_ENGINE_VERSION:-2.6.3}
-    profiles: ["command-center-split"]
+
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -345,7 +289,7 @@ services:
 
   command-center-realtime:
     image: argus-engine/command-center-realtime:${ARGUS_ENGINE_VERSION:-2.6.3}
-    profiles: ["command-center-split"]
+
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -367,7 +311,7 @@ services:
 
   command-center-bootstrapper:
     image: argus-engine/command-center-bootstrapper:${ARGUS_ENGINE_VERSION:-2.6.3}
-    profiles: ["command-center-split"]
+
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -390,7 +334,7 @@ services:
 
   command-center-spider-dispatcher:
     image: argus-engine/command-center-spider-dispatcher:${ARGUS_ENGINE_VERSION:-2.6.3}
-    profiles: ["command-center-split"]
+
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -412,7 +356,7 @@ services:
 
   command-center-web:
     image: argus-engine/command-center-web:${ARGUS_ENGINE_VERSION:-2.6.3}
-    profiles: ["command-center-split"]
+
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -448,7 +392,7 @@ services:
       Argus__Postgres__MaxPoolSize: ${ARGUS_GATEKEEPER_POSTGRES_MAX_POOL_SIZE:-2}
       Argus__FileStore__MaxPoolSize: ${ARGUS_GATEKEEPER_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
-      command-center:
+      command-center-gateway:
         condition: service_healthy
       postgres:
         condition: service_healthy
@@ -473,7 +417,7 @@ services:
       Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_SPIDER_POSTGRES_MAX_POOL_SIZE:-3}
       Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_SPIDER_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
-      command-center:
+      command-center-gateway:
         condition: service_healthy
       postgres:
         condition: service_healthy
@@ -503,7 +447,7 @@ services:
       Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_HTTP_REQUESTER_POSTGRES_MAX_POOL_SIZE:-5}
       Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_HTTP_REQUESTER_FILESTORE_MAX_POOL_SIZE:-2}
     depends_on:
-      command-center:
+      command-center-gateway:
         condition: service_healthy
       postgres:
         condition: service_healthy
@@ -543,7 +487,7 @@ services:
       Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_ENUM_POSTGRES_MAX_POOL_SIZE:-2}
       Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_ENUM_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
-      command-center:
+      command-center-gateway:
         condition: service_healthy
       postgres:
         condition: service_healthy
@@ -570,7 +514,7 @@ services:
       Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_PORTSCAN_POSTGRES_MAX_POOL_SIZE:-2}
       Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_PORTSCAN_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
-      command-center:
+      command-center-gateway:
         condition: service_healthy
       postgres:
         condition: service_healthy
@@ -597,7 +541,7 @@ services:
       Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_HIGHVALUE_POSTGRES_MAX_POOL_SIZE:-2}
       Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_HIGHVALUE_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
-      command-center:
+      command-center-gateway:
         condition: service_healthy
       postgres:
         condition: service_healthy
@@ -624,7 +568,7 @@ services:
       Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_TECHID_POSTGRES_MAX_POOL_SIZE:-2}
       Argus__FileStore__MaxPoolSize: ${ARGUS_WORKER_TECHID_FILESTORE_MAX_POOL_SIZE:-1}
     depends_on:
-      command-center:
+      command-center-gateway:
         condition: service_healthy
       postgres:
         condition: service_healthy

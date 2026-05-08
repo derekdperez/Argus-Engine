@@ -60,3 +60,4 @@ public static class AssetEndpoints
     public static void Map(WebApplication app) => app.MapAssetEndpoints();
 }
 
+

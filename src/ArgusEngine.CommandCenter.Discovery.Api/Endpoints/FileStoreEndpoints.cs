@@ -74,3 +74,4 @@ public static class FileStoreEndpoints
     public static void Map(WebApplication app) => app.MapFileStoreEndpoints();
 }
 
+

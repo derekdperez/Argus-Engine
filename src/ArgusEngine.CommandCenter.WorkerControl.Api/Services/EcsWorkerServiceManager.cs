@@ -14,7 +14,7 @@ using TaskDefinitionStatus = Amazon.ECS.TaskDefinitionStatus;
 using UpdateServiceRequest = Amazon.ECS.Model.UpdateServiceRequest;
 using ArgusEngine.Infrastructure.Configuration;
 
-namespace ArgusEngine.CommandCenter.Services.Aws;
+namespace ArgusEngine.CommandCenter.WorkerControl.Api.Services;
 
 public sealed class EcsWorkerServiceManager(
     IConfiguration configuration,
@@ -176,3 +176,4 @@ public sealed class EcsWorkerServiceManager(
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .ToList();
 }
+

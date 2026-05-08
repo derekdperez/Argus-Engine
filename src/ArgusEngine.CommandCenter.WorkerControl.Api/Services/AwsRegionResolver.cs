@@ -1,7 +1,7 @@
 using System.Text.Json;
 using ArgusEngine.Infrastructure.Configuration;
 
-namespace ArgusEngine.CommandCenter.Services.Aws;
+namespace ArgusEngine.CommandCenter.WorkerControl.Api.Services;
 
 public sealed class AwsRegionResolver(IConfiguration configuration)
 {
@@ -43,3 +43,4 @@ public sealed class AwsRegionResolver(IConfiguration configuration)
         }
     }
 }
+

@@ -1,0 +1,65 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/targets",
+    "legacySource": "TargetEndpoints.cs",
+    "targetHost": "Discovery.Api",
+    "status": "ported"
+  },
+  {
+    "method": "POST",
+    "path": "/api/targets",
+    "legacySource": "TargetEndpoints.cs",
+    "targetHost": "Discovery.Api",
+    "status": "ported"
+  },
+  {
+    "method": "GET",
+    "path": "/api/assets",
+    "legacySource": "AssetEndpoints.cs",
+    "targetHost": "Discovery.Api",
+    "status": "ported"
+  },
+  {
+    "method": "GET",
+    "path": "/api/status/summary",
+    "legacySource": "OpsEndpoints.cs",
+    "targetHost": "Operations.Api",
+    "status": "ported"
+  },
+  {
+    "method": "GET",
+    "path": "/api/workers/health",
+    "legacySource": "WorkerEndpoints.cs",
+    "targetHost": "WorkerControl.Api",
+    "status": "ported"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ops/spider/restart",
+    "legacySource": "ToolRestartEndpoints.cs",
+    "targetHost": "WorkerControl.Api",
+    "status": "ported"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/data-retention",
+    "legacySource": "DataRetentionAdminEndpoints.cs",
+    "targetHost": "Maintenance.Api",
+    "status": "ported"
+  },
+  {
+    "method": "GET",
+    "path": "/api/development/components",
+    "legacySource": "ComponentUpdateEndpoints.cs",
+    "targetHost": "Updates.Api",
+    "status": "ported"
+  },
+  {
+    "method": "GET",
+    "path": "/hubs/discovery",
+    "legacySource": "DiscoveryHub.cs",
+    "targetHost": "Realtime.Host",
+    "status": "ported"
+  }
+]

@@ -1,4 +1,4 @@
-using ArgusEngine.CommandCenter.Services.Updates;
+using ArgusEngine.CommandCenter.Updates.Api.Services;
 
 namespace ArgusEngine.CommandCenter.Updates.Api.Endpoints;
 
@@ -40,4 +40,5 @@ public static class ComponentUpdateEndpoints
         return app;
     }
 }
+
 

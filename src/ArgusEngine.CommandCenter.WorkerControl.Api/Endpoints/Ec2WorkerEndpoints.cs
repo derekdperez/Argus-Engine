@@ -46,7 +46,7 @@ public static class Ec2WorkerEndpoints
                     Ec2WorkerMachineCreateRequest body,
                     ArgusDbContext db,
                     IConfiguration configuration,
-                    IHubContext<DiscoveryHub> hub,
+                    IPublishEndpoint publishEndpoint,
                     CancellationToken ct) =>
                 {
                     var counts = NormalizeCounts(body.Workers);
@@ -86,7 +86,7 @@ public static class Ec2WorkerEndpoints
                         machine.StatusMessage = "EC2 worker machine launch requested. User data will bootstrap Docker and apply worker counts.";
                         machine.UpdatedAtUtc = DateTimeOffset.UtcNow;
                         await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                        await NotifyChangedAsync(hub, $"{machine.Name} EC2 worker machine launch requested", ct).ConfigureAwait(false);
+                        await NotifyChangedAsync(publishEndpoint, $"{machine.Name} EC2 worker machine launch requested", ct).ConfigureAwait(false);
                         return Results.Ok(new Ec2WorkerMachineMutationResult(ToDto(machine), machine.StatusMessage));
                     }
                     catch (Exception ex) when (ex is AmazonServiceException or InvalidOperationException)
@@ -107,7 +107,7 @@ public static class Ec2WorkerEndpoints
                     Ec2WorkerMachineScaleRequest body,
                     ArgusDbContext db,
                     IConfiguration configuration,
-                    IHubContext<DiscoveryHub> hub,
+                    IPublishEndpoint publishEndpoint,
                     CancellationToken ct) =>
                 {
                     var machine = await db.Ec2WorkerMachines.FirstOrDefaultAsync(m => m.Id == id, ct).ConfigureAwait(false);
@@ -128,7 +128,7 @@ public static class Ec2WorkerEndpoints
                         machine.LastAppliedAtUtc = DateTimeOffset.UtcNow;
                         machine.StatusMessage = "Scale command sent through AWS Systems Manager.";
                         await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                        await NotifyChangedAsync(hub, $"{machine.Name} EC2 worker scale command sent", ct).ConfigureAwait(false);
+                        await NotifyChangedAsync(publishEndpoint, $"{machine.Name} EC2 worker scale command sent", ct).ConfigureAwait(false);
                         return Results.Ok(new Ec2WorkerMachineMutationResult(ToDto(machine), machine.StatusMessage));
                     }
                     catch (Exception ex) when (ex is AmazonServiceException or InvalidOperationException)
@@ -147,7 +147,7 @@ public static class Ec2WorkerEndpoints
                     Guid id,
                     ArgusDbContext db,
                     IConfiguration configuration,
-                    IHubContext<DiscoveryHub> hub,
+                    IPublishEndpoint publishEndpoint,
                     CancellationToken ct) =>
                 {
                     var machine = await db.Ec2WorkerMachines.FirstOrDefaultAsync(m => m.Id == id, ct).ConfigureAwait(false);
@@ -176,7 +176,7 @@ public static class Ec2WorkerEndpoints
                         : "EC2 termination requested.";
                     machine.UpdatedAtUtc = DateTimeOffset.UtcNow;
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                    await NotifyChangedAsync(hub, $"{machine.Name} EC2 worker machine termination requested", ct).ConfigureAwait(false);
+                    await NotifyChangedAsync(publishEndpoint, $"{machine.Name} EC2 worker machine termination requested", ct).ConfigureAwait(false);
                     return Results.Ok(new Ec2WorkerMachineMutationResult(ToDto(machine), machine.StatusMessage));
                 })
             .WithName("RemoveEc2WorkerMachine");
@@ -676,10 +676,12 @@ public static class Ec2WorkerEndpoints
     private static string ShellQuote(string value) =>
         "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
 
-    private static Task NotifyChangedAsync(IHubContext<DiscoveryHub> hub, string message, CancellationToken ct) =>
+    private static Task NotifyChangedAsync(IPublishEndpoint publishEndpoint, string message, CancellationToken ct) =>
         hub.Clients.All.SendAsync(
             DiscoveryHubEvents.DomainEvent,
             new LiveUiEventDto("Ec2WorkersChanged", null, null, "workers", message, DateTimeOffset.UtcNow),
             cancellationToken: ct);
 }
+
+
 

@@ -1,4 +1,4 @@
-namespace ArgusEngine.CommandCenter.Services.Aws;
+namespace ArgusEngine.CommandCenter.WorkerControl.Api.Services;
 
 public sealed class EcsServiceNameResolver(IConfiguration configuration)
 {
@@ -36,3 +36,4 @@ public sealed class EcsServiceNameResolver(IConfiguration configuration)
             : configuration[envName] ?? $"nightmare-v2-{scaleKey}";
     }
 }
+

@@ -1,4 +1,4 @@
-using ArgusEngine.CommandCenter.Services.Status;
+using ArgusEngine.CommandCenter.Operations.Api.Services;
 
 namespace ArgusEngine.CommandCenter.Operations.Api.Endpoints;
 
@@ -24,4 +24,5 @@ public static class CommandCenterStatusEndpoints
         app.MapCommandCenterStatusEndpoints();
     }
 }
+
 

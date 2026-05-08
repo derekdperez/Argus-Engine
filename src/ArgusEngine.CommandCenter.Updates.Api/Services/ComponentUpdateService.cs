@@ -5,7 +5,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace ArgusEngine.CommandCenter.Services.Updates;
+namespace ArgusEngine.CommandCenter.Updates.Api.Services;
 
 public interface IComponentUpdateService
 {
@@ -736,3 +736,4 @@ public sealed class ComponentUpdateService : IComponentUpdateService
         string Version,
         string Revision);
 }
+

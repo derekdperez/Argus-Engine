@@ -1,4 +1,4 @@
-namespace ArgusEngine.CommandCenter.Services.Updates;
+namespace ArgusEngine.CommandCenter.Updates.Api.Services;
 
 public static class ComponentUpdateServiceRegistration
 {
@@ -14,3 +14,4 @@ public static class ComponentUpdateServiceRegistration
         return services;
     }
 }
+

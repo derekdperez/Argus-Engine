@@ -1,5 +1,5 @@
 using System.Reflection;
-using ArgusEngine.CommandCenter.Models;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.CommandCenter.Services.Workers;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Configuration;
@@ -15,7 +15,7 @@ using System.Net.Sockets;
 using ArgusEngine.Infrastructure.Messaging;
 
 
-namespace ArgusEngine.CommandCenter.Services.Status;
+namespace ArgusEngine.CommandCenter.Operations.Api.Services;
 
 public sealed class CommandCenterStatusSnapshotService(
     ArgusDbContext db,
@@ -720,3 +720,4 @@ public sealed class CommandCenterStatusSnapshotService(
         return Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
     }
 }
+

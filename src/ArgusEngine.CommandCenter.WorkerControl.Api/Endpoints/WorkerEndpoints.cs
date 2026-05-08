@@ -6,8 +6,8 @@ using ArgusEngine.Application.Workers;
 using ArgusEngine.CommandCenter.Hubs;
 using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.CommandCenter.Realtime;
-using ArgusEngine.CommandCenter.Services.Aws;
-using ArgusEngine.CommandCenter.Services.Workers;
+using ArgusEngine.CommandCenter.WorkerControl.Api.Services;
+using ArgusEngine.CommandCenter.WorkerControl.Api.Services;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 using EcsService = Amazon.ECS.Model.Service;
@@ -583,4 +583,5 @@ public static class WorkerEndpoints
 
     public static void Map(WebApplication app) => app.MapWorkerEndpoints();
 }
+
 

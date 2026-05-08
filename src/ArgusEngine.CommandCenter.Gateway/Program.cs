@@ -13,6 +13,20 @@ builder.Services.AddHttpClient(
         client.BaseAddress = new Uri(legacyBaseUrl, UriKind.Absolute);
         client.Timeout = TimeSpan.FromMinutes(5);
     });
+builder.Services.AddHttpClient(
+    "operations-api",
+    (serviceProvider, client) =>
+    {
+        var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+        var operationsBaseUrl = configuration["CommandCenter:OperationsBaseUrl"]
+            ?? configuration["Argus:CommandCenter:OperationsBaseUrl"];
+        if (!string.IsNullOrWhiteSpace(operationsBaseUrl))
+        {
+            client.BaseAddress = new Uri(operationsBaseUrl, UriKind.Absolute);
+        }
+
+        client.Timeout = TimeSpan.FromMinutes(5);
+    });
 
 var app = builder.Build();
 
@@ -28,9 +42,10 @@ static async Task<IResult> ForwardToLegacyCommandCenterAsync(
     IHttpClientFactory httpClientFactory,
     CancellationToken cancellationToken)
 {
+    var clientName = SelectClientName(context, httpClientFactory);
     using var request = CreateForwardRequest(context);
     using var response = await httpClientFactory
-        .CreateClient("legacy-command-center")
+        .CreateClient(clientName)
         .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
         .ConfigureAwait(false);
 
@@ -41,6 +56,22 @@ static async Task<IResult> ForwardToLegacyCommandCenterAsync(
 
     await response.Content.CopyToAsync(context.Response.Body, cancellationToken).ConfigureAwait(false);
     return Results.Empty;
+}
+
+static string SelectClientName(HttpContext context, IHttpClientFactory httpClientFactory)
+{
+    var path = context.Request.Path;
+    if (path.StartsWithSegments("/api/ops", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/status/summary", StringComparison.OrdinalIgnoreCase))
+    {
+        var operations = httpClientFactory.CreateClient("operations-api");
+        if (operations.BaseAddress is not null)
+        {
+            return "operations-api";
+        }
+    }
+
+    return "legacy-command-center";
 }
 
 static HttpRequestMessage CreateForwardRequest(HttpContext context)

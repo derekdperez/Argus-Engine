@@ -4,6 +4,7 @@
     <Project Path="src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj" Type="Classic C#" />
     <Project Path="src/ArgusEngine.CommandCenter.Contracts/ArgusEngine.CommandCenter.Contracts.csproj" Type="Classic C#" />
     <Project Path="src/ArgusEngine.CommandCenter.Gateway/ArgusEngine.CommandCenter.Gateway.csproj" Type="Classic C#" />
+    <Project Path="src/ArgusEngine.CommandCenter.Operations.Api/ArgusEngine.CommandCenter.Operations.Api.csproj" Type="Classic C#" />
     <Project Path="src/ArgusEngine.CommandCenter.Web/ArgusEngine.CommandCenter.Web.csproj" Type="Classic C#" />
     <Project Path="src/ArgusEngine.Contracts/ArgusEngine.Contracts.csproj" Type="Classic C#" />
     <Project Path="src/ArgusEngine.Domain/ArgusEngine.Domain.csproj" Type="Classic C#" />

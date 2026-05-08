@@ -74,6 +74,26 @@ public sealed class ProjectDependencyRulesTests
     }
 
     [Fact]
+    public void Operations_api_does_not_reference_legacy_command_center_or_worker_projects()
+    {
+        var graph = ProjectGraph.Load();
+        var forbiddenPrefixes = new[]
+        {
+            "ArgusEngine.CommandCenter",
+            "ArgusEngine.Workers.",
+            "ArgusEngine.Harness",
+            "ArgusEngine.Gatekeeper",
+        };
+
+        var violations = graph.ProjectReferences("ArgusEngine.CommandCenter.Operations.Api")
+            .Where(reference => reference != "ArgusEngine.CommandCenter.Contracts")
+            .Where(reference => forbiddenPrefixes.Any(prefix => reference.StartsWith(prefix, StringComparison.Ordinal)))
+            .ToArray();
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
     public void Current_legacy_command_center_worker_references_are_documented_until_migration_finishes()
     {
         var graph = ProjectGraph.Load(includeTests: false);

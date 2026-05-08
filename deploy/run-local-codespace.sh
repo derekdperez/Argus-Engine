@@ -100,6 +100,7 @@ print_codespace_urls() {
   if [[ "${ARGUS_LOCAL_ENABLE_COMMAND_CENTER_SPLIT:-0}" == "1" ]]; then
     echo "  CC Gateway:     $(codespace_url_for_port 8081)"
     echo "  CC Web Shell:   $(codespace_url_for_port 8082)"
+    echo "  CC Operations:  $(codespace_url_for_port 8083)"
   fi
   echo "  RabbitMQ UI:    $(codespace_url_for_port 15672)"
   echo ""

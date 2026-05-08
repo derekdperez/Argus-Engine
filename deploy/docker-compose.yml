@@ -184,6 +184,7 @@ services:
       <<: *common-env
       ASPNETCORE_URLS: http://+:8080
       CommandCenter__LegacyBaseUrl: http://command-center:8080/
+      CommandCenter__OperationsBaseUrl: http://command-center-operations-api:8080/
     ports:
       - "8081:8080"
     healthcheck:
@@ -194,6 +195,38 @@ services:
       start_period: 30s
     depends_on:
       command-center:
+        condition: service_healthy
+      command-center-operations-api:
+        condition: service_healthy
+
+  command-center-operations-api:
+    image: argus-engine/command-center-operations-api:${ARGUS_ENGINE_VERSION:-2.6.3}
+    profiles: ["command-center-split"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.commandcenter-host
+      args:
+        <<: *dotnet-build-args
+        PROJECT_DIR: ArgusEngine.CommandCenter.Operations.Api
+        APP_DLL: ArgusEngine.CommandCenter.Operations.Api.dll
+    environment:
+      <<: *common-env
+      ASPNETCORE_URLS: http://+:8080
+      Argus__Postgres__MaxPoolSize: ${ARGUS_OPERATIONS_API_POSTGRES_MAX_POOL_SIZE:-4}
+    ports:
+      - "8083:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
   command-center-web:

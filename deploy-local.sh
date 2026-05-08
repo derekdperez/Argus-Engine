@@ -276,8 +276,8 @@ done
 LOG_SERVICES=("$@")
 
 if [[ "$ENABLE_COMMAND_CENTER_SPLIT" == "1" ]]; then
-  APP_SERVICES+=(command-center-gateway command-center-web)
-  ALL_SERVICES+=(command-center-gateway command-center-web)
+  APP_SERVICES+=(command-center-gateway command-center-web command-center-operations-api)
+  ALL_SERVICES+=(command-center-gateway command-center-web command-center-operations-api)
 fi
 
 [[ -f "$COMPOSE_FILE" ]] || die "Missing $COMPOSE_FILE. Run from the repo root or set ARGUS_LOCAL_REPO_ROOT=/path/to/argus-engine."
@@ -468,6 +468,7 @@ print_urls() {
   if [[ "$ENABLE_COMMAND_CENTER_SPLIT" == "1" ]]; then
     echo "  CC Gateway:     http://localhost:8081/  (proxies legacy Command Center)"
     echo "  CC Web Shell:   http://localhost:8082/"
+    echo "  CC Operations:  http://localhost:8083/"
   fi
   if [[ "$host" != "localhost" ]]; then
     echo "  EC2/public URL: http://$host:8080/"

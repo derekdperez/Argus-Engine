@@ -1,33 +1,9 @@
 # syntax=docker/dockerfile:1.7
-FROM scratch AS vendored
-COPY artifacts/recon-tools/linux-amd64/ /vendor/
-
-FROM golang:1.26.2-alpine AS build
-
-ARG SUBFINDER_PACKAGE=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.14.0
-ARG AMASS_PACKAGE=github.com/owasp-amass/amass/v5/cmd/amass@v5.1.1
-ARG ARGUS_RECON_VENDOR_MODE=auto
-
-ENV GOBIN=/out \
-    CGO_ENABLED=0
-
-COPY --from=vendored /vendor/ /vendor/
-
-RUN mkdir -p /out \
-    && if [ "${ARGUS_RECON_VENDOR_MODE}" != "off" ] \
-      && [ -s /vendor/subfinder ] \
-      && [ -s /vendor/amass ]; then \
-        cp /vendor/subfinder /out/subfinder; \
-        cp /vendor/amass /out/amass; \
-        chmod +x /out/subfinder /out/amass; \
-      else \
-        apk add --no-cache git; \
-        go install -v "${SUBFINDER_PACKAGE}"; \
-        go install -v "${AMASS_PACKAGE}"; \
-      fi \
-    && test -x /out/subfinder \
-    && test -x /out/amass
-
+# Zero-download recon tool image.
+#
+# Refresh the committed binaries with deploy/vendor-recon-tools.sh. Builds should
+# fail fast if these artifacts are absent instead of compiling Go tools during
+# deployment.
 FROM scratch
-COPY --from=build /out/subfinder /subfinder
-COPY --from=build /out/amass /amass
+COPY --chmod=0755 artifacts/recon-tools/linux-amd64/subfinder /subfinder
+COPY --chmod=0755 artifacts/recon-tools/linux-amd64/amass /amass

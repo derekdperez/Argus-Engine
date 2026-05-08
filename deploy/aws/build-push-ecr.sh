@@ -30,6 +30,8 @@ build_and_push() {
 
   if [[ "$dockerfile" == "deploy/Dockerfile.worker-enum" ]]; then
     build_args+=(
+      --build-arg "SUBFINDER_VERSION=${SUBFINDER_VERSION:-2.14.0}"
+      --build-arg "AMASS_VERSION=${AMASS_VERSION:-5.1.1}"
       --build-arg "SUBFINDER_PACKAGE=${SUBFINDER_PACKAGE:-github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.14.0}"
       --build-arg "AMASS_PACKAGE=${AMASS_PACKAGE:-github.com/owasp-amass/amass/v5/cmd/amass@v5.1.1}"
     )

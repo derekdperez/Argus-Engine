@@ -1,4 +1,5 @@
 using ArgusEngine.CommandCenter.Hubs;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.CommandCenter.Models;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;

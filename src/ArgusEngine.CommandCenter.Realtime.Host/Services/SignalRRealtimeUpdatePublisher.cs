@@ -1,4 +1,5 @@
 using ArgusEngine.CommandCenter.Realtime.Host.Hubs;
+using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.Infrastructure.Observability;
 using Microsoft.AspNetCore.SignalR;

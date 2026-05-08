@@ -1,3 +1,4 @@
+using ArgusEngine.CommandCenter.Models;
 using MassTransit;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -143,10 +144,9 @@ public static class TargetEndpoints
                             ct)
                         .ConfigureAwait(false);
 
-                    await hub.Clients.All.SendAsync(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
+                    await publishEndpoint.Publish(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
                         .ConfigureAwait(false);
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
+                    await publishEndpoint.Publish(
                             new LiveUiEventDto(
                                 "TargetCreated",
                                 target.Id,
@@ -184,8 +184,7 @@ public static class TargetEndpoints
                     target.GlobalMaxDepth = depth;
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
                     var summary = new TargetSummary(target.Id, target.RootDomain, target.GlobalMaxDepth, target.CreatedAtUtc);
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
+                    await publishEndpoint.Publish(
                             new LiveUiEventDto(
                                 "TargetUpdated",
                                 target.Id,
@@ -222,8 +221,7 @@ public static class TargetEndpoints
                             ct)
                         .ConfigureAwait(false);
 
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
+                    await publishEndpoint.Publish(
                             new LiveUiEventDto(
                                 "TargetsMaxDepthUpdated",
                                 null,
@@ -250,8 +248,7 @@ public static class TargetEndpoints
                     var rootDomain = target.RootDomain;
                     db.Targets.Remove(target);
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
+                    await publishEndpoint.Publish(
                             new LiveUiEventDto(
                                 "TargetDeleted",
                                 id,
@@ -401,10 +398,9 @@ public static class TargetEndpoints
                                     Producer: "command-center"),
                                 ct)
                             .ConfigureAwait(false);
-                        await hub.Clients.All.SendAsync(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
+                        await publishEndpoint.Publish(DiscoveryHubEvents.TargetQueued, target.Id, target.RootDomain, cancellationToken: ct)
                             .ConfigureAwait(false);
-                        await hub.Clients.All.SendAsync(
-                                DiscoveryHubEvents.DomainEvent,
+                        await publishEndpoint.Publish(
                                 new LiveUiEventDto(
                                     "TargetCreated",
                                     target.Id,
@@ -430,6 +426,8 @@ public static class TargetEndpoints
 
     public static void Map(WebApplication app) => app.MapTargetEndpoints();
 }
+
+
 
 
 

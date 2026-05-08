@@ -1,3 +1,4 @@
+using ArgusEngine.CommandCenter.Models;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.Infrastructure.Data;
@@ -227,6 +228,7 @@ public static class HighValueFindingEndpoints
 
     public static void Map(WebApplication app) => app.MapHighValueFindingEndpoints();
 }
+
 
 
 

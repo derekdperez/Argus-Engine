@@ -1,3 +1,5 @@
+using ArgusEngine.CommandCenter.Contracts;
+using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.Application.FileStore;
 
 namespace ArgusEngine.CommandCenter.Discovery.Api.Endpoints;
@@ -73,6 +75,7 @@ public static class FileStoreEndpoints
 
     public static void Map(WebApplication app) => app.MapFileStoreEndpoints();
 }
+
 
 
 

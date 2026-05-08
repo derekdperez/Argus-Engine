@@ -1,3 +1,4 @@
+using ArgusEngine.CommandCenter.Models;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.Domain.Entities;
@@ -59,6 +60,7 @@ public static class AssetEndpoints
 
     public static void Map(WebApplication app) => app.MapAssetEndpoints();
 }
+
 
 
 

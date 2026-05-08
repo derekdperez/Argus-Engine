@@ -1,3 +1,4 @@
+using ArgusEngine.CommandCenter.Models;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ArgusEngine.Application.Workers;
@@ -329,6 +330,7 @@ public static class EventTraceEndpoints
         public bool IsConsume => Direction.Equals("Consume", StringComparison.OrdinalIgnoreCase);
     }
 }
+
 
 
 

@@ -1,3 +1,4 @@
+using ArgusEngine.CommandCenter.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using MassTransit;
@@ -53,8 +54,7 @@ public static class HttpRequestQueueEndpoints
                     row.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
-                    await hub.Clients.All.SendAsync(
-                            DiscoveryHubEvents.DomainEvent,
+                    await publishEndpoint.Publish(
                             new LiveUiEventDto(
                                 "QueueSettingsChanged",
                                 null,
@@ -288,6 +288,8 @@ public static class HttpRequestQueueEndpoints
 
     public static void Map(WebApplication app) => app.MapHttpRequestQueueEndpoints();
 }
+
+
 
 
 

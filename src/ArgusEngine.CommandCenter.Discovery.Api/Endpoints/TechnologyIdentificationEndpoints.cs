@@ -1,3 +1,4 @@
+using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.Contracts;
 using ArgusEngine.Domain.Entities;
@@ -405,6 +406,8 @@ public static class TechnologyIdentificationEndpoints
         string? EvidenceSummary,
         string DataSource);
 }
+
+
 
 
 

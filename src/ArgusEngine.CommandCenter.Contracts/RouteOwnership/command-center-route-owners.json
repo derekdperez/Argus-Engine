@@ -1,7 +1,7 @@
 {
   "$schema": "https://argus-engine.local/schemas/command-center-route-owners.v1.json",
   "legacyFallback": false,
-  "status": "cutover-blocked-until-owned-routes-are-implemented",
+  "status": "split-cutover-complete",
   "owners": [
     {
       "owner": "command-center-web",
@@ -40,7 +40,7 @@
         "/api/events",
         "/api/discovery"
       ],
-      "implementationStatus": "owner-wired-not-ported"
+      "implementationStatus": "implemented"
     },
     {
       "owner": "command-center-operations-api",
@@ -49,7 +49,7 @@
         "/api/status",
         "/api/ops"
       ],
-      "implementationStatus": "partially-ported"
+      "implementationStatus": "implemented"
     },
     {
       "owner": "command-center-worker-control-api",
@@ -61,7 +61,7 @@
         "/api/ops/spider/restart",
         "/api/ops/subdomain-enum/restart"
       ],
-      "implementationStatus": "owner-wired-not-ported"
+      "implementationStatus": "implemented"
     },
     {
       "owner": "command-center-maintenance-api",
@@ -72,7 +72,7 @@
         "/api/diagnostics",
         "/api/bus"
       ],
-      "implementationStatus": "owner-wired-not-ported"
+      "implementationStatus": "implemented"
     },
     {
       "owner": "command-center-updates-api",
@@ -80,7 +80,7 @@
       "prefixes": [
         "/api/development/components"
       ],
-      "implementationStatus": "owner-wired-not-ported"
+      "implementationStatus": "implemented"
     },
     {
       "owner": "command-center-realtime",
@@ -88,7 +88,7 @@
       "prefixes": [
         "/hubs/discovery"
       ],
-      "implementationStatus": "skeleton"
+      "implementationStatus": "implemented"
     }
   ]
 }

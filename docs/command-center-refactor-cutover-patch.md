@@ -1,22 +1,20 @@
-# CommandCenter Refactor Cutover Patch
+# CommandCenter Split Cutover
 
-This zip contains only modified or added files. It is intended to be extracted at the repository root.
+The Command Center has been cut over to split services. The gateway routes directly to the owning services; there is no legacy monolith fallback.
 
-## What this patch changes
+## Final Shape
 
 - Replaces the Gateway legacy catch-all with explicit split-service routing.
 - Removes the Gateway's implicit `legacy-command-center` fallback behavior.
 - Adds `/api/gateway/routes` diagnostics.
 - Adds WebSocket forwarding for `/hubs/discovery`.
 - Makes `deploy-local.sh` split-first and points local smoke checks at the Gateway on port `8081`.
-- Fixes the invalid `AddSingleton()` call in `CommandCenter.Maintenance.Api`.
-- Replaces fake "Accepted" behavior in WorkerControl restart with a truthful `501 Not Implemented` until real restart orchestration is ported.
-- Adds owner-aware `501 Not Implemented` responses for split APIs whose routes are owned but not yet ported.
+- Ports discovery, maintenance/admin, operations, worker-control, updates, realtime, and web routes into their owning split hosts.
+- Moves realtime UI notifications onto the split realtime host via RabbitMQ `LiveUiEventDto` consumption.
+- Replaces direct Web database access with API clients through the gateway.
 - Adds a route ownership manifest under `CommandCenter.Contracts`.
-- Adds a focused split smoke script.
+- Updates route compatibility tests to snapshot the split route surface.
 
-## Important limitation
+## Verification
 
-This patch makes the refactor honest and deployable as a split stack, but it does not magically port all legacy feature logic. Routes that are still not implemented now fail fast with owner diagnostics instead of silently proxying to the legacy monolith or returning fake success.
-
-The next implementation step is to move each legacy endpoint body into its owning split API, keeping the same request/response contract and adding Gateway parity tests.
+Run `dotnet test src/tests/ArgusEngine.RouteCompatibilityTests/ArgusEngine.RouteCompatibilityTests.csproj` to verify route ownership and route-surface compatibility.

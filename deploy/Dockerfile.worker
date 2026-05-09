@@ -29,7 +29,7 @@ RUN for f in src/*.csproj; do \
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     cp -an /opt/argus-nuget/packages/. /root/.nuget/packages/ 2>/dev/null || true; \
-    dotnet restore ArgusEngine.slnx
+    dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 
 # Copy the rest of the source
 COPY src/ src/

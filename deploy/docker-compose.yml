@@ -364,6 +364,7 @@ services:
     environment:
       <<: *common-env
       ASPNETCORE_URLS: http://+:8080
+      CommandCenter__GatewayBaseUrl: http://command-center-gateway:8080/
     ports:
       - "8082:8080"
     healthcheck:

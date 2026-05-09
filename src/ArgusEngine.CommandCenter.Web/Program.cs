@@ -19,16 +19,16 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<DiscoveryRealtimeClient>();
 
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveRequestBaseAddress(sp) });
-builder.Services.AddHttpClient<DiscoveryApiClient>((sp, c) => c.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<DiscoveryApiClient>((sp, c) => c.BaseAddress = ResolveGatewayBaseAddress(sp));
 
-builder.Services.AddHttpClient<OperationsApiClient>((sp, c) => c.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<OperationsApiClient>((sp, c) => c.BaseAddress = ResolveGatewayBaseAddress(sp));
 
-builder.Services.AddHttpClient<WorkerControlApiClient>((sp, c) => c.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<WorkerControlApiClient>((sp, c) => c.BaseAddress = ResolveGatewayBaseAddress(sp));
 
-builder.Services.AddHttpClient<MaintenanceApiClient>((sp, c) => c.BaseAddress = ResolveRequestBaseAddress(sp));
-builder.Services.AddHttpClient<UpdatesApiClient>((sp, c) => c.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<MaintenanceApiClient>((sp, c) => c.BaseAddress = ResolveGatewayBaseAddress(sp));
+builder.Services.AddHttpClient<UpdatesApiClient>((sp, c) => c.BaseAddress = ResolveGatewayBaseAddress(sp));
 
-builder.Services.AddHttpClient<RealtimeApiClient>((sp, c) => c.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<RealtimeApiClient>((sp, c) => c.BaseAddress = ResolveGatewayBaseAddress(sp));
 
 var app = builder.Build();
 
@@ -76,3 +76,30 @@ static Uri ResolveRequestBaseAddress(IServiceProvider services)
 
     return new Uri(navigation.BaseUri);
 }
+
+static Uri ResolveGatewayBaseAddress(IServiceProvider services)
+{
+    var configuration = services.GetRequiredService<IConfiguration>();
+
+    var configured =
+        configuration["CommandCenter:GatewayBaseUrl"]
+        ?? configuration["Argus:CommandCenter:GatewayBaseUrl"]
+        ?? configuration["CommandCenter:Services:Gateway"]
+        ?? configuration["Argus:CommandCenter:Services:Gateway"];
+
+    if (!string.IsNullOrWhiteSpace(configured))
+    {
+        if (!Uri.TryCreate(EnsureTrailingSlash(configured), UriKind.Absolute, out var configuredUri))
+        {
+            throw new InvalidOperationException(
+                $"Invalid Command Center gateway URL '{configured}'. Configure CommandCenter:GatewayBaseUrl.");
+        }
+
+        return configuredUri;
+    }
+
+    return ResolveRequestBaseAddress(services);
+}
+
+static string EnsureTrailingSlash(string value) =>
+    value.EndsWith('/', StringComparison.Ordinal) ? value : value + "/";

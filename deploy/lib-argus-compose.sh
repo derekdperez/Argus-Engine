@@ -677,7 +677,7 @@ argus_recipe_bundle_hash() {
   [[ -n "$root" ]] || return 1
   argus_sha256_file_list "$root" \
     deploy/docker-compose.yml \
-    deploy/Dockerfile.web \
+    deploy/Dockerfile.commandcenter-host \
     deploy/Dockerfile.worker \
     deploy/Dockerfile.worker-enum \
     deploy/Dockerfile.base-runtime \

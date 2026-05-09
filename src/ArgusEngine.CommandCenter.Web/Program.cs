@@ -102,4 +102,4 @@ static Uri ResolveGatewayBaseAddress(IServiceProvider services)
 }
 
 static string EnsureTrailingSlash(string value) =>
-    value.EndsWith("/", StringComparison.Ordinal) ? value : value + "/";
+    value.Length > 0 && value[^1] == '/' ? value : value + "/";

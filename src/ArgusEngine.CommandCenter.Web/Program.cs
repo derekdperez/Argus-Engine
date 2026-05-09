@@ -1,16 +1,13 @@
-using ArgusEngine.CommandCenter.Web.Components;
 using ArgusEngine.CommandCenter.Web.Clients;
-
-using ArgusEngine.CommandCenter.Realtime;
-
 using Microsoft.AspNetCore.Components;
-
-using Radzen;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+builder.Services.AddRazorPages();
+builder.Services.AddServerSideBlazor();
 
 builder.Services.AddRadzenComponents();
 
@@ -18,17 +15,18 @@ builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddScoped<DiscoveryRealtimeClient>();
 
+builder.Services.AddHttpClient("GatewayClient", sp => {
+    sp.BaseAddress = ResolveGatewayBaseAddress(sp);
+});
+
+builder.Services.AddHttpClient<DiscoveryApiClient>("GatewayClient");
+builder.Services.AddHttpClient<OperationsApiClient>("GatewayClient");
+builder.Services.AddHttpClient<WorkerControlApiClient>("GatewayClient");
+builder.Services.AddHttpClient<MaintenanceApiClient>("GatewayClient");
+builder.Services.AddHttpClient<UpdatesApiClient>("GatewayClient");
+builder.Services.AddHttpClient<RealtimeApiClient>("GatewayClient");
+
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveRequestBaseAddress(sp) });
-builder.Services.AddHttpClient<DiscoveryApiClient>((sp, c) => c.BaseAddress = ResolveGatewayBaseAddress(sp));
-
-builder.Services.AddHttpClient<OperationsApiClient>((sp, c) => c.BaseAddress = ResolveGatewayBaseAddress(sp));
-
-builder.Services.AddHttpClient<WorkerControlApiClient>((sp, c) => c.BaseAddress = ResolveGatewayBaseAddress(sp));
-
-builder.Services.AddHttpClient<MaintenanceApiClient>((sp, c) => c.BaseAddress = ResolveGatewayBaseAddress(sp));
-builder.Services.AddHttpClient<UpdatesApiClient>((sp, c) => c.BaseAddress = ResolveGatewayBaseAddress(sp));
-
-builder.Services.AddHttpClient<RealtimeApiClient>((sp, c) => c.BaseAddress = ResolveGatewayBaseAddress(sp));
 
 var app = builder.Build();
 
@@ -44,9 +42,6 @@ app.MapStaticAssets();
 
 app.UseStaticFiles();
 
-// Compatibility alias for clients, proxies, or stale HTML that still request the
-// pre-split Command Center CSS isolation bundle name. The current web project
-// emits ArgusEngine.CommandCenter.Web.styles.css.
 app.MapGet("/ArgusEngine.CommandCenter.styles.css", () =>
     Results.Redirect("/ArgusEngine.CommandCenter.Web.styles.css", permanent: false));
 
@@ -56,10 +51,10 @@ app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 
 app.MapGet("/health/ready", () => Results.Ok(new { status = "ready" }));
 
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+app.MapRazorPages();
+app.MapBlazorHub();
 
-await app.RunAsync().ConfigureAwait(false);
+await app.RunAsync();
 
 static Uri ResolveRequestBaseAddress(IServiceProvider services)
 {
@@ -103,3 +98,4 @@ static Uri ResolveGatewayBaseAddress(IServiceProvider services)
 
 static string EnsureTrailingSlash(string value) =>
     value.Length > 0 && value[^1] == '/' ? value : value + "/";
+

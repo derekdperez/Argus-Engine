@@ -25,18 +25,26 @@ public static class AdminUsageEndpoints
                     var now = DateTimeOffset.UtcNow;
                     var monthStart = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
 
-                    var samples = await db.CloudResourceUsageSamples.AsNoTracking()
-                        .Where(s => s.SampledAtUtc >= monthStart.AddMonths(-1) && s.SampledAtUtc <= now)
-                        .OrderBy(s => s.ResourceKind)
-                        .ThenBy(s => s.ResourceId)
-                        .ThenBy(s => s.SampledAtUtc)
-                        .ToListAsync(ct)
-                        .ConfigureAwait(false);
+                    List<CloudResourceUsageSample> samples;
+                    try
+                    {
+                        samples = await db.CloudResourceUsageSamples.AsNoTracking()
+                            .Where(s => s.SampledAtUtc >= monthStart.AddMonths(-1) && s.SampledAtUtc <= now)
+                            .OrderBy(s => s.ResourceKind)
+                            .ThenBy(s => s.ResourceId)
+                            .ThenBy(s => s.SampledAtUtc)
+                            .ToListAsync(ct)
+                            .ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        samples = [];
+                    }
 
                     var cloud = BuildCloudUsage(samples, monthStart, now);
                     await AddLiveEcsFallbackRowsAsync(cloud, configuration, monthStart, now, ct).ConfigureAwait(false);
                     AddProcessEc2FallbackRow(cloud, monthStart, now);
-                    var traffic = await LoadTrafficAsync(db, monthStart, ct).ConfigureAwait(false);
+                    var traffic = await LoadTrafficOrEmptyAsync(db, monthStart, ct).ConfigureAwait(false);
                     var ecsHours = cloud.Where(r => r.ResourceKind == "ecs-worker").Sum(r => r.HoursMonthToDate);
                     var ec2Hours = cloud.Where(r => r.ResourceKind == "ec2-server").Sum(r => r.HoursMonthToDate);
 
@@ -59,6 +67,18 @@ public static class AdminUsageEndpoints
                 })
             .WithName("ListAdminUsage");
         return app;
+    }
+
+    private static async Task<TrafficStats> LoadTrafficOrEmptyAsync(ArgusDbContext db, DateTimeOffset monthStart, CancellationToken ct)
+    {
+        try
+        {
+            return await LoadTrafficAsync(db, monthStart, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            return new TrafficStats(0, 0, 0, 0, 0);
+        }
     }
 
     private static async Task AddLiveEcsFallbackRowsAsync(

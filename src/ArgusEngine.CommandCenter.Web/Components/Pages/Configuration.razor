@@ -17,11 +17,16 @@
     {
         <div class="loading-state">
             <div class="spinner"></div>
-            <p>Loading configuration...</p>
+            <p>@(_loadError ?? "Loading configuration...")</p>
         </div>
     }
     else
     {
+        @if (!string.IsNullOrWhiteSpace(_loadError))
+        {
+            <div class="status-banner warning">@_loadError</div>
+        }
+
         <EditForm Model="@_settings" OnValidSubmit="HandleSave">
             <div class="config-sections">
                 <!-- HTTP Requester Section -->
@@ -145,6 +150,7 @@
     private HttpRequestQueueSettings? _settings;
     private bool _isSaving;
     private bool _showSuccess;
+    private string? _loadError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -153,8 +159,17 @@
 
     private async Task LoadSettings()
     {
-        _settings = await DiscoveryApi.Client.GetFromJsonAsync<HttpRequestQueueSettings>("/api/http-request-queue/settings")
-            ?? new HttpRequestQueueSettings();
+        try
+        {
+            _loadError = null;
+            _settings = await DiscoveryApi.Client.GetFromJsonAsync<HttpRequestQueueSettings>("/api/http-request-queue/settings")
+                ?? new HttpRequestQueueSettings();
+        }
+        catch (Exception ex)
+        {
+            _settings = new HttpRequestQueueSettings();
+            _loadError = $"Configuration service is unavailable. Showing default values. {ex.Message}";
+        }
     }
 
     private async Task HandleSave()

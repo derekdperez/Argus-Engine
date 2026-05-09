@@ -107,20 +107,27 @@ internal static class OpsStorageMetricsQuery
         string sql,
         CancellationToken ct)
     {
-        var connection = db.Database.GetDbConnection();
-        if (connection.State != ConnectionState.Open)
-            await connection.OpenAsync(ct).ConfigureAwait(false);
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        var value = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
-        return value switch
+        try
         {
-            long l => l,
-            int i => i,
-            decimal d => (long)d,
-            _ => 0,
-        };
+            var connection = db.Database.GetDbConnection();
+            if (connection.State != ConnectionState.Open)
+                await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            var value = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
+            return value switch
+            {
+                long l => l,
+                int i => i,
+                decimal d => (long)d,
+                _ => 0,
+            };
+        }
+        catch
+        {
+            return 0;
+        }
     }
 }
 

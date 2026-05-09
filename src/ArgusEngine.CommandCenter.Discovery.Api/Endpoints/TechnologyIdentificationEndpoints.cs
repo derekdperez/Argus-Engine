@@ -244,9 +244,17 @@ public static class TechnologyIdentificationEndpoints
             observationQuery = observationQuery.Where(x => x.TargetId == selectedTargetId);
         }
 
-        var projections = await observationQuery
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
+        List<TechnologyRowProjection> projections;
+        try
+        {
+            projections = await observationQuery
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            projections = [];
+        }
 
         var legacyQuery =
             from d in db.TechnologyDetections.AsNoTracking()
@@ -280,7 +288,14 @@ public static class TechnologyIdentificationEndpoints
             legacyQuery = legacyQuery.Where(x => x.TargetId == legacyTargetId);
         }
 
-        projections.AddRange(await legacyQuery.ToListAsync(ct).ConfigureAwait(false));
+        try
+        {
+            projections.AddRange(await legacyQuery.ToListAsync(ct).ConfigureAwait(false));
+        }
+        catch
+        {
+            // A partially migrated deployment should still render the page with empty data.
+        }
 
         var rows = projections
             .Select(x =>

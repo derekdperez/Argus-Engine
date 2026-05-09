@@ -45,7 +45,7 @@ app.MapGet(
                 {
                     new { owner = "command-center-worker-control-api", prefixes = new[] { "/api/workers", "/api/ec2-workers", "/api/ops/ecs-status", "/api/ops/spider/restart", "/api/ops/subdomain-enum/restart" } },
                     new { owner = "command-center-operations-api", prefixes = new[] { "/api/status", "/api/ops" } },
-                    new { owner = "command-center-discovery-api", prefixes = new[] { "/api/targets", "/api/assets", "/api/asset-graph", "/api/tags", "/api/technologies", "/api/asset-admission-decisions", "/api/high-value-findings", "/api/technology-identification", "/api/http-request-queue", "/api/filestore", "/api/events", "/api/discovery" } },
+                    new { owner = "command-center-discovery-api", prefixes = new[] { "/api/targets", "/api/assets", "/api/asset-graph", "/api/tags", "/api/technologies", "/api/asset-admission-decisions", "/api/high-value-findings", "/api/high-value-assets", "/api/technology-identification", "/api/http-request-queue", "/api/filestore", "/api/events", "/api/discovery" } },
                     new { owner = "command-center-maintenance-api", prefixes = new[] { "/api/admin", "/api/maintenance", "/api/diagnostics", "/api/bus" } },
                     new { owner = "command-center-updates-api", prefixes = new[] { "/api/development/components" } },
                     new { owner = "command-center-realtime", prefixes = new[] { "/hubs/discovery" } },
@@ -152,6 +152,7 @@ static string? SelectClientName(PathString path)
         || path.StartsWithSegments("/api/technologies", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/asset-admission-decisions", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/high-value-findings", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/high-value-assets", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/technology-identification", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/http-request-queue", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/filestore", StringComparison.OrdinalIgnoreCase)

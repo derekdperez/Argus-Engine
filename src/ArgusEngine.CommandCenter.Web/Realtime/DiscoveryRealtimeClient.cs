@@ -1,12 +1,14 @@
+using System.Net.Http;
 using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.CommandCenter.Models;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.SignalR.Client;
 using DiscoveryHubEvents = ArgusEngine.CommandCenter.Hubs.DiscoveryHubEvents;
 
 namespace ArgusEngine.CommandCenter.Realtime;
 
-public sealed class DiscoveryRealtimeClient(NavigationManager navigation) : IAsyncDisposable
+public sealed class DiscoveryRealtimeClient(NavigationManager navigation, IConfiguration configuration) : IAsyncDisposable
 {
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
     private HubConnection? _connection;
@@ -35,9 +37,16 @@ public sealed class DiscoveryRealtimeClient(NavigationManager navigation) : IAsy
                 return;
             }
 
-            _connection ??= CreateConnection();
-            await _connection.StartAsync(cancellationToken).ConfigureAwait(false);
-            RaiseConnectionStateChanged();
+            try
+            {
+                _connection ??= CreateConnection();
+                await _connection.StartAsync(cancellationToken).ConfigureAwait(false);
+                RaiseConnectionStateChanged();
+            }
+            catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TimeoutException)
+            {
+                RaiseConnectionStateChanged();
+            }
         }
         finally
         {
@@ -49,7 +58,7 @@ public sealed class DiscoveryRealtimeClient(NavigationManager navigation) : IAsy
     {
         await EnsureStartedAsync(cancellationToken).ConfigureAwait(false);
 
-        if (_connection is null || targetId is null)
+        if (_connection?.State != HubConnectionState.Connected || targetId is null)
         {
             return;
         }
@@ -60,7 +69,7 @@ public sealed class DiscoveryRealtimeClient(NavigationManager navigation) : IAsy
     private HubConnection CreateConnection()
     {
         var connection = new HubConnectionBuilder()
-            .WithUrl(navigation.ToAbsoluteUri("/hubs/discovery"))
+            .WithUrl(ResolveHubUri())
             .WithAutomaticReconnect()
             .Build();
 
@@ -133,6 +142,28 @@ public sealed class DiscoveryRealtimeClient(NavigationManager navigation) : IAsy
 
         return connection;
     }
+
+    private Uri ResolveHubUri()
+    {
+        var configured =
+            configuration["CommandCenter:RealtimeBaseUrl"]
+            ?? configuration["Argus:CommandCenter:RealtimeBaseUrl"]
+            ?? configuration["CommandCenter:GatewayBaseUrl"]
+            ?? configuration["Argus:CommandCenter:GatewayBaseUrl"]
+            ?? configuration["CommandCenter:Services:Gateway"]
+            ?? configuration["Argus:CommandCenter:Services:Gateway"];
+
+        if (!string.IsNullOrWhiteSpace(configured)
+            && Uri.TryCreate(EnsureTrailingSlash(configured), UriKind.Absolute, out var baseUri))
+        {
+            return new Uri(baseUri, "hubs/discovery");
+        }
+
+        return navigation.ToAbsoluteUri("/hubs/discovery");
+    }
+
+    private static string EnsureTrailingSlash(string value) =>
+        value.Length > 0 && value[^1] == '/' ? value : value + "/";
 
     private void RaiseConnectionStateChanged()
     {

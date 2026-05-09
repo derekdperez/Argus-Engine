@@ -19,10 +19,18 @@ public static class HttpRequestQueueEndpoints
                 "/api/http-request-queue/settings",
                 async (ArgusDbContext db, CancellationToken ct) =>
                 {
-                    var row = await db.HttpRequestQueueSettings.AsNoTracking()
-                        .FirstOrDefaultAsync(s => s.Id == 1, ct)
-                        .ConfigureAwait(false)
-                        ?? new HttpRequestQueueSettings();
+                    HttpRequestQueueSettings row;
+                    try
+                    {
+                        row = await db.HttpRequestQueueSettings.AsNoTracking()
+                            .FirstOrDefaultAsync(s => s.Id == 1, ct)
+                            .ConfigureAwait(false)
+                            ?? new HttpRequestQueueSettings();
+                    }
+                    catch
+                    {
+                        row = new HttpRequestQueueSettings();
+                    }
 
                     return Results.Ok(row);
                 })

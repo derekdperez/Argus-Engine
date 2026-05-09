@@ -43,10 +43,10 @@ public sealed class CommandCenterStatusSnapshotService(
         var components = BuildComponents(version, databaseHealthy);
         var dependencies = await BuildDependenciesAsync(databaseHealthy, cancellationToken).ConfigureAwait(false);
         var workers = databaseHealthy
-            ? await BuildWorkerStatusesAsync(alerts, now, cancellationToken).ConfigureAwait(false)
+            ? await TryBuildWorkerStatusesAsync(alerts, now, cancellationToken).ConfigureAwait(false)
             : BuildUnavailableWorkerStatuses();
         var queues = databaseHealthy
-            ? await BuildQueueStatusesAsync(alerts, now, cancellationToken).ConfigureAwait(false)
+            ? await TryBuildQueueStatusesAsync(alerts, now, cancellationToken).ConfigureAwait(false)
             : BuildUnavailableQueueStatuses();
 
         var indicators = BuildIndicators(workers, queues, dependencies);
@@ -73,6 +73,50 @@ public sealed class CommandCenterStatusSnapshotService(
             Dependencies: dependencies,
             Indicators: indicators,
             Alerts: alerts);
+    }
+
+    private async Task<IReadOnlyList<CommandCenterWorkerStatus>> TryBuildWorkerStatusesAsync(
+        List<CommandCenterAlert> alerts,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await BuildWorkerStatusesAsync(alerts, now, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to read worker status data while building the Command Center status snapshot.");
+            alerts.Add(new CommandCenterAlert(
+                Severity: "Warning",
+                Scope: "workers",
+                Message: "Worker status data is unavailable.",
+                AtUtc: now,
+                Color: "yellow"));
+            return BuildUnavailableWorkerStatuses();
+        }
+    }
+
+    private async Task<IReadOnlyList<CommandCenterQueueStatus>> TryBuildQueueStatusesAsync(
+        List<CommandCenterAlert> alerts,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await BuildQueueStatusesAsync(alerts, now, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to read queue status data while building the Command Center status snapshot.");
+            alerts.Add(new CommandCenterAlert(
+                Severity: "Warning",
+                Scope: "queues",
+                Message: "Queue status data is unavailable.",
+                AtUtc: now,
+                Color: "yellow"));
+            return BuildUnavailableQueueStatuses();
+        }
     }
 
     private async Task<bool> CanConnectToDatabaseAsync(

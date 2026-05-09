@@ -36,6 +36,18 @@
     gap: 2rem;
 }
 
+.status-banner {
+    border-radius: 0.7rem;
+    margin-bottom: 1rem;
+    padding: 0.85rem 1rem;
+}
+
+.status-banner.warning {
+    background: rgba(202, 138, 4, 0.12);
+    border: 1px solid rgba(202, 138, 4, 0.28);
+    color: #facc15;
+}
+
 .config-section {
     display: flex;
     gap: 1.5rem;

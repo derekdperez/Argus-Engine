@@ -18,6 +18,7 @@ def main(stdscr):
     # Run deploy.sh with a special flag so it doesn't loop back to us
     env = os.environ.copy()
     env["ARGUS_NO_UI"] = "1"
+    env["BUILDKIT_PROGRESS"] = "plain"
     
     # Stdbuf or PYTHONUNBUFFERED is useful but deploy.sh is a bash script.
     # We use pty or just pipe. Pipe is usually fine if we read line by line.

@@ -826,7 +826,7 @@ compose() {
   # BuildKit enables Dockerfile cache mounts for NuGet and Go module caches.
   export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
   export COMPOSE_DOCKER_CLI_BUILD="${COMPOSE_DOCKER_CLI_BUILD:-1}"
-  export BUILDKIT_PROGRESS="${argus_BUILD_PROGRESS:-auto}"
+  export BUILDKIT_PROGRESS="${BUILDKIT_PROGRESS:-${argus_BUILD_PROGRESS:-auto}}"
   local cf="$ROOT/deploy/docker-compose.yml"
   if argus_docker compose version >/dev/null 2>&1; then
     argus_docker compose -f "$cf" "$@"

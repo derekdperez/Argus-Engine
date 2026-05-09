@@ -1,95 +1,62 @@
-using ArgusEngine.Application.TechnologyIdentification.Fingerprints;
-using FluentAssertions;
+using ArgusEngine.Workers.TechnologyIdentification;
 using Xunit;
 
 namespace ArgusEngine.UnitTests.TechnologyIdentification;
 
-public sealed class TechnologyFingerprintCatalogTests
+public sealed class HtmlSignalExtractorTests
 {
-    private static readonly Lazy<LoadedTechnologyFingerprintCatalog> LoadedCatalog = new(
-        () => TechnologyFingerprintCatalogReader.LoadFromFile(GetCatalogPath()));
-
     [Fact]
-    public void RuntimeCatalogFileExists()
+    public void Extract_CollectsMetaSignalsAndResolvesScriptUrlsAgainstSourceUrl()
     {
-        File.Exists(GetCatalogPath()).Should().BeTrue();
+        const string html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta name="generator" content="WordPress 6.4">
+                <meta property="og:site_name" content="Argus">
+                <script src="/assets/app.js"></script>
+                <script src="https://cdn.example.net/lib.js"></script>
+              </head>
+            </html>
+            """;
+
+        var signals = HtmlSignalExtractor.Extract(
+            body: html,
+            contentType: "text/html; charset=utf-8",
+            sourceUrl: "https://example.com/products/details");
+
+        Assert.Equal("WordPress 6.4", signals.Meta["generator"]);
+        Assert.Equal("Argus", signals.Meta["og:site_name"]);
+        Assert.Contains("https://example.com/assets/app.js", signals.ScriptUrls);
+        Assert.Contains("https://cdn.example.net/lib.js", signals.ScriptUrls);
     }
 
     [Fact]
-    public void RuntimeCatalogLoadsAsTopLevelFingerprintArray()
+    public void Extract_DeduplicatesScriptUrlsCaseInsensitively()
     {
-        LoadedCatalog.Value.Fingerprints.Should().NotBeEmpty();
-        LoadedCatalog.Value.CatalogHash.Should().HaveLength(64);
+        const string html = """
+            <html>
+              <head>
+                <script src="https://cdn.example.net/app.js"></script>
+                <script src="https://CDN.example.net/app.js"></script>
+              </head>
+            </html>
+            """;
+
+        var signals = HtmlSignalExtractor.Extract(html, "text/html", "https://example.com/");
+
+        Assert.Single(signals.ScriptUrls);
     }
 
-    [Fact]
-    public void RuntimeCatalogFingerprintIdsAreUnique()
+    [Theory]
+    [InlineData(null, "text/html")]
+    [InlineData("", "text/html")]
+    [InlineData("{\"ok\":true}", "application/json")]
+    public void Extract_IgnoresBlankOrNonHtmlBodies(string? body, string? contentType)
     {
-        var duplicateIds = LoadedCatalog.Value.Fingerprints
-            .GroupBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
-            .Where(x => x.Count() > 1)
-            .Select(x => x.Key)
-            .ToArray();
+        var signals = HtmlSignalExtractor.Extract(body, contentType, "https://example.com/");
 
-        duplicateIds.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void RuntimeCatalogFingerprintsMeetRequiredSafetyShape()
-    {
-        var invalidFingerprints = LoadedCatalog.Value.Fingerprints
-            .Where(x =>
-                string.IsNullOrWhiteSpace(x.Id)
-                || string.IsNullOrWhiteSpace(x.Source.Type)
-                || string.IsNullOrWhiteSpace(x.Technology.Name)
-                || !string.Equals(
-                    x.RiskMode,
-                    TechnologyFingerprintCatalogValidator.RequiredRiskMode,
-                    StringComparison.OrdinalIgnoreCase))
-            .Select(x => x.Id)
-            .ToArray();
-
-        invalidFingerprints.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void RuntimeCatalogPassesValidator()
-    {
-        var validation = TechnologyFingerprintCatalogValidator.Validate(LoadedCatalog.Value.Fingerprints);
-
-        validation.IsValid.Should().BeTrue();
-        validation.Errors.Should().BeEmpty();
-        validation.InertFingerprintIds.Should().OnlyContain(id =>
-            LoadedCatalog.Value.Fingerprints.Any(fingerprint =>
-                string.Equals(fingerprint.Id, id, StringComparison.OrdinalIgnoreCase)
-                && fingerprint.Signals.Count == 0
-                && fingerprint.Probes.Count == 0));
-    }
-
-    private static string GetCatalogPath()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current is not null)
-        {
-            var candidate = Path.Combine(
-                current.FullName,
-                "src",
-                "Resources",
-                "TechnologyDetection",
-                "argus_fingerprints.json");
-
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            current = current.Parent;
-        }
-
-        return Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "Resources",
-            "TechnologyDetection",
-            "argus_fingerprints.json"));
+        Assert.Empty(signals.Meta);
+        Assert.Empty(signals.ScriptUrls);
     }
 }

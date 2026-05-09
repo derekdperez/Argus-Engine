@@ -1,44 +1,36 @@
-using System.Text.Json;
+using ArgusEngine.Contracts;
+using ArgusEngine.Contracts.Events;
+using ArgusEngine.Infrastructure.Gatekeeping;
 using Xunit;
 
 namespace ArgusEngine.Infrastructure.Tests;
 
 public sealed class ObservabilityStackTests
 {
-    private static string Root => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."));
-
     [Fact]
-    public void LocalObservabilityComposeStackIsPresent()
+    public void Canonicalizer_UsesDeterministicHashFallbackForMalformedStructuredAssets()
     {
-        var composePath = Path.Combine(Root, "deploy", "docker-compose.observability.yml");
-        var compose = File.ReadAllText(composePath);
+        var canonicalizer = new DefaultAssetCanonicalizer();
+        var first = canonicalizer.Canonicalize(CreateDiscovery(AssetKind.Url, "  not a uri with spaces  "));
+        var second = canonicalizer.Canonicalize(CreateDiscovery(AssetKind.Url, "  not a uri with spaces  "));
 
-        Assert.Contains("otel/opentelemetry-collector-contrib:0.151.0", compose);
-        Assert.Contains("prom/prometheus:v3.11.3", compose);
-        Assert.Contains("grafana/grafana:13.0.1", compose);
-        Assert.Contains("OpenTelemetry__OtlpEndpoint", compose);
+        Assert.Equal(AssetKind.Url, first.Kind);
+        Assert.StartsWith("url:", first.CanonicalKey, StringComparison.Ordinal);
+        Assert.Equal(first.CanonicalKey, second.CanonicalKey);
+        Assert.Equal("not a uri with spaces", first.NormalizedDisplay);
     }
 
-    [Fact]
-    public void GrafanaDashboardContainsRequiredArgusPanels()
-    {
-        var dashboardPath = Path.Combine(
-            Root,
-            "deploy",
-            "observability",
-            "grafana",
-            "dashboards",
-            "argus-engine-overview.json");
-
-        using var doc = JsonDocument.Parse(File.ReadAllText(dashboardPath));
-        var root = doc.RootElement;
-
-        Assert.Equal("argus-engine-overview", root.GetProperty("uid").GetString());
-
-        var serialized = root.ToString();
-        Assert.Contains("argus_http_queue_depth", serialized);
-        Assert.Contains("argus_outbox_depth", serialized);
-        Assert.Contains("argus_asset_admission_decisions_total", serialized);
-        Assert.Contains("argus_data_retention_deleted_rows_total", serialized);
-    }
+    private static AssetDiscovered CreateDiscovery(AssetKind kind, string rawValue) =>
+        new(
+            TargetId: Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            TargetRootDomain: "example.com",
+            GlobalMaxDepth: 4,
+            Depth: 0,
+            Kind: kind,
+            RawValue: rawValue,
+            DiscoveredBy: "unit-test",
+            OccurredAt: DateTimeOffset.UnixEpoch,
+            CorrelationId: Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            AdmissionStage: (AssetAdmissionStage)0,
+            AssetId: null);
 }

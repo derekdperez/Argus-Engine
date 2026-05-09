@@ -9,4 +9,9 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\ArgusEngine.Contracts\ArgusEngine.Contracts.csproj" />
+    <ProjectReference Include="..\..\ArgusEngine.Infrastructure\ArgusEngine.Infrastructure.csproj" />
+  </ItemGroup>
 </Project>

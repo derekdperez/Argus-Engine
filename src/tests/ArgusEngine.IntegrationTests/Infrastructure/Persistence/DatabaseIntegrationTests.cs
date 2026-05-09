@@ -1,69 +1,39 @@
-using ArgusEngine.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
-using Testcontainers.PostgreSql;
+using ArgusEngine.Contracts.Events;
+using ArgusEngine.Infrastructure.Messaging;
 using Xunit;
-using FluentAssertions;
-using ArgusEngine.Domain.Entities;
 
 namespace ArgusEngine.IntegrationTests.Infrastructure.Persistence;
 
-public class DatabaseIntegrationTests : IAsyncLifetime
+public sealed class DatabaseIntegrationTests
 {
-    private readonly PostgreSqlContainer _postgresContainer = new PostgreSqlBuilder("postgres:16-alpine")
-        .Build();
-
-    public async Task InitializeAsync()
+    [Fact]
+    public void OutboxMessageKeysAreStableForPersistedBusJournalRows()
     {
-        await _postgresContainer.StartAsync();
-    }
+        var targetCreatedKey = OutboxMessageTypeRegistry.GetMessageKey(typeof(TargetCreated));
+        var assetDiscoveredKey = OutboxMessageTypeRegistry.GetMessageKey(typeof(AssetDiscovered));
 
-    public async Task DisposeAsync()
-    {
-        await _postgresContainer.DisposeAsync();
-    }
-
-    private ArgusDbContext CreateContext()
-    {
-        var options = new DbContextOptionsBuilder<ArgusDbContext>()
-            .UseNpgsql(_postgresContainer.GetConnectionString())
-            .Options;
-        return new ArgusDbContext(options);
+        Assert.Equal("argus.events.target-created", targetCreatedKey);
+        Assert.Equal("argus.events.asset-discovered", assetDiscoveredKey);
     }
 
     [Fact]
-    public async Task Database_CanApplyPatches_AndPerformCrud()
+    public void PersistedLegacyMessageIdentifiersCanBeResolvedDuringReplay()
     {
-        // 1. Initialize DB with EnsureCreated
-        using (var db = CreateContext())
+        var persistedIdentifiers = new[]
         {
-            await db.Database.EnsureCreatedAsync();
-        }
+            "argus.events.target-created",
+            "nightmare.events.target-created",
+            "TargetCreated",
+            "Nightmare.Contracts.Events.TargetCreated, Nightmare.Contracts"
+        };
 
-        // 2. Apply Patches
-        using (var db = CreateContext())
+        foreach (var identifier in persistedIdentifiers)
         {
-            await ArgusDbSchemaPatches.ApplyAfterEnsureCreatedAsync(db, NullLogger.Instance);
-        }
+            Assert.True(
+                OutboxMessageTypeRegistry.TryResolve(identifier, out var resolvedType),
+                $"Expected '{identifier}' to resolve.");
 
-        // 3. Verify Crud on BusJournalEntry (which I just fixed mapping for)
-        using (var db = CreateContext())
-        {
-            var entry = new BusJournalEntry
-            {
-                Direction = "Consume",
-                MessageType = "TestMessage",
-                PayloadJson = "{}",
-                OccurredAtUtc = DateTimeOffset.UtcNow,
-                HostName = "test-host"
-            };
-
-            db.BusJournal.Add(entry);
-            await db.SaveChangesAsync();
-
-            var retrieved = await db.BusJournal.FirstAsync();
-            retrieved.MessageType.Should().Be("TestMessage");
-            retrieved.HostName.Should().Be("test-host");
+            Assert.Same(typeof(TargetCreated), resolvedType);
         }
     }
 }

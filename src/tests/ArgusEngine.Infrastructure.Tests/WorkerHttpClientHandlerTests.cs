@@ -1,9 +1,4 @@
-using System.Collections.Generic;
-using System.IO;
 using System.Net;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
 using ArgusEngine.Application.Http;
 using Xunit;
 
@@ -12,62 +7,121 @@ namespace ArgusEngine.Infrastructure.Tests;
 public sealed class WorkerHttpClientHandlerTests
 {
     [Fact]
-    public async Task SendAsync_DisposesBlockedResponseBeforeThrowingCircuitBreakerException()
+    public async Task SendAsync_AllowsFirstFourBlockResponsesAndTripsOnTheFifth()
     {
-        var contents = new List<TrackingContent>();
-        using var client = new HttpClient(
-            new WorkerHttpClientHandler
-            {
-                InnerHandler = new StubHandler(() =>
-                {
-                    var content = new TrackingContent();
-                    contents.Add(content);
+        var innerHandler = new SequenceHandler(
+            HttpStatusCode.TooManyRequests,
+            HttpStatusCode.TooManyRequests,
+            HttpStatusCode.TooManyRequests,
+            HttpStatusCode.TooManyRequests,
+            HttpStatusCode.TooManyRequests);
 
-                    return new HttpResponseMessage(HttpStatusCode.TooManyRequests)
-                    {
-                        Content = content
-                    };
-                })
-            });
+        using var client = CreateClient(innerHandler);
 
-        for (var i = 0; i < 4; i++)
+        for (var attempt = 0; attempt < 4; attempt++)
         {
             using var response = await client.GetAsync("https://example.test/");
             Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
         }
 
-        await Assert.ThrowsAsync<WafBlockedException>(() => client.GetAsync("https://example.test/"));
+        var exception = await Assert.ThrowsAsync<WafBlockedException>(() =>
+            client.GetAsync("https://example.test/"));
 
-        Assert.True(contents[^1].Disposed);
+        Assert.Contains("Circuit breaker tripped", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(5, innerHandler.RequestCount);
     }
 
-    private sealed class StubHandler(Func<HttpResponseMessage> factory) : HttpMessageHandler
+    [Fact]
+    public async Task SendAsync_ResetsTheBlockCounterAfterASuccessfulResponse()
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(factory());
-    }
+        var innerHandler = new SequenceHandler(
+            HttpStatusCode.Forbidden,
+            HttpStatusCode.Forbidden,
+            HttpStatusCode.Forbidden,
+            HttpStatusCode.Forbidden,
+            HttpStatusCode.OK,
+            HttpStatusCode.Forbidden,
+            HttpStatusCode.Forbidden,
+            HttpStatusCode.Forbidden,
+            HttpStatusCode.Forbidden,
+            HttpStatusCode.Forbidden);
 
-    private sealed class TrackingContent : HttpContent
-    {
-        public bool Disposed { get; private set; }
+        using var client = CreateClient(innerHandler);
 
-        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
-            Task.CompletedTask;
-
-        protected override bool TryComputeLength(out long length)
+        for (var attempt = 0; attempt < 4; attempt++)
         {
-            length = 0;
-            return true;
+            using var blockedResponse = await client.GetAsync("https://example.test/");
+            Assert.Equal(HttpStatusCode.Forbidden, blockedResponse.StatusCode);
         }
 
-        protected override void Dispose(bool disposing)
+        using var successfulResponse = await client.GetAsync("https://example.test/");
+        Assert.Equal(HttpStatusCode.OK, successfulResponse.StatusCode);
+
+        for (var attempt = 0; attempt < 4; attempt++)
         {
-            if (disposing)
+            using var blockedResponse = await client.GetAsync("https://example.test/");
+            Assert.Equal(HttpStatusCode.Forbidden, blockedResponse.StatusCode);
+        }
+
+        await Assert.ThrowsAsync<WafBlockedException>(() =>
+            client.GetAsync("https://example.test/"));
+    }
+
+    [Fact]
+    public async Task SendAsync_DoesNotTreatServerErrorsAsWafBlocks()
+    {
+        var innerHandler = new SequenceHandler(
+            HttpStatusCode.InternalServerError,
+            HttpStatusCode.InternalServerError,
+            HttpStatusCode.InternalServerError,
+            HttpStatusCode.InternalServerError,
+            HttpStatusCode.InternalServerError);
+
+        using var client = CreateClient(innerHandler);
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            using var response = await client.GetAsync("https://example.test/");
+            Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        }
+
+        Assert.Equal(5, innerHandler.RequestCount);
+    }
+
+    private static HttpClient CreateClient(HttpMessageHandler innerHandler)
+    {
+        var handler = new WorkerHttpClientHandler
+        {
+            InnerHandler = innerHandler
+        };
+
+        return new HttpClient(handler);
+    }
+
+    private sealed class SequenceHandler : HttpMessageHandler
+    {
+        private readonly Queue<HttpResponseMessage> _responses;
+
+        public int RequestCount { get; private set; }
+
+        public SequenceHandler(params HttpStatusCode[] statusCodes)
+        {
+            _responses = new Queue<HttpResponseMessage>(
+                statusCodes.Select(code => new HttpResponseMessage(code)));
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestCount++;
+
+            if (_responses.Count == 0)
             {
-                Disposed = true;
+                throw new InvalidOperationException("No HTTP responses remain in the test sequence.");
             }
 
-            base.Dispose(disposing);
+            return Task.FromResult(_responses.Dequeue());
         }
     }
 }

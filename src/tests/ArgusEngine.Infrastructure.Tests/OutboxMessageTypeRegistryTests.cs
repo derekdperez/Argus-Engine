@@ -6,45 +6,46 @@ namespace ArgusEngine.Infrastructure.Tests;
 
 public sealed class OutboxMessageTypeRegistryTests
 {
-    [Fact]
-    public void GetMessageKey_ReturnsResolvableStableKey()
+    [Theory]
+    [InlineData(typeof(TargetCreated), "argus.events.target-created")]
+    [InlineData(typeof(AssetDiscovered), "argus.events.asset-discovered")]
+    public void GetMessageKey_GeneratesStableKebabCaseKeysForEventContracts(Type eventType, string expectedKey)
     {
-        var key = OutboxMessageTypeRegistry.GetMessageKey(typeof(TargetCreated));
+        var key = OutboxMessageTypeRegistry.GetMessageKey(eventType);
 
-        Assert.Equal("argus.events.target-created", key);
+        Assert.Equal(expectedKey, key);
         Assert.True(OutboxMessageTypeRegistry.TryResolve(key, out var resolvedType));
-        Assert.Equal(typeof(TargetCreated), resolvedType);
+        Assert.Same(eventType, resolvedType);
     }
 
-    [Fact]
-    public void TryResolve_ResolvesLegacyAssemblyQualifiedTypeName()
+    [Theory]
+    [InlineData("argus.events.target-created")]
+    [InlineData("nightmare.events.target-created")]
+    [InlineData("TargetCreated")]
+    [InlineData("ArgusEngine.Contracts.Events.TargetCreated")]
+    public void TryResolve_AcceptsCurrentAndLegacyEventIdentifiers(string identifier)
     {
-        var legacyTypeName = typeof(TargetCreated).AssemblyQualifiedName!;
-
-        Assert.True(OutboxMessageTypeRegistry.TryResolve(legacyTypeName, out var resolvedType));
-        Assert.Equal(typeof(TargetCreated), resolvedType);
+        Assert.True(OutboxMessageTypeRegistry.TryResolve(identifier, out var resolvedType));
+        Assert.Same(typeof(TargetCreated), resolvedType);
     }
 
-    [Fact]
-    public void TryResolve_ResolvesLegacyNightmareEventKey()
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("argus.events.not-real")]
+    [InlineData("Nightmare.Contracts.Events.NotReal, Nightmare.Contracts")]
+    public void TryResolve_ReturnsFalseForBlankOrUnknownIdentifiers(string identifier)
     {
-        Assert.True(OutboxMessageTypeRegistry.TryResolve("nightmare.events.target-created", out var resolvedType));
-        Assert.Equal(typeof(TargetCreated), resolvedType);
-    }
-
-    [Fact]
-    public void TryResolve_ResolvesLegacyNightmareNamespace()
-    {
-        var legacyTypeName = "Nightmare.Contracts.Events.TargetCreated, Nightmare.Contracts";
-
-        Assert.True(OutboxMessageTypeRegistry.TryResolve(legacyTypeName, out var resolvedType));
-        Assert.Equal(typeof(TargetCreated), resolvedType);
-    }
-
-    [Fact]
-    public void TryResolve_RejectsUnknownMessageKey()
-    {
-        Assert.False(OutboxMessageTypeRegistry.TryResolve("argus.events.not-a-real-event", out var resolvedType));
+        Assert.False(OutboxMessageTypeRegistry.TryResolve(identifier, out var resolvedType));
         Assert.Null(resolvedType);
+    }
+
+    [Fact]
+    public void GetMessageKey_RejectsTypesThatAreNotEventContracts()
+    {
+        var exception = Assert.Throws<ArgumentException>(() =>
+            OutboxMessageTypeRegistry.GetMessageKey(typeof(string)));
+
+        Assert.Equal("messageType", exception.ParamName);
     }
 }

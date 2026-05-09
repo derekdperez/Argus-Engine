@@ -1,106 +1,76 @@
 using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Infrastructure.Gatekeeping;
-using FluentAssertions;
 using Xunit;
 
 namespace ArgusEngine.UnitTests.Infrastructure.Gatekeeping;
 
-public class DefaultAssetCanonicalizerTests
+public sealed class DefaultAssetCanonicalizerTests
 {
-    private readonly DefaultAssetCanonicalizer _sut = new();
+    private readonly DefaultAssetCanonicalizer _canonicalizer = new();
 
     [Theory]
-    [InlineData("example.com", "host:example.com", "example.com")]
-    [InlineData("  EXAMPLE.COM.  ", "host:example.com", "example.com")]
-    public void Canonicalize_Subdomain_Works(string raw, string expectedKey, string expectedDisplay)
+    [InlineData(AssetKind.Domain, " API.Example.COM. ", "host:api.example.com", "api.example.com")]
+    [InlineData(AssetKind.Subdomain, " WWW.Example.COM. ", "host:www.example.com", "www.example.com")]
+    public void Canonicalize_NormalizesHostAssets(AssetKind kind, string rawValue, string expectedKey, string expectedDisplay)
     {
-        var message = new AssetDiscovered(
-            TargetId: Guid.NewGuid(),
-            TargetRootDomain: "example.com",
-            GlobalMaxDepth: 3,
-            Depth: 0,
-            Kind: AssetKind.Subdomain,
-            RawValue: raw,
-            DiscoveredBy: "test",
-            OccurredAt: DateTimeOffset.UtcNow,
-            CorrelationId: Guid.NewGuid(),
-            AdmissionStage: AssetAdmissionStage.Raw,
-            AssetId: null);
-        
-        var result = _sut.Canonicalize(message);
+        var canonical = _canonicalizer.Canonicalize(CreateDiscovery(kind, rawValue));
 
-        result.Kind.Should().Be(AssetKind.Subdomain);
-        result.CanonicalKey.Should().Be(expectedKey);
-        result.NormalizedDisplay.Should().Be(expectedDisplay);
-    }
-
-    [Theory]
-    [InlineData("https://EXAMPLE.com/Path/", "url:https://example.com/path/")]
-    [InlineData("http://example.com:8080/a/b?z=1&a=2", "url:http://example.com:8080/a/b?a=2&z=1")]
-    [InlineData("example.com/login", "url:https://example.com/login")]
-    public void Canonicalize_Url_NormalizesCorrectly(string raw, string expectedKey)
-    {
-        var message = new AssetDiscovered(
-            TargetId: Guid.NewGuid(),
-            TargetRootDomain: "example.com",
-            GlobalMaxDepth: 3,
-            Depth: 0,
-            Kind: AssetKind.Url,
-            RawValue: raw,
-            DiscoveredBy: "test",
-            OccurredAt: DateTimeOffset.UtcNow,
-            CorrelationId: Guid.NewGuid(),
-            AdmissionStage: AssetAdmissionStage.Raw,
-            AssetId: null);
-
-        var result = _sut.Canonicalize(message);
-
-        result.CanonicalKey.Should().Be(expectedKey);
+        Assert.Equal(AssetKind.Subdomain, canonical.Kind);
+        Assert.Equal(expectedKey, canonical.CanonicalKey);
+        Assert.Equal(expectedDisplay, canonical.NormalizedDisplay);
     }
 
     [Fact]
-    public void Canonicalize_Url_ReplacesIdsAndGuids()
+    public void Canonicalize_TargetsTrimAndLowercaseTheRawTarget()
     {
-        var guid = Guid.NewGuid().ToString();
-        var raw = $"https://api.example.com/v1/users/123/profile/{guid}";
-        var message = new AssetDiscovered(
-            TargetId: Guid.NewGuid(),
-            TargetRootDomain: "example.com",
-            GlobalMaxDepth: 3,
-            Depth: 0,
-            Kind: AssetKind.ApiEndpoint,
-            RawValue: raw,
-            DiscoveredBy: "test",
-            OccurredAt: DateTimeOffset.UtcNow,
-            CorrelationId: Guid.NewGuid(),
-            AdmissionStage: AssetAdmissionStage.Raw,
-            AssetId: null);
+        var canonical = _canonicalizer.Canonicalize(CreateDiscovery(AssetKind.Target, " Example.COM "));
 
-        var result = _sut.Canonicalize(message);
-
-        result.CanonicalKey.Should().Be("url:https://api.example.com/v1/users/{id}/profile/{guid}");
+        Assert.Equal(AssetKind.Target, canonical.Kind);
+        Assert.Equal("target:example.com", canonical.CanonicalKey);
+        Assert.Equal("example.com", canonical.NormalizedDisplay);
     }
 
     [Fact]
-    public void Canonicalize_UnknownKind_UsesStableHash()
+    public void Canonicalize_NormalizesUrlPathsIdsGuidsAndSortedQueryParameters()
     {
-        var message = new AssetDiscovered(
-            TargetId: Guid.NewGuid(),
-            TargetRootDomain: "example.com",
-            GlobalMaxDepth: 3,
-            Depth: 0,
-            Kind: (AssetKind)999,
-            RawValue: "some-secret-value",
-            DiscoveredBy: "test",
-            OccurredAt: DateTimeOffset.UtcNow,
-            CorrelationId: Guid.NewGuid(),
-            AdmissionStage: AssetAdmissionStage.Raw,
-            AssetId: null);
+        var rawUrl = "HTTPS://Example.COM:443/Users/123/Files/550e8400-e29b-41d4-a716-446655440000/?B=2&a=1";
 
-        var result = _sut.Canonicalize(message);
+        var canonical = _canonicalizer.Canonicalize(CreateDiscovery(AssetKind.Url, rawUrl));
 
-        result.CanonicalKey.Should().StartWith("999:");
-        result.CanonicalKey.Length.Should().BeGreaterThan(10);
+        Assert.Equal(AssetKind.Url, canonical.Kind);
+        Assert.Equal("url:https://example.com/users/{id}/files/{guid}/?a=1&b=2", canonical.CanonicalKey);
     }
+
+    [Fact]
+    public void Canonicalize_AddsHttpsWhenStructuredAssetHasNoScheme()
+    {
+        var canonical = _canonicalizer.Canonicalize(CreateDiscovery(AssetKind.ApiEndpoint, "Example.COM/Products/42?B=2&A=1"));
+
+        Assert.Equal(AssetKind.ApiEndpoint, canonical.Kind);
+        Assert.Equal("apiendpoint:https://example.com/products/{id}?a=1&b=2", canonical.CanonicalKey);
+    }
+
+    [Fact]
+    public void Canonicalize_PreservesNonDefaultPortsInStructuredAssetKeys()
+    {
+        var canonical = _canonicalizer.Canonicalize(CreateDiscovery(AssetKind.JavaScriptFile, "http://Example.COM:8080/Assets/App.js"));
+
+        Assert.Equal(AssetKind.JavaScriptFile, canonical.Kind);
+        Assert.Equal("javascriptfile:http://example.com:8080/assets/app.js", canonical.CanonicalKey);
+    }
+
+    private static AssetDiscovered CreateDiscovery(AssetKind kind, string rawValue) =>
+        new(
+            TargetId: Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            TargetRootDomain: "example.com",
+            GlobalMaxDepth: 4,
+            Depth: 0,
+            Kind: kind,
+            RawValue: rawValue,
+            DiscoveredBy: "unit-test",
+            OccurredAt: DateTimeOffset.UnixEpoch,
+            CorrelationId: Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            AdmissionStage: (AssetAdmissionStage)0,
+            AssetId: null);
 }

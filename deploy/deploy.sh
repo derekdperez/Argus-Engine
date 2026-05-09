@@ -15,7 +15,7 @@
 #   - Docker Compose V1:  standalone "docker-compose" on PATH.
 #
 # Optional environment:
-#   argus_DEPLOY_MODE=image|hot  image=normal cached image deploy (default); hot=publish/copy/restart changed running services.
+#   argus_DEPLOY_MODE=hot|image  hot=publish/copy/restart changed running services (default); image=normal cached image deploy.
 #   argus_GIT_PULL=1   Run git pull --ff-only in the repo before building (remote must be ff-only). Defaults to 1 for --ecs-workers.
 #   argus_NO_CACHE=1      docker compose build --no-cache (also implied by -fresh)
 #   argus_PULL_IMAGES=1    docker compose build --pull. Defaults to 0 for fast deploys.
@@ -54,11 +54,19 @@ if [[ "${ARGUS_NO_DEPLOY_LOG:-0}" != "1" ]]; then
 fi
 
 argus_DEPLOY_FRESH="${argus_DEPLOY_FRESH:-0}"
-argus_DEPLOY_MODE="${argus_DEPLOY_MODE:-image}"
+argus_DEPLOY_MODE="${argus_DEPLOY_MODE:-hot}"
 argus_ECS_WORKERS="${argus_ECS_WORKERS:-0}"
 argus_ECS_REPLACE_WORKERS="${argus_ECS_REPLACE_WORKERS:-1}"
+CMD="up"
+FOLLOW_LOGS=0
+LOG_TAIL="${ARGUS_LOCAL_LOG_TAIL:-200}"
+COMMAND_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    up | down | logs | ps | status | restart | smoke | clean)
+      CMD="$1"
+      shift
+      ;;
     --ecs-workers)
       argus_ECS_WORKERS=1
       argus_DEPLOY_MODE=image
@@ -67,6 +75,35 @@ while [[ $# -gt 0 ]]; do
     -fresh | --fresh)
       argus_DEPLOY_FRESH=1
       argus_DEPLOY_MODE=image
+      shift
+      ;;
+    --skip-build)
+      argus_USER_SKIP_BUILD=1
+      shift
+      ;;
+    --no-cache)
+      argus_NO_CACHE=1
+      shift
+      ;;
+    --pull)
+      argus_PULL_IMAGES=1
+      shift
+      ;;
+    --force-recreate)
+      argus_FORCE_RECREATE=1
+      shift
+      ;;
+    --no-smoke)
+      argus_SKIP_BLAZOR_ASSET_VERIFY=1
+      shift
+      ;;
+    --tail)
+      [[ $# -ge 2 ]] || { echo "--tail requires a value" >&2; exit 1; }
+      LOG_TAIL="$2"
+      shift 2
+      ;;
+    --follow | -f)
+      FOLLOW_LOGS=1
       shift
       ;;
     --hot | -hot)
@@ -79,18 +116,26 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h | --help)
       cat <<'EOF'
-Usage: ./deploy/deploy.sh [--hot] [-fresh] [--ecs-workers]
+Usage: ./deploy/deploy.sh [options] [up|down|logs|ps|status|restart|smoke|clean] [service...]
 
-  (default)  Fast image deploy: rebuild only service image(s) whose source/shared
-             dependency or image recipe fingerprint changed, then run compose up
-             without forcing unchanged containers to restart.
+  up (default)
+             Universal incremental deploy. Source-only changes in running .NET
+             services are hot-swapped by default: publish, copy into the running
+             container, and restart only that service. Dockerfile/compose/tool
+             changes rebuild only the affected image(s).
 
-  --hot      For source-only changes in already-running services, publish that .NET
-             project with a cached NuGet folder, copy the publish output into the
-             running container, and restart only that service. Dockerfile/compose/tool
-             changes still fall back to image rebuilds.
+  --image    Use cached Docker image rebuilds instead of hot-swap for source changes.
+  --hot      Explicitly request the default hot-swap deploy mode.
 
-  -fresh     Rebuild all service images with --pull --no-cache and force recreate.
+  -fresh     Rebuild all service images with --no-cache and force recreate.
+             Local base images are built locally; they are not pulled from Docker Hub.
+
+  down       Stop containers and remove orphans.
+  logs       Show logs. Use -f/--follow to follow and --tail N to change line count.
+  ps|status  Show container status.
+  restart    Restart listed services, or all compose services if none are listed.
+  smoke      Run deploy/smoke-test.sh.
+  clean      Stop the stack and remove compose volumes after confirmation.
 
   --ecs-workers
              EC2 production mode: run the core self-hosted stack locally via
@@ -106,6 +151,7 @@ Environment:
   argus_NO_CACHE=1
   argus_PULL_IMAGES=1
   argus_FORCE_RECREATE=1
+  argus_USER_SKIP_BUILD=1
   argus_ECS_WORKERS=1
   argus_ECS_REPLACE_WORKERS=1
   argus_SKIP_BLAZOR_ASSET_VERIFY=1
@@ -116,8 +162,8 @@ EOF
       exit 0
       ;;
     *)
-      echo "Unknown argument: $1 (use -h for help)" >&2
-      exit 1
+      COMMAND_ARGS+=("$1")
+      shift
       ;;
   esac
 done
@@ -125,6 +171,10 @@ export argus_DEPLOY_FRESH
 export argus_DEPLOY_MODE
 export argus_ECS_WORKERS
 export argus_ECS_REPLACE_WORKERS
+export argus_USER_SKIP_BUILD="${argus_USER_SKIP_BUILD:-0}"
+export argus_NO_CACHE="${argus_NO_CACHE:-0}"
+export argus_PULL_IMAGES="${argus_PULL_IMAGES:-0}"
+export argus_FORCE_RECREATE="${argus_FORCE_RECREATE:-0}"
 if [[ "$argus_ECS_WORKERS" == "1" ]]; then
   export argus_GIT_PULL="${argus_GIT_PULL:-1}"
 fi
@@ -181,7 +231,8 @@ argus_verify_command_center_blazor_static_assets() {
 
   local tmp
   tmp="$(mktemp)"
-  if ! curl -fsS --max-time 20 "http://127.0.0.1:8080/_framework/blazor.web.js" -o "$tmp"; then
+  local web_base_url="${ARGUS_WEB_BASE_URL:-http://127.0.0.1:8082}"
+  if ! curl -fsS --max-time 20 "$web_base_url/_framework/blazor.web.js" -o "$tmp"; then
     echo "command-center-web failed to serve /_framework/blazor.web.js; attempting automatic recovery..." >&2
     if ! argus_recover_command_center_blazor_script "$cid"; then
       rm -f "$tmp"
@@ -191,7 +242,7 @@ argus_verify_command_center_blazor_static_assets() {
     fi
     cid="$(compose ps -q command-center-web | tail -n 1 || true)"
     rm -f "$tmp"
-    if ! curl -fsS --max-time 20 "http://127.0.0.1:8080/_framework/blazor.web.js" -o "$tmp"; then
+    if ! curl -fsS --max-time 20 "$web_base_url/_framework/blazor.web.js" -o "$tmp"; then
       rm -f "$tmp"
       echo "ERROR: /_framework/blazor.web.js still does not return HTTP 200 after recovery." >&2
       compose logs --tail=150 command-center-web >&2 || true
@@ -267,6 +318,55 @@ if [[ "$argus_ECS_WORKERS" == "1" && -f "$DEPLOY_DIR/aws/.env" ]]; then
 fi
 
 argus_ensure_runtime_dependencies
+case "$CMD" in
+  down)
+    echo "Stopping stack from: $ROOT"
+    compose down --remove-orphans
+    echo "Stopped."
+    exit 0
+    ;;
+  logs)
+    log_args=(logs --tail "$LOG_TAIL")
+    [[ "$FOLLOW_LOGS" == "1" ]] && log_args+=(-f)
+    log_args+=("${COMMAND_ARGS[@]}")
+    compose "${log_args[@]}"
+    exit 0
+    ;;
+  ps | status)
+    compose ps "${COMMAND_ARGS[@]}"
+    exit 0
+    ;;
+  restart)
+    if [[ ${#COMMAND_ARGS[@]} -gt 0 ]]; then
+      compose restart "${COMMAND_ARGS[@]}"
+    else
+      compose restart
+    fi
+    exit 0
+    ;;
+  smoke)
+    bash "$DEPLOY_DIR/smoke-test.sh" "${COMMAND_ARGS[@]}"
+    exit 0
+    ;;
+  clean)
+    if [[ "${CONFIRM_ARGUS_CLEAN:-}" != "yes" ]]; then
+      echo "Refusing to remove compose volumes without confirmation." >&2
+      echo "Run: CONFIRM_ARGUS_CLEAN=yes ./deploy/deploy.sh clean" >&2
+      exit 1
+    fi
+    compose down --remove-orphans --volumes
+    rm -rf "$ROOT/deploy/.hot-publish"
+    echo "Cleaned compose containers, orphans, volumes, and hot-publish output."
+    exit 0
+    ;;
+  up)
+    ;;
+  *)
+    echo "Unknown command: $CMD" >&2
+    exit 1
+    ;;
+esac
+
 if [[ "$argus_ECS_WORKERS" == "1" ]]; then
   argus_ensure_curl
   argus_ensure_git || true
@@ -287,7 +387,12 @@ if [[ "$argus_ECS_WORKERS" == "1" && "${argus_ECS_USE_MUTABLE_TAG:-0}" != "1" ]]
   export IMAGE_TAG="${ecs_image_tag:-argus-build}"
   echo "ECS IMAGE_TAG=${IMAGE_TAG}"
 fi
-argus_decide_incremental_deploy
+if [[ "${argus_USER_SKIP_BUILD:-0}" == "1" ]]; then
+  export argus_DEPLOY_SKIP_BUILD=1
+  echo "Deploy requested with --skip-build; docker compose up will apply runtime configuration only."
+else
+  argus_decide_incremental_deploy
+fi
 
 if [[ "$argus_ECS_WORKERS" == "1" ]]; then
   echo "Applying core stack from: $ROOT (local workers scaled to zero; ECS workers enabled)"
@@ -350,8 +455,9 @@ fi
 
 echo ""
 echo "argus v2 is running."
-echo "  Command Center:  http://localhost:8080/  (use host public IP on EC2)"
-echo "  # Blazor runtime:  http://localhost:8080/_framework/blazor.web.js (or fingerprinted equivalent)"
+echo "  Command Center gateway:  http://localhost:8081/  (use host public IP on EC2)"
+echo "  Command Center web:      http://localhost:8082/"
+echo "  # Blazor runtime:       http://localhost:8082/_framework/blazor.web.js (or fingerprinted equivalent)"
 echo "  RabbitMQ admin:  http://localhost:15672/  (user/pass: argus / argus)"
 echo "  Postgres:        localhost:5432  db=argus_engine (+ file blobs db argus_engine_files)  user=argus"
 echo ""
@@ -359,8 +465,9 @@ echo "Subdomain enumeration tools are installed into the worker images:"
 echo "  docker compose -f deploy/docker-compose.yml run --rm --entrypoint sh worker-enum -c 'command -v subfinder && command -v amass && test -s /opt/argus/wordlists/subdomains.txt'"
 echo ""
 echo "Useful commands (from $ROOT):"
-echo "  ./deploy/deploy.sh --hot                  # source-only hot-swap into running containers"
-echo "  ./deploy/deploy.sh -fresh                 # full image rebuild; use this if Blazor static assets are stale/missing"
+echo "  ./deploy/deploy.sh                        # incremental hot deploy; rebuilds only when needed"
+echo "  ./deploy/deploy.sh --image                # incremental image deploy instead of hot-swap"
+echo "  ./deploy/deploy.sh -fresh                 # full no-cache image rebuild"
 echo "  ./deploy/prebuild-cache.sh                # warm image/NuGet/Go caches before debugging"
 echo "  ./deploy/smoke-test.sh                    # verify health, Blazor static assets, and dependency diagnostics"
 echo "  ./deploy/logs.sh --errors                 # show recent error-like log lines across services"

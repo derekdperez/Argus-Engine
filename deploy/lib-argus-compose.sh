@@ -9,7 +9,7 @@
 #   - Does not pull base images or force-recreate unchanged containers unless requested.
 #
 # Optional:
-#   argus_DEPLOY_MODE=image|hot  Default image. hot updates running containers when only .NET source changed.
+#   argus_DEPLOY_MODE=image|hot  Default hot. hot updates running containers when only .NET source changed.
 #   argus_GIT_PULL=1             Run git pull --ff-only in ROOT before build.
 #   argus_NO_CACHE=1             Add docker compose build --no-cache (slowest, strongest cache bust).
 #   argus_PULL_IMAGES=1          Add docker compose build --pull. Defaults to 0 for fast deploys.
@@ -118,7 +118,16 @@ argus_sha256_file_list() {
 
 argus_service_project_path() {
   case "$1" in
-    command-center-web) echo "src/ArgusEngine.CommandCenter" ;;
+    command-center-gateway) echo "src/ArgusEngine.CommandCenter.Gateway" ;;
+    command-center-operations-api) echo "src/ArgusEngine.CommandCenter.Operations.Api" ;;
+    command-center-discovery-api) echo "src/ArgusEngine.CommandCenter.Discovery.Api" ;;
+    command-center-worker-control-api) echo "src/ArgusEngine.CommandCenter.WorkerControl.Api" ;;
+    command-center-maintenance-api) echo "src/ArgusEngine.CommandCenter.Maintenance.Api" ;;
+    command-center-updates-api) echo "src/ArgusEngine.CommandCenter.Updates.Api" ;;
+    command-center-realtime) echo "src/ArgusEngine.CommandCenter.Realtime.Host" ;;
+    command-center-bootstrapper) echo "src/ArgusEngine.CommandCenter.Bootstrapper" ;;
+    command-center-spider-dispatcher) echo "src/ArgusEngine.CommandCenter.SpiderDispatcher" ;;
+    command-center-web) echo "src/ArgusEngine.CommandCenter.Web" ;;
     gatekeeper) echo "src/ArgusEngine.Gatekeeper" ;;
     worker-spider) echo "src/ArgusEngine.Workers.Spider" ;;
     worker-enum) echo "src/ArgusEngine.Workers.Enumeration" ;;
@@ -132,7 +141,16 @@ argus_service_project_path() {
 
 argus_service_app_dll() {
   case "$1" in
-    command-center-web) echo "ArgusEngine.CommandCenter.dll" ;;
+    command-center-gateway) echo "ArgusEngine.CommandCenter.Gateway.dll" ;;
+    command-center-operations-api) echo "ArgusEngine.CommandCenter.Operations.Api.dll" ;;
+    command-center-discovery-api) echo "ArgusEngine.CommandCenter.Discovery.Api.dll" ;;
+    command-center-worker-control-api) echo "ArgusEngine.CommandCenter.WorkerControl.Api.dll" ;;
+    command-center-maintenance-api) echo "ArgusEngine.CommandCenter.Maintenance.Api.dll" ;;
+    command-center-updates-api) echo "ArgusEngine.CommandCenter.Updates.Api.dll" ;;
+    command-center-realtime) echo "ArgusEngine.CommandCenter.Realtime.Host.dll" ;;
+    command-center-bootstrapper) echo "ArgusEngine.CommandCenter.Bootstrapper.dll" ;;
+    command-center-spider-dispatcher) echo "ArgusEngine.CommandCenter.SpiderDispatcher.dll" ;;
+    command-center-web) echo "ArgusEngine.CommandCenter.Web.dll" ;;
     gatekeeper) echo "ArgusEngine.Gatekeeper.dll" ;;
     worker-spider) echo "ArgusEngine.Workers.Spider.dll" ;;
     worker-enum) echo "ArgusEngine.Workers.Enumeration.dll" ;;
@@ -152,7 +170,9 @@ argus_service_csproj() {
 
 argus_service_dockerfile() {
   case "$1" in
-    command-center-web) echo "deploy/Dockerfile.web" ;;
+    command-center-gateway | command-center-operations-api | command-center-discovery-api | command-center-worker-control-api | command-center-maintenance-api | command-center-updates-api | command-center-realtime | command-center-web)
+      echo "deploy/Dockerfile.commandcenter-host"
+      ;;
     worker-enum) echo "deploy/Dockerfile.worker-enum" ;;
     *) echo "deploy/Dockerfile.worker" ;;
   esac
@@ -160,6 +180,15 @@ argus_service_dockerfile() {
 
 argus_all_dotnet_services() {
   printf '%s\n' \
+    command-center-gateway \
+    command-center-operations-api \
+    command-center-discovery-api \
+    command-center-worker-control-api \
+    command-center-maintenance-api \
+    command-center-updates-api \
+    command-center-realtime \
+    command-center-bootstrapper \
+    command-center-spider-dispatcher \
     command-center-web \
     gatekeeper \
     worker-spider \
@@ -179,6 +208,7 @@ argus_common_source_inputs() {
     "global.json" \
     "ArgusEngine.slnx" \
     "src/ArgusEngine.Application" \
+    "src/ArgusEngine.CommandCenter.Contracts" \
     "src/ArgusEngine.Contracts" \
     "src/ArgusEngine.Domain" \
     "src/ArgusEngine.Infrastructure"
@@ -197,15 +227,21 @@ argus_service_specific_source_inputs() {
     command-center-web)
       inputs+=(
         "src/ArgusEngine.Harness.Core"
+      )
+      ;;
+    command-center-worker-control-api)
+      inputs+=(
+        "src/ArgusEngine.Harness.Core"
         "src/ArgusEngine.Gatekeeper"
         "src/ArgusEngine.Workers.Enumeration"
         "src/ArgusEngine.Workers.Spider"
         "src/ArgusEngine.Workers.PortScan"
         "src/ArgusEngine.Workers.HighValue"
         "src/ArgusEngine.Workers.TechnologyIdentification"
-        "src/ArgusEngine.Workers.HttpRequester"
-        "src/Resources/Wordlists/high_value"
       )
+      ;;
+    command-center-spider-dispatcher)
+      inputs+=("src/ArgusEngine.Workers.Spider")
       ;;
     worker-highvalue)
       inputs+=("src/Resources/RegexPatterns" "src/Resources/Wordlists/high_value")
@@ -700,7 +736,7 @@ argus_decide_incremental_deploy() {
   unset argus_HOT_SWAP_SERVICES
   unset argus_IMAGE_REBUILD_SERVICES
   unset argus_BUILT_SERVICES
-  argus_DEPLOY_MODE="${argus_DEPLOY_MODE:-image}"
+  argus_DEPLOY_MODE="${argus_DEPLOY_MODE:-hot}"
 
   case "$argus_DEPLOY_MODE" in
     image | hot) ;;
@@ -841,13 +877,17 @@ argus_ensure_base_images() {
     echo "Building runtime base image now to satisfy dependencies..."
     argus_docker build -t argus-engine-base:local -f "$ROOT/deploy/Dockerfile.base-runtime" "$ROOT/deploy/"
   fi
+  if ! argus_docker image inspect argus-recon-base:local >/dev/null 2>&1; then
+    echo "Building recon base image now to satisfy worker-enum dependencies..."
+    argus_docker build -t argus-recon-base:local -f "$ROOT/deploy/Dockerfile.base-recon" "$ROOT/deploy/"
+  fi
 }
 
 argus_compose_build_service_list() {
   argus_ensure_base_images
   local args=(build)
   local built_services=("$@")
-  [[ "${argus_PULL_IMAGES:-0}" == "1" || "${argus_DEPLOY_FRESH:-0}" == "1" ]] && args+=(--pull)
+  [[ "${argus_PULL_IMAGES:-0}" == "1" ]] && args+=(--pull)
   [[ "${argus_NO_CACHE:-}" == "1" ]] && args+=(--no-cache)
   if [[ $# -gt 0 ]]; then
     args+=("$@")
@@ -856,7 +896,7 @@ argus_compose_build_service_list() {
   fi
   if [[ "${argus_BUILD_SEQUENTIAL:-0}" == "1" ]]; then
     local build_flags=()
-    [[ "${argus_PULL_IMAGES:-0}" == "1" || "${argus_DEPLOY_FRESH:-0}" == "1" ]] && build_flags+=(--pull)
+    [[ "${argus_PULL_IMAGES:-0}" == "1" ]] && build_flags+=(--pull)
     [[ "${argus_NO_CACHE:-}" == "1" ]] && build_flags+=(--no-cache)
     local svc
     for svc in "${built_services[@]}"; do

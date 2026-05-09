@@ -18,6 +18,11 @@ public static class ArgusDbBootstrap
             LogLevel.Information,
             new EventId(2, nameof(LogStartupDatabaseBootstrapMigrated)),
             "Startup database bootstrap completed via Migrate mode.");
+    private static readonly Action<ILogger, Exception?> LogStartupDatabaseBootstrapMigrateFallback =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(4, nameof(LogStartupDatabaseBootstrapMigrateFallback)),
+            "Startup database bootstrap requested Migrate mode, but no EF migrations were found. Falling back to EnsureCreated compatibility mode.");
     private static readonly Action<ILogger, Exception?> LogStartupDatabaseBootstrapEnsureCreated =
         LoggerMessage.Define(
             LogLevel.Warning,
@@ -43,6 +48,15 @@ public static class ArgusDbBootstrap
         var db = scope.ServiceProvider.GetRequiredService<ArgusDbContext>();
         if (mode.Equals("Migrate", StringComparison.OrdinalIgnoreCase))
         {
+            var migrations = await db.Database.GetMigrationsAsync(cancellationToken).ConfigureAwait(false);
+            if (!migrations.Any())
+            {
+                LogStartupDatabaseBootstrapMigrateFallback(logger, null);
+                await BootstrapEnsureCreatedAsync(scope.ServiceProvider, db, logger, includeFileStore, cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+
             await db.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
             await ArgusDbSeeder.SeedWorkerSwitchesAsync(db, cancellationToken).ConfigureAwait(false);
             if (includeFileStore)
@@ -56,17 +70,8 @@ public static class ArgusDbBootstrap
             return;
         }
 
-        await db.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
-        await ArgusDbSchemaPatches.ApplyAfterEnsureCreatedAsync(db, logger, cancellationToken).ConfigureAwait(false);
-        await ArgusDbSeeder.SeedWorkerSwitchesAsync(db, cancellationToken).ConfigureAwait(false);
-        if (includeFileStore)
-        {
-            var fileStoreFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FileStoreDbContext>>();
-            await using var fs = await fileStoreFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-            await fs.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        LogStartupDatabaseBootstrapEnsureCreated(logger, null);
+        await BootstrapEnsureCreatedAsync(scope.ServiceProvider, db, logger, includeFileStore, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static bool ShouldSkipStartupDatabase(IConfiguration configuration)
@@ -82,5 +87,25 @@ public static class ArgusDbBootstrap
             Environment.GetEnvironmentVariable("ARGUS_SKIP_STARTUP_DATABASE"),
             "1",
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task BootstrapEnsureCreatedAsync(
+        IServiceProvider services,
+        ArgusDbContext db,
+        ILogger logger,
+        bool includeFileStore,
+        CancellationToken cancellationToken)
+    {
+        await db.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
+        await ArgusDbSchemaPatches.ApplyAfterEnsureCreatedAsync(db, logger, cancellationToken).ConfigureAwait(false);
+        await ArgusDbSeeder.SeedWorkerSwitchesAsync(db, cancellationToken).ConfigureAwait(false);
+        if (includeFileStore)
+        {
+            var fileStoreFactory = services.GetRequiredService<IDbContextFactory<FileStoreDbContext>>();
+            await using var fs = await fileStoreFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+            await fs.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        LogStartupDatabaseBootstrapEnsureCreated(logger, null);
     }
 }

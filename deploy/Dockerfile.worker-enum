@@ -33,14 +33,14 @@ RUN for f in src/*.csproj; do \
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     cp -an /opt/argus-nuget/packages/. /root/.nuget/packages/ 2>/dev/null || true; \
-    dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
+    dotnet restore ArgusEngine.slnx
 
 # Copy the rest of the source
 COPY src/ src/
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
-      -c Release -o /app/publish /p:UseAppHost=false \
+      -c Release -o /app/publish /p:UseAppHost=false --no-restore \
       -p:maxcpucount -p:ParallelizePublish=true \
       /p:Version="${COMPONENT_VERSION}" \
       /p:AssemblyVersion="2.6.1.0" \

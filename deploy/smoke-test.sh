@@ -17,12 +17,12 @@ check_url() {
   local url="$2"
   local expected="${3:-200}"
   local code
-  code="$(curl -k -sS -o /tmp/nightmare-smoke-body.txt -w '%{http_code}' --max-time "$CURL_TIMEOUT" "$url" || true)"
+  code="$(curl -k -sS -o /tmp/argus-smoke-body.txt -w '%{http_code}' --max-time "$CURL_TIMEOUT" "$url" || true)"
   if [[ "$code" == "$expected" ]]; then
     pass "$label ($code) $url"
   else
     printf 'Response body from %s:\n' "$url" >&2
-    sed -n '1,120p' /tmp/nightmare-smoke-body.txt >&2 || true
+    sed -n '1,120p' /tmp/argus-smoke-body.txt >&2 || true
     fail "$label expected HTTP $expected but got ${code:-curl-failed}: $url"
   fi
 }
@@ -54,17 +54,18 @@ check_diagnostics() {
   local label="$1"
   local path="$2"
   local code
-  code="$(curl -k -sS -o /tmp/nightmare-smoke-body.txt -w '%{http_code}' \
+  code="$(curl -k -sS -o /tmp/argus-smoke-body.txt -w '%{http_code}' \
     --max-time "$CURL_TIMEOUT" \
+    -H "X-Argus-Diagnostics-Key: ${DIAGNOSTICS_KEY}" \
     -H "X-Nightmare-Diagnostics-Key: ${DIAGNOSTICS_KEY}" \
     "${BASE_URL}${path}" || true)"
   if [[ "$code" == "200" ]]; then
     pass "$label ($code) ${BASE_URL}${path}"
-    sed -n '1,80p' /tmp/nightmare-smoke-body.txt
+    sed -n '1,80p' /tmp/argus-smoke-body.txt
     printf '\n'
   else
     printf 'Response body from %s:\n' "${BASE_URL}${path}" >&2
-    sed -n '1,120p' /tmp/nightmare-smoke-body.txt >&2 || true
+    sed -n '1,120p' /tmp/argus-smoke-body.txt >&2 || true
     fail "$label expected HTTP 200 but got ${code:-curl-failed}. Check ARGUS_DIAGNOSTICS_API_KEY."
   fi
 }

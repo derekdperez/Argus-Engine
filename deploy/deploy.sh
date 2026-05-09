@@ -97,6 +97,25 @@ while [[ $# -gt 0 ]]; do
       argus_SKIP_BLAZOR_ASSET_VERIFY=1
       shift
       ;;
+    --scale-spider)
+      [[ $# -ge 2 ]] || { echo "--scale-spider requires a value" >&2; exit 1; }
+      argus_SPIDER_REPLICAS="$2"
+      shift 2
+      ;;
+    --scale-enum)
+      [[ $# -ge 2 ]] || { echo "--scale-enum requires a value" >&2; exit 1; }
+      argus_ENUM_REPLICAS="$2"
+      shift 2
+      ;;
+    --scale-portscan | --scale-highvalue | --scale-techid | --scale-http-requester)
+      [[ $# -ge 2 ]] || { echo "$1 requires a value" >&2; exit 1; }
+      echo "WARN: $1 is accepted for compatibility, but this compose stack keeps that service at one container."
+      shift 2
+      ;;
+    --with-observability)
+      echo "WARN: --with-observability is accepted for compatibility, but deploy/deploy.sh currently uses deploy/docker-compose.yml only."
+      shift
+      ;;
     --tail)
       [[ $# -ge 2 ]] || { echo "--tail requires a value" >&2; exit 1; }
       LOG_TAIL="$2"
@@ -136,6 +155,8 @@ Usage: ./deploy/deploy.sh [options] [up|down|logs|ps|status|restart|smoke|clean]
   restart    Restart listed services, or all compose services if none are listed.
   smoke      Run deploy/smoke-test.sh.
   clean      Stop the stack and remove compose volumes after confirmation.
+
+Service arguments are used by logs, ps/status, and restart.
 
   --ecs-workers
              EC2 production mode: run the core self-hosted stack locally via

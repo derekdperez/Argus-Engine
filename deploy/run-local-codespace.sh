@@ -24,10 +24,9 @@ is_codespace() {
 configure_codespace_defaults() {
   is_codespace || return 0
 
-  # Smoke checks should use the in-container/local listener, not the external
-  # forwarded URL. deploy-local.sh also verifies that the rendered Blazor JS and
-  # CSS assets are served with executable/stylesheet MIME types.
-  export ARGUS_LOCAL_BASE_URL="${ARGUS_LOCAL_BASE_URL:-http://127.0.0.1:8080}"
+  # Smoke checks should use the in-container/local gateway listener, not the external
+  # forwarded URL.
+  export ARGUS_LOCAL_BASE_URL="${ARGUS_LOCAL_BASE_URL:-http://127.0.0.1:8081}"
 
   # Keep the default Codespace footprint small. Developers can override these
   # with deploy-local.sh scale flags or ARGUS_LOCAL_SCALE_WORKER_* variables.
@@ -91,34 +90,32 @@ enable_split_from_args() {
 }
 
 print_codespace_urls() {
-  local command_center_url
-  command_center_url="$(codespace_url_for_port 8080)"
+  local command_center_gateway_url command_center_web_url
+  command_center_gateway_url="$(codespace_url_for_port 8081)"
+  command_center_web_url="$(codespace_url_for_port 8082)"
 
   echo ""
   echo "GitHub Codespaces forwarded URLs:"
-  echo "  Command Center: $command_center_url"
-  if [[ "${ARGUS_LOCAL_ENABLE_COMMAND_CENTER_SPLIT:-0}" == "1" ]]; then
-    echo "  CC Gateway:     $(codespace_url_for_port 8081)"
-    echo "  CC Web Shell:   $(codespace_url_for_port 8082)"
-    echo "  CC Operations:  $(codespace_url_for_port 8083)"
-    echo "  CC Discovery:   $(codespace_url_for_port 8084)"
-    echo "  CC Workers:     $(codespace_url_for_port 8085)"
-    echo "  CC Maintenance: $(codespace_url_for_port 8086)"
-    echo "  CC Updates:     $(codespace_url_for_port 8087)"
-    echo "  CC Realtime:    $(codespace_url_for_port 8088)"
-  fi
+  echo "  Command Center gateway: $command_center_gateway_url"
+  echo "  Command Center web:     $command_center_web_url"
+  echo "  CC Operations:          $(codespace_url_for_port 8083)"
+  echo "  CC Discovery:           $(codespace_url_for_port 8084)"
+  echo "  CC Workers:             $(codespace_url_for_port 8085)"
+  echo "  CC Maintenance:         $(codespace_url_for_port 8086)"
+  echo "  CC Updates:             $(codespace_url_for_port 8087)"
+  echo "  CC Realtime:            $(codespace_url_for_port 8088)"
   echo "  RabbitMQ UI:    $(codespace_url_for_port 15672)"
   echo ""
   echo "Port visibility is controlled from the GitHub Codespaces Ports tab."
-  echo "If the page opens but CSS/JS are blocked, recreate command-center so it uses"
+  echo "If the page opens but CSS/JS are blocked, redeploy command-center-web so it uses"
   echo "the published static assets from the image:"
-  echo "  docker compose -f deploy/docker-compose.yml up -d --no-deps --force-recreate command-center"
+  echo "  ./deploy/deploy.sh --image"
   echo ""
   echo "Useful commands:"
   echo "  ./deploy/run-local-codespace.sh smoke"
-  echo "  ./deploy/run-local-codespace.sh --with-command-center-split"
+  echo "  ./deploy/run-local-codespace.sh"
   echo "  ./deploy/run-local-codespace.sh status"
-  echo "  ./deploy/run-local-codespace.sh logs --follow command-center"
+  echo "  ./deploy/run-local-codespace.sh logs --follow command-center-web"
   echo "  ./deploy/run-local-codespace.sh down"
 }
 

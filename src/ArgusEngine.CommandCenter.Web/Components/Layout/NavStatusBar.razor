@@ -1,0 +1,153 @@
+@rendermode InteractiveServer
+@implements IDisposable
+@using ArgusEngine.CommandCenter.Contracts
+@using ArgusEngine.CommandCenter.Models
+@using ArgusEngine.CommandCenter.Realtime
+@inject NavigationManager Navigation
+@inject DiscoveryRealtimeClient Realtime
+
+<div class="nav-status nav-status-@_statusTone" role="status" aria-live="polite" title="@_statusDetail">
+    <span class="nav-status-dot" aria-hidden="true"></span>
+    <span class="nav-status-text">@_statusText</span>
+    <span class="nav-status-time">@_statusTimeLabel</span>
+</div>
+
+@code {
+    private string _statusText = "Starting Command Center";
+    private string _statusDetail = "Preparing the application shell.";
+    private string _statusTone = "busy";
+    private string _statusTimeLabel = "now";
+    private bool _initialized;
+
+    protected override Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        Realtime.DomainEventReceived += OnDomainEventReceived;
+        Realtime.StatusChangedReceived += OnStatusChangedReceived;
+        Realtime.ConnectionStateChanged += OnRealtimeConnectionStateChanged;
+        SetStatus($"Opening {CurrentPageName()}", "Loading page data and controls.", "busy");
+        return Task.CompletedTask;
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialized)
+        {
+            _initialized = true;
+            _ = InvokeAsync(InitializeLiveStatusAsync);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task InitializeLiveStatusAsync()
+    {
+        try
+        {
+            await Realtime.EnsureStartedAsync();
+            SetStatus("Live updates connected", "Listening for Command Center activity.", "ok");
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Waiting for live updates", ex.Message, "warn");
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        _ = args;
+        _ = InvokeAsync(() =>
+        {
+            SetStatus($"Opening {CurrentPageName()}", "Loading page data and controls.", "busy");
+            StateHasChanged();
+        });
+    }
+
+    private void OnRealtimeConnectionStateChanged(object? sender, EventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        _ = InvokeAsync(() =>
+        {
+            if (Realtime.IsConnected)
+            {
+                SetStatus("Live updates connected", "Realtime event stream is active.", "ok");
+            }
+            else
+            {
+                SetStatus("Reconnecting live updates", $"Realtime state: {Realtime.State}.", "warn");
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private void OnDomainEventReceived(object? sender, LiveUiEventDto evt)
+    {
+        _ = sender;
+        _ = InvokeAsync(() =>
+        {
+            var summary = string.IsNullOrWhiteSpace(evt.Summary) ? evt.Kind : evt.Summary;
+            var scope = string.IsNullOrWhiteSpace(evt.Scope) ? "activity" : evt.Scope;
+            SetStatus(summary, $"Latest {scope} event: {evt.Kind}.", ToneForScope(scope));
+            StateHasChanged();
+        });
+    }
+
+    private void OnStatusChangedReceived(object? sender, CommandCenterStatusSnapshot snapshot)
+    {
+        _ = sender;
+        _ = InvokeAsync(() =>
+        {
+            SetStatus(
+                $"System status: {snapshot.Status}",
+                $"Updated {AppTimeFormat.Format(snapshot.AtUtc)}.",
+                string.Equals(snapshot.Status, "Healthy", StringComparison.OrdinalIgnoreCase) ? "ok" : "warn");
+            StateHasChanged();
+        });
+    }
+
+    private void SetStatus(string text, string detail, string tone)
+    {
+        _statusText = string.IsNullOrWhiteSpace(text) ? "Command Center ready" : text.Trim();
+        _statusDetail = detail;
+        _statusTone = tone;
+        _statusTimeLabel = "now";
+    }
+
+    private string CurrentPageName()
+    {
+        var relative = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/');
+        return relative switch
+        {
+            "" or "ops" => "Operations",
+            "high-value-findings" => "High Value",
+            "technology-identification" => "Technology ID",
+            "status" => "System Status",
+            "configuration" => "Configuration",
+            "admin" => "Admin",
+            "development" => "Development",
+            "home" => "Home",
+            _ => "Command Center",
+        };
+    }
+
+    private static string ToneForScope(string scope) =>
+        scope.ToLowerInvariant() switch
+        {
+            "targets" or "assets" or "http" => "busy",
+            "workers" or "status" or "ops" => "ok",
+            "findings" => "warn",
+            _ => "ok",
+        };
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+        Realtime.DomainEventReceived -= OnDomainEventReceived;
+        Realtime.StatusChangedReceived -= OnStatusChangedReceived;
+        Realtime.ConnectionStateChanged -= OnRealtimeConnectionStateChanged;
+    }
+}

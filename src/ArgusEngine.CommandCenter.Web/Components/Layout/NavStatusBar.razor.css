@@ -1,0 +1,72 @@
+.nav-status {
+    display: grid;
+    grid-template-columns: auto minmax(8rem, 22rem) auto;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 2.35rem;
+    max-width: min(34vw, 28rem);
+    padding: 0.42rem 0.65rem;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 0.65rem;
+    background: #fff;
+    color: #334155;
+    box-shadow: 0 5px 14px rgba(15, 23, 42, 0.06);
+}
+
+.nav-status-dot {
+    width: 0.62rem;
+    height: 0.62rem;
+    border-radius: 999px;
+    background: #64748b;
+    box-shadow: 0 0 0 4px rgba(100, 116, 139, 0.12);
+}
+
+.nav-status-busy .nav-status-dot {
+    background: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+    animation: nav-status-pulse 1.35s ease-in-out infinite;
+}
+
+.nav-status-ok .nav-status-dot {
+    background: #16a34a;
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.14);
+}
+
+.nav-status-warn .nav-status-dot {
+    background: #d97706;
+    box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.16);
+}
+
+.nav-status-text {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 0.84rem;
+    font-weight: 780;
+}
+
+.nav-status-time {
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+@keyframes nav-status-pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(0.78);
+        opacity: 0.7;
+    }
+}
+
+@media (max-width: 840px) {
+    .nav-status {
+        width: 100%;
+        max-width: none;
+    }
+}

@@ -87,7 +87,7 @@ public static partial class ArgusDbSchemaPatches
                     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
                     direction character varying(16) NOT NULL,
                     message_type character varying(256) NOT NULL,
-                    consumer_type character varying(512) NULL,
+                    consumer_type character varying(2048) NULL,
                     payload_json text NOT NULL,
                     occurred_at_utc timestamp with time zone NOT NULL,
                     host_name character varying(256) NOT NULL DEFAULT '',
@@ -112,12 +112,12 @@ public static partial class ArgusDbSchemaPatches
                         SELECT 1 FROM information_schema.columns
                         WHERE table_schema = 'public' AND table_name = 'bus_journal' AND column_name = 'consumer_type'
                     ) THEN
-                        ALTER TABLE bus_journal ALTER COLUMN consumer_type TYPE character varying(512);
+                        ALTER TABLE bus_journal ALTER COLUMN consumer_type TYPE character varying(2048);
                     ELSIF EXISTS (
                         SELECT 1 FROM information_schema.tables
                         WHERE table_schema = 'public' AND table_name = 'bus_journal'
                     ) THEN
-                        ALTER TABLE bus_journal ADD COLUMN consumer_type character varying(512);
+                        ALTER TABLE bus_journal ADD COLUMN consumer_type character varying(2048);
                     END IF;
                 END
                 $patch$;

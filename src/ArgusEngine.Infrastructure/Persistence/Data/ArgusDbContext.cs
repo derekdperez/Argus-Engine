@@ -187,6 +187,7 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnName("id");
             e.Property(x => x.ObservationId).HasColumnName("observation_id");
+            e.HasOne<TechnologyObservation>().WithMany().HasForeignKey(x => x.ObservationId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.SignalId).HasColumnName("signal_id");
             e.Property(x => x.EvidenceType).HasColumnName("evidence_type");
             e.Property(x => x.EvidenceKey).HasColumnName("evidence_key");
@@ -237,7 +238,7 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.Property(x => x.Id).HasColumnName("id").UseIdentityAlwaysColumn();
             e.Property(x => x.Direction).HasColumnName("direction").HasMaxLength(16).IsRequired();
             e.Property(x => x.MessageType).HasColumnName("message_type").HasMaxLength(256).IsRequired();
-            e.Property(x => x.ConsumerType).HasColumnName("consumer_type").HasMaxLength(512);
+            e.Property(x => x.ConsumerType).HasColumnName("consumer_type").HasMaxLength(2048);
             e.Property(x => x.PayloadJson).HasColumnName("payload_json").IsRequired();
             e.Property(x => x.OccurredAtUtc).HasColumnName("occurred_at_utc");
             e.Property(x => x.HostName).HasMaxLength(256).IsRequired().HasColumnName("host_name");

@@ -54,6 +54,8 @@ public sealed class AssetAdmissionDecisionSchemaInitializer(
 
                 CREATE INDEX IF NOT EXISTS ix_asset_admission_decisions_canonical_key
                     ON asset_admission_decisions (canonical_key);
+
+                ALTER TABLE asset_admission_decisions ADD COLUMN IF NOT EXISTS canonical_key varchar(2048) NULL;
                 """,
                 cancellationToken).ConfigureAwait(false);
         }

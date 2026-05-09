@@ -426,7 +426,7 @@ services:
       rabbitmq:
         condition: service_healthy
     deploy:
-      replicas: ${ARGUS_WORKER_SPIDER_REPLICAS:-1}
+      replicas: ${ARGUS_WORKER_SPIDER_REPLICAS:-2}
 
   worker-http-requester:
     image: argus-engine/worker-http-requester:${ARGUS_ENGINE_VERSION:-2.6.3}
@@ -456,7 +456,7 @@ services:
       rabbitmq:
         condition: service_healthy
     deploy:
-      replicas: ${ARGUS_WORKER_HTTP_REQUESTER_REPLICAS:-3}
+      replicas: ${ARGUS_WORKER_HTTP_REQUESTER_REPLICAS:-2}
 
   worker-enum:
     image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.6.3}
@@ -523,7 +523,7 @@ services:
       rabbitmq:
         condition: service_healthy
     deploy:
-      replicas: ${ARGUS_WORKER_PORTSCAN_REPLICAS:-1}
+      replicas: ${ARGUS_WORKER_PORTSCAN_REPLICAS:-2}
 
   worker-highvalue:
     image: argus-engine/worker-highvalue:${ARGUS_ENGINE_VERSION:-2.6.3}
@@ -550,7 +550,7 @@ services:
       rabbitmq:
         condition: service_healthy
     deploy:
-      replicas: ${ARGUS_WORKER_HIGHVALUE_REPLICAS:-1}
+      replicas: ${ARGUS_WORKER_HIGHVALUE_REPLICAS:-2}
 
   worker-techid:
     image: argus-engine/worker-techid:${ARGUS_ENGINE_VERSION:-2.6.3}
@@ -577,7 +577,7 @@ services:
       rabbitmq:
         condition: service_healthy
     deploy:
-      replicas: ${ARGUS_WORKER_TECHID_REPLICAS:-1}
+      replicas: ${ARGUS_WORKER_TECHID_REPLICAS:-2}
 
 volumes:
   pgdata:

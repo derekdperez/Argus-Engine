@@ -282,6 +282,7 @@
     private bool _anyLoading => _targetsLoading || _subdomainsLoading || _technologiesLoading || _usageLoading;
     private bool _initialLoadStarted;
     private string? _statusMessage;
+    private readonly List<string> _loadErrors = [];
     private Guid? _selectedTargetId;
     private string? _selectedSubdomain;
     private TechnologyUsageDto? _usageModal;
@@ -372,9 +373,9 @@
         if (firstRender && !_initialLoadStarted)
         {
             _initialLoadStarted = true;
-            _ = InvokeAsync(async () =>
+            return InvokeAsync(async () =>
             {
-                await ReloadAsync().ConfigureAwait(false);
+                await ReloadAsync();
                 StateHasChanged();
             });
         }
@@ -384,8 +385,10 @@
 
     private async Task ReloadAsync()
     {
+        _loadErrors.Clear();
         _statusMessage = null;
         await Task.WhenAll(ReloadTargetsAsync(), ReloadSubdomainsAsync(), ReloadTechnologiesAsync(), ReloadUsageAsync());
+        ApplyLoadErrors();
     }
 
     private async Task SelectTargetAsync(Guid targetId)
@@ -393,26 +396,38 @@
         _selectedTargetId = targetId;
         _selectedSubdomain = null;
         _subdomainSearch = "";
+        _loadErrors.Clear();
+        _statusMessage = null;
         await Task.WhenAll(ReloadSubdomainsAsync(), ReloadTechnologiesAsync(), ReloadUsageAsync());
+        ApplyLoadErrors();
     }
 
     private async Task ClearTargetAsync()
     {
         _selectedTargetId = null;
         _selectedSubdomain = null;
+        _loadErrors.Clear();
+        _statusMessage = null;
         await Task.WhenAll(ReloadSubdomainsAsync(), ReloadTechnologiesAsync(), ReloadUsageAsync());
+        ApplyLoadErrors();
     }
 
     private async Task SelectSubdomainAsync(string subdomain)
     {
         _selectedSubdomain = subdomain;
+        _loadErrors.Clear();
+        _statusMessage = null;
         await ReloadTechnologiesAsync();
+        ApplyLoadErrors();
     }
 
     private async Task ClearSubdomainAsync()
     {
         _selectedSubdomain = null;
+        _loadErrors.Clear();
+        _statusMessage = null;
         await ReloadTechnologiesAsync();
+        ApplyLoadErrors();
     }
 
     private async Task ReloadTargetsAsync()
@@ -427,7 +442,7 @@
         }
         catch (Exception ex)
         {
-            _statusMessage = $"Failed to load targets: {ex.Message}";
+            AddLoadError($"targets: {ex.Message}");
         }
         finally
         {
@@ -451,7 +466,7 @@
         }
         catch (Exception ex)
         {
-            _statusMessage = $"Failed to load subdomains: {ex.Message}";
+            AddLoadError($"subdomains: {ex.Message}");
         }
         finally
         {
@@ -471,7 +486,7 @@
         }
         catch (Exception ex)
         {
-            _statusMessage = $"Failed to load technologies: {ex.Message}";
+            AddLoadError($"technologies: {ex.Message}");
         }
         finally
         {
@@ -494,7 +509,7 @@
         }
         catch (Exception ex)
         {
-            _statusMessage = $"Failed to load technology usage: {ex.Message}";
+            AddLoadError($"technology usage: {ex.Message}");
         }
         finally
         {
@@ -532,6 +547,24 @@
         _technologySearch = "";
         _technologySourceFilter = "";
         return Task.CompletedTask;
+    }
+
+    private void AddLoadError(string message)
+    {
+        lock (_loadErrors)
+        {
+            _loadErrors.Add(message);
+        }
+    }
+
+    private void ApplyLoadErrors()
+    {
+        lock (_loadErrors)
+        {
+            _statusMessage = _loadErrors.Count == 0
+                ? null
+                : "Failed to load " + string.Join("; ", _loadErrors);
+        }
     }
 
     private bool IsSelectedTarget(Guid targetId) => _selectedTargetId == targetId;

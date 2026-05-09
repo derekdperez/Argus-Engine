@@ -78,6 +78,8 @@ public static partial class ArgusDbSchemaPatches
                 cancellationToken)
             .ConfigureAwait(false);
 
+        await EnsureCoreTablesAsync(db, cancellationToken).ConfigureAwait(false);
+
         LogPatchingBusJournal(logger);
         await db.Database.ExecuteSqlRawAsync(
                 """
@@ -667,6 +669,118 @@ public static partial class ArgusDbSchemaPatches
                 WHERE r.root_asset_id <> h.child_asset_id
                 ON CONFLICT (target_id, parent_asset_id, child_asset_id, relationship_type) DO UPDATE
                 SET last_seen_at_utc = EXCLUDED.last_seen_at_utc;
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task EnsureCoreTablesAsync(ArgusDbContext db, CancellationToken cancellationToken)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS recon_targets (
+                    "Id" uuid NOT NULL PRIMARY KEY,
+                    "RootDomain" character varying(253) NOT NULL,
+                    "GlobalMaxDepth" integer NOT NULL,
+                    "CreatedAtUtc" timestamp with time zone NOT NULL
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_recon_targets_RootDomain"
+                    ON recon_targets ("RootDomain");
+
+                CREATE TABLE IF NOT EXISTS stored_assets (
+                    "Id" uuid NOT NULL PRIMARY KEY,
+                    "TargetId" uuid NOT NULL REFERENCES recon_targets("Id") ON DELETE CASCADE,
+                    "Kind" integer NOT NULL,
+                    "CanonicalKey" character varying(2048) NOT NULL,
+                    "RawValue" character varying(4096) NOT NULL,
+                    asset_category smallint NOT NULL DEFAULT 0,
+                    display_name character varying(512) NULL,
+                    "Depth" integer NOT NULL DEFAULT 0,
+                    discovered_by character varying(128) NOT NULL DEFAULT 'legacy',
+                    discovery_context character varying(512) NOT NULL DEFAULT '',
+                    "DiscoveredAtUtc" timestamp with time zone NOT NULL DEFAULT now(),
+                    last_seen_at_utc timestamp with time zone NULL,
+                    confidence numeric(5,4) NOT NULL DEFAULT 1.0,
+                    "LifecycleStatus" character varying(32) NOT NULL DEFAULT 'Queued',
+                    type_details_json text NULL,
+                    final_url character varying(4096) NULL,
+                    redirect_count integer NOT NULL DEFAULT 0,
+                    redirect_chain_json jsonb NULL
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_stored_assets_TargetId_CanonicalKey"
+                    ON stored_assets ("TargetId", "CanonicalKey");
+                CREATE INDEX IF NOT EXISTS "IX_stored_assets_TargetId_Kind"
+                    ON stored_assets ("TargetId", "Kind");
+                CREATE INDEX IF NOT EXISTS ix_stored_assets_target_category
+                    ON stored_assets ("TargetId", asset_category);
+
+                CREATE TABLE IF NOT EXISTS http_request_queue (
+                    id uuid NOT NULL PRIMARY KEY,
+                    asset_id uuid NOT NULL REFERENCES stored_assets("Id") ON DELETE CASCADE,
+                    target_id uuid NOT NULL,
+                    asset_kind integer NOT NULL,
+                    method character varying(16) NOT NULL,
+                    request_url character varying(4096) NOT NULL,
+                    domain_key character varying(253) NOT NULL,
+                    state character varying(32) NOT NULL,
+                    priority integer NOT NULL DEFAULT 0,
+                    attempt_count integer NOT NULL DEFAULT 0,
+                    max_attempts integer NOT NULL DEFAULT 3,
+                    created_at_utc timestamp with time zone NOT NULL,
+                    updated_at_utc timestamp with time zone NOT NULL,
+                    next_attempt_at_utc timestamp with time zone NOT NULL,
+                    locked_by character varying(256) NULL,
+                    locked_until_utc timestamp with time zone NULL,
+                    started_at_utc timestamp with time zone NULL,
+                    completed_at_utc timestamp with time zone NULL,
+                    duration_ms bigint NULL,
+                    last_http_status integer NULL,
+                    last_error character varying(2048) NULL,
+                    request_headers_json text NULL,
+                    request_body text NULL,
+                    response_headers_json text NULL,
+                    response_body text NULL,
+                    response_content_type character varying(256) NULL,
+                    response_content_length bigint NULL,
+                    final_url character varying(4096) NULL,
+                    redirect_count integer NOT NULL DEFAULT 0,
+                    redirect_chain_json jsonb NULL,
+                    request_headers_blob_id uuid NULL,
+                    request_body_blob_id uuid NULL,
+                    response_headers_blob_id uuid NULL,
+                    response_body_blob_id uuid NULL,
+                    redirect_chain_blob_id uuid NULL,
+                    response_body_sha256 character varying(64) NULL,
+                    response_body_preview character varying(4096) NULL,
+                    response_body_truncated boolean NOT NULL DEFAULT false
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_http_request_queue_asset_id"
+                    ON http_request_queue (asset_id);
+                CREATE INDEX IF NOT EXISTS "IX_http_request_queue_State_NextAttemptAtUtc"
+                    ON http_request_queue (state, next_attempt_at_utc);
+                CREATE INDEX IF NOT EXISTS ix_http_request_queue_domain_started
+                    ON http_request_queue (domain_key, started_at_utc);
+
+                CREATE TABLE IF NOT EXISTS http_request_queue_settings (
+                    id integer NOT NULL PRIMARY KEY,
+                    enabled boolean NOT NULL,
+                    global_requests_per_minute integer NOT NULL,
+                    per_domain_requests_per_minute integer NOT NULL,
+                    max_concurrency integer NOT NULL,
+                    request_timeout_seconds integer NOT NULL,
+                    rotate_user_agents boolean NOT NULL DEFAULT false,
+                    custom_user_agents_json jsonb NULL,
+                    randomize_header_order boolean NOT NULL DEFAULT false,
+                    use_random_jitter boolean NOT NULL DEFAULT false,
+                    min_jitter_ms integer NOT NULL DEFAULT 0,
+                    max_jitter_ms integer NOT NULL DEFAULT 1000,
+                    spoof_referer boolean NOT NULL DEFAULT false,
+                    custom_headers_json jsonb NULL,
+                    updated_at_utc timestamp with time zone NOT NULL DEFAULT now()
+                );
                 """,
                 cancellationToken)
             .ConfigureAwait(false);

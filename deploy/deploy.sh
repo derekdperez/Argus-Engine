@@ -43,6 +43,15 @@ DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 cd "$ROOT"
 
+if [[ "${ARGUS_NO_UI:-0}" != "1" ]]; then
+  cmd="${1:-up}"
+  if [[ "$cmd" == "up" || "$cmd" == "-fresh" || "$cmd" == "--fresh" || "$cmd" == "--ecs-workers" ]]; then
+    if command -v python3 >/dev/null 2>&1 && [ -t 1 ]; then
+      exec python3 "$DEPLOY_DIR/deploy-ui.py" "$@"
+    fi
+  fi
+fi
+
 if [[ "${ARGUS_NO_DEPLOY_LOG:-0}" != "1" ]]; then
   mkdir -p "$ROOT/deploy/logs"
   LOG_FILE="$ROOT/deploy/logs/deploy_summary_$(date +'%Y-%m-%d_%H-%M-%S').log"

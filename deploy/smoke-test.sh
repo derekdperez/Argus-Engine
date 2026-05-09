@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Smoke-test the running Nightmare v2 Command Center and its dependency diagnostics.
+# Smoke-test the running Argus Engine Command Center and its dependency diagnostics.
 #
 # Usage:
 #   ./deploy/smoke-test.sh
-#   BASE_URL=http://server:8080 NIGHTMARE_DIAGNOSTICS_API_KEY=... ./deploy/smoke-test.sh
+#   BASE_URL=http://server:8081 ARGUS_DIAGNOSTICS_API_KEY=... ./deploy/smoke-test.sh
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-http://localhost:8080}"
-DIAGNOSTICS_KEY="${NIGHTMARE_DIAGNOSTICS_API_KEY:-local-dev-diagnostics-key-change-me}"
+BASE_URL="${BASE_URL:-${ARGUS_LOCAL_BASE_URL:-http://localhost:8081}}"
+DIAGNOSTICS_KEY="${ARGUS_DIAGNOSTICS_API_KEY:-${NIGHTMARE_DIAGNOSTICS_API_KEY:-local-dev-diagnostics-key-change-me}}"
 CURL_TIMEOUT="${CURL_TIMEOUT:-10}"
 
 pass() { printf 'PASS  %s\n' "$*"; }
@@ -65,11 +65,11 @@ check_diagnostics() {
   else
     printf 'Response body from %s:\n' "${BASE_URL}${path}" >&2
     sed -n '1,120p' /tmp/nightmare-smoke-body.txt >&2 || true
-    fail "$label expected HTTP 200 but got ${code:-curl-failed}. Check NIGHTMARE_DIAGNOSTICS_API_KEY."
+    fail "$label expected HTTP 200 but got ${code:-curl-failed}. Check ARGUS_DIAGNOSTICS_API_KEY."
   fi
 }
 
-printf 'Nightmare smoke test against %s\n' "$BASE_URL"
+printf 'Argus smoke test against %s\n' "$BASE_URL"
 check_url "Live health" "${BASE_URL}/health"
 check_url "Ready health" "${BASE_URL}/health/ready"
 check_blazor_asset_from_home_page

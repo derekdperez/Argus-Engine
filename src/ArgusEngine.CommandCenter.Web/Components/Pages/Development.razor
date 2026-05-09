@@ -15,6 +15,7 @@
 @using Microsoft.Extensions.Logging
 @using Microsoft.JSInterop
 @inject MaintenanceApiClient MaintenanceApi
+@inject LocalDockerClient DockerClient
 
 @inject IJSRuntime Js
 @inject ILogger<Development> Logger
@@ -133,6 +134,57 @@
                 <p>Click the button above to begin the automated worker health check suite.</p>
             </div>
         }
+    </section>
+
+    <section class="panel">
+        <div class="section-heading">
+            <div class="title-group">
+                <h2>Local Worker Scaling</h2>
+                <p class="muted">Manage local docker compose workers. Scaling down destroys containers immediately for failure testing.</p>
+            </div>
+            <button type="button" class="btn small outline" disabled="@_loadingDockerWorkers" @onclick="LoadDockerWorkersAsync">
+                @if (_loadingDockerWorkers)
+                {
+                    <span class="spinner"></span>
+                    <span>Refreshing...</span>
+                }
+                else
+                {
+                    <i class="ms-Icon ms-Icon--Refresh"></i>
+                    <span>Refresh</span>
+                }
+            </button>
+        </div>
+
+        <div class="grid-container">
+            <table class="dev-grid" style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border-light); text-align: left;">
+                        <th style="padding: 12px 16px;">Worker Service</th>
+                        <th style="padding: 12px 16px;">Containers Running</th>
+                        <th style="padding: 12px 16px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var svc in _workerServices)
+                    {
+                        var count = _dockerWorkers.TryGetValue(svc, out var list) ? list.Count : 0;
+                        <tr style="border-bottom: 1px solid var(--border-light);">
+                            <td style="padding: 12px 16px;"><strong>@svc</strong></td>
+                            <td style="padding: 12px 16px;">@count</td>
+                            <td style="padding: 12px 16px;">
+                                <button class="btn small outline" @onclick="() => ScaleUpWorkerAsync(svc)" disabled="@(count == 0 && !_dockerWorkers.ContainsKey(svc))">
+                                    <i class="ms-Icon ms-Icon--Add"></i> Scale Up
+                                </button>
+                                <button class="btn small danger-outline" @onclick="() => ScaleDownWorkerAsync(svc)" disabled="@(count == 0)" style="margin-left: 8px;">
+                                    <i class="ms-Icon ms-Icon--Remove"></i> Scale Down (Kill)
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
     </section>
 
     <section class="panel event-feed-panel">
@@ -358,6 +410,7 @@
         Realtime.DomainEventReceived += OnRealtimeEvent;
         await Realtime.EnsureStartedAsync(_devPollCts.Token);
         await RefreshErrorsAsync();
+        await LoadDockerWorkersAsync();
     }
 
     private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
@@ -782,6 +835,69 @@
     private void CloseErrorDetail()
     {
         _selectedError = null;
+    }
+
+    private Dictionary<string, List<DockerContainerDto>> _dockerWorkers = new();
+    private bool _loadingDockerWorkers;
+
+    private readonly string[] _workerServices = new[] {
+        "worker-spider",
+        "worker-enum",
+        "worker-portscan",
+        "worker-highvalue",
+        "worker-techid",
+        "worker-http-requester"
+    };
+
+    private async Task LoadDockerWorkersAsync()
+    {
+        _loadingDockerWorkers = true;
+        StateHasChanged();
+        try
+        {
+            _dockerWorkers.Clear();
+            foreach (var svc in _workerServices)
+            {
+                var containers = await DockerClient.GetContainersAsync(svc, _devPollCts.Token);
+                _dockerWorkers[svc] = containers;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not load docker workers. Ensure docker socket is mounted.");
+        }
+        finally
+        {
+            _loadingDockerWorkers = false;
+        }
+    }
+
+    private async Task ScaleDownWorkerAsync(string serviceName)
+    {
+        if (!_dockerWorkers.TryGetValue(serviceName, out var list) || list.Count == 0) return;
+        var container = list.Last(); // Kill the last one
+        try
+        {
+            await DockerClient.KillContainerAsync(container.Id, _devPollCts.Token);
+            await LoadDockerWorkersAsync();
+        }
+        catch (Exception ex)
+        {
+            await Js.InvokeVoidAsync("alert", $"Failed to kill container: {ex.Message}");
+        }
+    }
+
+    private async Task ScaleUpWorkerAsync(string serviceName)
+    {
+        try
+        {
+            await DockerClient.ScaleUpAsync(serviceName, _devPollCts.Token);
+            await LoadDockerWorkersAsync();
+        }
+        catch (Exception ex)
+        {
+            await Js.InvokeVoidAsync("alert", $"Failed to scale up container: {ex.Message}");
+        }
     }
 
     private static bool HasStackTrace(SystemError e)

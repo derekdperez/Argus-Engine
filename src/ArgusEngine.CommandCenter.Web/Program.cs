@@ -14,6 +14,8 @@ builder.Services.AddRadzenComponents();
 builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddScoped<DiscoveryRealtimeClient>();
+builder.Services.AddScoped<LocalDockerClient>();
+
 
 builder.Services.AddHttpClient("GatewayClient", sp => {
     sp.BaseAddress = ResolveGatewayBaseAddress(sp);

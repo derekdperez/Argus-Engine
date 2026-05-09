@@ -12,9 +12,13 @@ internal static class OperationsApiServiceCollectionExtensions
         var postgres = ApplyDefaultMaxPoolSize(
             ResolveConnectionString(configuration, "Postgres", "Host=localhost;Port=5432;Database=argus_engine;Username=argus;Password=argus"),
             configuration["Argus:Postgres:MaxPoolSize"] ?? configuration["Nightmare:Postgres:MaxPoolSize"] ?? "8");
+        var fileStore = ApplyDefaultMaxPoolSize(
+            ResolveConnectionString(configuration, "FileStore", postgres),
+            configuration["Argus:FileStore:MaxPoolSize"] ?? configuration["Nightmare:FileStore:MaxPoolSize"] ?? "4");
         var redis = ResolveConnectionString(configuration, "Redis", "localhost:6379");
 
         services.AddDbContextFactory<ArgusDbContext>(options => options.UseNpgsql(postgres));
+        services.AddDbContextFactory<FileStoreDbContext>(options => options.UseNpgsql(fileStore));
         services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<ArgusDbContext>>().CreateDbContext());
         services.AddSingleton<IConnectionMultiplexer>(_ =>
         {

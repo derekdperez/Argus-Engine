@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 
 using ArgusEngine.CommandCenter.Contracts;
+using ArgusEngine.CommandCenter.Operations.Api;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 using AssetKind = ArgusEngine.Contracts.AssetKind;
@@ -31,7 +32,7 @@ public static class OpsEndpoints
 
         app.MapGet(
             "/api/ops/overview",
-            async (ArgusDbContext db, CancellationToken ct) =>
+            async (ArgusDbContext db, IDbContextFactory<FileStoreDbContext> fileStoreFactory, CancellationToken ct) =>
             {
                 var totalTargets = await db.Targets.AsNoTracking()
                     .LongCountAsync(ct)
@@ -141,6 +142,7 @@ public static class OpsEndpoints
 
                 var domains10OrMore = domainCounts.LongCount(x => x.Count >= 10);
                 var domains10OrFewer = domainCounts.LongCount(x => x.Count < 10);
+                var storage = await OpsStorageMetricsQuery.LoadAsync(db, fileStoreFactory, ct).ConfigureAwait(false);
 
                 return Results.Ok(
                     new OpsOverviewDto(
@@ -162,7 +164,12 @@ public static class OpsEndpoints
                         publishedEventCount,
                         uniqueTechnologyObservationCount + uniqueLegacyTechnologyCount,
                         highValueAssetCount,
-                        httpRequestsSentLastMinute));
+                        httpRequestsSentLastMinute,
+                        storage.AssetMetadataBytes,
+                        storage.HttpArtifactBytes,
+                        storage.InlineHttpBytes,
+                        storage.EventJournalBytes,
+                        storage.TotalBytes));
             })
             .WithName("OpsOverview");
 

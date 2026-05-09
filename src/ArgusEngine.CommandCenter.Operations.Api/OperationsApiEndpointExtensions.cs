@@ -46,7 +46,7 @@ internal static class OperationsApiEndpointExtensions
 
         app.MapGet(
                 "/api/ops/overview",
-                async (ArgusDbContext db, CancellationToken ct) =>
+                async (ArgusDbContext db, IDbContextFactory<FileStoreDbContext> fileStoreFactory, CancellationToken ct) =>
                 {
                     var totalTargets = await db.Targets.AsNoTracking().LongCountAsync(ct).ConfigureAwait(false);
                     var totalAssetsConfirmed = await db.Assets.AsNoTracking()
@@ -120,6 +120,7 @@ internal static class OperationsApiEndpointExtensions
                         .ConfigureAwait(false);
 
                     var top = domainCounts.OrderByDescending(x => x.Count).ThenBy(x => x.RootDomain, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                    var storage = await OpsStorageMetricsQuery.LoadAsync(db, fileStoreFactory, ct).ConfigureAwait(false);
                     return Results.Ok(
                         new OpsOverviewDto(
                             totalTargets,
@@ -140,7 +141,12 @@ internal static class OperationsApiEndpointExtensions
                             publishedEventCount,
                             uniqueTechnologyObservationCount + uniqueLegacyTechnologyCount,
                             highValueAssetCount,
-                            httpRequestsSentLastMinute));
+                            httpRequestsSentLastMinute,
+                            storage.AssetMetadataBytes,
+                            storage.HttpArtifactBytes,
+                            storage.InlineHttpBytes,
+                            storage.EventJournalBytes,
+                            storage.TotalBytes));
                 })
             .WithName("OperationsApiOverview")
             .WithTags("Operations");

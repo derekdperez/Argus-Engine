@@ -65,7 +65,12 @@ public sealed record OpsOverviewDto(
     long PublishedEventCount,
     long UniqueTechnologyCount,
     long HighValueAssetCount,
-    long HttpRequestsSentLastMinuteCount);
+    long HttpRequestsSentLastMinuteCount,
+    long AssetMetadataStorageBytes,
+    long HttpArtifactStorageBytes,
+    long InlineHttpStorageBytes,
+    long EventJournalStorageBytes,
+    long TotalTrackedStorageBytes);
 
 public sealed record OpsSnapshotDto(
     IReadOnlyList<WorkerSwitchDto> Workers,

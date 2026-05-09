@@ -44,8 +44,9 @@
             <strong>@FormatNumber(HttpQueueQueuedCount) queued / @FormatNumber(HttpRequestsSentPerMinute) sent/min</strong>
         </article>
         <article class="metric-card">
-            <span>High Value Assets</span>
-            <strong>@FormatNumber(HighValueAssetsCount)</strong>
+            <span>Asset Storage</span>
+            <strong>@FormatStorageSize(TotalTrackedStorageBytes)</strong>
+            <small>@StorageBreakdownLabel</small>
         </article>
     </section>
 
@@ -423,7 +424,11 @@
     private long ConfirmedAssets => _targets.Sum(t => Long(t, "confirmedAssetCount", "ConfirmedAssetCount"));
     private long ConfirmedSubdomains => _targets.Sum(t => Long(t, "subdomainCount", "SubdomainCount"));
     private long UniqueTechnologies => OverviewLong("uniqueTechnologyCount", "UniqueTechnologyCount");
-    private long HighValueAssetsCount => OverviewLong("highValueAssetCount", "HighValueAssetCount");
+    private long TotalTrackedStorageBytes => OverviewLong("totalTrackedStorageBytes", "TotalTrackedStorageBytes");
+    private long AssetMetadataStorageBytes => OverviewLong("assetMetadataStorageBytes", "AssetMetadataStorageBytes");
+    private long HttpArtifactStorageBytes => OverviewLong("httpArtifactStorageBytes", "HttpArtifactStorageBytes");
+    private long InlineHttpStorageBytes => OverviewLong("inlineHttpStorageBytes", "InlineHttpStorageBytes");
+    private long EventJournalStorageBytes => OverviewLong("eventJournalStorageBytes", "EventJournalStorageBytes");
     private long HttpRequestsSentPerMinute => OverviewLong("httpRequestsSentLastMinuteCount", "HttpRequestsSentLastMinuteCount");
     private long HttpQueueQueuedCount => OverviewLong("httpQueueQueuedAssetCount", "HttpQueueQueuedAssetCount");
     private long RunningWorkerCount => UsingEcsWorkers
@@ -440,6 +445,9 @@
 
     private bool CanCreateTarget =>
         !string.IsNullOrWhiteSpace(_newTargetRootDomain) && _newTargetDepth > 0;
+
+    private string StorageBreakdownLabel =>
+        $"Assets {FormatStorageSize(AssetMetadataStorageBytes)} / HTTP {FormatStorageSize(HttpArtifactStorageBytes + InlineHttpStorageBytes)} / Events {FormatStorageSize(EventJournalStorageBytes)}";
 
     private string TopDomainLabel
     {
@@ -1452,6 +1460,21 @@
 
     private static string FormatNumber(long value) =>
         value.ToString("N0", CultureInfo.InvariantCulture);
+
+    private static string FormatStorageSize(long bytes)
+    {
+        var clamped = Math.Max(0, bytes);
+        var value = clamped / 1024d / 1024d;
+        var unit = "MB";
+
+        if (value >= 1024d)
+        {
+            value /= 1024d;
+            unit = "GB";
+        }
+
+        return $"{value:N1} {unit}";
+    }
 
     private static string DisplayOrDash(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "-" : value;

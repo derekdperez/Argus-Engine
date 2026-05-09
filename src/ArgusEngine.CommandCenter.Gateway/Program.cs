@@ -90,17 +90,41 @@ static async Task<IResult> ForwardToSplitCommandCenterAsync(
     }
 
     using var request = CreateForwardRequest(context);
-    using var response = await httpClientFactory
-        .CreateClient(selected)
-        .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-        .ConfigureAwait(false);
+    HttpResponseMessage response;
+    try
+    {
+        response = await httpClientFactory
+            .CreateClient(selected)
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+    }
+    catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+    {
+        return Results.Empty;
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+    {
+        return Results.Json(
+            new
+            {
+                error = "Command Center gateway could not reach the selected downstream service.",
+                service = selected,
+                path = context.Request.Path.Value,
+                detail = ex.Message,
+            },
+            statusCode: StatusCodes.Status502BadGateway);
+    }
 
-    context.Response.StatusCode = (int)response.StatusCode;
-    CopyHeaders(response.Headers, context.Response.Headers);
-    CopyHeaders(response.Content.Headers, context.Response.Headers);
-    context.Response.Headers.Remove("transfer-encoding");
+    using (response)
+    {
+        context.Response.StatusCode = (int)response.StatusCode;
+        CopyHeaders(response.Headers, context.Response.Headers);
+        CopyHeaders(response.Content.Headers, context.Response.Headers);
+        context.Response.Headers.Remove("transfer-encoding");
 
-    await response.Content.CopyToAsync(context.Response.Body, cancellationToken).ConfigureAwait(false);
+        await response.Content.CopyToAsync(context.Response.Body, cancellationToken).ConfigureAwait(false);
+    }
+
     return Results.Empty;
 }
 

@@ -370,9 +370,9 @@
     private readonly List<JsonElement> _rabbitQueues = [];
     private readonly List<JsonElement> _events = [];
 
-    private bool _assetsLoading;
-    private bool _targetsLoading;
-    private bool _httpLoading;
+    private bool _assetsLoading = true;
+    private bool _targetsLoading = true;
+    private bool _httpLoading = true;
     private bool _busLoading;
     private bool _eventsLoading;
     private bool _workersLoading;

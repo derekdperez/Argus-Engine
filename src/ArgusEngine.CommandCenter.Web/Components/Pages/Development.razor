@@ -186,8 +186,16 @@
 
             <div class="actions">
                 <button type="button" class="btn small outline" @onclick="RefreshErrorsAsync">
-                    <i class="ms-Icon ms-Icon--Refresh"></i>
-                    <span>Refresh</span>
+                    @if (_errorsLoading)
+                    {
+                        <span class="spinner"></span>
+                        <span>Loading...</span>
+                    }
+                    else
+                    {
+                        <i class="ms-Icon ms-Icon--Refresh"></i>
+                        <span>Refresh</span>
+                    }
                 </button>
 
                 <button type="button" class="btn small outline" disabled="@(_errors.Count == 0)" @onclick="DownloadConcatenatedErrorsAsync">
@@ -285,6 +293,7 @@
                             AllowPaging="true"
                             PageSize="10"
                             AllowSorting="true"
+                            IsLoading="@_errorsLoading"
                             class="dev-grid error-grid">
                 <Columns>
                     <RadzenDataGridColumn TItem="SystemError" Property="Timestamp" Title="Time" Width="160px">
@@ -334,6 +343,8 @@
 @code {
     private bool _busy;
     private bool _generatingBugFixPrompt;
+    private bool _errorsLoading = true;
+    private bool _errorsReloadRunning;
     private HarnessResultDto? _result;
     private List<SystemError> _errors = new();
     private List<LiveUiEventDto> _liveEvents = new();
@@ -364,6 +375,13 @@
 
     private async Task RefreshErrorsAsync()
     {
+        if (_errorsReloadRunning)
+        {
+            return;
+        }
+
+        _errorsReloadRunning = true;
+        _errorsLoading = true;
         try
         {
             _errors = await MaintenanceApi.Client.GetFromJsonAsync<List<SystemError>>("/api/diagnostics/system-errors") ?? new();
@@ -376,6 +394,11 @@
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to load system-wide errors for the development diagnostics page.");
+        }
+        finally
+        {
+            _errorsLoading = false;
+            _errorsReloadRunning = false;
         }
     }
 

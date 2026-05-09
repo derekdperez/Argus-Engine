@@ -48,7 +48,7 @@ public static class ArgusDbBootstrap
         var db = scope.ServiceProvider.GetRequiredService<ArgusDbContext>();
         if (mode.Equals("Migrate", StringComparison.OrdinalIgnoreCase))
         {
-            var migrations = await db.Database.GetMigrationsAsync(cancellationToken).ConfigureAwait(false);
+            var migrations = db.Database.GetMigrations();
             if (!migrations.Any())
             {
                 LogStartupDatabaseBootstrapMigrateFallback(logger, null);

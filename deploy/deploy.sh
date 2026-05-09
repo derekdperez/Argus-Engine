@@ -58,9 +58,8 @@ if [[ "${ARGUS_NO_DEPLOY_LOG:-0}" != "1" ]]; then
   echo "Logging deployment to $LOG_FILE"
   # exec with process substitution requires bash, which deploy.sh is
   exec > >(tee -i "$LOG_FILE") 2>&1
-  export PS4='+ [$(date "+%Y-%m-%d %H:%M:%S.%3N")] '
-  set -x
 fi
+
 
 argus_DEPLOY_FRESH="${argus_DEPLOY_FRESH:-0}"
 argus_DEPLOY_MODE="${argus_DEPLOY_MODE:-hot}"

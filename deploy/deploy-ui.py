@@ -56,6 +56,8 @@ def main(stdscr):
                 line = q.get_nowait()
                 line = line.strip()
                 if line:
+                    if line.startswith('+'):
+                        continue
                     logs.append(line)
                     if len(logs) > 12:
                         logs.pop(0)

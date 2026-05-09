@@ -781,6 +781,147 @@ public static partial class ArgusDbSchemaPatches
                     custom_headers_json jsonb NULL,
                     updated_at_utc timestamp with time zone NOT NULL DEFAULT now()
                 );
+
+                CREATE TABLE IF NOT EXISTS worker_heartbeats (
+                    "HostName" character varying(256) NOT NULL,
+                    "WorkerKey" character varying(64) NOT NULL,
+                    "LastHeartbeatUtc" timestamp with time zone NOT NULL,
+                    "ActiveConsumerCount" integer NOT NULL DEFAULT 0,
+                    "ProcessId" integer NOT NULL DEFAULT 0,
+                    "Version" text NULL,
+                    "IsHealthy" boolean NOT NULL DEFAULT true,
+                    "HealthMessage" text NULL,
+                    CONSTRAINT "PK_worker_heartbeats" PRIMARY KEY ("HostName", "WorkerKey")
+                );
+
+                CREATE TABLE IF NOT EXISTS worker_cancellations (
+                    "MessageId" uuid NOT NULL PRIMARY KEY,
+                    "RequestedAtUtc" timestamp with time zone NOT NULL,
+                    "Reason" text NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS worker_switches (
+                    "WorkerKey" character varying(64) NOT NULL PRIMARY KEY,
+                    "IsEnabled" boolean NOT NULL DEFAULT true,
+                    "UpdatedAtUtc" timestamp with time zone NOT NULL DEFAULT now()
+                );
+
+                CREATE TABLE IF NOT EXISTS worker_scale_targets (
+                    scale_key character varying(64) NOT NULL PRIMARY KEY,
+                    desired_count integer NOT NULL DEFAULT 0,
+                    updated_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    CONSTRAINT ck_worker_scale_targets_desired_count_nonnegative CHECK (desired_count >= 0)
+                );
+
+                CREATE TABLE IF NOT EXISTS worker_scaling_settings (
+                    scale_key character varying(64) NOT NULL PRIMARY KEY,
+                    min_tasks integer NOT NULL DEFAULT 0,
+                    max_tasks integer NOT NULL DEFAULT 0,
+                    target_backlog_per_task integer NOT NULL DEFAULT 25,
+                    updated_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    CONSTRAINT ck_worker_scaling_settings_min_nonnegative CHECK (min_tasks >= 0),
+                    CONSTRAINT ck_worker_scaling_settings_max_gte_min CHECK (max_tasks >= min_tasks),
+                    CONSTRAINT ck_worker_scaling_settings_target_positive CHECK (target_backlog_per_task > 0)
+                );
+
+                CREATE TABLE IF NOT EXISTS outbox_messages (
+                    id uuid NOT NULL PRIMARY KEY,
+                    message_type character varying(512) NOT NULL,
+                    payload_json text NOT NULL,
+                    event_id uuid NOT NULL,
+                    correlation_id uuid NOT NULL,
+                    causation_id uuid NOT NULL,
+                    occurred_at_utc timestamp with time zone NOT NULL,
+                    producer character varying(128) NOT NULL,
+                    state character varying(32) NOT NULL DEFAULT 'Pending',
+                    attempt_count integer NOT NULL DEFAULT 0,
+                    created_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    updated_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    next_attempt_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    dispatched_at_utc timestamp with time zone NULL,
+                    last_error character varying(2048) NULL,
+                    locked_by character varying(256) NULL,
+                    locked_until_utc timestamp with time zone NULL
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_outbox_messages_event_id ON outbox_messages (event_id);
+                CREATE INDEX IF NOT EXISTS ix_outbox_messages_state_next_attempt ON outbox_messages (state, next_attempt_at_utc);
+                CREATE INDEX IF NOT EXISTS ix_outbox_messages_created_at ON outbox_messages (created_at_utc DESC);
+
+                CREATE TABLE IF NOT EXISTS inbox_messages (
+                    id uuid NOT NULL PRIMARY KEY,
+                    event_id uuid NOT NULL,
+                    consumer character varying(256) NOT NULL,
+                    processed_at_utc timestamp with time zone NOT NULL,
+                    CONSTRAINT ux_inbox_messages_event_consumer UNIQUE (event_id, consumer)
+                );
+
+                CREATE TABLE IF NOT EXISTS system_errors (
+                    "Id" uuid NOT NULL PRIMARY KEY,
+                    "Timestamp" timestamp with time zone NOT NULL,
+                    "Component" character varying(128) NOT NULL,
+                    "LogLevel" character varying(32) NOT NULL,
+                    "LoggerName" character varying(512) NOT NULL,
+                    "Message" text NOT NULL,
+                    "Exception" text NULL,
+                    "MachineName" character varying(256) NOT NULL,
+                    "MetadataJson" jsonb NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_system_errors_timestamp ON system_errors ("Timestamp" DESC);
+                CREATE INDEX IF NOT EXISTS ix_system_errors_component ON system_errors ("Component");
+
+                CREATE TABLE IF NOT EXISTS cloud_resource_usage_samples (
+                    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                    sampled_at_utc timestamp with time zone NOT NULL,
+                    resource_kind character varying(64) NOT NULL,
+                    resource_id character varying(256) NOT NULL,
+                    resource_name character varying(256) NOT NULL,
+                    running_count integer NOT NULL DEFAULT 0,
+                    metadata_json jsonb NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_cloud_resource_usage_samples_kind_resource_sampled
+                    ON cloud_resource_usage_samples (resource_kind, resource_id, sampled_at_utc);
+
+                CREATE TABLE IF NOT EXISTS ec2_worker_machines (
+                    id uuid NOT NULL PRIMARY KEY,
+                    name character varying(128) NOT NULL,
+                    instance_id character varying(64) NULL,
+                    aws_state character varying(64) NOT NULL,
+                    public_ip_address character varying(64) NULL,
+                    private_ip_address character varying(64) NULL,
+                    instance_type character varying(64) NULL,
+                    last_command_id character varying(128) NULL,
+                    last_command_status character varying(64) NULL,
+                    status_message character varying(1024) NULL,
+                    spider_workers integer NOT NULL DEFAULT 0,
+                    enum_workers integer NOT NULL DEFAULT 0,
+                    portscan_workers integer NOT NULL DEFAULT 0,
+                    highvalue_workers integer NOT NULL DEFAULT 0,
+                    technology_identification_workers integer NOT NULL DEFAULT 0,
+                    created_at_utc timestamp with time zone NOT NULL,
+                    updated_at_utc timestamp with time zone NOT NULL,
+                    last_applied_at_utc timestamp with time zone NULL,
+                    CONSTRAINT ck_ec2_worker_machines_spider_nonnegative CHECK (spider_workers >= 0),
+                    CONSTRAINT ck_ec2_worker_machines_enum_nonnegative CHECK (enum_workers >= 0),
+                    CONSTRAINT ck_ec2_worker_machines_portscan_nonnegative CHECK (portscan_workers >= 0),
+                    CONSTRAINT ck_ec2_worker_machines_highvalue_nonnegative CHECK (highvalue_workers >= 0),
+                    CONSTRAINT ck_ec2_worker_machines_techid_nonnegative CHECK (technology_identification_workers >= 0)
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_ec2_worker_machines_instance_id
+                    ON ec2_worker_machines (instance_id)
+                    WHERE instance_id IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS ix_ec2_worker_machines_aws_state ON ec2_worker_machines (aws_state);
+
+                CREATE TABLE IF NOT EXISTS target_scan_states (
+                    correlation_id uuid NOT NULL PRIMARY KEY,
+                    current_state character varying(64) NOT NULL,
+                    target_domain character varying(253) NOT NULL,
+                    created_at_utc timestamp with time zone NOT NULL,
+                    updated_at_utc timestamp with time zone NOT NULL
+                );
                 """,
                 cancellationToken)
             .ConfigureAwait(false);

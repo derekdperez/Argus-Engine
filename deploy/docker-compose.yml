@@ -137,6 +137,8 @@ services:
       retries: 3
       start_period: 30s
     depends_on:
+      command-center-web:
+        condition: service_healthy
       command-center-operations-api:
         condition: service_healthy
 

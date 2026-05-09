@@ -275,10 +275,10 @@
     private readonly HashSet<Guid> _selectedObservationIds = [];
     private readonly HashSet<string> _selectedUsageKeys = new(StringComparer.OrdinalIgnoreCase);
 
-    private bool _targetsLoading;
-    private bool _subdomainsLoading;
-    private bool _technologiesLoading;
-    private bool _usageLoading;
+    private bool _targetsLoading = true;
+    private bool _subdomainsLoading = true;
+    private bool _technologiesLoading = true;
+    private bool _usageLoading = true;
     private bool _anyLoading => _targetsLoading || _subdomainsLoading || _technologiesLoading || _usageLoading;
     private bool _initialLoadStarted;
     private string? _statusMessage;

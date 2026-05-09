@@ -234,7 +234,8 @@
     private readonly HashSet<Guid> _selectedAssetIds = [];
     private readonly HashSet<string> _visibleColumns = Columns.Select(c => c.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
     private bool _initialLoadStarted;
-    private bool _loading;
+    private bool _loading = true;
+    private bool _reloadRunning;
     private bool _showColumnsModal;
     private string _search = "";
     private string _statusFilter = "Active";
@@ -347,9 +348,10 @@
 
     private async Task ReloadAsync()
     {
-        if (_loading)
+        if (_reloadRunning)
             return;
 
+        _reloadRunning = true;
         _loading = true;
         _statusMessage = null;
         try
@@ -370,6 +372,7 @@
         finally
         {
             _loading = false;
+            _reloadRunning = false;
         }
     }
 

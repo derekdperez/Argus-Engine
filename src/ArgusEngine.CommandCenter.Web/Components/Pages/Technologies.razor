@@ -97,6 +97,7 @@
     private readonly List<TechnologyDetectionRowDto> _rows = [];
     private bool _initialLoadStarted;
     private bool _loading = true;
+    private bool _reloadRunning;
     private DateTimeOffset? _lastLoadedAtUtc;
     private string _search = "";
     private string _targetFilter = "";
@@ -191,9 +192,10 @@
 
     private async Task ReloadAsync()
     {
-        if (_loading)
+        if (_reloadRunning)
             return;
 
+        _reloadRunning = true;
         _loading = true;
         try
         {
@@ -212,6 +214,7 @@
         finally
         {
             _loading = false;
+            _reloadRunning = false;
         }
     }
 

@@ -191,7 +191,14 @@ argus_azure_env_file() {
 }
 
 argus_azure_service_env_file() {
-  printf '%s\n' "$ARGUS_REPO_ROOT/deploy/azure/service-env"
+  local configured="${SERVICE_ENV_FILE:-deploy/azure/service-env}"
+  if [[ "$configured" = /* ]]; then
+    printf '%s
+' "$configured"
+  else
+    printf '%s
+' "$ARGUS_REPO_ROOT/$configured"
+  fi
 }
 
 argus_azure_bootstrap_env() {
@@ -210,19 +217,33 @@ argus_azure_bootstrap_env() {
 
   argus_load_env_file "$env_file"
 
-  local subscription default_rg default_env default_acr default_tag location
+  local subscription default_rg default_env default_acr default_tag location default_sku default_prefix default_service_env default_min default_max default_cpu default_memory
   default_rg="${AZURE_RESOURCE_GROUP:-argus-engine-rg}"
   default_env="${AZURE_CONTAINERAPPS_ENV:-argus-engine-env}"
   default_acr="${AZURE_ACR_NAME:-$(argus_make_azure_acr_name_default)}"
   default_tag="${IMAGE_TAG:-$(argus_default_version)}"
+  default_sku="${AZURE_ACR_SKU:-Basic}"
+  default_prefix="${AZURE_IMAGE_PREFIX:-argus-engine}"
+  default_service_env="${SERVICE_ENV_FILE:-deploy/azure/service-env}"
+  default_min="${AZURE_MIN_REPLICAS:-1}"
+  default_max="${AZURE_MAX_REPLICAS:-3}"
+  default_cpu="${AZURE_CONTAINER_CPU:-0.5}"
+  default_memory="${AZURE_CONTAINER_MEMORY:-1.0Gi}"
 
   subscription="$(argus_prompt_value AZURE_SUBSCRIPTION_ID 'Azure subscription ID or name' "${AZURE_SUBSCRIPTION_ID:-}")"
   location="$(argus_prompt_value AZURE_LOCATION 'Azure region/location' "${AZURE_LOCATION:-eastus}")"
   AZURE_RESOURCE_GROUP="$(argus_prompt_value AZURE_RESOURCE_GROUP 'Azure resource group' "$default_rg")"
   AZURE_CONTAINERAPPS_ENV="$(argus_prompt_value AZURE_CONTAINERAPPS_ENV 'Azure Container Apps environment name' "$default_env")"
   AZURE_ACR_NAME="$(argus_prompt_value AZURE_ACR_NAME 'Azure Container Registry name (globally unique, lowercase letters/numbers)' "$default_acr")"
+  AZURE_ACR_SKU="$(argus_prompt_value AZURE_ACR_SKU 'Azure Container Registry SKU' "$default_sku")"
+  AZURE_IMAGE_PREFIX="$(argus_prompt_value AZURE_IMAGE_PREFIX 'Azure image repository prefix' "$default_prefix")"
   IMAGE_TAG="$(argus_prompt_value IMAGE_TAG 'Container image tag to build/push' "$default_tag")"
   ARGUS_ENGINE_VERSION="$(argus_prompt_value ARGUS_ENGINE_VERSION 'Argus compose/build version' "$(argus_default_version)")"
+  SERVICE_ENV_FILE="$(argus_prompt_value SERVICE_ENV_FILE 'Runtime service env file path' "$default_service_env")"
+  AZURE_MIN_REPLICAS="$(argus_prompt_value AZURE_MIN_REPLICAS 'Azure minimum replicas per worker' "$default_min")"
+  AZURE_MAX_REPLICAS="$(argus_prompt_value AZURE_MAX_REPLICAS 'Azure maximum replicas per worker' "$default_max")"
+  AZURE_CONTAINER_CPU="$(argus_prompt_value AZURE_CONTAINER_CPU 'Azure container CPU per worker' "$default_cpu")"
+  AZURE_CONTAINER_MEMORY="$(argus_prompt_value AZURE_CONTAINER_MEMORY 'Azure container memory per worker' "$default_memory")"
 
   # ACR names must be alphanumeric only. Normalize common mistakes before persisting.
   AZURE_ACR_NAME="$(printf '%s' "$AZURE_ACR_NAME" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
@@ -238,10 +259,17 @@ argus_azure_bootstrap_env() {
   argus_upsert_env "$env_file" AZURE_RESOURCE_GROUP "$AZURE_RESOURCE_GROUP"
   argus_upsert_env "$env_file" AZURE_CONTAINERAPPS_ENV "$AZURE_CONTAINERAPPS_ENV"
   argus_upsert_env "$env_file" AZURE_ACR_NAME "$AZURE_ACR_NAME"
+  argus_upsert_env "$env_file" AZURE_ACR_SKU "$AZURE_ACR_SKU"
+  argus_upsert_env "$env_file" AZURE_IMAGE_PREFIX "$AZURE_IMAGE_PREFIX"
   argus_upsert_env "$env_file" IMAGE_TAG "$IMAGE_TAG"
   argus_upsert_env "$env_file" ARGUS_ENGINE_VERSION "$ARGUS_ENGINE_VERSION"
+  argus_upsert_env "$env_file" SERVICE_ENV_FILE "$SERVICE_ENV_FILE"
+  argus_upsert_env "$env_file" AZURE_MIN_REPLICAS "$AZURE_MIN_REPLICAS"
+  argus_upsert_env "$env_file" AZURE_MAX_REPLICAS "$AZURE_MAX_REPLICAS"
+  argus_upsert_env "$env_file" AZURE_CONTAINER_CPU "$AZURE_CONTAINER_CPU"
+  argus_upsert_env "$env_file" AZURE_CONTAINER_MEMORY "$AZURE_CONTAINER_MEMORY"
 
-  export AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_RESOURCE_GROUP AZURE_CONTAINERAPPS_ENV AZURE_ACR_NAME IMAGE_TAG ARGUS_ENGINE_VERSION
+  export AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_RESOURCE_GROUP AZURE_CONTAINERAPPS_ENV AZURE_ACR_NAME AZURE_ACR_SKU AZURE_IMAGE_PREFIX IMAGE_TAG ARGUS_ENGINE_VERSION SERVICE_ENV_FILE AZURE_MIN_REPLICAS AZURE_MAX_REPLICAS AZURE_CONTAINER_CPU AZURE_CONTAINER_MEMORY
 
   argus_ensure_gitignored_local_env
 }
@@ -343,7 +371,7 @@ argus_azure_ensure_resources() {
     az acr create \
       --resource-group "$AZURE_RESOURCE_GROUP" \
       --name "$AZURE_ACR_NAME" \
-      --sku Basic \
+      --sku "${AZURE_ACR_SKU:-Basic}" \
       --admin-enabled true \
       --output none
   else

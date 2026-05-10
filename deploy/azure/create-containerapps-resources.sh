@@ -18,7 +18,11 @@ Resource group:          $AZURE_RESOURCE_GROUP
 Location:                $AZURE_LOCATION
 Container Apps env:      $AZURE_CONTAINERAPPS_ENV
 Container Registry:      $AZURE_ACR_NAME
+ACR SKU:                 ${AZURE_ACR_SKU:-Basic}
 ACR login server:        $LOGIN_SERVER
+Image prefix:            ${AZURE_IMAGE_PREFIX:-argus-engine}
+Image tag:               ${IMAGE_TAG:-latest}
+Worker replicas:         ${AZURE_MIN_REPLICAS:-1}-${AZURE_MAX_REPLICAS:-3}
 
 Next:
   ./deploy/azure/build-push-acr.sh

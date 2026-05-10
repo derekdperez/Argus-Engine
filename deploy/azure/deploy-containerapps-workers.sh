@@ -16,6 +16,10 @@ SERVICE_ENV_FILE="$(argus_azure_service_env_file)"
 LOGIN_SERVER="$(argus_azure_acr_login_server)"
 ACR_USER="$(argus_azure_acr_username)"
 ACR_PASS="$(argus_azure_acr_password)"
+MIN_REPLICAS="${AZURE_MIN_REPLICAS:-1}"
+MAX_REPLICAS="${AZURE_MAX_REPLICAS:-3}"
+CONTAINER_CPU="${AZURE_CONTAINER_CPU:-0.5}"
+CONTAINER_MEMORY="${AZURE_CONTAINER_MEMORY:-1.0Gi}"
 
 SERVICES=("$@")
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
@@ -50,10 +54,10 @@ for service in "${SERVICES[@]}"; do
     az containerapp update \
       --resource-group "$AZURE_RESOURCE_GROUP" \
       --name "$app_name" \
-      --min-replicas 1 \
-      --max-replicas 2 \
-      --cpu 0.5 \
-      --memory 1.0Gi \
+      --min-replicas "$MIN_REPLICAS" \
+      --max-replicas "$MAX_REPLICAS" \
+      --cpu "$CONTAINER_CPU" \
+      --memory "$CONTAINER_MEMORY" \
       --output none
   else
     az containerapp create \
@@ -65,10 +69,10 @@ for service in "${SERVICES[@]}"; do
       --registry-username "$ACR_USER" \
       --registry-password "$ACR_PASS" \
       --ingress disabled \
-      --min-replicas 1 \
-      --max-replicas 2 \
-      --cpu 0.5 \
-      --memory 1.0Gi \
+      --min-replicas "$MIN_REPLICAS" \
+      --max-replicas "$MAX_REPLICAS" \
+      --cpu "$CONTAINER_CPU" \
+      --memory "$CONTAINER_MEMORY" \
       --env-vars "${ENV_PAIRS[@]}" \
       --output none
   fi

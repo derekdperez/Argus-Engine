@@ -18,10 +18,16 @@ cp "$OVERLAY_DIR/deploy/cloud-tools/install-cloud-clis.sh" "$REPO_ROOT/deploy/cl
 cp "$OVERLAY_DIR/deploy/azure/"*.sh "$REPO_ROOT/deploy/azure/"
 cp "$OVERLAY_DIR/deploy/azure/.env.example" "$REPO_ROOT/deploy/azure/.env.example"
 cp "$OVERLAY_DIR/deploy/azure/service-env.example" "$REPO_ROOT/deploy/azure/service-env.example"
+if [[ -f "$OVERLAY_DIR/deploy/azure/.env" ]]; then
+  if [[ -f "$REPO_ROOT/deploy/azure/.env" ]]; then
+    cp "$REPO_ROOT/deploy/azure/.env" "$REPO_ROOT/deploy/azure/.env.bak.$(date +%s)"
+  fi
+  cp "$OVERLAY_DIR/deploy/azure/.env" "$REPO_ROOT/deploy/azure/.env"
+fi
 
 chmod +x "$REPO_ROOT/deploy/cloud-common.sh" "$REPO_ROOT/deploy/cloud-tools/install-cloud-clis.sh" "$REPO_ROOT/deploy/azure/"*.sh
 
-echo "Installed Azure deploy scripts into: $REPO_ROOT/deploy/azure"
+echo "Installed configured Azure deploy scripts into: $REPO_ROOT/deploy/azure"
 echo
 echo "Next:"
 echo "  cd \"$REPO_ROOT\""

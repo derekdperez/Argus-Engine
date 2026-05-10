@@ -1,55 +1,47 @@
 #!/usr/bin/env python3
 """
-Create a changes-only zip for derekdperez/argus-engine containing the updated
-deploy/deploy-ui.py.
+Argus Engine deployment console.
+
+This script intentionally uses only the Python standard library so it can run on
+fresh EC2/local hosts before project dependencies are installed.
+
+It is both:
+  1. a friendly menu-driven CLI for humans, and
+  2. a backwards-compatible deploy.sh handoff target.
+
+Examples:
+    ./deploy/deploy-ui.py
+    ./deploy/deploy-ui.py deploy --hot
+    ./deploy/deploy-ui.py deploy --image command-center-web worker-spider
+    ./deploy/deploy-ui.py scale local worker-spider=4 worker-enum=2
+    ./deploy/deploy-ui.py scale ecs worker-spider=6 worker-techid=1
+    ./deploy/deploy-ui.py monitor
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
-
-DEPLOY_UI = r'''#!/usr/bin/env python3
-"""
-Argus Engine interactive deployment menu.
-
-This file intentionally has no third-party Python dependencies. It replaces the
-old compatibility shim with a full interactive console that can:
-
-- monitor local/cloud deployments
-- compare deployed component versions with GitHub/main
-- update one component or every component with an available update
-- run the existing local, AWS, Azure, and GCP deployment helpers
-- configure cloud credentials and provider env files once
-- control worker provisioning and scaling through the deployment configuration
-"""
-
-from __future__ import annotations
-
-import json
+import argparse
 import os
 import re
 import shlex
 import shutil
 import subprocess
 import sys
-import textwrap
 import time
 import urllib.error
 import urllib.request
-import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Mapping, Optional, Sequence
 
 
-REPO_OWNER = "derekdperez"
-REPO_NAME = "argus-engine"
-REPO_URL = f"https://github.com/{REPO_OWNER}/{REPO_NAME}"
-RAW_BASE_URL = f"https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/main"
-GITHUB_COMMIT_API = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/commits/main"
-
-CORE_SERVICES = [
+# Keep this list in sync with deploy/docker-compose.yml. The script will prefer
+# `docker compose config --services` when Docker is available.
+FALLBACK_SERVICES = [
+    "postgres",
+    "filestore-db-init",
+    "redis",
+    "rabbitmq",
     "command-center-gateway",
     "command-center-operations-api",
     "command-center-discovery-api",
@@ -61,9 +53,6 @@ CORE_SERVICES = [
     "command-center-spider-dispatcher",
     "command-center-web",
     "gatekeeper",
-]
-
-WORKER_SERVICES = [
     "worker-spider",
     "worker-http-requester",
     "worker-enum",
@@ -72,1385 +61,1467 @@ WORKER_SERVICES = [
     "worker-techid",
 ]
 
-ALL_KNOWN_SERVICES = CORE_SERVICES + WORKER_SERVICES
+WORKERS = {
+    "worker-spider": {
+        "label": "Spider worker",
+        "short": "spider",
+        "local_env": "ARGUS_WORKER_SPIDER_REPLICAS",
+        "legacy_flag": "--scale-spider",
+        "ecs_env": "WORKER_SPIDER_SERVICE",
+        "ecs_default": "argus-worker-spider",
+        "desired_env": "ECS_DESIRED_WORKER_SPIDER",
+        "description": "Discovery/spider jobs and HTTP queue intake.",
+    },
+    "worker-http-requester": {
+        "label": "HTTP requester worker",
+        "short": "http",
+        "local_env": "ARGUS_WORKER_HTTP_REQUESTER_REPLICAS",
+        "legacy_flag": "--scale-http-requester",
+        "ecs_env": "WORKER_HTTP_REQUESTER_SERVICE",
+        "ecs_default": "argus-worker-http-requester",
+        "desired_env": "ECS_DESIRED_WORKER_HTTP_REQUESTER",
+        "description": "Distributed HTTP request processing.",
+    },
+    "worker-enum": {
+        "label": "Enumeration worker",
+        "short": "enum",
+        "local_env": "ARGUS_WORKER_ENUM_REPLICAS",
+        "legacy_flag": "--scale-enum",
+        "ecs_env": "WORKER_ENUM_SERVICE",
+        "ecs_default": "argus-worker-enum",
+        "desired_env": "ECS_DESIRED_WORKER_ENUM",
+        "description": "Subdomain enumeration using bundled recon tools.",
+    },
+    "worker-portscan": {
+        "label": "Port scan worker",
+        "short": "portscan",
+        "local_env": "ARGUS_WORKER_PORTSCAN_REPLICAS",
+        "legacy_flag": "--scale-portscan",
+        "ecs_env": "WORKER_PORTSCAN_SERVICE",
+        "ecs_default": "argus-worker-portscan",
+        "desired_env": "ECS_DESIRED_WORKER_PORTSCAN",
+        "description": "Port scanning pipeline.",
+    },
+    "worker-highvalue": {
+        "label": "High-value worker",
+        "short": "highvalue",
+        "local_env": "ARGUS_WORKER_HIGHVALUE_REPLICAS",
+        "legacy_flag": "--scale-highvalue",
+        "ecs_env": "WORKER_HIGHVALUE_SERVICE",
+        "ecs_default": "argus-worker-highvalue",
+        "desired_env": "ECS_DESIRED_WORKER_HIGHVALUE",
+        "description": "High-value path/regex analysis.",
+    },
+    "worker-techid": {
+        "label": "Technology identification worker",
+        "short": "techid",
+        "local_env": "ARGUS_WORKER_TECHID_REPLICAS",
+        "legacy_flag": "--scale-techid",
+        "ecs_env": "WORKER_TECHID_SERVICE",
+        "ecs_default": "argus-worker-techid",
+        "desired_env": "ECS_DESIRED_WORKER_TECHID",
+        "description": "Technology fingerprinting.",
+    },
+}
+
+HEALTH_ENDPOINTS = {
+    "command-center-gateway": "http://127.0.0.1:8081/health/ready",
+    "command-center-web": "http://127.0.0.1:8082/health/ready",
+    "command-center-operations-api": "http://127.0.0.1:8083/health/ready",
+    "command-center-discovery-api": "http://127.0.0.1:8084/health/ready",
+    "command-center-worker-control-api": "http://127.0.0.1:8085/health/ready",
+    "command-center-maintenance-api": "http://127.0.0.1:8086/health/ready",
+    "command-center-updates-api": "http://127.0.0.1:8087/health/ready",
+    "command-center-realtime": "http://127.0.0.1:8088/health/ready",
+}
+
+PROJECT_HINTS = {
+    "command-center-gateway": ["src/ArgusEngine.CommandCenter.Gateway/"],
+    "command-center-operations-api": ["src/ArgusEngine.CommandCenter.Operations.Api/"],
+    "command-center-discovery-api": ["src/ArgusEngine.CommandCenter.Discovery.Api/"],
+    "command-center-worker-control-api": ["src/ArgusEngine.CommandCenter.WorkerControl.Api/"],
+    "command-center-maintenance-api": ["src/ArgusEngine.CommandCenter.Maintenance.Api/"],
+    "command-center-updates-api": ["src/ArgusEngine.CommandCenter.Updates.Api/"],
+    "command-center-realtime": ["src/ArgusEngine.CommandCenter.Realtime.Host/"],
+    "command-center-bootstrapper": ["src/ArgusEngine.CommandCenter.Bootstrapper/"],
+    "command-center-spider-dispatcher": ["src/ArgusEngine.CommandCenter.SpiderDispatcher/"],
+    "command-center-web": ["src/ArgusEngine.CommandCenter.Web/"],
+    "gatekeeper": ["src/ArgusEngine.Gatekeeper/"],
+    "worker-spider": ["src/ArgusEngine.Workers.Spider/"],
+    "worker-http-requester": ["src/ArgusEngine.Workers.HttpRequester/"],
+    "worker-enum": ["src/ArgusEngine.Workers.Enumeration/"],
+    "worker-portscan": ["src/ArgusEngine.Workers.PortScan/"],
+    "worker-highvalue": ["src/ArgusEngine.Workers.HighValue/"],
+    "worker-techid": ["src/ArgusEngine.Workers.TechnologyIdentification/"],
+}
+
+GLOBAL_INVALIDATORS = {
+    "ArgusEngine.slnx",
+    "Directory.Build.props",
+    "Directory.Build.targets",
+    "Directory.Packages.props",
+    "global.json",
+    ".dockerignore",
+    "deploy/docker-compose.yml",
+    "deploy/Dockerfile.base-runtime",
+    "deploy/Dockerfile.base-recon",
+    "deploy/Dockerfile.commandcenter-host",
+    "deploy/Dockerfile.worker",
+    "deploy/Dockerfile.worker-enum",
+}
 
 
 @dataclass(frozen=True)
-class LatestRelease:
-    version: str
-    sha: str
-    source: str
+class Options:
+    dry_run: bool = False
+    assume_yes: bool = False
+    no_color: bool = False
+    repo_root: Optional[Path] = None
+    verbose: bool = False
 
 
 @dataclass(frozen=True)
-class ServiceStatus:
-    name: str
-    deployed: bool
-    state: str
-    health: str
-    version: str
-    revision: str
-    image: str
-    update_available: bool
-    reason: str
+class Paths:
+    repo_root: Path
+    deploy_dir: Path
+    compose_file: Path
+    deploy_sh: Path
+    logs_sh: Path
+    smoke_test: Path
+    aws_dir: Path
 
+    @staticmethod
+    def resolve(explicit: Optional[Path] = None) -> "Paths":
+        start = explicit.resolve() if explicit else Path.cwd().resolve()
+        if start.is_file():
+            start = start.parent
 
-class CommandRunner:
-    def __init__(self, root: Path, *, dry_run: bool = False) -> None:
-        self.root = root
-        self.dry_run = dry_run
+        for candidate in [start, *start.parents]:
+            deploy_dir = candidate / "deploy"
+            compose_file = deploy_dir / "docker-compose.yml"
+            if deploy_dir.is_dir() and compose_file.exists():
+                return Paths(
+                    repo_root=candidate,
+                    deploy_dir=deploy_dir,
+                    compose_file=compose_file,
+                    deploy_sh=deploy_dir / "deploy.sh",
+                    logs_sh=deploy_dir / "logs.sh",
+                    smoke_test=deploy_dir / "smoke-test.sh",
+                    aws_dir=deploy_dir / "aws",
+                )
 
-    def call(
-        self,
-        args: Sequence[str],
-        *,
-        env: dict[str, str] | None = None,
-        cwd: Path | None = None,
-        quiet: bool = False,
-    ) -> int:
-        if not quiet:
-            print_cmd(args)
-        if self.dry_run:
-            return 0
+        raise SystemExit(
+            "Could not find the Argus Engine repository root. "
+            "Run this from inside the argus-engine checkout or pass --repo-root PATH."
+        )
+
+    def rel(self, path: Path) -> str:
         try:
-            return subprocess.call(list(args), cwd=str(cwd or self.root), env=env)
-        except FileNotFoundError:
-            print_error(f"Command not found: {args[0]}")
-            return 127
+            return str(path.resolve().relative_to(self.repo_root.resolve()))
+        except ValueError:
+            return str(path)
 
-    def output(
+
+class Ui:
+    def __init__(self, *, no_color: bool = False):
+        self.use_color = sys.stdout.isatty() and not no_color and "NO_COLOR" not in os.environ
+
+    def color(self, text: str, code: str) -> str:
+        if not self.use_color:
+            return text
+        return f"\033[{code}m{text}\033[0m"
+
+    def header(self, title: str) -> None:
+        print()
+        print(self.color(f"╭─ {title}", "1;36"))
+        print(self.color("╰" + "─" * (len(title) + 2), "36"))
+
+    def section(self, title: str) -> None:
+        print()
+        print(self.color(title, "1;34"))
+        print(self.color("-" * len(title), "34"))
+
+    def info(self, text: str) -> None:
+        print(f"{self.color('ℹ', '36')} {text}")
+
+    def ok(self, text: str) -> None:
+        print(f"{self.color('✓', '32')} {text}")
+
+    def warn(self, text: str) -> None:
+        print(f"{self.color('!', '33')} {text}")
+
+    def error(self, text: str) -> None:
+        print(f"{self.color('✗', '31')} {text}", file=sys.stderr)
+
+    def command(self, args: Sequence[str]) -> None:
+        print(self.color("$ " + " ".join(shlex.quote(a) for a in args), "2"))
+
+    def prompt(self, label: str, default: Optional[str] = None) -> str:
+        suffix = f" [{default}]" if default not in (None, "") else ""
+        value = input(f"{label}{suffix}: ").strip()
+        if not value and default is not None:
+            return default
+        return value
+
+    def prompt_int(self, label: str, default: int, minimum: int = 0, maximum: Optional[int] = None) -> int:
+        while True:
+            raw = self.prompt(label, str(default))
+            try:
+                value = int(raw)
+            except ValueError:
+                self.warn("Enter a whole number.")
+                continue
+            if value < minimum:
+                self.warn(f"Enter a value >= {minimum}.")
+                continue
+            if maximum is not None and value > maximum:
+                self.warn(f"Enter a value <= {maximum}.")
+                continue
+            return value
+
+    def confirm(self, label: str, *, default: bool = False, assume_yes: bool = False) -> bool:
+        if assume_yes:
+            self.ok(f"{label} yes")
+            return True
+        suffix = "Y/n" if default else "y/N"
+        raw = input(f"{label} [{suffix}]: ").strip().lower()
+        if not raw:
+            return default
+        return raw in {"y", "yes"}
+
+    def choose(self, title: str, choices: Sequence[str], *, default: int = 1) -> int:
+        while True:
+            print()
+            self.info(title)
+            for i, choice in enumerate(choices, 1):
+                print(f"  {i:2}. {choice}")
+            raw = self.prompt("Choose", str(default))
+            try:
+                idx = int(raw)
+            except ValueError:
+                self.warn("Enter a menu number.")
+                continue
+            if 1 <= idx <= len(choices):
+                return idx - 1
+            self.warn(f"Choose between 1 and {len(choices)}.")
+
+    def pause(self) -> None:
+        if sys.stdin.isatty():
+            input("\nPress Enter to continue...")
+
+
+class Runner:
+    def __init__(self, paths: Paths, options: Options, ui: Ui, env: Mapping[str, str]):
+        self.paths = paths
+        self.options = options
+        self.ui = ui
+        self.env = dict(env)
+
+    def merged_env(self, extra: Optional[Mapping[str, str]] = None) -> dict[str, str]:
+        env = dict(os.environ)
+        env.update(self.env)
+        env["ARGUS_NO_UI"] = "1"
+        if extra:
+            env.update({k: str(v) for k, v in extra.items()})
+        return env
+
+    def run(
         self,
         args: Sequence[str],
         *,
-        env: dict[str, str] | None = None,
-        cwd: Path | None = None,
-        quiet: bool = True,
-    ) -> str:
-        if not quiet:
-            print_cmd(args)
-        if self.dry_run:
-            return ""
+        env: Optional[Mapping[str, str]] = None,
+        check: bool = False,
+    ) -> int:
+        self.ui.command(args)
+        if self.options.dry_run:
+            return 0
         try:
             completed = subprocess.run(
                 list(args),
-                cwd=str(cwd or self.root),
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
+                cwd=self.paths.repo_root,
+                env=self.merged_env(env),
                 check=False,
             )
         except FileNotFoundError:
-            return ""
-        return completed.stdout.strip()
+            self.ui.error(f"Command not found: {args[0]}")
+            return 127
+        if check and completed.returncode != 0:
+            raise SystemExit(completed.returncode)
+        return completed.returncode
 
+    def capture(self, args: Sequence[str], *, env: Optional[Mapping[str, str]] = None) -> tuple[int, str, str]:
+        if self.options.verbose:
+            self.ui.command(args)
+        if self.options.dry_run:
+            return 0, "", ""
+        try:
+            completed = subprocess.run(
+                list(args),
+                cwd=self.paths.repo_root,
+                env=self.merged_env(env),
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            return completed.returncode, completed.stdout, completed.stderr
+        except FileNotFoundError:
+            return 127, "", f"Command not found: {args[0]}"
 
-class ArgusDeployUi:
-    def __init__(self, root: Path, *, dry_run: bool = False, assume_yes: bool = False) -> None:
-        self.root = root
-        self.deploy_dir = root / "deploy"
-        self.runner = CommandRunner(root, dry_run=dry_run)
-        self.dry_run = dry_run
-        self.assume_yes = assume_yes
+    def shell(self, command: str) -> int:
+        if os.name == "nt":
+            return self.run(["powershell", "-NoProfile", "-Command", command])
+        return self.run(["bash", "-lc", command])
 
-    @property
-    def compose_file(self) -> Path:
-        return self.deploy_dir / "docker-compose.yml"
-
-    def compose_cmd(self) -> list[str]:
-        if shutil.which("docker"):
-            return ["docker", "compose", "-f", str(self.compose_file)]
-        return ["docker-compose", "-f", str(self.compose_file)]
-
-    def deploy_script(self, args: Sequence[str]) -> int:
-        env = os.environ.copy()
-        env["ARGUS_NO_UI"] = "1"
-        script = self.deploy_dir / "deploy.sh"
-        return self.runner.call(["bash", str(script), *args], env=env)
-
-    def provider_env(self, provider: str) -> dict[str, str]:
-        env = os.environ.copy()
-        for path in [
-            self.deploy_dir / ".env.local",
-            self.deploy_dir / provider / ".env",
-            self.deploy_dir / provider / ".env.generated",
-        ]:
-            env.update(read_env(path))
-        return env
-
-    def script(self, provider: str, name: str) -> Path:
-        return self.deploy_dir / provider / name
-
-    def run_script(self, provider: str, name: str, args: Sequence[str] = ()) -> int:
-        path = self.script(provider, name)
+    def bash_script(self, path: Path, args: Sequence[str] = (), *, env: Optional[Mapping[str, str]] = None) -> int:
         if not path.exists():
-            print_error(f"Missing script: {path.relative_to(self.root)}")
+            self.ui.error(f"Script not found: {self.paths.rel(path)}")
             return 2
-        return self.runner.call(["bash", str(path), *args], env=self.provider_env(provider))
+        return self.run(["bash", str(path), *args], env=env)
 
-    def main_menu(self) -> int:
-        while True:
-            clear_screen()
-            self.print_header()
-            choice = choose(
-                "Main menu",
-                [
-                    "Monitor deployments and statuses",
-                    "Version/update center",
-                    "Deploy/update local stack",
-                    "Update individual components",
-                    "Update all components with available updates",
-                    "AWS worker deployment / provisioning",
-                    "Azure worker deployment / provisioning",
-                    "Google Cloud worker deployment / provisioning",
-                    "One-time credentials and provider configuration",
-                    "Scale workers",
-                    "Logs",
-                    "Open Command Center web URLs",
-                    "Run existing .NET DeployUi",
-                    "Exit",
-                ],
-            )
 
-            if choice == 0:
-                self.monitor_menu()
-            elif choice == 1:
-                self.update_center()
-            elif choice == 2:
-                self.local_menu()
-            elif choice == 3:
-                self.update_individual()
-            elif choice == 4:
-                self.update_all_available()
-            elif choice == 5:
-                self.aws_menu()
-            elif choice == 6:
-                self.azure_menu()
-            elif choice == 7:
-                self.gcp_menu()
-            elif choice == 8:
-                self.config_wizard()
-            elif choice == 9:
-                self.scale_menu()
-            elif choice == 10:
-                self.logs_menu()
-            elif choice == 11:
-                self.open_web_urls()
-            elif choice == 12:
-                self.run_dotnet_ui([])
-            else:
-                return 0
-
-    def print_header(self) -> None:
-        latest = self.latest_release()
-        local = self.local_version()
-        statuses = self.service_statuses(latest, quiet=True)
-        updates = [s for s in statuses if s.update_available]
-        print_box(
-            "Argus Engine Deployment Center",
-            [
-                f"Repo:          {REPO_URL}",
-                f"Root:          {self.root}",
-                f"Local version: {local or 'unknown'}",
-                f"GitHub/main:   {latest.version or 'unknown'} ({short_sha(latest.sha)})",
-                f"Updates:       {len(updates)} deployed component(s) behind GitHub/main",
-                f"Mode:          {'dry-run' if self.dry_run else 'live'}",
-            ],
-        )
-        if updates:
-            print_warn(
-                "Update alert: "
-                + ", ".join(s.name for s in updates[:8])
-                + (" ..." if len(updates) > 8 else "")
-            )
-
-    def monitor_menu(self) -> None:
-        while True:
-            clear_screen()
-            print_title("Deployment monitor")
-            self.status_all()
-            print()
-            action = prompt("Press Enter to refresh, 'q' to go back, or seconds to auto-refresh once", "")
-            if action.lower() in {"q", "quit", "back"}:
-                return
-            if action.isdigit():
-                time.sleep(max(1, int(action)))
-
-    def update_center(self) -> None:
-        while True:
-            clear_screen()
-            print_title("Version/update center")
-            self.print_versions()
-            choice = choose(
-                "Update actions",
-                [
-                    "Refresh",
-                    "Update one component",
-                    "Update all available",
-                    "Show known services",
-                    "Back",
-                ],
-            )
-            if choice == 0:
-                continue
-            if choice == 1:
-                self.update_individual()
-            elif choice == 2:
-                self.update_all_available()
-            elif choice == 3:
-                self.show_services()
-                pause()
-            else:
-                return
-
-    def local_menu(self) -> None:
-        choice = choose(
-            "Local Docker Compose deployment",
-            [
-                "Incremental hot deploy",
-                "Image deploy",
-                "Fresh no-cache rebuild",
-                "Status",
-                "Restart services",
-                "Logs",
-                "Smoke test",
-                "Down",
-                "Clean volumes",
-                "Back",
-            ],
-        )
-
-        if choice == 0:
-            self.deploy_script(["--hot"])
-        elif choice == 1:
-            self.deploy_script(["--image"])
-        elif choice == 2:
-            self.deploy_script(["--fresh"])
-        elif choice == 3:
-            self.local_status()
-        elif choice == 4:
-            services = self.select_services(allow_all=True)
-            self.deploy_script(["restart", *services])
-        elif choice == 5:
-            self.logs_menu()
-        elif choice == 6:
-            self.deploy_script(["smoke"])
-        elif choice == 7:
-            self.deploy_script(["down"])
-        elif choice == 8:
-            if confirm("Remove compose volumes?", default=False, assume_yes=self.assume_yes):
-                env = os.environ.copy()
-                env["CONFIRM_ARGUS_CLEAN"] = "yes"
-                env["ARGUS_NO_UI"] = "1"
-                self.runner.call(["bash", str(self.deploy_dir / "deploy.sh"), "clean"], env=env)
-        pause()
-
-    def logs_menu(self) -> None:
-        services = self.select_services(allow_all=True, allow_empty=True)
-        tail = prompt("Tail lines", "200")
-        follow = confirm("Follow logs?", default=False, assume_yes=False)
-        args = ["logs", "--tail", tail]
-        if follow:
-            args.append("--follow")
-        args.extend(services)
-        self.deploy_script(args)
-        if not follow:
-            pause()
-
-    def aws_menu(self) -> None:
-        choice = choose(
-            "AWS ECS/ECR + EC2 workers",
-            [
-                "Configure AWS credentials/env",
-                "EC2 hybrid release: local core + ECS workers",
-                "Create ECR repositories/resources",
-                "Build and push selected ECR images",
-                "Deploy selected ECS services",
-                "Build, push, and deploy selected ECS services",
-                "Replace selected ECS worker tasks",
-                "Run ECS autoscale pass",
-                "Provision EC2 worker instances",
-                "Deploy to existing EC2 worker instance IDs",
-                "Scale ECS workers",
-                "Show AWS status",
-                "Back",
-            ],
-        )
-        if choice == 0:
-            self.configure_aws()
-        elif choice == 1:
-            self.deploy_script(["--ecs-workers"])
-        elif choice == 2:
-            self.run_script("aws", "create-ecr-repos.sh")
-        elif choice == 3:
-            self.run_script("aws", "build-push-ecr.sh", self.select_cloud_services("aws"))
-        elif choice == 4:
-            self.run_script("aws", "deploy-ecs-services.sh", self.select_cloud_services("aws"))
-        elif choice == 5:
-            services = self.select_cloud_services("aws")
-            if self.run_script("aws", "create-ecr-repos.sh") == 0:
-                if self.run_script("aws", "build-push-ecr.sh", services) == 0:
-                    self.run_script("aws", "deploy-ecs-services.sh", services)
-        elif choice == 6:
-            self.run_script("aws", "replace-ecs-worker-tasks.sh", self.select_worker_services())
-        elif choice == 7:
-            self.run_script("aws", "autoscale-ecs-workers.sh")
-        elif choice == 8:
-            self.run_script("aws", "provision-ec2-workers.sh")
-        elif choice == 9:
-            ids = prompt("Instance IDs, space-separated", "").split()
-            self.run_script("aws", "deploy-worker-instances.sh", ids)
-        elif choice == 10:
-            self.scale_provider("aws")
-        elif choice == 11:
-            self.aws_status()
-        pause()
-
-    def azure_menu(self) -> None:
-        choice = choose(
-            "Azure Container Apps / ACR",
-            [
-                "Configure Azure credentials/env",
-                "Create Azure Container Apps resources",
-                "Build and push selected ACR images",
-                "Deploy selected Container Apps workers",
-                "Build, push, and deploy selected services",
-                "Scale Azure workers",
-                "Show Azure status",
-                "Back",
-            ],
-        )
-        if choice == 0:
-            self.configure_azure()
-        elif choice == 1:
-            self.run_script("azure", "create-containerapps-resources.sh")
-        elif choice == 2:
-            self.run_script("azure", "build-push-acr.sh", self.select_cloud_services("azure"))
-        elif choice == 3:
-            self.run_script("azure", "deploy-containerapps-workers.sh", self.select_cloud_services("azure"))
-        elif choice == 4:
-            services = self.select_cloud_services("azure")
-            if self.run_script("azure", "create-containerapps-resources.sh") == 0:
-                if self.run_script("azure", "build-push-acr.sh", services) == 0:
-                    self.run_script("azure", "deploy-containerapps-workers.sh", services)
-        elif choice == 5:
-            self.scale_provider("azure")
-        elif choice == 6:
-            self.azure_status()
-        pause()
-
-    def gcp_menu(self) -> None:
-        choice = choose(
-            "Google Cloud Run Worker Pools / Artifact Registry",
-            [
-                "Configure Google Cloud credentials/env",
-                "Create Artifact Registry repository",
-                "Build and push selected Artifact Registry images",
-                "Deploy selected Cloud Run worker pools",
-                "Build, push, and deploy selected services",
-                "Scale GCP workers",
-                "Show GCP status",
-                "Back",
-            ],
-        )
-        if choice == 0:
-            self.configure_gcp()
-        elif choice == 1:
-            self.run_script("gcp", "create-artifact-registry.sh")
-        elif choice == 2:
-            self.run_script("gcp", "build-push-artifact-registry.sh", self.select_cloud_services("gcp"))
-        elif choice == 3:
-            self.run_script("gcp", "deploy-cloudrun-worker-pools.sh", self.select_cloud_services("gcp"))
-        elif choice == 4:
-            services = self.select_cloud_services("gcp")
-            if self.run_script("gcp", "create-artifact-registry.sh") == 0:
-                if self.run_script("gcp", "build-push-artifact-registry.sh", services) == 0:
-                    self.run_script("gcp", "deploy-cloudrun-worker-pools.sh", services)
-        elif choice == 5:
-            self.scale_provider("gcp")
-        elif choice == 6:
-            self.gcp_status()
-        pause()
-
-    def scale_menu(self) -> None:
-        provider = choose("Scale provider", ["AWS ECS", "Azure Container Apps", "Google Cloud Run Worker Pools", "Back"])
-        if provider == 0:
-            self.scale_provider("aws")
-        elif provider == 1:
-            self.scale_provider("azure")
-        elif provider == 2:
-            self.scale_provider("gcp")
-        pause()
-
-    def status_all(self) -> int:
-        local = self.local_status()
-        print()
-        aws = self.aws_status(quiet_missing=True)
-        print()
-        azure = self.azure_status(quiet_missing=True)
-        print()
-        gcp = self.gcp_status(quiet_missing=True)
-        return first_nonzero(local, aws, azure, gcp)
-
-    def local_status(self) -> int:
-        print_title("Local Docker Compose")
-        return self.runner.call([*self.compose_cmd(), "ps"])
-
-    def aws_status(self, *, quiet_missing: bool = False) -> int:
-        print_title("AWS")
-        status_script = self.script("aws", "ecs-command-center-status.sh")
-        if status_script.exists():
-            return self.run_script("aws", "ecs-command-center-status.sh")
-        env = self.provider_env("aws")
-        cluster = env.get("ECS_CLUSTER", "argus-engine")
-        if shutil.which("aws"):
-            return self.runner.call(["aws", "ecs", "list-services", "--cluster", cluster, "--output", "table"], env=env)
-        if not quiet_missing:
-            print_warn("AWS CLI not found.")
-        return 0
-
-    def azure_status(self, *, quiet_missing: bool = False) -> int:
-        print_title("Azure")
-        doctor = self.script("azure", "doctor.sh")
-        if doctor.exists():
-            return self.run_script("azure", "doctor.sh")
-        env = self.provider_env("azure")
-        if shutil.which("az"):
-            group = env.get("AZURE_RESOURCE_GROUP", "")
-            args = ["az", "containerapp", "list", "--output", "table"]
-            if group:
-                args[3:3] = ["--resource-group", group]
-            return self.runner.call(args, env=env)
-        if not quiet_missing:
-            print_warn("Azure CLI not found.")
-        return 0
-
-    def gcp_status(self, *, quiet_missing: bool = False) -> int:
-        print_title("Google Cloud")
-        env = self.provider_env("gcp")
-        if shutil.which("gcloud"):
-            project = env.get("GCP_PROJECT_ID") or env.get("GOOGLE_CLOUD_PROJECT")
-            region = env.get("GCP_REGION") or env.get("GOOGLE_REGION", "us-central1")
-            base = ["gcloud", "run", "worker-pools", "list", "--region", region]
-            if project:
-                base.extend(["--project", project])
-            rc = self.runner.call(base, env=env)
-            if rc != 0:
-                beta = ["gcloud", "beta", "run", "worker-pools", "list", "--region", region]
-                if project:
-                    beta.extend(["--project", project])
-                return self.runner.call(beta, env=env)
-            return rc
-        if not quiet_missing:
-            print_warn("Google Cloud CLI not found.")
-        return 0
-
-    def print_versions(self) -> None:
-        latest = self.latest_release()
-        statuses = self.service_statuses(latest, quiet=False)
-        print(f"GitHub/main version: {latest.version or 'unknown'}  commit: {short_sha(latest.sha)}")
-        print(f"Local checkout version: {self.local_version() or 'unknown'}")
-        print()
-        print_table(
-            ["Component", "State", "Health", "Deployed", "Git", "Update", "Reason"],
-            [
-                [
-                    s.name,
-                    s.state,
-                    s.health,
-                    s.version or "-",
-                    latest.version or "-",
-                    "YES" if s.update_available else "no",
-                    s.reason,
-                ]
-                for s in statuses
-            ],
-        )
-
-    def latest_release(self) -> LatestRelease:
-        version = ""
-        source = "GitHub raw VERSION"
-        text = fetch_text(f"{RAW_BASE_URL}/VERSION")
-        if text:
-            version = text.strip().splitlines()[0].strip()
-        if not version:
-            source = "GitHub raw docker-compose.yml"
-            compose = fetch_text(f"{RAW_BASE_URL}/deploy/docker-compose.yml")
-            match = re.search(r"ARGUS_ENGINE_VERSION:-([^}\\s]+)", compose or "")
-            version = match.group(1).strip() if match else ""
-        sha = ""
-        commit_json = fetch_text(GITHUB_COMMIT_API)
-        if commit_json:
-            try:
-                sha = json.loads(commit_json).get("sha", "")
-            except json.JSONDecodeError:
-                sha = ""
-        return LatestRelease(version=version, sha=sha, source=source)
-
-    def local_version(self) -> str:
-        version_file = self.root / "VERSION"
-        if version_file.exists():
-            value = version_file.read_text(encoding="utf-8", errors="ignore").strip().splitlines()
-            if value and value[0].strip():
-                return value[0].strip()
-
-        if self.compose_file.exists():
-            text = self.compose_file.read_text(encoding="utf-8", errors="ignore")
-            match = re.search(r"ARGUS_ENGINE_VERSION:-([^}\\s]+)", text)
-            if match:
-                return match.group(1).strip()
-
-        return ""
-
-    def service_statuses(self, latest: LatestRelease | None = None, *, quiet: bool = True) -> list[ServiceStatus]:
-        latest = latest or self.latest_release()
-        services = self.compose_services()
-        statuses: list[ServiceStatus] = []
-        for service in services:
-            statuses.append(self.inspect_service(service, latest))
-        if not quiet and not statuses:
-            print_warn("No Docker Compose services detected.")
-        return statuses
-
-    def compose_services(self) -> list[str]:
-        output = self.runner.output([*self.compose_cmd(), "config", "--services"])
-        services = [line.strip() for line in output.splitlines() if line.strip()]
-        if services:
-            ordered = [s for s in ALL_KNOWN_SERVICES if s in services]
-            extra = [s for s in services if s not in ordered]
-            return ordered + extra
-        return list(ALL_KNOWN_SERVICES)
-
-    def inspect_service(self, service: str, latest: LatestRelease) -> ServiceStatus:
-        cid = first_line(self.runner.output([*self.compose_cmd(), "ps", "-q", service]))
-        if not cid:
-            return ServiceStatus(service, False, "not-running", "-", "", "", "", False, "not deployed")
-
-        state = clean_go_template_value(
-            self.runner.output(["docker", "inspect", "-f", "{{.State.Status}}", cid])
-        )
-        health = clean_go_template_value(
-            self.runner.output(["docker", "inspect", "-f", "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}", cid])
-        )
-        image = clean_go_template_value(
-            self.runner.output(["docker", "inspect", "-f", "{{.Config.Image}}", cid])
-        )
-        label_version = clean_go_template_value(
-            self.runner.output(["docker", "inspect", "-f", '{{index .Config.Labels "org.opencontainers.image.version"}}', cid])
-        )
-        revision = clean_go_template_value(
-            self.runner.output(["docker", "inspect", "-f", '{{index .Config.Labels "org.opencontainers.image.revision"}}', cid])
-        )
-        env_lines = self.runner.output(["docker", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", cid])
-        env = parse_env_lines(env_lines.splitlines())
-        version = (
-            env.get("ARGUS_COMPONENT_VERSION")
-            or env.get("ARGUS_ENGINE_VERSION")
-            or label_version
-            or image_tag(image)
-        )
-
-        update = False
-        reasons: list[str] = []
-        if latest.version and version and version != latest.version:
-            update = True
-            reasons.append(f"{version} -> {latest.version}")
-        if latest.sha and revision and revision != latest.sha and not latest.sha.startswith(revision):
-            update = True
-            reasons.append(f"{short_sha(revision)} -> {short_sha(latest.sha)}")
-
-        return ServiceStatus(
-            service,
-            True,
-            state or "unknown",
-            health or "none",
-            version,
-            revision,
-            image,
-            update,
-            "; ".join(reasons) if reasons else "current",
-        )
-
-    def update_individual(self) -> int:
-        latest = self.latest_release()
-        statuses = [s for s in self.service_statuses(latest) if s.deployed]
-        outdated = [s for s in statuses if s.update_available]
-        candidates = outdated or statuses
-        if not candidates:
-            print_warn("No deployed components found.")
-            pause()
-            return 0
-
-        print_table(
-            ["#", "Component", "Deployed", "Latest", "Update"],
-            [
-                [str(i + 1), s.name, s.version or "-", latest.version or "-", "YES" if s.update_available else "no"]
-                for i, s in enumerate(candidates)
-            ],
-        )
-        selected = select_from_candidates([s.name for s in candidates], "Component(s) to update")
-        if not selected:
-            return 0
-        return self.update_services(selected, latest)
-
-    def update_all_available(self) -> int:
-        latest = self.latest_release()
-        outdated = [s.name for s in self.service_statuses(latest) if s.update_available]
-        if not outdated:
-            print_info("All deployed components appear current.")
-            pause()
-            return 0
-
-        print_warn("Components with available updates:")
-        for name in outdated:
-            print(f"  - {name}")
-
-        if not confirm("Update all components listed above?", default=True, assume_yes=self.assume_yes):
-            return 0
-        return self.update_services(outdated, latest)
-
-    def update_services(self, services: Sequence[str], latest: LatestRelease | None = None) -> int:
-        latest = latest or self.latest_release()
-        env = os.environ.copy()
-        env["ARGUS_NO_UI"] = "1"
-        if latest.version:
-            env["ARGUS_ENGINE_VERSION"] = latest.version
-        if latest.sha:
-            env["BUILD_SOURCE_STAMP"] = latest.sha
-
-        if (self.root / ".git").exists():
-            if confirm("Run git pull --ff-only before updating?", default=True, assume_yes=self.assume_yes):
-                rc = self.runner.call(["git", "pull", "--ff-only"], env=env)
-                if rc != 0:
-                    return rc
-
-        services = list(dict.fromkeys(services))
-        if set(services) == set(self.compose_services()):
-            return self.runner.call(["bash", str(self.deploy_dir / "deploy.sh"), "--image"], env=env)
-
-        print_info("Building selected component image(s)...")
-        rc = self.runner.call([*self.compose_cmd(), "build", *services], env=env)
-        if rc != 0:
-            return rc
-
-        print_info("Recreating selected component container(s)...")
-        return self.runner.call(
-            [*self.compose_cmd(), "up", "-d", "--no-deps", "--force-recreate", *services],
-            env=env,
-        )
-
-    def config_wizard(self) -> int:
-        choice = choose(
-            "One-time provider configuration",
-            [
-                "Configure all providers",
-                "AWS only",
-                "Azure only",
-                "Google Cloud only",
-                "Command Center/web control URL",
-                "Show config files",
-                "Back",
-            ],
-        )
-        if choice == 0:
-            for fn in [self.configure_aws, self.configure_azure, self.configure_gcp, self.configure_command_center]:
-                rc = fn()
-                if rc != 0:
-                    return rc
-        elif choice == 1:
-            return self.configure_aws()
-        elif choice == 2:
-            return self.configure_azure()
-        elif choice == 3:
-            return self.configure_gcp()
-        elif choice == 4:
-            return self.configure_command_center()
-        elif choice == 5:
-            self.show_config_files()
-            pause()
-        return 0
-
-    def configure_command_center(self) -> int:
-        path = self.deploy_dir / ".env.local"
-        env = read_env(path)
-        url = prompt("Command Center URL used by scalers/web controls", env.get("COMMAND_CENTER_URL", "http://localhost:8081"))
-        web = prompt("Command Center web URL", env.get("ARGUS_WEB_URL", "http://localhost:8082"))
-        env["COMMAND_CENTER_URL"] = url
-        env["ARGUS_WEB_URL"] = web
-        write_env(path, env, "Argus local deployment UI configuration")
-        print_info(f"Saved {path.relative_to(self.root)}")
-        return 0
-
-    def configure_aws(self) -> int:
-        env_path = ensure_env_file(self.deploy_dir / "aws" / ".env", self.deploy_dir / "aws" / ".env.example")
-        ensure_env_file(self.deploy_dir / "aws" / "service-env", self.deploy_dir / "aws" / "service-env.example")
-        env = read_env(env_path)
-        env["AWS_REGION"] = prompt("AWS region", env.get("AWS_REGION", "us-east-1"))
-        env["AWS_ACCOUNT_ID"] = prompt("AWS account ID", env.get("AWS_ACCOUNT_ID", ""))
-        env["ECS_CLUSTER"] = prompt("ECS cluster", env.get("ECS_CLUSTER", "argus-engine"))
-        env["ECR_PREFIX"] = prompt("ECR repository prefix", env.get("ECR_PREFIX", "argus-engine"))
-        env["COMMAND_CENTER_URL"] = prompt("Command Center URL reachable by autoscaler", env.get("COMMAND_CENTER_URL", "http://localhost:8081"))
-        write_env(env_path, env, "AWS deployment settings for Argus Engine")
-        if shutil.which("aws"):
-            rc = self.runner.call(["aws", "sts", "get-caller-identity"], env=self.provider_env("aws"))
-            if rc != 0 and confirm("Run aws configure now?", default=True, assume_yes=self.assume_yes):
-                return self.runner.call(["aws", "configure"])
-        else:
-            print_warn("AWS CLI not found. Install/configure it before running AWS deployments.")
-        return 0
-
-    def configure_azure(self) -> int:
-        env_path = ensure_env_file(self.deploy_dir / "azure" / ".env", self.deploy_dir / "azure" / ".env.example")
-        ensure_env_file(self.deploy_dir / "azure" / "service-env", self.deploy_dir / "azure" / "service-env.example")
-        env = read_env(env_path)
-        env["AZURE_SUBSCRIPTION_ID"] = prompt("Azure subscription ID", env.get("AZURE_SUBSCRIPTION_ID", ""))
-        env["AZURE_LOCATION"] = prompt("Azure location", env.get("AZURE_LOCATION", "eastus"))
-        env["AZURE_RESOURCE_GROUP"] = prompt("Azure resource group", env.get("AZURE_RESOURCE_GROUP", "argus-engine-rg"))
-        env["AZURE_CONTAINERAPPS_ENV"] = prompt("Azure Container Apps environment", env.get("AZURE_CONTAINERAPPS_ENV", "argus-engine-env"))
-        env["AZURE_ACR_NAME"] = prompt("Azure ACR name", env.get("AZURE_ACR_NAME", ""))
-        env["AZURE_IMAGE_PREFIX"] = prompt("Azure image prefix", env.get("AZURE_IMAGE_PREFIX", "argus-engine"))
-        write_env(env_path, env, "Azure deployment settings for Argus Engine")
-        if shutil.which("az"):
-            rc = self.runner.call(["az", "account", "show", "--output", "table"], env=self.provider_env("azure"))
-            if rc != 0 and confirm("Run az login now?", default=True, assume_yes=self.assume_yes):
-                rc = self.runner.call(["az", "login"])
-            if env.get("AZURE_SUBSCRIPTION_ID"):
-                self.runner.call(["az", "account", "set", "--subscription", env["AZURE_SUBSCRIPTION_ID"]])
-            return rc
-        print_warn("Azure CLI not found. Install/configure it before running Azure deployments.")
-        return 0
-
-    def configure_gcp(self) -> int:
-        env_path = ensure_env_file(self.deploy_dir / "gcp" / ".env", self.deploy_dir / "gcp" / ".env.example")
-        ensure_env_file(self.deploy_dir / "gcp" / "service-env", self.deploy_dir / "gcp" / "service-env.example")
-        env = read_env(env_path)
-        env["GCP_PROJECT_ID"] = prompt("GCP project ID", env.get("GCP_PROJECT_ID", ""))
-        env["GCP_REGION"] = prompt("GCP region", env.get("GCP_REGION", "us-central1"))
-        env["GCP_ARTIFACT_REPOSITORY"] = prompt("Artifact Registry repository", env.get("GCP_ARTIFACT_REPOSITORY", "argus-engine"))
-        env["GCP_IMAGE_PREFIX"] = prompt("GCP image prefix", env.get("GCP_IMAGE_PREFIX", "argus-engine"))
-        write_env(env_path, env, "Google Cloud deployment settings for Argus Engine")
-        if shutil.which("gcloud"):
-            rc = self.runner.call(["gcloud", "auth", "list"], env=self.provider_env("gcp"))
-            if rc != 0 and confirm("Run gcloud auth login now?", default=True, assume_yes=self.assume_yes):
-                rc = self.runner.call(["gcloud", "auth", "login"])
-            if env.get("GCP_PROJECT_ID"):
-                self.runner.call(["gcloud", "config", "set", "project", env["GCP_PROJECT_ID"]])
-            return rc
-        print_warn("Google Cloud CLI not found. Install/configure it before running GCP deployments.")
-        return 0
-
-    def scale_provider(self, provider: str) -> int:
-        services = self.select_worker_services()
-        if not services:
-            return 0
-
-        if provider == "aws":
-            env_path = ensure_env_file(self.deploy_dir / "aws" / ".env", self.deploy_dir / "aws" / ".env.example")
-            env = read_env(env_path)
-            for service in services:
-                key = service_key(service)
-                env[f"ECS_DESIRED_{key}"] = prompt(f"{service} desired ECS tasks", env.get(f"ECS_DESIRED_{key}", "1"))
-                env[f"ECS_MIN_{key}"] = prompt(f"{service} min ECS tasks", env.get(f"ECS_MIN_{key}", "0"))
-                env[f"ECS_MAX_{key}"] = prompt(f"{service} max ECS tasks", env.get(f"ECS_MAX_{key}", "20"))
-            env["UPDATE_DESIRED_COUNTS"] = "true"
-            write_env(env_path, env, "AWS deployment settings for Argus Engine")
-            run_env = self.provider_env("aws")
-            run_env["UPDATE_DESIRED_COUNTS"] = "true"
-            return self.runner.call(["bash", str(self.script("aws", "deploy-ecs-services.sh")), *services], env=run_env)
-
-        if provider == "azure":
-            env_path = ensure_env_file(self.deploy_dir / "azure" / ".env", self.deploy_dir / "azure" / ".env.example")
-            env = read_env(env_path)
-            env["AZURE_MIN_REPLICAS"] = prompt("Azure min replicas", env.get("AZURE_MIN_REPLICAS", "0"))
-            env["AZURE_MAX_REPLICAS"] = prompt("Azure max replicas", env.get("AZURE_MAX_REPLICAS", "3"))
-            write_env(env_path, env, "Azure deployment settings for Argus Engine")
-            return self.run_script("azure", "deploy-containerapps-workers.sh", services)
-
-        if provider == "gcp":
-            env_path = ensure_env_file(self.deploy_dir / "gcp" / ".env", self.deploy_dir / "gcp" / ".env.example")
-            env = read_env(env_path)
-            for service in services:
-                key = service_key(service)
-                env[f"GCP_WORKER_INSTANCES_{key}"] = prompt(
-                    f"{service} Cloud Run worker-pool instances",
-                    env.get(f"GCP_WORKER_INSTANCES_{key}", env.get("GCP_WORKER_INSTANCES", "1")),
-                )
-            write_env(env_path, env, "Google Cloud deployment settings for Argus Engine")
-            return self.run_script("gcp", "deploy-cloudrun-worker-pools.sh", services)
-
-        print_error(f"Unknown provider: {provider}")
-        return 2
-
-    def select_services(self, *, allow_all: bool = True, allow_empty: bool = False) -> list[str]:
-        services = self.compose_services()
-        return select_from_candidates(services, "Services", allow_all=allow_all, allow_empty=allow_empty)
-
-    def select_worker_services(self) -> list[str]:
-        return select_from_candidates(WORKER_SERVICES, "Worker services", allow_all=True)
-
-    def select_cloud_services(self, provider: str) -> list[str]:
-        if provider == "aws":
-            return select_from_candidates(WORKER_SERVICES, "Cloud services", allow_all=True)
-        return select_from_candidates(WORKER_SERVICES, "Cloud worker services", allow_all=True)
-
-    def show_services(self) -> None:
-        print_table(
-            ["Service", "Type"],
-            [[s, "worker" if s in WORKER_SERVICES else "core"] for s in self.compose_services()],
-        )
-
-    def show_config_files(self) -> None:
-        for path in [
-            self.deploy_dir / ".env.local",
-            self.deploy_dir / "aws" / ".env",
-            self.deploy_dir / "aws" / "service-env",
-            self.deploy_dir / "azure" / ".env",
-            self.deploy_dir / "azure" / "service-env",
-            self.deploy_dir / "gcp" / ".env",
-            self.deploy_dir / "gcp" / "service-env",
-        ]:
-            status = "exists" if path.exists() else "missing"
-            print(f"{path.relative_to(self.root)}  [{status}]")
-
-    def open_web_urls(self) -> None:
-        env = read_env(self.deploy_dir / ".env.local")
-        urls = [
-            env.get("ARGUS_WEB_URL", "http://localhost:8082"),
-            env.get("COMMAND_CENTER_URL", "http://localhost:8081"),
-            "http://localhost:15672",
-        ]
-        for url in urls:
-            print_info(f"Opening {url}")
-            if not self.dry_run:
-                webbrowser.open(url)
-
-    def run_dotnet_ui(self, args: Sequence[str]) -> int:
-        project = self.deploy_dir / "ArgusEngine.DeployUi" / "ArgusEngine.DeployUi.csproj"
-        dotnet = shutil.which("dotnet")
-        if not dotnet or not project.exists():
-            print_error("dotnet or deploy/ArgusEngine.DeployUi was not found.")
-            return 2
-        return self.runner.call([dotnet, "run", "--project", str(project), "--", *args])
-
-
-def resolve_repo_root(explicit: str | None = None) -> Path:
-    if explicit:
-        return Path(explicit).resolve()
-
-    candidates = [Path.cwd(), Path(__file__).resolve().parent, Path(__file__).resolve().parent.parent]
-    for start in candidates:
-        for path in [start, *start.parents]:
-            if (path / "ArgusEngine.slnx").exists() and (path / "deploy" / "docker-compose.yml").exists():
-                return path.resolve()
-
-    return Path(__file__).resolve().parent.parent
-
-
-def parse_args(argv: Sequence[str]) -> tuple[list[str], bool, bool, str | None]:
-    dry_run = False
-    assume_yes = False
-    root: str | None = None
-    remaining: list[str] = []
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if arg in {"--dry-run", "-n"}:
-            dry_run = True
-        elif arg in {"--yes", "-y"}:
-            assume_yes = True
-        elif arg == "--root":
-            i += 1
-            if i >= len(argv):
-                raise SystemExit("--root requires a path")
-            root = argv[i]
-        else:
-            remaining.append(arg)
-        i += 1
-    return remaining, dry_run, assume_yes, root
-
-
-def dispatch(app: ArgusDeployUi, args: Sequence[str]) -> int:
-    if not args or args[0] in {"menu", "up"}:
-        if sys.stdin.isatty():
-            return app.main_menu()
-        return app.deploy_script(["up"])
-
-    command = args[0].lower()
-    rest = list(args[1:])
-
-    if command in {"--fresh", "-fresh"}:
-        return app.deploy_script(["--fresh"])
-    if command == "--ecs-workers":
-        return app.deploy_script(["--ecs-workers"])
-    if command in {"help", "-h", "--help"}:
-        show_help()
-        return 0
-    if command == "dotnet-ui":
-        return app.run_dotnet_ui(rest)
-    if command == "status":
-        return app.status_all()
-    if command in {"versions", "updates"}:
-        app.print_versions()
-        return 0
-    if command == "services":
-        app.show_services()
-        return 0
-    if command == "update":
-        if not rest or rest[0] == "all":
-            return app.update_all_available()
-        return app.update_services(rest)
-    if command == "local":
-        return app.deploy_script(rest or ["up"])
-    if command == "aws":
-        return dispatch_aws(app, rest)
-    if command in {"azure", "az"}:
-        return dispatch_azure(app, rest)
-    if command in {"gcp", "google"}:
-        return dispatch_gcp(app, rest)
-    if command == "cloud":
-        return dispatch_cloud(app, rest)
-    if command == "config":
-        if not rest or rest[0] == "wizard":
-            return app.config_wizard()
-        app.show_config_files()
-        return 0
-    if command == "scale":
-        provider = rest[0] if rest else ""
-        if provider in {"aws", "azure", "gcp"}:
-            return app.scale_provider(provider)
-        app.scale_menu()
-        return 0
-    if command == "open-web":
-        app.open_web_urls()
-        return 0
-
-    print_error(f"Unknown command: {command}")
-    show_help()
-    return 2
-
-
-def dispatch_aws(app: ArgusDeployUi, args: Sequence[str]) -> int:
-    action = args[0].lower() if args else "status"
-    services = args[1:]
-    if action in {"login", "configure", "config"}:
-        return app.configure_aws()
-    if action == "hybrid":
-        return app.deploy_script(["--ecs-workers"])
-    if action in {"resources", "repos"}:
-        return app.run_script("aws", "create-ecr-repos.sh")
-    if action == "build":
-        return app.run_script("aws", "build-push-ecr.sh", services or WORKER_SERVICES)
-    if action == "deploy":
-        return app.run_script("aws", "deploy-ecs-services.sh", services or WORKER_SERVICES)
-    if action == "release":
-        selected = services or WORKER_SERVICES
-        if app.run_script("aws", "create-ecr-repos.sh") == 0:
-            if app.run_script("aws", "build-push-ecr.sh", selected) == 0:
-                return app.run_script("aws", "deploy-ecs-services.sh", selected)
-        return 1
-    if action == "replace":
-        return app.run_script("aws", "replace-ecs-worker-tasks.sh", services or WORKER_SERVICES)
-    if action == "autoscale":
-        return app.run_script("aws", "autoscale-ecs-workers.sh")
-    if action == "provision-ec2":
-        return app.run_script("aws", "provision-ec2-workers.sh")
-    if action == "deploy-ec2":
-        return app.run_script("aws", "deploy-worker-instances.sh", services)
-    if action == "scale":
-        return app.scale_provider("aws")
-    if action == "status":
-        return app.aws_status()
-    print_error(f"Unknown AWS action: {action}")
-    return 2
-
-
-def dispatch_azure(app: ArgusDeployUi, args: Sequence[str]) -> int:
-    action = args[0].lower() if args else "status"
-    services = args[1:]
-    if action in {"login", "configure", "config"}:
-        return app.configure_azure()
-    if action in {"resources", "create"}:
-        return app.run_script("azure", "create-containerapps-resources.sh")
-    if action == "build":
-        return app.run_script("azure", "build-push-acr.sh", services or WORKER_SERVICES)
-    if action == "deploy":
-        return app.run_script("azure", "deploy-containerapps-workers.sh", services or WORKER_SERVICES)
-    if action == "release":
-        selected = services or WORKER_SERVICES
-        if app.run_script("azure", "create-containerapps-resources.sh") == 0:
-            if app.run_script("azure", "build-push-acr.sh", selected) == 0:
-                return app.run_script("azure", "deploy-containerapps-workers.sh", selected)
-        return 1
-    if action == "scale":
-        return app.scale_provider("azure")
-    if action == "status":
-        return app.azure_status()
-    print_error(f"Unknown Azure action: {action}")
-    return 2
-
-
-def dispatch_gcp(app: ArgusDeployUi, args: Sequence[str]) -> int:
-    action = args[0].lower() if args else "status"
-    services = args[1:]
-    if action in {"login", "configure", "config"}:
-        return app.configure_gcp()
-    if action in {"repository", "resources", "create"}:
-        return app.run_script("gcp", "create-artifact-registry.sh")
-    if action == "build":
-        return app.run_script("gcp", "build-push-artifact-registry.sh", services or WORKER_SERVICES)
-    if action == "deploy":
-        return app.run_script("gcp", "deploy-cloudrun-worker-pools.sh", services or WORKER_SERVICES)
-    if action == "release":
-        selected = services or WORKER_SERVICES
-        if app.run_script("gcp", "create-artifact-registry.sh") == 0:
-            if app.run_script("gcp", "build-push-artifact-registry.sh", selected) == 0:
-                return app.run_script("gcp", "deploy-cloudrun-worker-pools.sh", selected)
-        return 1
-    if action == "scale":
-        return app.scale_provider("gcp")
-    if action == "status":
-        return app.gcp_status()
-    print_error(f"Unknown GCP action: {action}")
-    return 2
-
-
-def dispatch_cloud(app: ArgusDeployUi, args: Sequence[str]) -> int:
-    action = args[0].lower() if args else "status"
-    services = args[1:] or WORKER_SERVICES
-    if action in {"login", "configure", "config"}:
-        return app.config_wizard()
-    if action == "status":
-        return app.status_all()
-    if action in {"release-all", "all", "release"}:
-        for provider, fn in [
-            ("aws", lambda: dispatch_aws(app, ["release", *services])),
-            ("azure", lambda: dispatch_azure(app, ["release", *services])),
-            ("gcp", lambda: dispatch_gcp(app, ["release", *services])),
-        ]:
-            print_title(f"Cloud release: {provider.upper()}")
-            rc = fn()
-            if rc != 0:
-                return rc
-        return 0
-    if action == "scale":
-        app.scale_menu()
-        return 0
-    print_error(f"Unknown cloud action: {action}")
-    return 2
-
-
-def show_help() -> None:
-    print(
-        textwrap.dedent(
-            f"""
-            Argus Engine deploy UI
-
-            Interactive:
-              python3 deploy/deploy-ui.py
-              ./deploy/deploy.sh up
-
-            Version/update:
-              python3 deploy/deploy-ui.py versions
-              python3 deploy/deploy-ui.py update all
-              python3 deploy/deploy-ui.py update worker-spider command-center-web
-
-            Local:
-              python3 deploy/deploy-ui.py local --hot
-              python3 deploy/deploy-ui.py local --image
-              python3 deploy/deploy-ui.py local status
-              python3 deploy/deploy-ui.py local logs worker-spider
-
-            Cloud:
-              python3 deploy/deploy-ui.py config wizard
-              python3 deploy/deploy-ui.py aws hybrid
-              python3 deploy/deploy-ui.py aws release worker-spider worker-enum
-              python3 deploy/deploy-ui.py azure release worker-spider
-              python3 deploy/deploy-ui.py gcp release worker-spider
-              python3 deploy/deploy-ui.py cloud release-all
-
-            Scaling:
-              python3 deploy/deploy-ui.py scale aws
-              python3 deploy/deploy-ui.py scale azure
-              python3 deploy/deploy-ui.py scale gcp
-
-            Global:
-              --dry-run / -n
-              --yes / -y
-              --root <path>
-            """
-        ).strip()
-    )
-
-
-def fetch_text(url: str, timeout: int = 12) -> str:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "argus-engine-deploy-ui/1.0",
-            "Accept": "application/vnd.github+json,text/plain,*/*",
-        },
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.read().decode("utf-8", errors="replace")
-    except (urllib.error.URLError, TimeoutError, OSError):
-        return ""
-
-
-def read_env(path: Path) -> dict[str, str]:
+def parse_env_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
     if not path.exists():
-        return {}
-    return parse_env_lines(path.read_text(encoding="utf-8", errors="ignore").splitlines())
+        return values
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return values
 
-
-def parse_env_lines(lines: Iterable[str]) -> dict[str, str]:
-    env: dict[str, str] = {}
     for raw in lines:
         line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
             continue
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
         if key:
-            env[key] = value
-    return env
+            values[key] = value
+    return values
 
 
-def write_env(path: Path, values: dict[str, str], title: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    existing = path.read_text(encoding="utf-8", errors="ignore").splitlines() if path.exists() else []
-    seen: set[str] = set()
-    output: list[str] = []
+def load_environment(paths: Paths) -> dict[str, str]:
+    merged: dict[str, str] = {}
+    for path in [
+        paths.deploy_dir / ".env",
+        paths.deploy_dir / ".env.local",
+        paths.aws_dir / ".env",
+        paths.aws_dir / ".env.generated",
+    ]:
+        for key, value in parse_env_file(path).items():
+            merged.setdefault(key, value)
+    return merged
 
-    if not existing:
-        output.extend([f"# {title}", "# Generated by deploy/deploy-ui.py. Do not commit secrets.", ""])
 
-    for line in existing:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            output.append(line)
-            continue
-        key = stripped.split("=", 1)[0].strip()
-        if key in values:
-            output.append(f"{key}={shell_env_quote(values[key])}")
-            seen.add(key)
+def which(program: str) -> Optional[str]:
+    return shutil.which(program)
+
+
+class ArgusDeployConsole:
+    def __init__(self, paths: Paths, options: Options):
+        self.paths = paths
+        self.options = options
+        self.ui = Ui(no_color=options.no_color)
+        self.env = load_environment(paths)
+        self.runner = Runner(paths, options, self.ui, self.env)
+        self._compose_cmd: Optional[list[str]] = None
+        self._services: Optional[list[str]] = None
+
+    # ---------- command discovery ----------
+
+    def compose_cmd(self) -> list[str]:
+        if self._compose_cmd is not None:
+            return list(self._compose_cmd)
+
+        code, _, _ = self.runner.capture(["docker", "compose", "version"])
+        if code == 0:
+            self._compose_cmd = ["docker", "compose"]
+            return list(self._compose_cmd)
+
+        if which("docker-compose"):
+            self._compose_cmd = ["docker-compose"]
+            return list(self._compose_cmd)
+
+        self.ui.error("Docker Compose was not found. Install Docker Compose v2 or run deploy.sh so it can bootstrap dependencies.")
+        self._compose_cmd = ["docker", "compose"]
+        return list(self._compose_cmd)
+
+    def compose(self, *args: str) -> list[str]:
+        return [*self.compose_cmd(), "-f", str(self.paths.compose_file), *args]
+
+    def services(self) -> list[str]:
+        if self._services is not None:
+            return list(self._services)
+
+        code, stdout, _ = self.runner.capture(self.compose("config", "--services"))
+        services = [line.strip() for line in stdout.splitlines() if line.strip()] if code == 0 else []
+        if not services:
+            services = list(FALLBACK_SERVICES)
+        self._services = services
+        return list(services)
+
+    def app_services(self) -> list[str]:
+        infrastructure = {"postgres", "filestore-db-init", "redis", "rabbitmq"}
+        return [s for s in self.services() if s not in infrastructure]
+
+    def worker_services(self) -> list[str]:
+        available = set(self.services())
+        return [service for service in WORKERS if service in available]
+
+    # ---------- top-level dispatch ----------
+
+    def run(self, argv: Sequence[str]) -> int:
+        if not argv or argv[0].lower() in {"menu", "ui", "interactive"}:
+            return self.menu()
+
+        command = argv[0].lower()
+        rest = list(argv[1:])
+
+        # Compatibility with deploy.sh's historical handoff behavior.
+        if command in {"up"}:
+            return self.deploy_from_args(rest)
+        if command in {"--fresh", "-fresh"}:
+            return self.deploy_sh(["--fresh", *rest])
+        if command in {"--ecs-workers"}:
+            return self.deploy_sh(["--ecs-workers", *rest])
+        if command in {"--hot", "-hot"}:
+            return self.deploy_sh(["--hot", *rest])
+        if command in {"--image", "-image"}:
+            return self.deploy_sh(["--image", *rest])
+
+        if command in {"deploy", "update"}:
+            return self.deploy_from_args(rest)
+        if command in {"scale", "workers", "worker"}:
+            return self.scale_from_args(rest)
+        if command in {"monitor", "status", "ps"}:
+            return self.monitor_from_args([command, *rest])
+        if command in {"logs", "log"}:
+            return self.logs_from_args(rest)
+        if command == "restart":
+            return self.deploy_sh(["restart", *rest])
+        if command == "down":
+            return self.deploy_sh(["down", *rest])
+        if command == "smoke":
+            return self.deploy_sh(["smoke", *rest])
+        if command == "clean":
+            return self.clean()
+        if command in {"ecs", "aws", "cloud"}:
+            return self.ecs_from_args(rest)
+        if command in {"services", "components"}:
+            self.show_services()
+            return 0
+        if command in {"health", "check"}:
+            return self.health_checks()
+        if command in {"changed", "affected"}:
+            self.show_changed_services()
+            return 0
+        if command in {"help", "-h", "--help"}:
+            self.print_help()
+            return 0
+
+        self.ui.error(f"Unknown command: {argv[0]}")
+        self.print_help()
+        return 2
+
+    # ---------- menus ----------
+
+    def menu(self) -> int:
+        while True:
+            self.ui.header("Argus Engine deployment console")
+            self.show_context(compact=True)
+
+            choice = self.ui.choose(
+                "What do you want to do?",
+                [
+                    "Deploy or update the local Docker Compose stack",
+                    "Scale local or ECS workers",
+                    "Monitor health, status, logs, queues, and worker counts",
+                    "Operate services: restart, stop, smoke test, clean",
+                    "AWS ECS / ECR deployment and monitoring",
+                    "Show changed/affected services",
+                    "Open a command shell from the repo root",
+                    "Exit",
+                ],
+            )
+
+            if choice == 0:
+                code = self.deploy_menu()
+            elif choice == 1:
+                code = self.scale_menu()
+            elif choice == 2:
+                code = self.monitor_menu()
+            elif choice == 3:
+                code = self.operations_menu()
+            elif choice == 4:
+                code = self.ecs_menu()
+            elif choice == 5:
+                self.show_changed_services()
+                code = 0
+            elif choice == 6:
+                code = self.custom_shell()
+            else:
+                return 0
+
+            if code != 0:
+                self.ui.warn(f"Last action exited with code {code}.")
+            self.ui.pause()
+
+    def deploy_menu(self) -> int:
+        choice = self.ui.choose(
+            "Deploy/update",
+            [
+                "Incremental hot deploy — fastest for source-only changes",
+                "Incremental image deploy — rebuild changed images",
+                "Full fresh rebuild — no-cache image rebuild and recreate",
+                "Deploy/update selected components",
+                "Deploy local core + ECS workers from this EC2 host",
+                "Back",
+            ],
+        )
+        if choice == 0:
+            return self.deploy_sh(["--hot"])
+        if choice == 1:
+            return self.deploy_sh(["--image"])
+        if choice == 2:
+            return self.deploy_sh(["--fresh"])
+        if choice == 3:
+            return self.selected_component_deploy()
+        if choice == 4:
+            return self.deploy_sh(["--ecs-workers"])
+        return 0
+
+    def selected_component_deploy(self) -> int:
+        services = self.select_services(include_infra=False, default="changed")
+        if not services:
+            self.ui.warn("No components selected.")
+            return 0
+
+        mode = self.ui.choose(
+            "Selected component action",
+            [
+                "Build images, then up -d selected components",
+                "Up -d selected components without rebuilding",
+                "Force recreate selected components without rebuilding",
+                "Restart selected components only",
+                "Tail logs for selected components",
+            ],
+        )
+
+        if mode == 0:
+            build = self.runner.run(self.compose("build", *services))
+            if build != 0:
+                return build
+            return self.runner.run(self.compose("up", "-d", "--no-deps", *services))
+        if mode == 1:
+            return self.runner.run(self.compose("up", "-d", "--no-deps", *services))
+        if mode == 2:
+            return self.runner.run(self.compose("up", "-d", "--no-deps", "--force-recreate", *services))
+        if mode == 3:
+            return self.deploy_sh(["restart", *services])
+        return self.deploy_sh(["logs", "--tail", "200", *services])
+
+    def scale_menu(self) -> int:
+        choice = self.ui.choose(
+            "Worker scaling",
+            [
+                "Show current local worker replica counts",
+                "Scale all local Docker Compose workers",
+                "Scale one local Docker Compose worker",
+                "Run queue-driven ECS autoscaler once",
+                "Manually set ECS desired worker counts",
+                "Show ECS worker/service status",
+                "Back",
+            ],
+        )
+        if choice == 0:
+            self.show_worker_counts()
+            return 0
+        if choice == 1:
+            counts = self.prompt_worker_counts()
+            return self.apply_local_worker_scale(counts)
+        if choice == 2:
+            selected = self.select_worker()
+            current = self.local_service_count(selected)
+            count = self.ui.prompt_int(f"{selected} replicas", current, minimum=0)
+            return self.apply_local_worker_scale({selected: count})
+        if choice == 3:
+            return self.run_aws_script("autoscale-ecs-workers.sh")
+        if choice == 4:
+            counts = self.prompt_worker_counts(include_http_requester=True)
+            return self.apply_ecs_worker_scale(counts)
+        if choice == 5:
+            return self.ecs_status()
+        return 0
+
+    def monitor_menu(self) -> int:
+        choice = self.ui.choose(
+            "Monitoring",
+            [
+                "Compose status for all components",
+                "Worker replica counts",
+                "Health checks for Command Center endpoints",
+                "Recent logs",
+                "Follow logs",
+                "Error-focused logs with context",
+                "Docker stats",
+                "Queue and worker heartbeat diagnostics",
+                "ECS / Command Center status",
+                "Back",
+            ],
+        )
+        if choice == 0:
+            return self.deploy_sh(["status"])
+        if choice == 1:
+            self.show_worker_counts()
+            return 0
+        if choice == 2:
+            return self.health_checks()
+        if choice == 3:
+            services = self.select_services(include_infra=True, allow_empty=True, default="none")
+            tail = self.ui.prompt_int("Log tail lines", 200, minimum=1)
+            return self.deploy_sh(["logs", "--tail", str(tail), *services])
+        if choice == 4:
+            services = self.select_services(include_infra=True, allow_empty=True, default="none")
+            return self.deploy_sh(["logs", "--follow", *services])
+        if choice == 5:
+            services = self.select_services(include_infra=True, allow_empty=True, default="none")
+            tail = self.ui.prompt_int("Log tail lines to scan", 400, minimum=1)
+            return self.error_logs(services, tail=tail)
+        if choice == 6:
+            return self.runner.run(self.compose("stats"))
+        if choice == 7:
+            return self.queue_diagnostics()
+        if choice == 8:
+            return self.ecs_status()
+        return 0
+
+    def operations_menu(self) -> int:
+        choice = self.ui.choose(
+            "Service operations",
+            [
+                "Restart selected services",
+                "Restart all services",
+                "Stop stack",
+                "Run smoke test",
+                "Clean stack and remove volumes",
+                "Show useful URLs",
+                "Back",
+            ],
+        )
+        if choice == 0:
+            services = self.select_services(include_infra=True, default="changed")
+            return self.deploy_sh(["restart", *services])
+        if choice == 1:
+            return self.deploy_sh(["restart"])
+        if choice == 2:
+            if self.ui.confirm("Stop the local stack?", default=False, assume_yes=self.options.assume_yes):
+                return self.deploy_sh(["down"])
+            return 0
+        if choice == 3:
+            return self.deploy_sh(["smoke"])
+        if choice == 4:
+            return self.clean()
+        if choice == 5:
+            self.show_urls()
+            return 0
+        return 0
+
+    def ecs_menu(self) -> int:
+        choice = self.ui.choose(
+            "AWS ECS / ECR",
+            [
+                "EC2 hybrid deploy: local core + ECS workers",
+                "Create ECR repositories",
+                "Build and push ECR images for selected services",
+                "Deploy/update selected ECS services",
+                "Build, push, and deploy selected ECS services",
+                "Replace selected ECS worker tasks",
+                "Run ECS autoscaler once",
+                "Show ECS / Command Center status",
+                "Back",
+            ],
+        )
+        if choice == 0:
+            return self.deploy_sh(["--ecs-workers"])
+        if choice == 1:
+            return self.run_aws_script("create-ecr-repos.sh")
+        if choice in {2, 3, 4, 5}:
+            services = self.select_services(include_infra=False, only_cloudish=True, default="workers")
+            if not services:
+                self.ui.warn("No services selected.")
+                return 0
+            if choice == 2:
+                return self.run_aws_script("build-push-ecr.sh", services)
+            if choice == 3:
+                return self.run_aws_script("deploy-ecs-services.sh", services)
+            if choice == 4:
+                create = self.run_aws_script("create-ecr-repos.sh")
+                if create != 0:
+                    return create
+                build = self.run_aws_script("build-push-ecr.sh", services)
+                if build != 0:
+                    return build
+                return self.run_aws_script("deploy-ecs-services.sh", services)
+            return self.run_aws_script("replace-ecs-worker-tasks.sh", services)
+        if choice == 6:
+            return self.run_aws_script("autoscale-ecs-workers.sh")
+        if choice == 7:
+            return self.ecs_status()
+        return 0
+
+    # ---------- direct commands ----------
+
+    def deploy_from_args(self, args: Sequence[str]) -> int:
+        args = list(args)
+        scale_counts, remaining = self.extract_scale_args(args)
+
+        if "--ecs-workers" in remaining:
+            code = self.deploy_sh(["--ecs-workers", *[a for a in remaining if a != "--ecs-workers"]])
+        elif "--fresh" in remaining or "-fresh" in remaining:
+            code = self.deploy_sh(["--fresh", *[a for a in remaining if a not in {"--fresh", "-fresh"}]])
+        elif "--image" in remaining or "-image" in remaining:
+            services = [a for a in remaining if not a.startswith("-")]
+            if services:
+                code = self.runner.run(self.compose("build", *services))
+                if code == 0:
+                    code = self.runner.run(self.compose("up", "-d", "--no-deps", *services))
+            else:
+                code = self.deploy_sh(["--image"])
         else:
-            output.append(line)
+            services = [a for a in remaining if not a.startswith("-")]
+            code = self.deploy_sh(["--hot", *services])
 
-    for key in sorted(values):
-        if key not in seen:
-            output.append(f"{key}={shell_env_quote(values[key])}")
+        if code == 0 and scale_counts:
+            return self.apply_local_worker_scale(scale_counts)
+        return code
 
-    path.write_text("\n".join(output).rstrip() + "\n", encoding="utf-8")
+    def scale_from_args(self, args: Sequence[str]) -> int:
+        args = list(args)
+        if not args:
+            return self.scale_menu()
 
+        target = args[0].lower()
+        if target in {"local", "compose"}:
+            counts = self.parse_count_pairs(args[1:])
+            return self.apply_local_worker_scale(counts)
+        if target in {"ecs", "aws"}:
+            counts = self.parse_count_pairs(args[1:])
+            return self.apply_ecs_worker_scale(counts)
+        if target in {"autoscale", "auto"}:
+            return self.run_aws_script("autoscale-ecs-workers.sh", args[1:])
 
-def ensure_env_file(path: Path, example: Path) -> Path:
-    if path.exists():
-        return path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if example.exists():
-        path.write_text(example.read_text(encoding="utf-8", errors="ignore"), encoding="utf-8")
-    else:
-        path.write_text("# Generated by deploy/deploy-ui.py\n", encoding="utf-8")
-    return path
+        # Default to local for convenience: deploy-ui.py scale worker-spider=3
+        counts = self.parse_count_pairs(args)
+        return self.apply_local_worker_scale(counts)
 
+    def monitor_from_args(self, args: Sequence[str]) -> int:
+        command = args[0]
+        rest = list(args[1:])
+        if command in {"status", "ps"}:
+            return self.deploy_sh(["status", *rest])
+        if not rest:
+            return self.monitor_menu()
 
-def shell_env_quote(value: str) -> str:
-    if value == "":
+        topic = rest[0].lower()
+        if topic in {"health", "check"}:
+            return self.health_checks()
+        if topic in {"workers", "scale"}:
+            self.show_worker_counts()
+            return 0
+        if topic in {"queues", "queue", "heartbeat", "heartbeats"}:
+            return self.queue_diagnostics()
+        if topic in {"ecs", "aws"}:
+            return self.ecs_status()
+        return self.monitor_menu()
+
+    def logs_from_args(self, args: Sequence[str]) -> int:
+        if "--errors" in args:
+            remaining = [a for a in args if a != "--errors"]
+            return self.error_logs(remaining, tail=400)
+        return self.deploy_sh(["logs", *args])
+
+    def ecs_from_args(self, args: Sequence[str]) -> int:
+        if not args:
+            return self.ecs_menu()
+        action = args[0].lower()
+        rest = list(args[1:])
+
+        if action in {"hybrid", "workers"}:
+            return self.deploy_sh(["--ecs-workers", *rest])
+        if action == "repos":
+            return self.run_aws_script("create-ecr-repos.sh", rest)
+        if action in {"build", "push"}:
+            return self.run_aws_script("build-push-ecr.sh", rest)
+        if action == "deploy":
+            return self.run_aws_script("deploy-ecs-services.sh", rest)
+        if action == "release":
+            create = self.run_aws_script("create-ecr-repos.sh")
+            if create != 0:
+                return create
+            build = self.run_aws_script("build-push-ecr.sh", rest)
+            if build != 0:
+                return build
+            return self.run_aws_script("deploy-ecs-services.sh", rest)
+        if action == "replace":
+            return self.run_aws_script("replace-ecs-worker-tasks.sh", rest)
+        if action == "autoscale":
+            return self.run_aws_script("autoscale-ecs-workers.sh", rest)
+        if action == "scale":
+            return self.apply_ecs_worker_scale(self.parse_count_pairs(rest))
+        if action == "status":
+            return self.ecs_status()
+
+        self.ui.error(f"Unknown ECS action: {action}")
+        return 2
+
+    # ---------- action helpers ----------
+
+    def deploy_sh(self, args: Sequence[str]) -> int:
+        return self.runner.bash_script(self.paths.deploy_sh, list(args))
+
+    def clean(self) -> int:
+        self.ui.warn("This removes compose containers, orphans, volumes, and hot-publish output.")
+        if not self.ui.confirm("Continue with clean?", default=False, assume_yes=self.options.assume_yes):
+            return 0
+        return self.runner.bash_script(
+            self.paths.deploy_sh,
+            ["clean"],
+            env={"CONFIRM_ARGUS_CLEAN": "yes"},
+        )
+
+    def run_aws_script(self, name: str, args: Sequence[str] = ()) -> int:
+        script = self.paths.aws_dir / name
+        if not script.exists():
+            self.ui.error(f"AWS helper not found: {self.paths.rel(script)}")
+            return 2
+        return self.runner.bash_script(script, list(args))
+
+    def health_checks(self) -> int:
+        self.ui.section("Health checks")
+        failures = 0
+        for service, url in HEALTH_ENDPOINTS.items():
+            start = time.time()
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "argus-deploy-ui/1.0"})
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    elapsed_ms = int((time.time() - start) * 1000)
+                    if 200 <= response.status < 300:
+                        self.ui.ok(f"{service:<40} {response.status} {elapsed_ms}ms {url}")
+                    else:
+                        failures += 1
+                        self.ui.warn(f"{service:<40} HTTP {response.status} {url}")
+            except urllib.error.HTTPError as exc:
+                failures += 1
+                self.ui.warn(f"{service:<40} HTTP {exc.code} {url}")
+            except Exception as exc:
+                failures += 1
+                self.ui.warn(f"{service:<40} unavailable: {exc}")
+        return 1 if failures else 0
+
+    def error_logs(self, services: Sequence[str], *, tail: int = 400) -> int:
+        if self.paths.logs_sh.exists():
+            return self.runner.bash_script(self.paths.logs_sh, ["--errors", "--tail", str(tail), *services])
+        return self.deploy_sh(["logs", "--tail", str(tail), *services])
+
+    def queue_diagnostics(self) -> int:
+        self.ui.section("Queue and worker diagnostics")
+        queries = [
+            (
+                "Worker heartbeats",
+                """
+SELECT "WorkerKey",
+       "HostName",
+       "IsHealthy",
+       "ActiveConsumerCount",
+       "LastHeartbeatUtc",
+       now() - "LastHeartbeatUtc" AS heartbeat_age,
+       "HealthMessage"
+FROM worker_heartbeats
+ORDER BY "LastHeartbeatUtc" DESC
+LIMIT 50;
+""",
+            ),
+            (
+                "HTTP request queue by state",
+                """
+SELECT state, count(*) AS rows
+FROM http_request_queue
+GROUP BY state
+ORDER BY rows DESC;
+""",
+            ),
+            (
+                "Recent bus consumer activity",
+                """
+SELECT direction,
+       consumer_type,
+       host_name,
+       max(occurred_at_utc) AS last_seen,
+       count(*) AS events
+FROM bus_journal
+WHERE occurred_at_utc >= now() - interval '30 minutes'
+GROUP BY direction, consumer_type, host_name
+ORDER BY last_seen DESC
+LIMIT 50;
+""",
+            ),
+        ]
+
+        exit_code = 0
+        for title, sql in queries:
+            self.ui.section(title)
+            code = self.runner.run(
+                self.compose(
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "psql",
+                    "-v",
+                    "ON_ERROR_STOP=1",
+                    "-U",
+                    "argus",
+                    "-d",
+                    "argus_engine",
+                    "-c",
+                    sql,
+                )
+            )
+            if code != 0:
+                exit_code = code
+        return exit_code
+
+    def ecs_status(self) -> int:
+        status_script = self.paths.aws_dir / "ecs-command-center-status.sh"
+        if status_script.exists():
+            return self.runner.bash_script(status_script)
+
+        region = self.get_env("AWS_REGION", "us-east-1")
+        cluster = self.get_env("ECS_CLUSTER", "argus-engine")
+        service_names = [self.ecs_service_name(worker) for worker in self.worker_services()]
+        if not service_names:
+            service_names = [str(meta["ecs_default"]) for meta in WORKERS.values()]
+
+        return self.runner.run(
+            [
+                "aws",
+                "ecs",
+                "describe-services",
+                "--region",
+                region,
+                "--cluster",
+                cluster,
+                "--services",
+                *service_names,
+                "--query",
+                "services[].{service:serviceName,status:status,desired:desiredCount,running:runningCount,pending:pendingCount,taskDefinition:taskDefinition}",
+                "--output",
+                "table",
+            ]
+        )
+
+    def apply_local_worker_scale(self, counts: Mapping[str, int]) -> int:
+        if not counts:
+            self.ui.warn("No worker counts provided.")
+            return 0
+
+        normalized = self.normalize_worker_counts(counts)
+        env_updates = {str(WORKERS[service]["local_env"]): str(count) for service, count in normalized.items()}
+        args: list[str] = ["up", "-d"]
+
+        for service, count in normalized.items():
+            args.extend(["--scale", f"{service}={count}"])
+        args.extend(normalized.keys())
+
+        self.ui.section("Applying local worker scale")
+        for service, count in normalized.items():
+            self.ui.info(f"{service}: {count} replica(s)")
+
+        code = self.runner.run(self.compose(*args), env=env_updates)
+        if code == 0:
+            self.show_worker_counts()
+        return code
+
+    def apply_ecs_worker_scale(self, counts: Mapping[str, int]) -> int:
+        if not counts:
+            self.ui.warn("No ECS worker counts provided.")
+            return 0
+
+        normalized = self.normalize_worker_counts(counts, include_http_requester=True)
+        region = self.get_env("AWS_REGION", "us-east-1")
+        cluster = self.get_env("ECS_CLUSTER", "argus-engine")
+
+        self.ui.section("Applying ECS desired worker counts")
+        exit_code = 0
+        for service, count in normalized.items():
+            ecs_service = self.ecs_service_name(service)
+            self.ui.info(f"{service} → {ecs_service}: desired={count}")
+            code = self.runner.run(
+                [
+                    "aws",
+                    "ecs",
+                    "update-service",
+                    "--region",
+                    region,
+                    "--cluster",
+                    cluster,
+                    "--service",
+                    ecs_service,
+                    "--desired-count",
+                    str(count),
+                ]
+            )
+            if code != 0:
+                exit_code = code
+        return exit_code
+
+    # ---------- info/display ----------
+
+    def show_context(self, *, compact: bool = False) -> None:
+        if compact:
+            self.ui.info(f"Repo: {self.paths.repo_root}")
+            version = self.version()
+            if version:
+                self.ui.info(f"Version: {version}")
+            if self.options.dry_run:
+                self.ui.warn("Dry run: commands will be printed, not executed.")
+            return
+
+        self.ui.section("Context")
+        print(f"Repository : {self.paths.repo_root}")
+        print(f"Deploy dir : {self.paths.deploy_dir}")
+        print(f"Compose    : {self.paths.compose_file}")
+        version = self.version()
+        if version:
+            print(f"Version    : {version}")
+        print(f"Dry run    : {self.options.dry_run}")
+
+    def version(self) -> str:
+        for source in [
+            os.environ.get("ARGUS_ENGINE_VERSION"),
+            self.env.get("ARGUS_ENGINE_VERSION"),
+        ]:
+            if source:
+                return source
+        version_file = self.paths.repo_root / "VERSION"
+        if version_file.exists():
+            try:
+                return version_file.read_text(encoding="utf-8").strip()
+            except OSError:
+                return ""
         return ""
-    if re.fullmatch(r"[A-Za-z0-9_./:@,+=-]+", value):
-        return value
-    return shlex.quote(value)
 
+    def show_urls(self) -> None:
+        self.ui.section("Useful URLs")
+        urls = [
+            ("Command Center gateway", "http://localhost:8081/"),
+            ("Command Center web", "http://localhost:8082/"),
+            ("Operations API", "http://localhost:8083/health/ready"),
+            ("Discovery API", "http://localhost:8084/health/ready"),
+            ("Worker Control API", "http://localhost:8085/health/ready"),
+            ("Maintenance API", "http://localhost:8086/health/ready"),
+            ("Updates API", "http://localhost:8087/health/ready"),
+            ("Realtime host", "http://localhost:8088/health/ready"),
+            ("RabbitMQ admin", "http://localhost:15672/  user/pass: argus / argus"),
+            ("Postgres", "localhost:5432 db=argus_engine user=argus"),
+        ]
+        for name, url in urls:
+            print(f"{name:<28} {url}")
 
-def choose(title: str, options: Sequence[str]) -> int:
-    print_title(title)
-    for i, option in enumerate(options, 1):
-        print(f"  [{i}] {option}")
-    while True:
-        raw = input("Select: ").strip()
-        if not raw:
-            continue
-        if raw.isdigit() and 1 <= int(raw) <= len(options):
-            return int(raw) - 1
-        print_warn(f"Enter a number from 1 to {len(options)}.")
+    def show_services(self) -> None:
+        self.ui.section("Deployable components")
+        for service in self.services():
+            kind = "worker" if service in WORKERS else "infra" if service in {"postgres", "redis", "rabbitmq", "filestore-db-init"} else "app"
+            print(f"{service:<42} {kind}")
 
+    def show_worker_counts(self) -> None:
+        self.ui.section("Local worker replica counts")
+        for worker in self.worker_services():
+            count = self.local_service_count(worker)
+            meta = WORKERS[worker]
+            print(f"{worker:<30} {count:>3}  {meta['description']}")
 
-def select_from_candidates(
-    candidates: Sequence[str],
-    label: str,
-    *,
-    allow_all: bool = True,
-    allow_empty: bool = False,
-) -> list[str]:
-    candidates = list(candidates)
-    if not candidates:
-        return []
+    def show_changed_services(self) -> None:
+        changed = self.changed_files()
+        affected = self.changed_services(changed)
+        self.ui.section("Changed files")
+        if changed:
+            for file in changed:
+                print(file)
+        else:
+            self.ui.warn("No Git changes detected.")
+        self.ui.section("Likely affected components")
+        if affected:
+            for service in affected:
+                print(service)
+        else:
+            self.ui.warn("No affected components detected.")
 
-    print_title(label)
-    for i, value in enumerate(candidates, 1):
-        print(f"  [{i:2}] {value}")
+    # ---------- selection/prompting ----------
 
-    hints = []
-    if allow_all:
-        hints.append("all")
-    if allow_empty:
-        hints.append("none")
-    hint = f" ({', '.join(hints)} allowed)" if hints else ""
-    raw = prompt(f"Select by number/name, comma or space separated{hint}", "all" if allow_all else "")
+    def select_services(
+        self,
+        *,
+        include_infra: bool,
+        allow_empty: bool = False,
+        only_cloudish: bool = False,
+        default: str = "all",
+    ) -> list[str]:
+        candidates = self.services() if include_infra else self.app_services()
+        if only_cloudish:
+            candidates = [service for service in candidates if service not in {"filestore-db-init"}]
 
-    if not raw and allow_empty:
-        return []
-    if raw.lower() == "none" and allow_empty:
-        return []
-    if raw.lower() == "all" and allow_all:
-        return candidates
+        changed = self.changed_services(self.changed_files())
+        worker_names = self.worker_services()
 
-    selected: list[str] = []
-    tokens = [t for t in re.split(r"[,\s]+", raw.strip()) if t]
-    lookup = {name.lower(): name for name in candidates}
-    for token in tokens:
-        if token.isdigit():
-            idx = int(token) - 1
-            if 0 <= idx < len(candidates):
-                selected.append(candidates[idx])
+        self.ui.section("Components")
+        for idx, service in enumerate(candidates, 1):
+            mark = "*" if service in changed else " "
+            kind = "worker" if service in WORKERS else "infra" if service in {"postgres", "redis", "rabbitmq", "filestore-db-init"} else "app"
+            print(f"{idx:>2}. {mark} {service:<42} {kind}")
+
+        if changed:
+            self.ui.info("* = likely affected by current Git changes.")
+
+        if default == "changed" and not changed:
+            default = "all"
+        if default == "workers":
+            default_value = "workers"
+        elif allow_empty:
+            default_value = default if default in {"all", "changed", "workers"} else "none"
+        else:
+            default_value = default if default in {"all", "changed", "workers"} else "all"
+
+        raw = self.ui.prompt(
+            "Select numbers/names separated by commas, or all/changed/workers/none",
+            default_value,
+        ).strip()
+
+        if raw.lower() == "none":
+            return [] if allow_empty else candidates
+        if raw.lower() == "all":
+            return candidates
+        if raw.lower() == "changed":
+            return [s for s in candidates if s in changed] or ([] if allow_empty else candidates)
+        if raw.lower() == "workers":
+            return [s for s in candidates if s in worker_names]
+
+        selected: list[str] = []
+        by_name = {s.lower(): s for s in candidates}
+        for token in re.split(r"[,\s]+", raw):
+            if not token:
                 continue
-        match = lookup.get(token.lower())
-        if match:
-            selected.append(match)
+            if token.isdigit():
+                idx = int(token)
+                if 1 <= idx <= len(candidates):
+                    selected.append(candidates[idx - 1])
+                else:
+                    self.ui.warn(f"Ignoring out-of-range selection: {token}")
+                continue
+            match = by_name.get(token.lower())
+            if match:
+                selected.append(match)
+            else:
+                self.ui.warn(f"Ignoring unknown component: {token}")
+
+        # De-duplicate while preserving order.
+        deduped: list[str] = []
+        for service in selected:
+            if service not in deduped:
+                deduped.append(service)
+        return deduped
+
+    def select_worker(self) -> str:
+        workers = self.worker_services()
+        if not workers:
+            workers = list(WORKERS)
+        idx = self.ui.choose("Select worker", [f"{w} — {WORKERS[w]['description']}" for w in workers])
+        return workers[idx]
+
+    def prompt_worker_counts(self, *, include_http_requester: bool = True) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        self.ui.section("Worker counts")
+        self.ui.info("Set a worker to 0 to stop that worker class.")
+        for worker in self.worker_services():
+            if worker == "worker-http-requester" and not include_http_requester:
+                continue
+            current = self.local_service_count(worker)
+            counts[worker] = self.ui.prompt_int(f"{worker} replicas", current, minimum=0)
+        return counts
+
+    # ---------- lower-level helpers ----------
+
+    def local_service_count(self, service: str) -> int:
+        code, stdout, _ = self.runner.capture(self.compose("ps", "-q", service))
+        if code != 0:
+            return 0
+        return len([line for line in stdout.splitlines() if line.strip()])
+
+    def changed_files(self) -> list[str]:
+        if not (self.paths.repo_root / ".git").exists():
+            return []
+
+        files: set[str] = set()
+
+        def collect(args: Sequence[str]) -> None:
+            code, stdout, _ = self.runner.capture(["git", *args])
+            if code == 0:
+                for line in stdout.splitlines():
+                    line = line.strip()
+                    if line:
+                        files.add(line.replace("\\", "/"))
+
+        collect(["diff", "--name-only"])
+        collect(["diff", "--cached", "--name-only"])
+        collect(["ls-files", "--others", "--exclude-standard"])
+
+        code, upstream, _ = self.runner.capture(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+        upstream = upstream.strip()
+        if code == 0 and upstream:
+            code, merge_base, _ = self.runner.capture(["git", "merge-base", "HEAD", upstream])
+            merge_base = merge_base.strip()
+            if code == 0 and merge_base:
+                collect(["diff", "--name-only", f"{merge_base}...HEAD"])
+
+        return sorted(files)
+
+    def changed_services(self, files: Sequence[str]) -> list[str]:
+        if not files:
+            return []
+
+        normalized = [f.replace("\\", "/") for f in files]
+        if any(file in GLOBAL_INVALIDATORS or file.startswith("deploy/") for file in normalized):
+            return sorted(self.app_services())
+
+        affected: set[str] = set()
+        for service, hints in PROJECT_HINTS.items():
+            for file in normalized:
+                if any(file.startswith(hint) for hint in hints):
+                    affected.add(service)
+        return sorted(service for service in affected if service in self.services())
+
+    def extract_scale_args(self, args: Sequence[str]) -> tuple[dict[str, int], list[str]]:
+        counts: dict[str, int] = {}
+        remaining: list[str] = []
+        legacy_to_worker = {str(meta["legacy_flag"]): worker for worker, meta in WORKERS.items()}
+
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg in legacy_to_worker:
+                if i + 1 >= len(args):
+                    self.ui.error(f"{arg} requires a value.")
+                    raise SystemExit(2)
+                counts[legacy_to_worker[arg]] = self.parse_count(args[i + 1])
+                i += 2
+                continue
+            if arg.startswith("--scale-") and "=" in arg:
+                flag, value = arg.split("=", 1)
+                worker = legacy_to_worker.get(flag)
+                if worker:
+                    counts[worker] = self.parse_count(value)
+                    i += 1
+                    continue
+            remaining.append(arg)
+            i += 1
+
+        return counts, remaining
+
+    def parse_count_pairs(self, tokens: Sequence[str]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        if not tokens:
+            return counts
+
+        for token in tokens:
+            if "=" not in token:
+                self.ui.warn(f"Ignoring scale token without '=': {token}")
+                continue
+            raw_worker, raw_count = token.split("=", 1)
+            worker = self.normalize_worker_name(raw_worker)
+            counts[worker] = self.parse_count(raw_count)
+        return counts
+
+    def parse_count(self, raw: str) -> int:
+        try:
+            value = int(raw)
+        except ValueError:
+            raise SystemExit(f"Worker counts must be non-negative integers; got {raw!r}.")
+        if value < 0:
+            raise SystemExit("Worker counts must be non-negative.")
+        return value
+
+    def normalize_worker_counts(
+        self,
+        counts: Mapping[str, int],
+        *,
+        include_http_requester: bool = True,
+    ) -> dict[str, int]:
+        normalized: dict[str, int] = {}
+        for raw_worker, count in counts.items():
+            worker = self.normalize_worker_name(raw_worker)
+            if worker == "worker-http-requester" and not include_http_requester:
+                continue
+            if worker not in WORKERS:
+                raise SystemExit(f"Unknown worker: {raw_worker}")
+            normalized[worker] = int(count)
+        return normalized
+
+    def normalize_worker_name(self, raw: str) -> str:
+        key = raw.strip().lower().replace("_", "-")
+        if key in WORKERS:
+            return key
+        if not key.startswith("worker-"):
+            candidate = f"worker-{key}"
+            if candidate in WORKERS:
+                return candidate
+        for worker, meta in WORKERS.items():
+            if key == str(meta["short"]).lower():
+                return worker
+        raise SystemExit(f"Unknown worker '{raw}'. Valid workers: {', '.join(WORKERS)}")
+
+    def ecs_service_name(self, worker: str) -> str:
+        meta = WORKERS[worker]
+        env_name = str(meta["ecs_env"])
+        return self.get_env(env_name, str(meta["ecs_default"]))
+
+    def get_env(self, key: str, default: str = "") -> str:
+        return os.environ.get(key) or self.env.get(key) or default
+
+    def custom_shell(self) -> int:
+        command = self.ui.prompt("Command to run from repo root")
+        if not command:
+            return 0
+        return self.runner.shell(command)
+
+    # ---------- help/preflight ----------
+
+    def print_help(self) -> None:
+        print(
+            """
+Argus deployment console
+
+Usage:
+  deploy/deploy-ui.py [global options] [command]
+
+Interactive:
+  deploy/deploy-ui.py
+  deploy/deploy-ui.py menu
+
+Deploy/update:
+  deploy/deploy-ui.py deploy --hot [service...]
+  deploy/deploy-ui.py deploy --image [service...]
+  deploy/deploy-ui.py deploy --fresh
+  deploy/deploy-ui.py deploy --ecs-workers
+
+Scaling:
+  deploy/deploy-ui.py scale local worker-spider=4 worker-enum=2 worker-http-requester=2
+  deploy/deploy-ui.py scale ecs worker-spider=6 worker-techid=1
+  deploy/deploy-ui.py scale autoscale
+
+Monitoring:
+  deploy/deploy-ui.py monitor
+  deploy/deploy-ui.py status [service...]
+  deploy/deploy-ui.py logs [--follow] [service...]
+  deploy/deploy-ui.py logs --errors [service...]
+  deploy/deploy-ui.py health
+  deploy/deploy-ui.py changed
+  deploy/deploy-ui.py services
+
+AWS/ECS:
+  deploy/deploy-ui.py ecs hybrid
+  deploy/deploy-ui.py ecs repos
+  deploy/deploy-ui.py ecs build [service...]
+  deploy/deploy-ui.py ecs deploy [service...]
+  deploy/deploy-ui.py ecs release [service...]
+  deploy/deploy-ui.py ecs replace [worker-service...]
+  deploy/deploy-ui.py ecs status
+
+Global options:
+  --dry-run, -n       Print commands without executing them
+  --yes, -y          Assume yes for destructive confirmations
+  --repo-root PATH   Run against a specific checkout
+  --no-color         Disable ANSI color output
+  --verbose          Print discovery commands too
+
+Compatibility:
+  deploy-ui.py still accepts deploy.sh handoff-style arguments such as:
+  up, --fresh, -fresh, --ecs-workers, --hot, --image, logs, status, restart, down, smoke.
+""".strip()
+        )
+
+    def preflight(self) -> int:
+        self.ui.header("Preflight")
+        self.show_context()
+        failures = 0
+
+        checks = [
+            ("Python", sys.executable),
+            ("Docker", "docker"),
+            ("Git", "git"),
+            ("Bash", "bash"),
+            ("AWS CLI", "aws"),
+        ]
+
+        for name, exe in checks:
+            found = which(exe) if exe != sys.executable else exe
+            if found:
+                self.ui.ok(f"{name:<10} {found}")
+            else:
+                failures += 1
+                self.ui.warn(f"{name:<10} not found")
+
+        compose_code, compose_out, _ = self.runner.capture(["docker", "compose", "version"])
+        if compose_code == 0:
+            self.ui.ok(f"Compose    {compose_out.strip()}")
+        elif which("docker-compose"):
+            code, out, _ = self.runner.capture(["docker-compose", "--version"])
+            self.ui.ok(f"Compose    {out.strip() if code == 0 else 'docker-compose'}")
         else:
-            print_warn(f"Ignoring unknown selection: {token}")
+            failures += 1
+            self.ui.warn("Compose    not found")
 
-    return list(dict.fromkeys(selected))
+        for path in [self.paths.compose_file, self.paths.deploy_sh, self.paths.logs_sh]:
+            if path.exists():
+                self.ui.ok(f"File       {self.paths.rel(path)}")
+            else:
+                failures += 1
+                self.ui.warn(f"File       missing: {self.paths.rel(path)}")
 
-
-def prompt(label: str, default: str = "") -> str:
-    suffix = f" [{default}]" if default else ""
-    value = input(f"{label}{suffix}: ").strip()
-    return value if value else default
-
-
-def confirm(label: str, *, default: bool = True, assume_yes: bool = False) -> bool:
-    if assume_yes:
-        return True
-    suffix = "Y/n" if default else "y/N"
-    value = input(f"{label} [{suffix}]: ").strip().lower()
-    if not value:
-        return default
-    return value in {"y", "yes", "true", "1"}
+        return 1 if failures else 0
 
 
-def print_cmd(args: Sequence[str]) -> None:
-    print(f"$ {shlex.join(str(a) for a in args)}")
+def parse_global_options(argv: Sequence[str]) -> tuple[Options, list[str]]:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("-n", "--dry-run", action="store_true")
+    parser.add_argument("-y", "--yes", action="store_true")
+    parser.add_argument("--no-color", action="store_true")
+    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--repo-root", type=Path)
+    parser.add_argument("-h", "--help", action="store_true")
+
+    ns, remaining = parser.parse_known_args(argv)
+    options = Options(
+        dry_run=ns.dry_run,
+        assume_yes=ns.yes,
+        no_color=ns.no_color,
+        repo_root=ns.repo_root,
+        verbose=ns.verbose,
+    )
+    if ns.help and not remaining:
+        remaining = ["help"]
+    return options, remaining
 
 
-def print_title(title: str) -> None:
-    print()
-    print(f"== {title} ==")
-
-
-def print_info(message: str) -> None:
-    print(f"[info] {message}")
-
-
-def print_warn(message: str) -> None:
-    print(f"[warn] {message}")
-
-
-def print_error(message: str) -> None:
-    print(f"[error] {message}", file=sys.stderr)
-
-
-def print_box(title: str, lines: Sequence[str]) -> None:
-    width = max([len(title), *(len(line) for line in lines)], default=len(title)) + 4
-    print("┌" + "─" * width + "┐")
-    print("│ " + title.ljust(width - 2) + " │")
-    print("├" + "─" * width + "┤")
-    for line in lines:
-        print("│ " + line.ljust(width - 2) + " │")
-    print("└" + "─" * width + "┘")
-
-
-def print_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> None:
-    data = [list(map(str, headers)), *[list(map(str, row)) for row in rows]]
-    widths = [max(len(row[i]) for row in data) for i in range(len(headers))]
-    fmt = "  ".join("{:<" + str(width) + "}" for width in widths)
-    print(fmt.format(*headers))
-    print(fmt.format(*["-" * width for width in widths]))
-    for row in rows:
-        print(fmt.format(*map(str, row)))
-
-
-def pause() -> None:
-    if sys.stdin.isatty():
-        input("\nPress Enter to continue...")
-
-
-def clear_screen() -> None:
-    if sys.stdout.isatty():
-        os.system("cls" if os.name == "nt" else "clear")
-
-
-def first_line(value: str) -> str:
-    return value.splitlines()[0].strip() if value.splitlines() else ""
-
-
-def clean_go_template_value(value: str) -> str:
-    value = value.strip()
-    if value in {"<no value>", "null", "None"}:
-        return ""
-    return value
-
-
-def image_tag(image: str) -> str:
-    last = image.rsplit("/", 1)[-1]
-    if ":" in last:
-        return last.rsplit(":", 1)[-1]
-    return ""
-
-
-def short_sha(value: str) -> str:
-    return value[:12] if value else "unknown"
-
-
-def service_key(service: str) -> str:
-    key = service.upper().replace("-", "_")
-    if key.startswith("WORKER_"):
-        return key
-    return key
-
-
-def first_nonzero(*codes: int) -> int:
-    for code in codes:
-        if code:
-            return code
-    return 0
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    argv = list(argv if argv is not None else sys.argv[1:])
-    args, dry_run, assume_yes, explicit_root = parse_args(argv)
-    root = resolve_repo_root(explicit_root)
-    app = ArgusDeployUi(root, dry_run=dry_run, assume_yes=assume_yes)
-    return dispatch(app, args)
+def main(argv: Sequence[str]) -> int:
+    options, remaining = parse_global_options(argv)
+    paths = Paths.resolve(options.repo_root)
+    console = ArgusDeployConsole(paths, options)
+    return console.run(remaining)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
-'''
-
-def main() -> None:
-    out = Path("argus-engine-deploy-ui-changes.zip").resolve()
-    info = ZipInfo("deploy/deploy-ui.py")
-    info.external_attr = 0o755 << 16
-
-    with ZipFile(out, "w", compression=ZIP_DEFLATED) as zf:
-        zf.writestr(info, DEPLOY_UI)
-
-    print(f"Wrote {out}")
-    print("Zip contents:")
-    print("  deploy/deploy-ui.py")
-
-if __name__ == "__main__":
-    main()
+    raise SystemExit(main(sys.argv[1:]))

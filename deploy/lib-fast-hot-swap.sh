@@ -123,23 +123,19 @@ argus_parallel_publish() {
 }
 
 # ── Copy publish output into running containers in parallel ─────────────────
-# For each service: docker cp into temp dir, atomic replace /app, restart.
-# All copies are fired in parallel; restarts are done after all copies succeed.
-argus_parallel_hot_copy_and_restart() {
+# Reads from deploy/.hot-publish/<service>/publish/ (never from src/).
+argus_parallel_hot_copy_and_restart_from_staging() {
   local services=("$@")
   [[ ${#services[@]} -gt 0 ]] || return 0
 
   local copy_pids=()
-  local copy_svcs=()
-  local failed_copy=()
 
   for service in "${services[@]}"; do
-    local out_abs="$ROOT/deploy/.hot-publish/$service"
+    local out_abs="$ROOT/deploy/.hot-publish/$service/publish"
     [[ -d "$out_abs" ]] || { echo "WARN: No publish output for $service, skipping copy."; continue; }
 
     (
       set +e
-      # Get all running container IDs for this service
       local cids running_cids=()
       mapfile -t cids < <(compose ps -q "$service" 2>/dev/null || true)
       for cid in "${cids[@]}"; do
@@ -154,7 +150,6 @@ argus_parallel_hot_copy_and_restart() {
         exit 0
       fi
 
-      # Copy to all replicas in parallel (usually just 1, sometimes 2)
       local copy_sub_pids=()
       for cid in "${running_cids[@]}"; do
         local temp="/tmp/argus-hot-${service}-${cid:0:8}"
@@ -172,10 +167,8 @@ argus_parallel_hot_copy_and_restart() {
   done
 
   for p in "${copy_pids[@]}"; do wait "$p"; done
-
   echo "ARGUS_ALL_COPIES_DONE"
 
-  # Now restart all services simultaneously
   local restart_pids=()
   for service in "${services[@]}"; do
     ( compose restart "$service" >/dev/null 2>&1 && echo "ARGUS_RESTART_DONE:${service}" ) &
@@ -184,6 +177,7 @@ argus_parallel_hot_copy_and_restart() {
   for p in "${restart_pids[@]}"; do wait "$p"; done
   echo "ARGUS_ALL_RESTARTS_DONE"
 }
+
 
 # ── Entry point called from argus_compose_hot_deploy ────────────────────────
 # Usage: argus_fast_hot_swap service1 service2 ...

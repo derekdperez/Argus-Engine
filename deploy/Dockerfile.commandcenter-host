@@ -2,12 +2,10 @@
 
 # Generic Command Center split host image.
 # Build context: repository root.
-
 ARG PROJECT_DIR=ArgusEngine.CommandCenter.Gateway
 ARG APP_DLL=ArgusEngine.CommandCenter.Gateway.dll
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-
 ARG COMPONENT_VERSION=2.6.3
 ARG PROJECT_DIR
 ARG APP_DLL
@@ -24,17 +22,17 @@ COPY Directory.Build.props Directory.Build.targets Directory.Packages.props Argu
 COPY src/*/*.csproj ./src/
 
 RUN for f in src/*.csproj; do \
-      [ -e "$f" ] || continue; \
-      p="${f#src/}"; \
-      p="${p%.csproj}"; \
-      mkdir -p "src/$p"; \
-      mv "$f" "src/$p/"; \
+    [ -e "$f" ] || continue; \
+    p="${f#src/}"; \
+    p="${p%.csproj}"; \
+    mkdir -p "src/$p"; \
+    mv "$f" "src/$p/"; \
     done
 
 # Restore the target host into the same obj cache publish mounts below. The old
 # solution-wide restore wrote assets into the image layer, then the publish
 # cache mount hid those assets and caused NETSDK1004 under --no-restore.
-RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=shared \
+RUN --mount=type=cache,id=argus-nuget-locked-v1,target=/root/.nuget/packages,sharing=locked \
     --mount=type=cache,id=argus-obj-${PROJECT_DIR},target=/src/src/${PROJECT_DIR}/obj,sharing=locked \
     cp -an /opt/argus-nuget/packages/. /root/.nuget/packages/ 2>/dev/null || true; \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
@@ -42,7 +40,7 @@ RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=share
 # Copy the rest of the source after restore to keep NuGet restore cacheable.
 COPY src/ src/
 
-RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=shared \
+RUN --mount=type=cache,id=argus-nuget-locked-v1,target=/root/.nuget/packages,sharing=locked \
     --mount=type=cache,id=argus-obj-${PROJECT_DIR},target=/src/src/${PROJECT_DIR}/obj,sharing=locked \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
       -c Release -o /app/publish /p:UseAppHost=false --no-restore \
@@ -54,13 +52,11 @@ RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=share
       && test -s "/app/publish/${APP_DLL}"
 
 FROM argus-engine-base:local AS final
-
 ARG APP_DLL
 ARG BUILD_SOURCE_STAMP=unknown
 ARG COMPONENT_VERSION=2.6.3
 
 WORKDIR /app
-
 ENV ASPNETCORE_URLS=http://+:8080
 ENV APP_DLL=${APP_DLL}
 
@@ -69,7 +65,7 @@ EXPOSE 8080
 COPY --from=build /app/publish .
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:8080/health/ready >/dev/null || exit 1
+    CMD curl -fsS http://127.0.0.1:8080/health/ready >/dev/null || exit 1
 
 LABEL org.opencontainers.image.title="Argus Engine Command Center Split Host" \
       org.opencontainers.image.description="Split Command Center host for Argus Engine" \

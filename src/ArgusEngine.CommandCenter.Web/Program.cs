@@ -1,34 +1,29 @@
 using ArgusEngine.CommandCenter.Web.Clients;
+using ArgusEngine.CommandCenter.Web.Components;
 using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
+using DiscoveryRealtimeClient = ArgusEngine.CommandCenter.Realtime.DiscoveryRealtimeClient;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddRazorPages();
-builder.Services.AddServerSideBlazor();
-
-builder.Services.AddRadzenComponents();
+builder.Services
+    .AddRazorComponents()
+    .AddInteractiveServerComponents();
 
 builder.Services.AddHttpContextAccessor();
 
+// The Command Center web app talks back to the same host for its local API
+// surface. Register these as simple scoped clients to avoid AddHttpClient<T>
+// overload ambiguity under the current .NET 10 SDK/compiler.
+builder.Services.AddScoped(CreateRequestHttpClient);
+builder.Services.AddScoped(sp => new DiscoveryApiClient(CreateRequestHttpClient(sp)));
+builder.Services.AddScoped(sp => new OperationsApiClient(CreateRequestHttpClient(sp)));
+builder.Services.AddScoped(sp => new WorkerControlApiClient(CreateRequestHttpClient(sp)));
+builder.Services.AddScoped(sp => new MaintenanceApiClient(CreateRequestHttpClient(sp)));
+builder.Services.AddScoped(sp => new UpdatesApiClient(CreateRequestHttpClient(sp)));
+builder.Services.AddScoped(sp => new RealtimeApiClient(CreateRequestHttpClient(sp)));
+
 builder.Services.AddScoped<DiscoveryRealtimeClient>();
 builder.Services.AddScoped<LocalDockerClient>();
-
-
-builder.Services.AddHttpClient("GatewayClient", sp => {
-    sp.BaseAddress = ResolveGatewayBaseAddress(sp);
-});
-
-builder.Services.AddHttpClient<DiscoveryApiClient>("GatewayClient");
-builder.Services.AddHttpClient<OperationsApiClient>("GatewayClient");
-builder.Services.AddHttpClient<WorkerControlApiClient>("GatewayClient");
-builder.Services.AddHttpClient<MaintenanceApiClient>("GatewayClient");
-builder.Services.AddHttpClient<UpdatesApiClient>("GatewayClient");
-builder.Services.AddHttpClient<RealtimeApiClient>("GatewayClient");
-
-builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveRequestBaseAddress(sp) });
 
 var app = builder.Build();
 
@@ -43,61 +38,38 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.MapStaticAssets();
 
 app.UseStaticFiles();
-
-app.MapGet("/ArgusEngine.CommandCenter.styles.css", () =>
-    Results.Redirect("/ArgusEngine.CommandCenter.Web.styles.css", permanent: false));
-
 app.UseAntiforgery();
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
-
 app.MapGet("/health/ready", () => Results.Ok(new { status = "ready" }));
 
-app.MapRazorPages();
-app.MapBlazorHub();
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode();
 
-await app.RunAsync();
+await app.RunAsync().ConfigureAwait(false);
+
+static HttpClient CreateRequestHttpClient(IServiceProvider services)
+{
+    return new HttpClient
+    {
+        BaseAddress = ResolveRequestBaseAddress(services)
+    };
+}
 
 static Uri ResolveRequestBaseAddress(IServiceProvider services)
 {
     var request = services.GetRequiredService<IHttpContextAccessor>().HttpContext?.Request;
-
     if (request is not null)
     {
-        var pathBase = request.PathBase.HasValue ? request.PathBase.Value : "";
-
+        var pathBase = request.PathBase.HasValue ? request.PathBase.Value : string.Empty;
         return new Uri($"{request.Scheme}://{request.Host}{pathBase}/");
     }
 
-    var navigation = services.GetRequiredService<NavigationManager>();
-
-    return new Uri(navigation.BaseUri);
-}
-
-static Uri ResolveGatewayBaseAddress(IServiceProvider services)
-{
-    var configuration = services.GetRequiredService<IConfiguration>();
-
-    var configured =
-        configuration["CommandCenter:GatewayBaseUrl"]
-        ?? configuration["Argus:CommandCenter:GatewayBaseUrl"]
-        ?? configuration["CommandCenter:Services:Gateway"]
-        ?? configuration["Argus:CommandCenter:Services:Gateway"];
-
-    if (!string.IsNullOrWhiteSpace(configured))
+    var navigation = services.GetService<NavigationManager>();
+    if (navigation is not null)
     {
-        if (!Uri.TryCreate(EnsureTrailingSlash(configured), UriKind.Absolute, out var configuredUri))
-        {
-            throw new InvalidOperationException(
-                $"Invalid Command Center gateway URL '{configured}'. Configure CommandCenter:GatewayBaseUrl.");
-        }
-
-        return configuredUri;
+        return new Uri(navigation.BaseUri);
     }
 
-    return ResolveRequestBaseAddress(services);
+    return new Uri("http://localhost/");
 }
-
-static string EnsureTrailingSlash(string value) =>
-    value.Length > 0 && value[^1] == '/' ? value : value + "/";
-

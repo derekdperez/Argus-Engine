@@ -227,12 +227,12 @@ run_deploy() {
   elif [[ "$FRESH" == "1" ]]; then
     deploy_args+=(--fresh)
   else
-    deploy_args+=(--image)
+    deploy_args+=(--hot)
   fi
 
   run env \
     ARGUS_NO_UI=1 \
-    argus_DEPLOY_MODE=image \
+    argus_DEPLOY_MODE=hot \
     argus_BUILD_SEQUENTIAL=1 \
     argus_BUILD_PROGRESS=plain \
     BUILDKIT_PROGRESS=plain \

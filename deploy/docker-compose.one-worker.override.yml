@@ -1,0 +1,21 @@
+# Optional manual override for direct docker compose usage.
+# deploy.sh also patches explicit scales through deploy/apply-one-worker-defaults.sh.
+services:
+  worker-spider:
+    deploy:
+      replicas: 1
+  worker-http-requester:
+    deploy:
+      replicas: 1
+  worker-enum:
+    deploy:
+      replicas: 1
+  worker-portscan:
+    deploy:
+      replicas: 1
+  worker-highvalue:
+    deploy:
+      replicas: 1
+  worker-techid:
+    deploy:
+      replicas: 1

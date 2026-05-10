@@ -18,11 +18,12 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 2
 fi
 
-spider="${EC2_WORKER_SPIDER:-0}"
-enum="${EC2_WORKER_ENUM:-0}"
-portscan="${EC2_WORKER_PORTSCAN:-0}"
-highvalue="${EC2_WORKER_HIGHVALUE:-0}"
-techid="${EC2_WORKER_TECHID:-5}"
+# Default each worker type to exactly one local container.
+spider="${EC2_WORKER_SPIDER:-1}"
+enum="${EC2_WORKER_ENUM:-1}"
+portscan="${EC2_WORKER_PORTSCAN:-1}"
+highvalue="${EC2_WORKER_HIGHVALUE:-1}"
+techid="${EC2_WORKER_TECHID:-1}"
 
 for value in "$spider" "$enum" "$portscan" "$highvalue" "$techid"; do
   if [[ ! "$value" =~ ^[0-9]+$ ]]; then

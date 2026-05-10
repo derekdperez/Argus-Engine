@@ -6,31 +6,66 @@ using Radzen;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddRazorComponents()
+builder.Services
+    .AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddHttpContextAccessor();
 
-// Register the Radzen services used by the Web UI without depending on the
-// AddRadzenComponents extension method being visible to this project at compile time.
+// Radzen components used by App.razor/layout/pages.
 builder.Services.AddScoped<DialogService>();
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<TooltipService>();
 builder.Services.AddScoped<ContextMenuService>();
 builder.Services.AddScoped<ThemeService>();
 
-// NavStatusBar and other interactive components inject this concrete client.
-// Without this registration, the root page can pass health checks while "/" fails
-// with "no registered service of type DiscoveryRealtimeClient".
-builder.Services.AddScoped<DiscoveryRealtimeClient>();
+// Plain HttpClient remains request-relative for components that deliberately use the web host.
+// Split-service API clients below must not use the current request host, because in Docker that
+// resolves to command-center-web:8080 and causes /api/* calls to hit the Blazor app instead of
+// the gateway/API services.
+builder.Services.AddScoped(sp => new HttpClient
+{
+    BaseAddress = ResolveRequestBaseAddress(sp),
+});
 
-builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveRequestBaseAddress(sp) });
-builder.Services.AddHttpClient<OperationsApiClient>((sp, client) => client.BaseAddress = ResolveRequestBaseAddress(sp));
-builder.Services.AddHttpClient<DiscoveryApiClient>((sp, client) => client.BaseAddress = ResolveRequestBaseAddress(sp));
-builder.Services.AddHttpClient<WorkerControlApiClient>((sp, client) => client.BaseAddress = ResolveRequestBaseAddress(sp));
-builder.Services.AddHttpClient<MaintenanceApiClient>((sp, client) => client.BaseAddress = ResolveRequestBaseAddress(sp));
-builder.Services.AddHttpClient<UpdatesApiClient>((sp, client) => client.BaseAddress = ResolveRequestBaseAddress(sp));
-builder.Services.AddHttpClient<RealtimeApiClient>((sp, client) => client.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<DiscoveryApiClient>((sp, client) =>
+    client.BaseAddress = ResolveServiceBaseAddress(
+        sp,
+        "Discovery",
+        "http://command-center-discovery-api:8080/"));
+
+builder.Services.AddHttpClient<OperationsApiClient>((sp, client) =>
+    client.BaseAddress = ResolveServiceBaseAddress(
+        sp,
+        "Operations",
+        "http://command-center-operations-api:8080/"));
+
+builder.Services.AddHttpClient<WorkerControlApiClient>((sp, client) =>
+    client.BaseAddress = ResolveServiceBaseAddress(
+        sp,
+        "WorkerControl",
+        "http://command-center-worker-control-api:8080/"));
+
+builder.Services.AddHttpClient<MaintenanceApiClient>((sp, client) =>
+    client.BaseAddress = ResolveServiceBaseAddress(
+        sp,
+        "Maintenance",
+        "http://command-center-maintenance-api:8080/"));
+
+builder.Services.AddHttpClient<UpdatesApiClient>((sp, client) =>
+    client.BaseAddress = ResolveServiceBaseAddress(
+        sp,
+        "Updates",
+        "http://command-center-updates-api:8080/"));
+
+builder.Services.AddHttpClient<RealtimeApiClient>((sp, client) =>
+    client.BaseAddress = ResolveServiceBaseAddress(
+        sp,
+        "Realtime",
+        "http://command-center-realtime:8080/"));
+
+builder.Services.AddScoped<DiscoveryRealtimeClient>();
+builder.Services.AddScoped<LocalDockerClient>();
 
 var app = builder.Build();
 
@@ -79,3 +114,27 @@ static Uri ResolveRequestBaseAddress(IServiceProvider services)
 
     return new Uri("http://localhost/");
 }
+
+static Uri ResolveServiceBaseAddress(IServiceProvider services, string serviceName, string localDefault)
+{
+    var configuration = services.GetRequiredService<IConfiguration>();
+
+    var value =
+        configuration[$"CommandCenter:Services:{serviceName}"] ??
+        configuration[$"Argus:CommandCenter:Services:{serviceName}"] ??
+        configuration[$"CommandCenter:{serviceName}BaseUrl"] ??
+        configuration[$"Argus:CommandCenter:{serviceName}BaseUrl"] ??
+        localDefault;
+
+    if (Uri.TryCreate(EnsureTrailingSlash(value), UriKind.Absolute, out var uri))
+    {
+        return uri;
+    }
+
+    throw new InvalidOperationException(
+        $"Invalid Command Center split-service URL for '{serviceName}': '{value}'. " +
+        $"Configure CommandCenter:Services:{serviceName}.");
+}
+
+static string EnsureTrailingSlash(string value) =>
+    value.Length > 0 && value[^1] == '/' ? value : value + "/";

@@ -486,9 +486,9 @@
         try
         {
             Realtime.DomainEventReceived += OnRealtimeEvent;
-            await Realtime.EnsureStartedAsync(_devPollCts.Token).ConfigureAwait(false);
-            await RefreshErrorsAsync().ConfigureAwait(false);
-            await LoadDockerWorkersAsync().ConfigureAwait(false);
+            await Realtime.EnsureStartedAsync(_devPollCts.Token);
+            await RefreshErrorsAsync();
+            await LoadDockerWorkersAsync();
         }
         catch (Exception ex)
         {

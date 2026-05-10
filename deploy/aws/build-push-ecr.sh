@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "${script_dir}/../.." && pwd)"
+
+# shellcheck source=../lib-argus-service-catalog.sh
+source "${repo_root}/deploy/lib-argus-service-catalog.sh"
+
 : "${AWS_REGION:?Set AWS_REGION}"
 : "${AWS_ACCOUNT_ID:?Set AWS_ACCOUNT_ID}"
 : "${ECR_PREFIX:=argus-v2}"
@@ -13,15 +19,16 @@ component_version="${COMPONENT_VERSION:-$IMAGE_TAG}"
 aws ecr get-login-password --region "$AWS_REGION" |
   docker login --username AWS --password-stdin "$registry"
 
-build_and_push() {
+docker_build_and_push() {
   local service="$1"
-  local dockerfile="$2"
-  local project_dir="$3"
-  local app_dll="$4"
-  local image="${registry}/${ECR_PREFIX}/${service}:${IMAGE_TAG}"
+  local dockerfile project_dir app_dll image
+  dockerfile="$(argus_service_dockerfile "$service")"
+  project_dir="$(argus_service_project_dir "$service")"
+  app_dll="$(argus_service_app_dll "$service")"
+  image="${registry}/${ECR_PREFIX}/${service}:${IMAGE_TAG}"
 
   local build_args=(
-    -f "$dockerfile"
+    --file "$dockerfile"
     --build-arg "PROJECT_DIR=${project_dir}"
     --build-arg "APP_DLL=${app_dll}"
     --build-arg "BUILD_SOURCE_STAMP=${build_stamp}"
@@ -35,51 +42,35 @@ build_and_push() {
     )
   fi
 
-  echo "Building ${image}"
-  DOCKER_BUILDKIT=1 docker build "${build_args[@]}" -t "$image" .
-  docker push "$image"
+  echo "Building and pushing ${image}"
+
+  # GitHub-hosted runners are ephemeral. Prefer buildx with the GHA cache when
+  # available so repeated production releases do not rebuild unchanged layers.
+  if [[ "${GITHUB_ACTIONS:-}" == "true" && "${ARGUS_USE_GHA_BUILD_CACHE:-1}" == "1" ]] &&
+     docker buildx version >/dev/null 2>&1; then
+    docker buildx build \
+      "${build_args[@]}" \
+      --cache-from type=gha,scope="argus-${service}" \
+      --cache-to type=gha,scope="argus-${service}",mode=max \
+      --tag "$image" \
+      --push \
+      .
+  else
+    DOCKER_BUILDKIT=1 docker build "${build_args[@]}" --tag "$image" .
+    docker push "$image"
+  fi
 }
 
 services=("$@")
-
 if [[ ${#services[@]} -eq 0 ]]; then
-  services=(
-    "command-center"
-    "gatekeeper"
-    "worker-spider"
-    "worker-enum"
-    "worker-portscan"
-    "worker-highvalue"
-    "worker-techid"
-  )
+  mapfile -t services < <(argus_ecr_default_services)
 fi
 
-for service in "${services[@]}"; do
-  case "$service" in
-    command-center)
-      build_and_push "command-center" "deploy/Dockerfile.web" "ArgusEngine.CommandCenter" "ArgusEngine.CommandCenter.dll"
-      ;;
-    gatekeeper)
-      build_and_push "gatekeeper" "deploy/Dockerfile.worker" "ArgusEngine.Gatekeeper" "ArgusEngine.Gatekeeper.dll"
-      ;;
-    worker-spider)
-      build_and_push "worker-spider" "deploy/Dockerfile.worker" "ArgusEngine.Workers.Spider" "ArgusEngine.Workers.Spider.dll"
-      ;;
-    worker-enum)
-      build_and_push "worker-enum" "deploy/Dockerfile.worker-enum" "ArgusEngine.Workers.Enumeration" "ArgusEngine.Workers.Enumeration.dll"
-      ;;
-    worker-portscan)
-      build_and_push "worker-portscan" "deploy/Dockerfile.worker" "ArgusEngine.Workers.PortScan" "ArgusEngine.Workers.PortScan.dll"
-      ;;
-    worker-highvalue)
-      build_and_push "worker-highvalue" "deploy/Dockerfile.worker" "ArgusEngine.Workers.HighValue" "ArgusEngine.Workers.HighValue.dll"
-      ;;
-    worker-techid)
-      build_and_push "worker-techid" "deploy/Dockerfile.worker" "ArgusEngine.Workers.TechnologyIdentification" "ArgusEngine.Workers.TechnologyIdentification.dll"
-      ;;
-    *)
-      echo "Unknown service: $service" >&2
-      exit 1
-      ;;
-  esac
+for raw_service in "${services[@]}"; do
+  service="$(argus_validate_service "$raw_service")"
+  if [[ "$(argus_service_ecr_enabled "$service")" != "1" ]]; then
+    echo "Skipping ${service}: not marked as an ECR/ECS deployable service in deploy/service-catalog.tsv"
+    continue
+  fi
+  docker_build_and_push "$service"
 done

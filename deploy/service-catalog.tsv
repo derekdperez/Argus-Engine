@@ -1,0 +1,18 @@
+# service	project_dir	app_dll	dockerfile	ecr_enabled	kind	extra_source_dirs
+command-center-gateway	ArgusEngine.CommandCenter.Gateway	ArgusEngine.CommandCenter.Gateway.dll	deploy/Dockerfile.commandcenter-host	1	aspnet	
+command-center-operations-api	ArgusEngine.CommandCenter.Operations.Api	ArgusEngine.CommandCenter.Operations.Api.dll	deploy/Dockerfile.commandcenter-host	1	aspnet	
+command-center-discovery-api	ArgusEngine.CommandCenter.Discovery.Api	ArgusEngine.CommandCenter.Discovery.Api.dll	deploy/Dockerfile.commandcenter-host	1	aspnet	
+command-center-worker-control-api	ArgusEngine.CommandCenter.WorkerControl.Api	ArgusEngine.CommandCenter.WorkerControl.Api.dll	deploy/Dockerfile.commandcenter-host	1	aspnet	src/ArgusEngine.Harness.Core,src/ArgusEngine.Gatekeeper,src/ArgusEngine.Workers.Enumeration,src/ArgusEngine.Workers.Spider,src/ArgusEngine.Workers.PortScan,src/ArgusEngine.Workers.HighValue,src/ArgusEngine.Workers.TechnologyIdentification
+command-center-maintenance-api	ArgusEngine.CommandCenter.Maintenance.Api	ArgusEngine.CommandCenter.Maintenance.Api.dll	deploy/Dockerfile.commandcenter-host	1	aspnet	
+command-center-updates-api	ArgusEngine.CommandCenter.Updates.Api	ArgusEngine.CommandCenter.Updates.Api.dll	deploy/Dockerfile.commandcenter-host	1	aspnet	
+command-center-realtime	ArgusEngine.CommandCenter.Realtime.Host	ArgusEngine.CommandCenter.Realtime.Host.dll	deploy/Dockerfile.commandcenter-host	1	aspnet	
+command-center-bootstrapper	ArgusEngine.CommandCenter.Bootstrapper	ArgusEngine.CommandCenter.Bootstrapper.dll	deploy/Dockerfile.worker	0	worker	
+command-center-spider-dispatcher	ArgusEngine.CommandCenter.SpiderDispatcher	ArgusEngine.CommandCenter.SpiderDispatcher.dll	deploy/Dockerfile.worker	1	worker	src/ArgusEngine.Workers.Spider
+command-center-web	ArgusEngine.CommandCenter.Web	ArgusEngine.CommandCenter.Web.dll	deploy/Dockerfile.commandcenter-host	1	aspnet	src/ArgusEngine.Harness.Core
+gatekeeper	ArgusEngine.Gatekeeper	ArgusEngine.Gatekeeper.dll	deploy/Dockerfile.worker	1	worker	
+worker-spider	ArgusEngine.Workers.Spider	ArgusEngine.Workers.Spider.dll	deploy/Dockerfile.worker	1	worker	
+worker-http-requester	ArgusEngine.Workers.HttpRequester	ArgusEngine.Workers.HttpRequester.dll	deploy/Dockerfile.worker	1	worker	
+worker-enum	ArgusEngine.Workers.Enumeration	ArgusEngine.Workers.Enumeration.dll	deploy/Dockerfile.worker-enum	1	worker	deploy/wordlists,deploy/artifacts/recon-tools
+worker-portscan	ArgusEngine.Workers.PortScan	ArgusEngine.Workers.PortScan.dll	deploy/Dockerfile.worker	1	worker	
+worker-highvalue	ArgusEngine.Workers.HighValue	ArgusEngine.Workers.HighValue.dll	deploy/Dockerfile.worker	1	worker	src/Resources/RegexPatterns,src/Resources/Wordlists/high_value
+worker-techid	ArgusEngine.Workers.TechnologyIdentification	ArgusEngine.Workers.TechnologyIdentification.dll	deploy/Dockerfile.worker	1	worker	src/Resources/TechIdentificationData,src/Resources/TechnologyDetection

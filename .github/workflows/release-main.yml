@@ -4,6 +4,17 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'src/**'
+      - 'deploy/**'
+      - 'scripts/**'
+      - 'test.sh'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - 'NuGet.config'
+      - 'global.json'
+      - '.github/workflows/release-main.yml'
   workflow_dispatch:
 
 permissions:
@@ -27,10 +38,35 @@ env:
   COMPONENT_VERSION: ci-${{ github.run_number }}
 
 jobs:
+  detect-affected-services:
+    name: Detect affected deployable services
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.detect.outputs.services }}
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+      reason: ${{ steps.detect.outputs.reason }}
+      diff_range: ${{ steps.detect.outputs.diff_range }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect affected services
+        id: detect
+        run: |
+          chmod +x deploy/aws/detect-affected-services.sh deploy/detect-affected-services.py
+          deploy/aws/detect-affected-services.sh --format github-output
+
+      - name: Show deploy plan
+        run: |
+          echo "Diff range: ${{ steps.detect.outputs.diff_range }}"
+          echo "Reason: ${{ steps.detect.outputs.reason }}"
+          echo "Services: ${{ steps.detect.outputs.services }}"
+
   build-and-unit-tests:
     name: Build solution and run unit tests
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -56,8 +92,8 @@ jobs:
   e2e-tests:
     name: Deploy to EC2 E2E server and run E2E tests
     runs-on: ubuntu-latest
-    needs: build-and-unit-tests
-
+    needs:
+      - build-and-unit-tests
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -87,9 +123,11 @@ jobs:
   deploy-production:
     name: Deploy to ECS production
     runs-on: ubuntu-latest
-    needs: e2e-tests
+    needs:
+      - detect-affected-services
+      - e2e-tests
+    if: needs.detect-affected-services.outputs.has_changes == 'true'
     environment: production
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -111,17 +149,24 @@ jobs:
           printf '%s\n' "$ARGUS_ECS_SERVICE_ENV" > deploy/aws/service-env
 
       - name: Ensure ECR repositories
+        env:
+          AFFECTED_SERVICES: ${{ needs.detect-affected-services.outputs.services }}
         run: |
           chmod +x deploy/aws/create-ecr-repos.sh
-          deploy/aws/create-ecr-repos.sh
+          read -r -a services <<< "$AFFECTED_SERVICES"
+          deploy/aws/create-ecr-repos.sh "${services[@]}"
 
       - name: Build and push production images
+        env:
+          AFFECTED_SERVICES: ${{ needs.detect-affected-services.outputs.services }}
         run: |
           chmod +x deploy/aws/build-push-ecr.sh
-          deploy/aws/build-push-ecr.sh
+          read -r -a services <<< "$AFFECTED_SERVICES"
+          deploy/aws/build-push-ecr.sh "${services[@]}"
 
       - name: Deploy ECS services
         env:
+          AFFECTED_SERVICES: ${{ needs.detect-affected-services.outputs.services }}
           ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'argus-engine' }}
           ECS_SUBNETS: ${{ vars.ECS_SUBNETS }}
           ECS_SECURITY_GROUPS: ${{ vars.ECS_SECURITY_GROUPS }}
@@ -131,16 +176,31 @@ jobs:
           ECS_ASSIGN_PUBLIC_IP: ${{ vars.ECS_ASSIGN_PUBLIC_IP || 'DISABLED' }}
           ECS_LOG_GROUP: ${{ vars.ECS_LOG_GROUP || '/ecs/argus-v2' }}
           ECS_LOG_PREFIX: ${{ vars.ECS_LOG_PREFIX || 'argus-v2' }}
-          COMMAND_CENTER_SERVICE: ${{ vars.COMMAND_CENTER_SERVICE || 'argus-command-center' }}
+          COMMAND_CENTER_SERVICE: ${{ vars.COMMAND_CENTER_SERVICE || 'argus-command-center-gateway' }}
           GATEKEEPER_SERVICE: ${{ vars.GATEKEEPER_SERVICE || 'argus-gatekeeper' }}
           WORKER_SPIDER_SERVICE: ${{ vars.WORKER_SPIDER_SERVICE || 'argus-worker-spider' }}
           WORKER_ENUM_SERVICE: ${{ vars.WORKER_ENUM_SERVICE || 'argus-worker-enum' }}
           WORKER_PORTSCAN_SERVICE: ${{ vars.WORKER_PORTSCAN_SERVICE || 'argus-worker-portscan' }}
           WORKER_HIGHVALUE_SERVICE: ${{ vars.WORKER_HIGHVALUE_SERVICE || 'argus-worker-highvalue' }}
           WORKER_TECHID_SERVICE: ${{ vars.WORKER_TECHID_SERVICE || 'argus-worker-techid' }}
+          WORKER_HTTP_REQUESTER_SERVICE: ${{ vars.WORKER_HTTP_REQUESTER_SERVICE || 'argus-worker-http-requester' }}
           SERVICE_ENV_FILE: deploy/aws/service-env
           UPDATE_DESIRED_COUNTS: ${{ vars.UPDATE_DESIRED_COUNTS || 'false' }}
           ECS_FORCE_NEW_DEPLOYMENT: "false"
         run: |
           chmod +x deploy/aws/deploy-ecs-services.sh
-          deploy/aws/deploy-ecs-services.sh
+          read -r -a services <<< "$AFFECTED_SERVICES"
+          deploy/aws/deploy-ecs-services.sh "${services[@]}"
+
+  no-production-deploy-needed:
+    name: No production deploy needed
+    runs-on: ubuntu-latest
+    needs:
+      - detect-affected-services
+      - e2e-tests
+    if: needs.detect-affected-services.outputs.has_changes != 'true'
+    steps:
+      - name: Explain skip
+        run: |
+          echo "No deployable services were affected."
+          echo "Reason: ${{ needs.detect-affected-services.outputs.reason }}"

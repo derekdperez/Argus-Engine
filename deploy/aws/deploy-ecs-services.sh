@@ -4,6 +4,9 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../.." && pwd)"
 
+# shellcheck source=../lib-argus-service-catalog.sh
+source "${repo_root}/deploy/lib-argus-service-catalog.sh"
+
 : "${AWS_REGION:?Set AWS_REGION}"
 : "${AWS_ACCOUNT_ID:?Set AWS_ACCOUNT_ID}"
 : "${ECS_CLUSTER:?Set ECS_CLUSTER}"
@@ -41,37 +44,51 @@ if [[ ! -f "$SERVICE_ENV_FILE" ]]; then
 fi
 
 if [[ "${ECS_CREATE_LOG_GROUP}" == "true" ]]; then
-  aws logs create-log-group --region "$AWS_REGION" --log-group-name "$ECS_LOG_GROUP" >/dev/null 2>&1 || true
+  aws logs create-log-group \
+    --region "$AWS_REGION" \
+    --log-group-name "$ECS_LOG_GROUP" >/dev/null 2>&1 || true
 fi
 
 registry="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-all_services=(
-  command-center
-  gatekeeper
-  worker-spider
-  worker-enum
-  worker-portscan
-  worker-highvalue
-  worker-techid
-)
-
 selected_services=("$@")
 if [[ ${#selected_services[@]} -eq 0 ]]; then
-  selected_services=("${all_services[@]}")
+  mapfile -t selected_services < <(argus_ecr_default_services)
 fi
 
-service_name() {
+service_env_var_name() {
+  local service="$1"
+  local normalized="${service//-/_}"
+  printf 'ECS_SERVICE_%s\n' "${normalized^^}"
+}
+
+legacy_service_name() {
   case "$1" in
-    command-center) echo "${COMMAND_CENTER_SERVICE:-argus-command-center}" ;;
-    gatekeeper) echo "${GATEKEEPER_SERVICE:-argus-gatekeeper}" ;;
-    worker-spider) echo "${WORKER_SPIDER_SERVICE:-argus-worker-spider}" ;;
-    worker-enum) echo "${WORKER_ENUM_SERVICE:-argus-worker-enum}" ;;
-    worker-portscan) echo "${WORKER_PORTSCAN_SERVICE:-argus-worker-portscan}" ;;
-    worker-highvalue) echo "${WORKER_HIGHVALUE_SERVICE:-argus-worker-highvalue}" ;;
-    worker-techid) echo "${WORKER_TECHID_SERVICE:-argus-worker-techid}" ;;
-    *) echo "Unknown service key: $1" >&2; return 1 ;;
+    command-center-gateway) echo "${COMMAND_CENTER_SERVICE:-}" ;;
+    gatekeeper) echo "${GATEKEEPER_SERVICE:-}" ;;
+    worker-spider) echo "${WORKER_SPIDER_SERVICE:-}" ;;
+    worker-enum) echo "${WORKER_ENUM_SERVICE:-}" ;;
+    worker-portscan) echo "${WORKER_PORTSCAN_SERVICE:-}" ;;
+    worker-highvalue) echo "${WORKER_HIGHVALUE_SERVICE:-}" ;;
+    worker-techid) echo "${WORKER_TECHID_SERVICE:-}" ;;
+    worker-http-requester) echo "${WORKER_HTTP_REQUESTER_SERVICE:-}" ;;
+    *) echo "" ;;
   esac
+}
+
+service_name() {
+  local service="$1"
+  local var legacy
+  var="$(service_env_var_name "$service")"
+  legacy="$(legacy_service_name "$service")"
+
+  if [[ -n "${!var:-}" ]]; then
+    echo "${!var}"
+  elif [[ -n "$legacy" ]]; then
+    echo "$legacy"
+  else
+    echo "argus-${service}"
+  fi
 }
 
 task_family() {
@@ -85,9 +102,11 @@ desired_count() {
   local service="$1"
   local sanitized="${service//-/_}"
   local var="ECS_DESIRED_${sanitized^^}"
+
   case "$service" in
-    command-center|gatekeeper) echo "${!var:-1}" ;;
-    worker-spider|worker-enum) echo "${!var:-1}" ;;
+    command-center-bootstrapper) echo "${!var:-0}" ;;
+    command-center-*|gatekeeper) echo "${!var:-1}" ;;
+    worker-spider|worker-enum|worker-http-requester) echo "${!var:-1}" ;;
     *) echo "${!var:-1}" ;;
   esac
 }
@@ -96,9 +115,10 @@ task_cpu() {
   local service="$1"
   local sanitized="${service//-/_}"
   local var="ECS_CPU_${sanitized^^}"
+
   case "$service" in
-    command-center) echo "${!var:-1024}" ;;
-    worker-enum|worker-spider) echo "${!var:-1024}" ;;
+    command-center-gateway|command-center-web) echo "${!var:-1024}" ;;
+    command-center-*|worker-enum|worker-spider) echo "${!var:-1024}" ;;
     *) echo "${!var:-512}" ;;
   esac
 }
@@ -107,9 +127,10 @@ task_memory() {
   local service="$1"
   local sanitized="${service//-/_}"
   local var="ECS_MEMORY_${sanitized^^}"
+
   case "$service" in
-    command-center) echo "${!var:-2048}" ;;
-    worker-enum|worker-spider) echo "${!var:-2048}" ;;
+    command-center-gateway|command-center-web) echo "${!var:-2048}" ;;
+    command-center-*|worker-enum|worker-spider) echo "${!var:-2048}" ;;
     *) echo "${!var:-1024}" ;;
   esac
 }
@@ -117,22 +138,28 @@ task_memory() {
 write_task_definition_json() {
   local service="$1"
   local output="$2"
-  local family image
+  local family image kind app_dll
+
   family="$(task_family "$service")"
   image="${registry}/${ECR_PREFIX}/${service}:${IMAGE_TAG}"
+  kind="$(argus_service_kind "$service")"
+  app_dll="$(argus_service_app_dll "$service")"
 
   SERVICE_KEY="$service" \
-  TASK_FAMILY="$family" \
-  CONTAINER_IMAGE="$image" \
-  TASK_CPU="$(task_cpu "$service")" \
-  TASK_MEMORY="$(task_memory "$service")" \
-  python3 - "$SERVICE_ENV_FILE" >"$output" <<'PY'
+    SERVICE_KIND="$kind" \
+    SERVICE_APP_DLL="$app_dll" \
+    TASK_FAMILY="$family" \
+    CONTAINER_IMAGE="$image" \
+    TASK_CPU="$(task_cpu "$service")" \
+    TASK_MEMORY="$(task_memory "$service")" \
+    python3 - "$SERVICE_ENV_FILE" >"$output" <<'PY'
 import json
 import os
 import sys
 
 env_file = sys.argv[1]
 service = os.environ["SERVICE_KEY"]
+kind = os.environ["SERVICE_KIND"]
 
 def parse_env(path):
     values = {}
@@ -147,21 +174,24 @@ def parse_env(path):
 
 env = parse_env(env_file)
 
-if service == "command-center":
-    env.update({
-        "ASPNETCORE_URLS": "http://+:8080",
-        "argus__ListenPlainHttp": "true",
-    })
+if kind == "aspnet":
+    env.setdefault("ASPNETCORE_URLS", "http://+:8080")
+
+    if service == "command-center-gateway":
+        env.setdefault("CommandCenter__OperationsBaseUrl", "http://command-center-operations-api:8080/")
+    elif service == "command-center-web":
+        env.setdefault("CommandCenter__GatewayBaseUrl", "http://command-center-gateway:8080/")
 else:
-    env.update({
-        "argus__SkipStartupDatabase": "true",
-        "argus_SKIP_STARTUP_DATABASE": "1",
-    })
+    env.setdefault("Argus__SkipStartupDatabase", "true")
+    env.setdefault("ARGUS_SKIP_STARTUP_DATABASE", "1")
 
 if service == "worker-spider":
     env.setdefault("Spider__Http__AllowInsecureSsl", "false")
+elif service == "worker-http-requester":
+    env.setdefault("HttpRequester__AllowInsecureSsl", "false")
 
 environment = [{"name": key, "value": value} for key, value in sorted(env.items())]
+
 container = {
     "name": service,
     "image": os.environ["CONTAINER_IMAGE"],
@@ -177,7 +207,7 @@ container = {
     },
 }
 
-if service == "command-center":
+if kind == "aspnet":
     container["portMappings"] = [{
         "containerPort": 8080,
         "hostPort": 8080,
@@ -211,6 +241,7 @@ PY
 
 latest_task_definition() {
   local family="$1"
+
   aws ecs list-task-definitions \
     --region "$AWS_REGION" \
     --family-prefix "$family" \
@@ -224,8 +255,8 @@ task_definition_matches() {
   local desired_file="$1"
   local task_definition="$2"
   local actual_file
-  actual_file="$(mktemp)"
 
+  actual_file="$(mktemp)"
   aws ecs describe-task-definition \
     --region "$AWS_REGION" \
     --task-definition "$task_definition" \
@@ -237,8 +268,10 @@ import json
 import sys
 
 desired_path, actual_path = sys.argv[1], sys.argv[2]
+
 with open(desired_path, encoding="utf-8") as handle:
     desired = json.load(handle)
+
 with open(actual_path, encoding="utf-8") as handle:
     actual = json.load(handle)
 
@@ -253,13 +286,16 @@ def norm_container(container):
         "healthCheck",
     ]
     normalized = {key: container[key] for key in keys if key in container}
+
     if "environment" in normalized:
         normalized["environment"] = sorted(normalized["environment"], key=lambda x: x["name"])
+
     if "portMappings" in normalized:
         normalized["portMappings"] = sorted(
             normalized["portMappings"],
             key=lambda x: (x.get("containerPort", 0), x.get("protocol", "")),
         )
+
     return normalized
 
 def norm_task(task):
@@ -276,8 +312,10 @@ def norm_task(task):
             for container in sorted(task.get("containerDefinitions", []), key=lambda x: x.get("name", ""))
         ],
     }
+
     if not normalized["taskRoleArn"]:
         normalized.pop("taskRoleArn")
+
     return normalized
 
 sys.exit(0 if norm_task(desired) == norm_task(actual) else 1)
@@ -287,6 +325,7 @@ PY
   else
     local result=1
   fi
+
   rm -f "$actual_file"
   return "$result"
 }
@@ -294,11 +333,12 @@ PY
 ensure_task_definition() {
   local service="$1"
   local family desired_file latest
+
   family="$(task_family "$service")"
   desired_file="$(mktemp)"
   write_task_definition_json "$service" "$desired_file"
-
   latest="$(latest_task_definition "$family")"
+
   if [[ "$latest" != "None" && -n "$latest" ]] && task_definition_matches "$desired_file" "$latest"; then
     rm -f "$desired_file"
     echo "$latest"
@@ -310,11 +350,13 @@ ensure_task_definition() {
     --cli-input-json "file://${desired_file}" \
     --query 'taskDefinition.taskDefinitionArn' \
     --output text
+
   rm -f "$desired_file"
 }
 
 service_status() {
   local ecs_service="$1"
+
   aws ecs describe-services \
     --region "$AWS_REGION" \
     --cluster "$ECS_CLUSTER" \
@@ -329,12 +371,13 @@ create_service() {
   local task_definition="$3"
   local desired="$4"
   local tmp
+
   tmp="$(mktemp)"
 
   SERVICE_NAME="$ecs_service" \
-  TASK_DEFINITION="$task_definition" \
-  DESIRED_COUNT="$desired" \
-  python3 - >"$tmp" <<'PY'
+    TASK_DEFINITION="$task_definition" \
+    DESIRED_COUNT="$desired" \
+    python3 - >"$tmp" <<'PY'
 import json
 import os
 
@@ -366,11 +409,21 @@ if os.environ.get("ECS_ENABLE_EXECUTE_COMMAND", "false").lower() == "true":
 print(json.dumps(doc, separators=(",", ":")))
 PY
 
-  aws ecs create-service --region "$AWS_REGION" --cli-input-json "file://${tmp}" >/dev/null
+  aws ecs create-service \
+    --region "$AWS_REGION" \
+    --cli-input-json "file://${tmp}" >/dev/null
+
   rm -f "$tmp"
 }
 
-for service in "${selected_services[@]}"; do
+for raw_service in "${selected_services[@]}"; do
+  service="$(argus_validate_service "$raw_service")"
+
+  if [[ "$(argus_service_ecr_enabled "$service")" != "1" ]]; then
+    echo "Skipping ${service}: not marked as an ECR/ECS deployable service in deploy/service-catalog.tsv"
+    continue
+  fi
+
   ecs_service="$(service_name "$service")"
   desired="$(desired_count "$service")"
   task_definition="$(ensure_task_definition "$service")"
@@ -398,6 +451,7 @@ for service in "${selected_services[@]}"; do
         --query 'services[0].desiredCount' \
         --output text
     )"
+
     args=(
       ecs update-service
       --region "$AWS_REGION"
@@ -405,18 +459,22 @@ for service in "${selected_services[@]}"; do
       --service "$ecs_service"
     )
     changed=0
+
     if [[ "$current_task" != "$task_definition" ]]; then
       args+=(--task-definition "$task_definition")
       changed=1
     fi
+
     if [[ "$UPDATE_DESIRED_COUNTS" == "true" ]]; then
       args+=(--desired-count "$desired")
       [[ "$current_desired" == "$desired" ]] || changed=1
     fi
+
     if [[ "$ECS_FORCE_NEW_DEPLOYMENT" == "true" ]]; then
       args+=(--force-new-deployment)
       changed=1
     fi
+
     if [[ "$changed" == "1" ]]; then
       aws "${args[@]}" >/dev/null
       echo "Updated ECS service ${ecs_service} to ${task_definition}"

@@ -171,6 +171,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      command-center-bootstrapper:
+        condition: service_completed_successfully
 
   command-center-discovery-api:
     image: argus-engine/command-center-discovery-api:${ARGUS_ENGINE_VERSION:-2.6.3}
@@ -201,6 +203,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      command-center-bootstrapper:
+        condition: service_completed_successfully
 
   command-center-worker-control-api:
     image: argus-engine/command-center-worker-control-api:${ARGUS_ENGINE_VERSION:-2.6.3}
@@ -233,6 +237,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      command-center-bootstrapper:
+        condition: service_completed_successfully
 
   command-center-maintenance-api:
     image: argus-engine/command-center-maintenance-api:${ARGUS_ENGINE_VERSION:-2.6.3}
@@ -263,6 +269,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      command-center-bootstrapper:
+        condition: service_completed_successfully
 
   command-center-updates-api:
     image: argus-engine/command-center-updates-api:${ARGUS_ENGINE_VERSION:-2.6.3}
@@ -284,9 +292,10 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
 
-  command-center-realtime:
+    param($m)
+    $m.Groups[1].Value + "    depends_on:`r`n      postgres:`r`n        condition: service_healthy`r`n      redis:`r`n        condition: service_healthy`r`n      rabbitmq:`r`n        condition: service_healthy`r`n      command-center-bootstrapper:`r`n        condition: service_completed_successfully`r`n" + $m.Groups[2].Value
+
     image: argus-engine/command-center-realtime:${ARGUS_ENGINE_VERSION:-2.6.3}
     restart: unless-stopped
     build:
@@ -306,9 +315,10 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
 
-  command-center-bootstrapper:
+    param($m)
+    $m.Groups[1].Value + "    depends_on:`r`n      postgres:`r`n        condition: service_healthy`r`n      redis:`r`n        condition: service_healthy`r`n      rabbitmq:`r`n        condition: service_healthy`r`n      command-center-bootstrapper:`r`n        condition: service_completed_successfully`r`n" + $m.Groups[2].Value
+
     image: argus-engine/command-center-bootstrapper:${ARGUS_ENGINE_VERSION:-2.6.3}
 
     build:
@@ -352,6 +362,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      command-center-bootstrapper:
+        condition: service_completed_successfully
 
   command-center-web:
     image: argus-engine/command-center-web:${ARGUS_ENGINE_VERSION:-2.6.3}

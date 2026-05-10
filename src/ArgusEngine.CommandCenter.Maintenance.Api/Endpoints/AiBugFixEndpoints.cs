@@ -89,7 +89,6 @@ public static class AiBugFixEndpoints
 
                     // Dispatch the GitHub Actions workflow
                     string? workflowUrl = null;
-                    string? workflowRunId = null;
                     try
                     {
                         var callbackBase  = config[ConfigCallbackBase] ?? DeriveCallbackBase(http);
@@ -186,7 +185,7 @@ public static class AiBugFixEndpoints
                     var callbackBase = config[ConfigCallbackBase] ?? DeriveCallbackBase(http);
                     var bundle = new AiBugFixPromptBundleDto(
                         runId,
-                        run.PromptText,
+                        run.prompt_text,
                         config[ConfigGitHubOwner] ?? "derekdperez",
                         config[ConfigGitHubRepo]  ?? "Argus-Engine",
                         callbackBase,
@@ -336,8 +335,8 @@ public static class AiBugFixEndpoints
                 {8}::jsonb, {9}, {10}
             )
             """,
-            id, now, ip, sourceUrl,
-            status, statusMessage,
+            id, now, (object?)ip ?? DBNull.Value, (object?)sourceUrl ?? DBNull.Value,
+            status, (object?)statusMessage ?? DBNull.Value,
             errorCount, componentScope,
             errorSnapshotJson, promptText, promptSha)
             .ConfigureAwait(false);
@@ -348,7 +347,7 @@ public static class AiBugFixEndpoints
     {
         await db.Database.ExecuteSqlRawAsync(
             "UPDATE ai_bug_fix_runs SET status={0}, status_message={1}, updated_at_utc={2} WHERE id={3}",
-            status, message, DateTimeOffset.UtcNow, id)
+            status, (object?)message ?? DBNull.Value, DateTimeOffset.UtcNow, id)
             .ConfigureAwait(false);
     }
 
@@ -364,7 +363,7 @@ public static class AiBugFixEndpoints
     {
         await db.Database.ExecuteSqlRawAsync(
             "UPDATE ai_bug_fix_runs SET github_workflow_url={0}, status={1}, status_message={2}, updated_at_utc={3} WHERE id={4}",
-            workflowUrl, AiBugFixRunStatus.AiGeneratingPatch, "GitHub workflow dispatched; AI is generating a patch.", DateTimeOffset.UtcNow, id)
+            (object?)workflowUrl ?? DBNull.Value, AiBugFixRunStatus.AiGeneratingPatch, "GitHub workflow dispatched; AI is generating a patch.", DateTimeOffset.UtcNow, id)
             .ConfigureAwait(false);
     }
 
@@ -390,13 +389,13 @@ public static class AiBugFixEndpoints
                 updated_at_utc              = {12}
             WHERE id = {13}
             """,
-            cb.Status, cb.StatusMessage,
-            cb.Branch, cb.PullRequestNumber, cb.PullRequestUrl,
-            cb.WorkflowRunId, cb.WorkflowUrl,
-            cb.MergeSha,
-            cb.DeploymentRunId, cb.DeploymentUrl,
-            cb.SmokeTestResultJson,
-            cb.FailureDetail,
+            cb.Status, (object?)cb.StatusMessage ?? DBNull.Value,
+            (object?)cb.Branch ?? DBNull.Value, (object?)cb.PullRequestNumber ?? DBNull.Value, (object?)cb.PullRequestUrl ?? DBNull.Value,
+            (object?)cb.WorkflowRunId ?? DBNull.Value, (object?)cb.WorkflowUrl ?? DBNull.Value,
+            (object?)cb.MergeSha ?? DBNull.Value,
+            (object?)cb.DeploymentRunId ?? DBNull.Value, (object?)cb.DeploymentUrl ?? DBNull.Value,
+            (object?)cb.SmokeTestResultJson ?? DBNull.Value,
+            (object?)cb.FailureDetail ?? DBNull.Value,
             DateTimeOffset.UtcNow,
             id)
             .ConfigureAwait(false);
@@ -416,15 +415,15 @@ public static class AiBugFixEndpoints
     {
         var rows = await db.Database
             .SqlQueryRaw<AiBugFixRunRow>(
-                $"""
+                """
                 SELECT id, created_at_utc, updated_at_utc, status, status_message,
                        error_count, component_scope, github_branch, github_pr_number,
                        github_pr_url, github_workflow_run_id, github_workflow_url,
                        deployment_url, deployment_completed_at_utc, failure_detail
                 FROM ai_bug_fix_runs
                 ORDER BY created_at_utc DESC
-                LIMIT {limit}
-                """)
+                LIMIT {0}
+                """, limit)
             .ToListAsync(ct)
             .ConfigureAwait(false);
         return rows.Select(ToDto).ToList();

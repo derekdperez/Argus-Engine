@@ -116,7 +116,7 @@ services:
 
   command-center-gateway:
     image: argus-engine/command-center-gateway:${ARGUS_ENGINE_VERSION:-2.6.3}
-
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -144,7 +144,7 @@ services:
 
   command-center-operations-api:
     image: argus-engine/command-center-operations-api:${ARGUS_ENGINE_VERSION:-2.6.3}
-
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -174,7 +174,7 @@ services:
 
   command-center-discovery-api:
     image: argus-engine/command-center-discovery-api:${ARGUS_ENGINE_VERSION:-2.6.3}
-
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -204,7 +204,7 @@ services:
 
   command-center-worker-control-api:
     image: argus-engine/command-center-worker-control-api:${ARGUS_ENGINE_VERSION:-2.6.3}
-
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -236,7 +236,7 @@ services:
 
   command-center-maintenance-api:
     image: argus-engine/command-center-maintenance-api:${ARGUS_ENGINE_VERSION:-2.6.3}
-
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -266,7 +266,7 @@ services:
 
   command-center-updates-api:
     image: argus-engine/command-center-updates-api:${ARGUS_ENGINE_VERSION:-2.6.3}
-
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -288,7 +288,7 @@ services:
 
   command-center-realtime:
     image: argus-engine/command-center-realtime:${ARGUS_ENGINE_VERSION:-2.6.3}
-
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host
@@ -355,7 +355,7 @@ services:
 
   command-center-web:
     image: argus-engine/command-center-web:${ARGUS_ENGINE_VERSION:-2.6.3}
-
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/Dockerfile.commandcenter-host

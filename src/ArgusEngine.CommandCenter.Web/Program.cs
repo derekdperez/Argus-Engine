@@ -1,3 +1,4 @@
+using ArgusEngine.CommandCenter.Realtime;
 using ArgusEngine.CommandCenter.Web.Clients;
 using ArgusEngine.CommandCenter.Web.Components;
 using Microsoft.AspNetCore.Components;
@@ -18,30 +19,18 @@ builder.Services.AddScoped<TooltipService>();
 builder.Services.AddScoped<ContextMenuService>();
 builder.Services.AddScoped<ThemeService>();
 
-builder.Services.AddScoped<LocalDockerClient>();
+// NavStatusBar and other interactive components inject this concrete client.
+// Without this registration, the root page can pass health checks while "/" fails
+// with "no registered service of type DiscoveryRealtimeClient".
+builder.Services.AddScoped<DiscoveryRealtimeClient>();
 
-builder.Services.AddScoped(sp => new HttpClient
-{
-    BaseAddress = ResolveRequestBaseAddress(sp)
-});
-
-builder.Services.AddHttpClient<DiscoveryApiClient>((sp, client) =>
-    client.BaseAddress = ResolveRequestBaseAddress(sp));
-
-builder.Services.AddHttpClient<MaintenanceApiClient>((sp, client) =>
-    client.BaseAddress = ResolveRequestBaseAddress(sp));
-
-builder.Services.AddHttpClient<OperationsApiClient>((sp, client) =>
-    client.BaseAddress = ResolveRequestBaseAddress(sp));
-
-builder.Services.AddHttpClient<RealtimeApiClient>((sp, client) =>
-    client.BaseAddress = ResolveRequestBaseAddress(sp));
-
-builder.Services.AddHttpClient<UpdatesApiClient>((sp, client) =>
-    client.BaseAddress = ResolveRequestBaseAddress(sp));
-
-builder.Services.AddHttpClient<WorkerControlApiClient>((sp, client) =>
-    client.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveRequestBaseAddress(sp) });
+builder.Services.AddHttpClient<OperationsApiClient>((sp, client) => client.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<DiscoveryApiClient>((sp, client) => client.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<WorkerControlApiClient>((sp, client) => client.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<MaintenanceApiClient>((sp, client) => client.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<UpdatesApiClient>((sp, client) => client.BaseAddress = ResolveRequestBaseAddress(sp));
+builder.Services.AddHttpClient<RealtimeApiClient>((sp, client) => client.BaseAddress = ResolveRequestBaseAddress(sp));
 
 var app = builder.Build();
 
@@ -52,14 +41,16 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+
 app.MapStaticAssets();
 app.UseStaticFiles();
 
 // Compatibility alias for clients, proxies, or stale HTML that still request the
 // pre-split Command Center CSS isolation bundle name. The current web project
 // emits ArgusEngine.CommandCenter.Web.styles.css.
-app.MapGet("/ArgusEngine.CommandCenter.styles.css", () =>
-    Results.Redirect("/ArgusEngine.CommandCenter.Web.styles.css", permanent: false));
+app.MapGet(
+    "/ArgusEngine.CommandCenter.styles.css",
+    () => Results.Redirect("/ArgusEngine.CommandCenter.Web.styles.css", permanent: false));
 
 app.UseAntiforgery();
 
@@ -74,7 +65,6 @@ await app.RunAsync().ConfigureAwait(false);
 static Uri ResolveRequestBaseAddress(IServiceProvider services)
 {
     var request = services.GetService<IHttpContextAccessor>()?.HttpContext?.Request;
-
     if (request is not null)
     {
         var pathBase = request.PathBase.HasValue ? request.PathBase.Value : "";

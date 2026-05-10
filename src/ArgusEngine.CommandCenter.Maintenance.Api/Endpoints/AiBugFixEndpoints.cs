@@ -185,7 +185,7 @@ public static class AiBugFixEndpoints
                     var callbackBase = config[ConfigCallbackBase] ?? DeriveCallbackBase(http);
                     var bundle = new AiBugFixPromptBundleDto(
                         runId,
-                        run.prompt_text,
+                        run.PromptText,
                         config[ConfigGitHubOwner] ?? "derekdperez",
                         config[ConfigGitHubRepo]  ?? "Argus-Engine",
                         callbackBase,
@@ -449,7 +449,7 @@ public static class AiBugFixEndpoints
     {
         var rows = await db.Database
             .SqlQueryRaw<AiBugFixRunRaw>(
-                "SELECT id, prompt_text FROM ai_bug_fix_runs WHERE id = {0}", id)
+                "SELECT id, prompt_text AS PromptText FROM ai_bug_fix_runs WHERE id = {0}", id)
             .ToListAsync(ct)
             .ConfigureAwait(false);
         return rows.FirstOrDefault();
@@ -486,7 +486,7 @@ public static class AiBugFixEndpoints
     private sealed class AiBugFixRunRaw
     {
         public Guid   id          { get; set; }
-        public string prompt_text { get; set; } = "";
+        public string PromptText { get; set; } = "";
     }
 }
 

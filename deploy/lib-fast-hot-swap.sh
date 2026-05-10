@@ -41,27 +41,45 @@ argus_parallel_publish() {
   local nuget_dir="$ROOT/.nuget/packages"
   mkdir -p "$nuget_dir"
 
+  # Staging root — all build intermediates and outputs go here, never inside src/
+  local staging_root="$ROOT/deploy/.hot-publish"
+
   local pids=()
-  local svc_for_pid=()
 
   for service in "${services[@]}"; do
-    local csproj out_dir log_file
+    local csproj out_dir obj_dir log_file
     csproj="$ROOT/$(argus_service_csproj "$service")"
-    out_dir="$ROOT/deploy/.hot-publish/$service"
+    out_dir="$staging_root/$service/publish"
+    obj_dir="$staging_root/$service/obj"
     log_file="/tmp/argus-publish-${service}.log"
 
-    rm -rf "$out_dir"
-    mkdir -p "$out_dir"
+    rm -rf "$staging_root/$service"
+    mkdir -p "$out_dir" "$obj_dir"
+
+    # Relative paths used inside the Docker container (workspace = $ROOT)
+    local rel_csproj rel_out rel_obj
+    rel_csproj="$(realpath --relative-to="$ROOT" "$csproj")"
+    rel_out="deploy/.hot-publish/$service/publish"
+    rel_obj="deploy/.hot-publish/$service/obj"
 
     (
       set +e
+      # MSBuild properties that redirect ALL build artifacts outside src/
+      local msbuild_redirects
+      msbuild_redirects=(
+        "/p:UseAppHost=false"
+        "/p:BaseIntermediateOutputPath=$obj_dir/"
+        "/p:BaseOutputPath=$out_dir/../bin/"
+        "-p:maxcpucount"
+      )
+
       if command -v dotnet >/dev/null 2>&1; then
+        NUGET_PACKAGES="$nuget_dir" \
         dotnet publish "$csproj" \
-          -c Release -o "$out_dir" \
+          -c Release \
+          -o "$out_dir" \
           --no-restore \
-          /p:UseAppHost=false \
-          -p:maxcpucount \
-          NUGET_PACKAGES="$nuget_dir" \
+          "${msbuild_redirects[@]}" \
           >"$log_file" 2>&1
       else
         local uid gid
@@ -69,39 +87,38 @@ argus_parallel_publish() {
         argus_docker run --rm \
           --user "$uid:$gid" \
           -v "$ROOT:/workspace" \
-          -v "$nuget_dir:/root/.nuget/packages" \
+          -v "$nuget_dir:/nuget" \
           -w /workspace \
           -e DOTNET_CLI_TELEMETRY_OPTOUT=1 \
           -e DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
-          -e NUGET_PACKAGES=/root/.nuget/packages \
+          -e NUGET_PACKAGES=/nuget \
           mcr.microsoft.com/dotnet/sdk:10.0 \
-          dotnet publish "$csproj" \
-            -c Release -o "deploy/.hot-publish/$service" \
-            --no-restore /p:UseAppHost=false -p:maxcpucount \
+          dotnet publish "$rel_csproj" \
+            -c Release \
+            -o "$rel_out" \
+            --no-restore \
+            "/p:UseAppHost=false" \
+            "/p:BaseIntermediateOutputPath=$rel_obj/" \
+            "/p:BaseOutputPath=$rel_obj/../bin/" \
+            "-p:maxcpucount" \
           >"$log_file" 2>&1
       fi
+
       local rc=$?
       if [[ $rc -eq 0 ]]; then
         echo "ARGUS_STATUS:${service}:ok"
       else
         echo "ARGUS_STATUS:${service}:fail"
-        # Print build errors to stderr so they appear in our log pane
         echo "=== BUILD FAILED: $service ===" >&2
         tail -30 "$log_file" >&2
       fi
     ) &
 
     pids+=($!)
-    svc_for_pid+=("$service")
     echo "ARGUS_PUBLISH_START:${service}"
   done
 
-  # Wait for all publishes, collecting results
-  local failed=()
-  for i in "${!pids[@]}"; do
-    wait "${pids[$i]}"
-  done
-
+  for pid in "${pids[@]}"; do wait "$pid"; done
   return 0
 }
 
@@ -152,7 +169,6 @@ argus_parallel_hot_copy_and_restart() {
       echo "ARGUS_COPY_DONE:${service}"
     ) &
     copy_pids+=($!)
-    copy_svcs+=("$service")
   done
 
   for p in "${copy_pids[@]}"; do wait "$p"; done
@@ -219,7 +235,7 @@ argus_fast_hot_swap() {
   local ok_services=()
   local fail_services=()
   for service in "${services[@]}"; do
-    local out="$ROOT/deploy/.hot-publish/$service"
+    local out="$ROOT/deploy/.hot-publish/$service/publish"
     local dll
     dll="$(argus_service_app_dll "$service" 2>/dev/null || true)"
     if [[ -n "$dll" && -f "$out/$dll" ]]; then
@@ -240,9 +256,9 @@ argus_fast_hot_swap() {
   # ── Step 3: Parallel copy + restart ───────────────────────────────────────
   if [[ ${#ok_services[@]} -gt 0 ]]; then
     echo "ARGUS_PHASE:copy_restart"
-    argus_parallel_hot_copy_and_restart "${ok_services[@]}"
+    # Pass publish subdirectory to copy function
+    argus_parallel_hot_copy_and_restart_from_staging "${ok_services[@]}"
     argus_note_built_services "${ok_services[@]}"
-    # Update source fingerprints for successfully hot-swapped services
     argus_update_image_build_fingerprints "${ok_services[@]}"
   fi
 

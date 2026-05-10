@@ -1,29 +1,47 @@
 using ArgusEngine.CommandCenter.Web.Clients;
 using ArgusEngine.CommandCenter.Web.Components;
 using Microsoft.AspNetCore.Components;
-using DiscoveryRealtimeClient = ArgusEngine.CommandCenter.Realtime.DiscoveryRealtimeClient;
+using Radzen;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services
-    .AddRazorComponents()
+builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddHttpContextAccessor();
 
-// The Command Center web app talks back to the same host for its local API
-// surface. Register these as simple scoped clients to avoid AddHttpClient<T>
-// overload ambiguity under the current .NET 10 SDK/compiler.
-builder.Services.AddScoped(CreateRequestHttpClient);
-builder.Services.AddScoped(sp => new DiscoveryApiClient(CreateRequestHttpClient(sp)));
-builder.Services.AddScoped(sp => new OperationsApiClient(CreateRequestHttpClient(sp)));
-builder.Services.AddScoped(sp => new WorkerControlApiClient(CreateRequestHttpClient(sp)));
-builder.Services.AddScoped(sp => new MaintenanceApiClient(CreateRequestHttpClient(sp)));
-builder.Services.AddScoped(sp => new UpdatesApiClient(CreateRequestHttpClient(sp)));
-builder.Services.AddScoped(sp => new RealtimeApiClient(CreateRequestHttpClient(sp)));
+// Register the Radzen services used by the Web UI without depending on the
+// AddRadzenComponents extension method being visible to this project at compile time.
+builder.Services.AddScoped<DialogService>();
+builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<TooltipService>();
+builder.Services.AddScoped<ContextMenuService>();
+builder.Services.AddScoped<ThemeService>();
 
-builder.Services.AddScoped<DiscoveryRealtimeClient>();
 builder.Services.AddScoped<LocalDockerClient>();
+
+builder.Services.AddScoped(sp => new HttpClient
+{
+    BaseAddress = ResolveRequestBaseAddress(sp)
+});
+
+builder.Services.AddHttpClient<DiscoveryApiClient>((sp, client) =>
+    client.BaseAddress = ResolveRequestBaseAddress(sp));
+
+builder.Services.AddHttpClient<MaintenanceApiClient>((sp, client) =>
+    client.BaseAddress = ResolveRequestBaseAddress(sp));
+
+builder.Services.AddHttpClient<OperationsApiClient>((sp, client) =>
+    client.BaseAddress = ResolveRequestBaseAddress(sp));
+
+builder.Services.AddHttpClient<RealtimeApiClient>((sp, client) =>
+    client.BaseAddress = ResolveRequestBaseAddress(sp));
+
+builder.Services.AddHttpClient<UpdatesApiClient>((sp, client) =>
+    client.BaseAddress = ResolveRequestBaseAddress(sp));
+
+builder.Services.AddHttpClient<WorkerControlApiClient>((sp, client) =>
+    client.BaseAddress = ResolveRequestBaseAddress(sp));
 
 var app = builder.Build();
 
@@ -34,10 +52,15 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-
 app.MapStaticAssets();
-
 app.UseStaticFiles();
+
+// Compatibility alias for clients, proxies, or stale HTML that still request the
+// pre-split Command Center CSS isolation bundle name. The current web project
+// emits ArgusEngine.CommandCenter.Web.styles.css.
+app.MapGet("/ArgusEngine.CommandCenter.styles.css", () =>
+    Results.Redirect("/ArgusEngine.CommandCenter.Web.styles.css", permanent: false));
+
 app.UseAntiforgery();
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
@@ -48,20 +71,13 @@ app.MapRazorComponents<App>()
 
 await app.RunAsync().ConfigureAwait(false);
 
-static HttpClient CreateRequestHttpClient(IServiceProvider services)
-{
-    return new HttpClient
-    {
-        BaseAddress = ResolveRequestBaseAddress(services)
-    };
-}
-
 static Uri ResolveRequestBaseAddress(IServiceProvider services)
 {
-    var request = services.GetRequiredService<IHttpContextAccessor>().HttpContext?.Request;
+    var request = services.GetService<IHttpContextAccessor>()?.HttpContext?.Request;
+
     if (request is not null)
     {
-        var pathBase = request.PathBase.HasValue ? request.PathBase.Value : string.Empty;
+        var pathBase = request.PathBase.HasValue ? request.PathBase.Value : "";
         return new Uri($"{request.Scheme}://{request.Host}{pathBase}/");
     }
 

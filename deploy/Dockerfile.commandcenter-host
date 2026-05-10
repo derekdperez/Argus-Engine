@@ -26,13 +26,13 @@ RUN for f in src/*.csproj; do \
       mv "$f" "src/$p/"; \
     done
 
-RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
+RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=shared \
     cp -an /opt/argus-nuget/packages/. /root/.nuget/packages/ 2>/dev/null || true; \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 
 COPY src/ src/
 
-RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
+RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=shared \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
       -c Release -o /app/publish /p:UseAppHost=false --no-restore \
       -p:maxcpucount -p:ParallelizePublish=true \

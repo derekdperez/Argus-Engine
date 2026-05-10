@@ -53,6 +53,21 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.MapStaticAssets();
 app.UseStaticFiles();
 
+app.MapGet("/_framework/blazor.web.js", async context =>
+{
+    var path = Path.Combine(builder.Environment.WebRootPath ?? "wwwroot", "_framework", "blazor.web.js");
+    if (File.Exists(path))
+    {
+        context.Response.ContentType = "application/javascript";
+        await context.Response.SendFileAsync(path);
+    }
+    else
+    {
+        context.Response.StatusCode = 404;
+        await context.Response.WriteAsync($"blazor.web.js not found on disk at {path}. WebRootPath is {builder.Environment.WebRootPath}");
+    }
+});
+
 // Compatibility alias for clients, proxies, or stale HTML that still request the
 // pre-split Command Center CSS isolation bundle name. The current web project
 // emits ArgusEngine.CommandCenter.Web.styles.css.

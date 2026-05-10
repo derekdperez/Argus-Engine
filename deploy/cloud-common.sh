@@ -1,269 +1,318 @@
 #!/usr/bin/env bash
-# Shared helpers for Argus cloud worker deployment scripts.
-# shellcheck shell=bash
+# Shared helpers for Argus Engine cloud deployment scripts.
+# These scripts are intentionally Bash-only so they can run from EC2, local Linux, macOS, or CI.
 
-argus_cloud_repo_root() {
-  argus_cloud_find_repo_root "$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)"
+set -euo pipefail
+
+argus_log() {
+  printf '\033[1;34m[ARGUS]\033[0m %s\n' "$*" >&2
 }
 
-argus_cloud_find_repo_root() {
-  local script_dir="${1:-}"
-  local candidates=()
+argus_warn() {
+  printf '\033[1;33m[ARGUS WARN]\033[0m %s\n' "$*" >&2
+}
 
-  [[ -n "${ARGUS_REPO_ROOT:-}" ]] && candidates+=("$ARGUS_REPO_ROOT")
-  candidates+=("$PWD")
+argus_die() {
+  printf '\033[1;31m[ARGUS ERROR]\033[0m %s\n' "$*" >&2
+  exit 1
+}
 
-  if command -v git >/dev/null 2>&1; then
-    local git_root
-    git_root="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
-    [[ -n "$git_root" ]] && candidates+=("$git_root")
-  fi
+argus_find_repo_root() {
+  local start="${1:-$PWD}"
+  local dir
+  dir="$(cd "$start" 2>/dev/null && pwd)" || return 1
 
-  if [[ -n "$script_dir" ]]; then
-    local script_root
-    script_root="$(cd "$script_dir/../.." 2>/dev/null && pwd -P || true)"
-    [[ -n "$script_root" ]] && candidates+=("$script_root")
-  fi
-
-  local c
-  for c in "${candidates[@]}"; do
-    [[ -z "$c" ]] && continue
-    if [[ -f "$c/ArgusEngine.slnx" && -d "$c/src" ]]; then
-      cd "$c" && pwd -P
+  while [[ "$dir" != "/" ]]; do
+    if [[ -f "$dir/ArgusEngine.slnx" && -d "$dir/deploy" ]]; then
+      printf '%s\n' "$dir"
       return 0
     fi
+    dir="$(dirname "$dir")"
   done
 
-  cat >&2 <<'EOF'
-Could not locate the Argus Engine repo root.
-
-Run this command from the project root, or set ARGUS_REPO_ROOT explicitly:
-
-  cd /path/to/argus-engine
-  ARGUS_REPO_ROOT="$PWD" ./argus-multicloud-deploy-scripts/deploy/azure/build-push-acr.sh
-EOF
-  exit 2
+  return 1
 }
 
-argus_cloud_require_command() {
+ARGUS_REPO_ROOT="${ARGUS_REPO_ROOT:-$(argus_find_repo_root "$PWD" || true)}"
+if [[ -z "${ARGUS_REPO_ROOT}" ]]; then
+  argus_die "Could not find Argus repo root. Run this from the repository root, or set ARGUS_REPO_ROOT=/path/to/argus-engine."
+fi
+
+ARGUS_DEPLOY_DIR="$ARGUS_REPO_ROOT/deploy"
+
+argus_require_cmd() {
   local cmd="$1"
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "Missing required command: $cmd" >&2
-    exit 127
+  command -v "$cmd" >/dev/null 2>&1 || argus_die "Missing required command: $cmd"
+}
+
+argus_warn_if_sudo() {
+  if [[ "${EUID}" -eq 0 && -n "${SUDO_USER:-}" ]]; then
+    argus_warn "Running as sudo/root. Azure CLI login and Docker config may be stored under root, not ${SUDO_USER}."
   fi
 }
 
-argus_cloud_load_env_file() {
-  local env_file="$1"
-  if [[ -f "$env_file" ]]; then
-    # shellcheck source=/dev/null
+argus_default_version() {
+  if [[ -n "${ARGUS_ENGINE_VERSION:-}" ]]; then
+    printf '%s\n' "$ARGUS_ENGINE_VERSION"
+  elif [[ -f "$ARGUS_REPO_ROOT/VERSION" ]]; then
+    tr -d '[:space:]' < "$ARGUS_REPO_ROOT/VERSION"
+  else
+    printf 'latest\n'
+  fi
+}
+
+argus_env_quote() {
+  # Print a shell-safe single-quoted value for .env files.
+  local value="${1:-}"
+  printf "'%s'" "${value//\'/\'\\\'\'}"
+}
+
+argus_env_get() {
+  local key="$1"
+  local value="${!key-}"
+  printf '%s\n' "$value"
+}
+
+argus_env_is_placeholder() {
+  local value="${1:-}"
+  [[ -z "$value" || "$value" == "CHANGE_ME" || "$value" == "<CHANGE_ME>" || "$value" == "changeme" || "$value" == "example" ]]
+}
+
+argus_upsert_env() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  mkdir -p "$(dirname "$file")"
+  touch "$file"
+
+  local quoted
+  quoted="$(argus_env_quote "$value")"
+
+  if grep -Eq "^${key}=" "$file"; then
+    local tmp
+    tmp="$(mktemp)"
+    awk -v k="$key" -v v="$quoted" 'BEGIN{done=0} $0 ~ "^" k "=" {print k "=" v; done=1; next} {print} END{if(!done) print k "=" v}' "$file" > "$tmp"
+    cat "$tmp" > "$file"
+    rm -f "$tmp"
+  else
+    printf '%s=%s\n' "$key" "$quoted" >> "$file"
+  fi
+}
+
+argus_load_env_file() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    # shellcheck disable=SC1090
     set -a
-    . "$env_file"
+    source "$file"
     set +a
   fi
 }
 
-argus_cloud_trim() {
-  local s="$1"
-  s="${s#"${s%%[![:space:]]*}"}"
-  s="${s%"${s##*[![:space:]]}"}"
-  printf '%s' "$s"
-}
+argus_prompt_value() {
+  local key="$1"
+  local prompt="$2"
+  local default="${3:-}"
+  local secret="${4:-false}"
+  local current="${!key-}"
 
-argus_cloud_unquote() {
-  local s="$1"
-  if [[ "$s" == \"*\" && "$s" == *\" ]]; then
-    s="${s:1:${#s}-2}"
-  elif [[ "$s" == \'*\' && "$s" == *\' ]]; then
-    s="${s:1:${#s}-2}"
-  fi
-  printf '%s' "$s"
-}
-
-argus_cloud_is_interactive() {
-  [[ -t 0 && "${ARGUS_CLOUD_NONINTERACTIVE:-}" != "1" ]]
-}
-
-argus_cloud_single_quote() {
-  local s="$1"
-  s="${s//\'/\'\"\'\"\'}"
-  printf "'%s'" "$s"
-}
-
-argus_cloud_restore_ownership_if_sudo() {
-  local path="$1"
-  if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]] && command -v id >/dev/null 2>&1; then
-    local group
-    group="$(id -gn "$SUDO_USER" 2>/dev/null || true)"
-    if [[ -n "$group" ]]; then
-      chown "$SUDO_USER:$group" "$path" 2>/dev/null || true
-    else
-      chown "$SUDO_USER" "$path" 2>/dev/null || true
-    fi
-  fi
-}
-
-argus_cloud_ensure_config_file() {
-  local target="$1"
-  local example="${2:-}"
-  local description="${3:-configuration file}"
-
-  mkdir -p "$(dirname "$target")"
-
-  if [[ -f "$target" ]]; then
+  if ! argus_env_is_placeholder "$current"; then
+    printf '%s\n' "$current"
     return 0
   fi
 
-  if [[ -n "$example" && -f "$example" ]]; then
-    cp "$example" "$target"
-    argus_cloud_restore_ownership_if_sudo "$target"
-    echo "Created ${description}: ${target}"
-  else
-    : > "$target"
-    argus_cloud_restore_ownership_if_sudo "$target"
-    echo "Created empty ${description}: ${target}"
-  fi
-}
+  local shown_default="$default"
+  local answer=""
 
-argus_cloud_upsert_env_value() {
-  local env_file="$1"
-  local key="$2"
-  local value="$3"
-  local quoted tmp
-
-  mkdir -p "$(dirname "$env_file")"
-  [[ -f "$env_file" ]] || : > "$env_file"
-
-  quoted="$(argus_cloud_single_quote "$value")"
-  tmp="$(mktemp)"
-
-  awk -v key="$key" -v line="${key}=${quoted}" '
-    BEGIN { done=0 }
-    $0 ~ "^[[:space:]]*(export[[:space:]]+)?" key "=" {
-      if (!done) {
-        print line
-        done=1
-      }
-      next
-    }
-    { print }
-    END {
-      if (!done) {
-        print line
-      }
-    }
-  ' "$env_file" > "$tmp"
-
-  mv "$tmp" "$env_file"
-  argus_cloud_restore_ownership_if_sudo "$env_file"
-}
-
-argus_cloud_value_needs_prompt() {
-  local v="${1:-}"
-  [[ -z "$v" ]] && return 0
-  case "$v" in
-    *CHANGE_ME*|*REPLACE_ME*|*replace-with*|*replace_me*|*replace*|'< '*|'<'*'>'|argusengineacrreplace)
+  if [[ ! -t 0 && ! -r /dev/tty ]]; then
+    if [[ -n "$default" ]]; then
+      printf '%s\n' "$default"
       return 0
-      ;;
-  esac
-  return 1
-}
-
-argus_cloud_prompt_env_var() {
-  local env_file="$1"
-  local key="$2"
-  local prompt="$3"
-  local default_value="${4:-}"
-  local required="${5:-1}"
-  local current="${!key:-}"
-
-  if ! argus_cloud_value_needs_prompt "$current"; then
-    return 0
-  fi
-
-  if ! argus_cloud_is_interactive; then
-    if [[ "$required" == "1" ]]; then
-      echo "Missing required setting ${key}. Add it to ${env_file} or run interactively." >&2
-      exit 2
     fi
-    return 0
+    argus_die "Missing $key and no interactive terminal is available. Set it in the relevant .env file."
   fi
 
-  local value=""
   while true; do
-    if [[ -n "$default_value" ]]; then
-      read -r -p "${prompt} [${default_value}]: " value
-      value="${value:-$default_value}"
+    if [[ "$secret" == "true" ]]; then
+      if [[ -n "$shown_default" ]]; then
+        printf '%s [%s]: ' "$prompt" "hidden default" > /dev/tty
+      else
+        printf '%s: ' "$prompt" > /dev/tty
+      fi
+      IFS= read -rs answer < /dev/tty || true
+      printf '\n' > /dev/tty
     else
-      read -r -p "${prompt}: " value
+      if [[ -n "$shown_default" ]]; then
+        printf '%s [%s]: ' "$prompt" "$shown_default" > /dev/tty
+      else
+        printf '%s: ' "$prompt" > /dev/tty
+      fi
+      IFS= read -r answer < /dev/tty || true
     fi
 
-    if [[ "$required" != "1" || -n "$value" ]]; then
-      break
+    if [[ -z "$answer" ]]; then
+      answer="$default"
     fi
-    echo "${key} is required."
-  done
 
-  printf -v "$key" '%s' "$value"
-  export "$key"
-  argus_cloud_upsert_env_value "$env_file" "$key" "$value"
-}
-
-argus_cloud_require_env_vars() {
-  local env_file="$1"
-  shift
-
-  local key
-  for key in "$@"; do
-    if argus_cloud_value_needs_prompt "${!key:-}"; then
-      echo "Missing required setting ${key}. Add it to ${env_file}." >&2
-      exit 2
+    if [[ -n "$answer" ]]; then
+      printf '%s\n' "$answer"
+      return 0
     fi
+
+    printf 'A value is required.\n' > /dev/tty
   done
 }
 
-argus_cloud_default_acr_name() {
+argus_ensure_gitignored_local_env() {
+  local gitignore="$ARGUS_REPO_ROOT/.gitignore"
+  touch "$gitignore"
+  grep -qxF 'deploy/azure/.env' "$gitignore" || printf '\ndeploy/azure/.env\n' >> "$gitignore"
+  grep -qxF 'deploy/azure/service-env' "$gitignore" || printf 'deploy/azure/service-env\n' >> "$gitignore"
+}
+
+argus_parse_env_keys() {
+  local file="$1"
+  [[ -f "$file" ]] || return 0
+  grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$file" | cut -d= -f1 | sort -u
+}
+
+argus_make_azure_acr_name_default() {
+  local raw
+  raw="$(basename "$ARGUS_REPO_ROOT" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
+  raw="${raw:-argusengine}"
+  # ACR name: alphanumeric, globally unique, 5-50 chars. Add a stable-ish suffix from path hash.
   local suffix
-  suffix="$(date +%s)"
-  printf 'argusengine%s' "$suffix"
+  suffix="$(printf '%s' "$ARGUS_REPO_ROOT" | cksum | awk '{print $1}')"
+  printf '%s%s' "${raw:0:32}" "${suffix:0:8}"
 }
 
-argus_cloud_guess_azure_subscription_id() {
-  if command -v az >/dev/null 2>&1 && az account show >/dev/null 2>&1; then
-    az account show --query id -o tsv 2>/dev/null || true
+argus_azure_env_file() {
+  printf '%s\n' "$ARGUS_REPO_ROOT/deploy/azure/.env"
+}
+
+argus_azure_service_env_file() {
+  printf '%s\n' "$ARGUS_REPO_ROOT/deploy/azure/service-env"
+}
+
+argus_azure_bootstrap_env() {
+  local env_file
+  env_file="$(argus_azure_env_file)"
+  mkdir -p "$(dirname "$env_file")"
+
+  if [[ ! -f "$env_file" ]]; then
+    if [[ -f "$ARGUS_REPO_ROOT/deploy/azure/.env.example" ]]; then
+      cp "$ARGUS_REPO_ROOT/deploy/azure/.env.example" "$env_file"
+    else
+      touch "$env_file"
+    fi
+    argus_log "Created $env_file"
   fi
+
+  argus_load_env_file "$env_file"
+
+  local subscription default_rg default_env default_acr default_tag location
+  default_rg="${AZURE_RESOURCE_GROUP:-argus-engine-rg}"
+  default_env="${AZURE_CONTAINERAPPS_ENV:-argus-engine-env}"
+  default_acr="${AZURE_ACR_NAME:-$(argus_make_azure_acr_name_default)}"
+  default_tag="${IMAGE_TAG:-$(argus_default_version)}"
+
+  subscription="$(argus_prompt_value AZURE_SUBSCRIPTION_ID 'Azure subscription ID or name' "${AZURE_SUBSCRIPTION_ID:-}")"
+  location="$(argus_prompt_value AZURE_LOCATION 'Azure region/location' "${AZURE_LOCATION:-eastus}")"
+  AZURE_RESOURCE_GROUP="$(argus_prompt_value AZURE_RESOURCE_GROUP 'Azure resource group' "$default_rg")"
+  AZURE_CONTAINERAPPS_ENV="$(argus_prompt_value AZURE_CONTAINERAPPS_ENV 'Azure Container Apps environment name' "$default_env")"
+  AZURE_ACR_NAME="$(argus_prompt_value AZURE_ACR_NAME 'Azure Container Registry name (globally unique, lowercase letters/numbers)' "$default_acr")"
+  IMAGE_TAG="$(argus_prompt_value IMAGE_TAG 'Container image tag to build/push' "$default_tag")"
+  ARGUS_ENGINE_VERSION="$(argus_prompt_value ARGUS_ENGINE_VERSION 'Argus compose/build version' "$(argus_default_version)")"
+
+  # ACR names must be alphanumeric only. Normalize common mistakes before persisting.
+  AZURE_ACR_NAME="$(printf '%s' "$AZURE_ACR_NAME" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
+  if [[ ${#AZURE_ACR_NAME} -lt 5 || ${#AZURE_ACR_NAME} -gt 50 ]]; then
+    argus_die "AZURE_ACR_NAME must be 5-50 alphanumeric characters after normalization. Got: $AZURE_ACR_NAME"
+  fi
+
+  AZURE_SUBSCRIPTION_ID="$subscription"
+  AZURE_LOCATION="$location"
+
+  argus_upsert_env "$env_file" AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID"
+  argus_upsert_env "$env_file" AZURE_LOCATION "$AZURE_LOCATION"
+  argus_upsert_env "$env_file" AZURE_RESOURCE_GROUP "$AZURE_RESOURCE_GROUP"
+  argus_upsert_env "$env_file" AZURE_CONTAINERAPPS_ENV "$AZURE_CONTAINERAPPS_ENV"
+  argus_upsert_env "$env_file" AZURE_ACR_NAME "$AZURE_ACR_NAME"
+  argus_upsert_env "$env_file" IMAGE_TAG "$IMAGE_TAG"
+  argus_upsert_env "$env_file" ARGUS_ENGINE_VERSION "$ARGUS_ENGINE_VERSION"
+
+  export AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_RESOURCE_GROUP AZURE_CONTAINERAPPS_ENV AZURE_ACR_NAME IMAGE_TAG ARGUS_ENGINE_VERSION
+
+  argus_ensure_gitignored_local_env
 }
 
-argus_cloud_prompt_azure_env() {
-  local env_file="$1"
+argus_azure_bootstrap_service_env() {
+  local service_env
+  service_env="$(argus_azure_service_env_file)"
+  mkdir -p "$(dirname "$service_env")"
 
-  local default_subscription
-  default_subscription="$(argus_cloud_guess_azure_subscription_id)"
+  if [[ ! -f "$service_env" ]]; then
+    if [[ -f "$ARGUS_REPO_ROOT/deploy/azure/service-env.example" ]]; then
+      cp "$ARGUS_REPO_ROOT/deploy/azure/service-env.example" "$service_env"
+    else
+      touch "$service_env"
+    fi
+    argus_log "Created $service_env"
+  fi
 
-  argus_cloud_prompt_env_var "$env_file" AZURE_SUBSCRIPTION_ID "Azure subscription ID (blank uses current az default)" "$default_subscription" 0
-  argus_cloud_prompt_env_var "$env_file" AZURE_LOCATION "Azure region/location" "${AZURE_LOCATION:-eastus}" 1
-  argus_cloud_prompt_env_var "$env_file" AZURE_RESOURCE_GROUP "Azure resource group name" "${AZURE_RESOURCE_GROUP:-argus-engine-rg}" 1
-  argus_cloud_prompt_env_var "$env_file" AZURE_CONTAINERAPPS_ENV "Azure Container Apps environment name" "${AZURE_CONTAINERAPPS_ENV:-argus-engine-env}" 1
-  argus_cloud_prompt_env_var "$env_file" AZURE_ACR_NAME "Azure Container Registry name, lowercase letters/numbers only, globally unique" "${AZURE_ACR_NAME:-$(argus_cloud_default_acr_name)}" 1
-  argus_cloud_prompt_env_var "$env_file" AZURE_ACR_SKU "Azure Container Registry SKU" "${AZURE_ACR_SKU:-Basic}" 1
-  argus_cloud_prompt_env_var "$env_file" AZURE_IMAGE_PREFIX "Container image prefix/path" "${AZURE_IMAGE_PREFIX:-argus-engine}" 1
-  argus_cloud_prompt_env_var "$env_file" IMAGE_TAG "Container image tag" "${IMAGE_TAG:-latest}" 1
-  argus_cloud_prompt_env_var "$env_file" SERVICE_ENV_FILE "Runtime service environment file" "${SERVICE_ENV_FILE:-deploy/azure/service-env}" 1
-  argus_cloud_prompt_env_var "$env_file" AZURE_MIN_REPLICAS "Default minimum replicas per worker" "${AZURE_MIN_REPLICAS:-1}" 1
-  argus_cloud_prompt_env_var "$env_file" AZURE_MAX_REPLICAS "Default maximum replicas per worker" "${AZURE_MAX_REPLICAS:-3}" 1
+  argus_load_env_file "$service_env"
+
+  local pg_default redis_default rabbit_host rabbit_user rabbit_pass rabbit_vhost rabbit_mgmt diag_key
+  pg_default="${ConnectionStrings__Postgres:-Host=CHANGE_ME;Port=5432;Database=argus_engine;Username=argus;Password=CHANGE_ME}"
+  redis_default="${ConnectionStrings__Redis:-CHANGE_ME:6379}"
+  rabbit_host="${RabbitMq__Host:-CHANGE_ME}"
+  rabbit_user="${RabbitMq__Username:-argus}"
+  rabbit_pass="${RabbitMq__Password:-}"
+  rabbit_vhost="${RabbitMq__VirtualHost:-/}"
+  rabbit_mgmt="${RabbitMq__ManagementUrl:-http://CHANGE_ME:15672}"
+  diag_key="${Argus__Diagnostics__ApiKey:-$(printf 'argus-azure-%s' "$(date +%s)")}"
+
+  if [[ "$pg_default" == *"CHANGE_ME"* || "$pg_default" == *"10.0.0.10"* ]]; then
+    ConnectionStrings__Postgres="$(argus_prompt_value ConnectionStrings__Postgres 'Postgres connection string reachable from Azure Container Apps' "$pg_default")"
+    argus_upsert_env "$service_env" ConnectionStrings__Postgres "$ConnectionStrings__Postgres"
+  fi
+
+  if [[ "$redis_default" == *"CHANGE_ME"* || "$redis_default" == *"10.0.0.10"* ]]; then
+    ConnectionStrings__Redis="$(argus_prompt_value ConnectionStrings__Redis 'Redis connection string/host reachable from Azure Container Apps' "$redis_default")"
+    argus_upsert_env "$service_env" ConnectionStrings__Redis "$ConnectionStrings__Redis"
+  fi
+
+  if [[ "$rabbit_host" == "CHANGE_ME" || "$rabbit_host" == "10.0.0.10" ]]; then
+    RabbitMq__Host="$(argus_prompt_value RabbitMq__Host 'RabbitMQ host reachable from Azure Container Apps' "$rabbit_host")"
+    argus_upsert_env "$service_env" RabbitMq__Host "$RabbitMq__Host"
+  fi
+
+  RabbitMq__Username="$(argus_prompt_value RabbitMq__Username 'RabbitMQ username' "$rabbit_user")"
+  RabbitMq__Password="$(argus_prompt_value RabbitMq__Password 'RabbitMQ password' "$rabbit_pass" true)"
+  RabbitMq__VirtualHost="$(argus_prompt_value RabbitMq__VirtualHost 'RabbitMQ virtual host' "$rabbit_vhost")"
+
+  if [[ "$rabbit_mgmt" == *"CHANGE_ME"* || "$rabbit_mgmt" == *"10.0.0.10"* ]]; then
+    RabbitMq__ManagementUrl="$(argus_prompt_value RabbitMq__ManagementUrl 'RabbitMQ management URL reachable from Azure Container Apps' "$rabbit_mgmt")"
+    argus_upsert_env "$service_env" RabbitMq__ManagementUrl "$RabbitMq__ManagementUrl"
+  fi
+
+  Argus__Diagnostics__ApiKey="$(argus_prompt_value Argus__Diagnostics__ApiKey 'Argus diagnostics API key' "$diag_key" true)"
+
+  argus_upsert_env "$service_env" RabbitMq__Username "$RabbitMq__Username"
+  argus_upsert_env "$service_env" RabbitMq__Password "$RabbitMq__Password"
+  argus_upsert_env "$service_env" RabbitMq__VirtualHost "$RabbitMq__VirtualHost"
+  argus_upsert_env "$service_env" Argus__Diagnostics__ApiKey "$Argus__Diagnostics__ApiKey"
+
+  export ConnectionStrings__Postgres ConnectionStrings__Redis RabbitMq__Host RabbitMq__Username RabbitMq__Password RabbitMq__VirtualHost RabbitMq__ManagementUrl Argus__Diagnostics__ApiKey
+  argus_ensure_gitignored_local_env
 }
 
-argus_cloud_azure_ensure_login_and_subscription() {
-  argus_cloud_require_command az
+argus_azure_login_if_needed() {
+  argus_require_cmd az
 
   if ! az account show >/dev/null 2>&1; then
-    if argus_cloud_is_interactive; then
-      echo "Azure CLI is not logged in. Starting device-code login..."
-      az login --use-device-code >/dev/null
-    else
-      echo "Azure CLI is not logged in. Run: az login --use-device-code" >&2
-      exit 2
-    fi
+    argus_log "Azure CLI is not logged in; starting device-code login."
+    az login --use-device-code >/dev/null
   fi
 
   if [[ -n "${AZURE_SUBSCRIPTION_ID:-}" ]]; then
@@ -271,295 +320,158 @@ argus_cloud_azure_ensure_login_and_subscription() {
   fi
 }
 
-argus_cloud_guess_gcp_project_id() {
-  if command -v gcloud >/dev/null 2>&1; then
-    gcloud config get-value project 2>/dev/null || true
+argus_azure_ensure_containerapp_extension() {
+  argus_require_cmd az
+  if ! az containerapp --help >/dev/null 2>&1; then
+    argus_log "Installing/upgrading Azure Container Apps CLI extension."
+    az extension add --name containerapp --upgrade >/dev/null
   fi
 }
 
-argus_cloud_prompt_gcp_env() {
-  local env_file="$1"
-  local default_project
-  default_project="$(argus_cloud_guess_gcp_project_id)"
+argus_azure_ensure_resources() {
+  argus_azure_login_if_needed
+  argus_azure_ensure_containerapp_extension
 
-  argus_cloud_prompt_env_var "$env_file" GCP_PROJECT_ID "Google Cloud project ID" "${GCP_PROJECT_ID:-$default_project}" 1
-  argus_cloud_prompt_env_var "$env_file" GCP_REGION "Google Cloud region" "${GCP_REGION:-us-central1}" 1
-  argus_cloud_prompt_env_var "$env_file" GCP_ARTIFACT_REPOSITORY "Artifact Registry Docker repository name" "${GCP_ARTIFACT_REPOSITORY:-argus-engine}" 1
-  argus_cloud_prompt_env_var "$env_file" GCP_IMAGE_PREFIX "Container image prefix/path" "${GCP_IMAGE_PREFIX:-argus-engine}" 1
-  argus_cloud_prompt_env_var "$env_file" IMAGE_TAG "Container image tag" "${IMAGE_TAG:-latest}" 1
-  argus_cloud_prompt_env_var "$env_file" SERVICE_ENV_FILE "Runtime service environment file" "${SERVICE_ENV_FILE:-deploy/gcp/service-env}" 1
-  argus_cloud_prompt_env_var "$env_file" GCP_WORKER_INSTANCES "Default Cloud Run Worker Pool instances" "${GCP_WORKER_INSTANCES:-1}" 1
-}
+  argus_log "Ensuring resource group: $AZURE_RESOURCE_GROUP ($AZURE_LOCATION)"
+  az group create \
+    --name "$AZURE_RESOURCE_GROUP" \
+    --location "$AZURE_LOCATION" \
+    --output none
 
-argus_cloud_gcp_ensure_login_and_project() {
-  argus_cloud_require_command gcloud
-
-  local active_account
-  active_account="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | head -n 1 || true)"
-  if [[ -z "$active_account" ]]; then
-    if argus_cloud_is_interactive; then
-      echo "gcloud is not logged in. Starting console-only login..."
-      gcloud auth login --no-launch-browser
-    else
-      echo "gcloud is not logged in. Run: gcloud auth login --no-launch-browser" >&2
-      exit 2
-    fi
-  fi
-
-  gcloud config set project "$GCP_PROJECT_ID" >/dev/null
-}
-
-argus_cloud_abs_path_from_repo() {
-  local repo_root="$1"
-  local path="$2"
-  if [[ "$path" == /* ]]; then
-    printf '%s' "$path"
+  if ! az acr show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_ACR_NAME" >/dev/null 2>&1; then
+    argus_log "Creating Azure Container Registry: $AZURE_ACR_NAME"
+    az acr create \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
+      --name "$AZURE_ACR_NAME" \
+      --sku Basic \
+      --admin-enabled true \
+      --output none
   else
-    printf '%s/%s' "$repo_root" "$path"
+    argus_log "Azure Container Registry already exists: $AZURE_ACR_NAME"
+    az acr update \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
+      --name "$AZURE_ACR_NAME" \
+      --admin-enabled true \
+      --output none
+  fi
+
+  if ! az containerapp env show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINERAPPS_ENV" >/dev/null 2>&1; then
+    argus_log "Creating Azure Container Apps environment: $AZURE_CONTAINERAPPS_ENV"
+    az containerapp env create \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
+      --name "$AZURE_CONTAINERAPPS_ENV" \
+      --location "$AZURE_LOCATION" \
+      --output none
+  else
+    argus_log "Azure Container Apps environment already exists: $AZURE_CONTAINERAPPS_ENV"
   fi
 }
 
-argus_cloud_file_has_placeholders() {
-  local file="$1"
-  grep -Eq 'CHANGE_ME|10\.0\.0\.10|replace-with|REPLACE_ME|<[^>]+>' "$file" 2>/dev/null
+argus_azure_acr_login_server() {
+  az acr show \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --name "$AZURE_ACR_NAME" \
+    --query loginServer \
+    --output tsv
 }
 
-argus_cloud_ensure_service_env() {
-  local target="$1"
-  local example="${2:-}"
-  local label="${3:-cloud}"
-
-  argus_cloud_ensure_config_file "$target" "$example" "${label} runtime service environment file"
-
-  while argus_cloud_file_has_placeholders "$target"; do
-    cat >&2 <<EOF
-
-${target} still contains example placeholders such as CHANGE_ME or 10.0.0.10.
-These values must be endpoints and credentials that ${label} workers can reach at runtime.
-EOF
-
-    if ! argus_cloud_is_interactive; then
-      echo "Edit ${target} and rerun." >&2
-      exit 2
-    fi
-
-    local editor answer
-    editor="${EDITOR:-nano}"
-    read -r -p "Open ${target} in ${editor} now? [Y/n]: " answer
-    case "${answer:-Y}" in
-      y|Y|yes|YES)
-        "$editor" "$target"
-        ;;
-      *)
-        echo "Edit ${target} and rerun." >&2
-        exit 2
-        ;;
-    esac
-  done
+argus_azure_acr_username() {
+  az acr credential show \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --name "$AZURE_ACR_NAME" \
+    --query username \
+    --output tsv
 }
 
-argus_cloud_env_file_to_azure_args() {
-  local env_file="$1"
-  local -n out_ref="$2"
-  out_ref=()
-
-  if [[ ! -f "$env_file" ]]; then
-    echo "Service env file does not exist: $env_file" >&2
-    exit 2
-  fi
-
-  local raw line key value
-  while IFS= read -r raw || [[ -n "$raw" ]]; do
-    line="$(argus_cloud_trim "$raw")"
-    [[ -z "$line" || "$line" == \#* ]] && continue
-    [[ "$line" != *=* ]] && continue
-    key="$(argus_cloud_trim "${line%%=*}")"
-    value="$(argus_cloud_trim "${line#*=}")"
-    value="$(argus_cloud_unquote "$value")"
-    out_ref+=("${key}=${value}")
-  done < "$env_file"
+argus_azure_acr_password() {
+  az acr credential show \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --name "$AZURE_ACR_NAME" \
+    --query 'passwords[0].value' \
+    --output tsv
 }
 
-argus_cloud_write_service_env_file() {
-  local source_env="$1"
-  local service="$2"
-  local output="$3"
-
-  if [[ ! -f "$source_env" ]]; then
-    echo "Service env file does not exist: $source_env" >&2
-    exit 2
-  fi
-
-  cp "$source_env" "$output"
-  {
-    echo ""
-    echo "# Added by Argus cloud deployment scripts for ${service}"
-    echo "Argus__SkipStartupDatabase=true"
-    echo "ARGUS_SKIP_STARTUP_DATABASE=1"
-    if [[ "$service" == "worker-spider" || "$service" == "worker-http-requester" ]]; then
-      echo "Spider__Http__AllowInsecureSsl=false"
-      echo "HttpRequester__AllowInsecureSsl=false"
-    fi
-  } >> "$output"
+argus_service_project_dir() {
+  case "$1" in
+    command-center-gateway) printf 'ArgusEngine.CommandCenter.Gateway\n' ;;
+    command-center-operations-api) printf 'ArgusEngine.CommandCenter.Operations.Api\n' ;;
+    command-center-discovery-api) printf 'ArgusEngine.CommandCenter.Discovery.Api\n' ;;
+    command-center-worker-control-api) printf 'ArgusEngine.CommandCenter.WorkerControl.Api\n' ;;
+    command-center-maintenance-api) printf 'ArgusEngine.CommandCenter.Maintenance.Api\n' ;;
+    command-center-updates-api) printf 'ArgusEngine.CommandCenter.Updates.Api\n' ;;
+    command-center-realtime) printf 'ArgusEngine.CommandCenter.Realtime.Host\n' ;;
+    command-center-web) printf 'ArgusEngine.CommandCenter.Web\n' ;;
+    command-center-bootstrapper) printf 'ArgusEngine.CommandCenter.Bootstrapper\n' ;;
+    command-center-spider-dispatcher) printf 'ArgusEngine.CommandCenter.SpiderDispatcher\n' ;;
+    gatekeeper) printf 'ArgusEngine.Gatekeeper\n' ;;
+    worker-spider) printf 'ArgusEngine.Workers.Spider\n' ;;
+    worker-http-requester) printf 'ArgusEngine.Workers.HttpRequester\n' ;;
+    worker-enum) printf 'ArgusEngine.Workers.Enumeration\n' ;;
+    worker-portscan) printf 'ArgusEngine.Workers.PortScan\n' ;;
+    worker-highvalue) printf 'ArgusEngine.Workers.HighValue\n' ;;
+    worker-techid) printf 'ArgusEngine.Workers.TechnologyIdentification\n' ;;
+    *) return 1 ;;
+  esac
 }
 
-argus_cloud_default_services() {
-  cat <<'EOF'
-gatekeeper
+argus_known_services() {
+  cat <<'SERVICES'
+command-center-gateway
+command-center-operations-api
+command-center-discovery-api
+command-center-worker-control-api
+command-center-maintenance-api
+command-center-updates-api
+command-center-realtime
+command-center-web
+command-center-bootstrapper
 command-center-spider-dispatcher
+gatekeeper
 worker-spider
 worker-http-requester
 worker-enum
 worker-portscan
 worker-highvalue
 worker-techid
-EOF
+SERVICES
 }
 
-argus_cloud_selected_services() {
-  if [[ "$#" -gt 0 ]]; then
-    printf '%s\n' "$@"
-    return 0
-  fi
-
-  if [[ -n "${ARGUS_CLOUD_SERVICES:-}" ]]; then
-    # shellcheck disable=SC2206
-    local services=( ${ARGUS_CLOUD_SERVICES} )
-    printf '%s\n' "${services[@]}"
-    return 0
-  fi
-
-  argus_cloud_default_services
+argus_worker_services() {
+  cat <<'SERVICES'
+command-center-spider-dispatcher
+gatekeeper
+worker-spider
+worker-http-requester
+worker-enum
+worker-portscan
+worker-highvalue
+worker-techid
+SERVICES
 }
 
-argus_cloud_sanitize_env_suffix() {
-  local s="$1"
-  s="${s//-/_}"
-  printf '%s' "${s^^}"
+argus_validate_services() {
+  local svc
+  for svc in "$@"; do
+    argus_service_project_dir "$svc" >/dev/null || argus_die "Unknown service '$svc'. Known services: $(argus_known_services | paste -sd ' ' -)"
+  done
 }
 
-argus_cloud_service_project_dir() {
-  case "$1" in
-    gatekeeper) echo "ArgusEngine.Gatekeeper" ;;
-    command-center-spider-dispatcher) echo "ArgusEngine.CommandCenter.SpiderDispatcher" ;;
-    worker-spider) echo "ArgusEngine.Workers.Spider" ;;
-    worker-http-requester) echo "ArgusEngine.Workers.HttpRequester" ;;
-    worker-enum) echo "ArgusEngine.Workers.Enumeration" ;;
-    worker-portscan) echo "ArgusEngine.Workers.PortScan" ;;
-    worker-highvalue) echo "ArgusEngine.Workers.HighValue" ;;
-    worker-techid) echo "ArgusEngine.Workers.TechnologyIdentification" ;;
-    *) echo "Unknown Argus cloud worker service: $1" >&2; return 1 ;;
-  esac
-}
-
-argus_cloud_service_app_dll() {
-  case "$1" in
-    gatekeeper) echo "ArgusEngine.Gatekeeper.dll" ;;
-    command-center-spider-dispatcher) echo "ArgusEngine.CommandCenter.SpiderDispatcher.dll" ;;
-    worker-spider) echo "ArgusEngine.Workers.Spider.dll" ;;
-    worker-http-requester) echo "ArgusEngine.Workers.HttpRequester.dll" ;;
-    worker-enum) echo "ArgusEngine.Workers.Enumeration.dll" ;;
-    worker-portscan) echo "ArgusEngine.Workers.PortScan.dll" ;;
-    worker-highvalue) echo "ArgusEngine.Workers.HighValue.dll" ;;
-    worker-techid) echo "ArgusEngine.Workers.TechnologyIdentification.dll" ;;
-    *) echo "Unknown Argus cloud worker service: $1" >&2; return 1 ;;
-  esac
-}
-
-argus_cloud_service_dockerfile() {
-  case "$1" in
-    worker-enum) echo "deploy/Dockerfile.worker-enum" ;;
-    *) echo "deploy/Dockerfile.worker" ;;
-  esac
-}
-
-argus_cloud_service_default_instances() {
-  case "$1" in
-    worker-http-requester) echo "3" ;;
-    worker-enum) echo "2" ;;
-    *) echo "1" ;;
-  esac
-}
-
-argus_cloud_service_default_cpu_azure() {
-  case "$1" in
-    worker-spider|worker-http-requester|worker-enum) echo "1.0" ;;
-    *) echo "0.5" ;;
-  esac
-}
-
-argus_cloud_service_default_memory_azure() {
-  case "$1" in
-    worker-spider|worker-http-requester|worker-enum) echo "2.0Gi" ;;
-    *) echo "1.0Gi" ;;
-  esac
-}
-
-argus_cloud_service_default_cpu_gcp() {
-  case "$1" in
-    worker-spider|worker-http-requester|worker-enum) echo "1" ;;
-    *) echo "1" ;;
-  esac
-}
-
-argus_cloud_service_default_memory_gcp() {
-  case "$1" in
-    worker-spider|worker-http-requester|worker-enum) echo "2Gi" ;;
-    *) echo "1Gi" ;;
-  esac
-}
-
-argus_cloud_service_var_or_default() {
-  local prefix="$1"
+argus_azure_image_name() {
+  local login_server="$1"
   local service="$2"
-  local default_value="$3"
-  local suffix var
-  suffix="$(argus_cloud_sanitize_env_suffix "$service")"
-  var="${prefix}_${suffix}"
-  printf '%s' "${!var:-$default_value}"
+  printf '%s/%s/%s:%s\n' "$login_server" "${AZURE_IMAGE_PREFIX:-argus-engine}" "$service" "$IMAGE_TAG"
 }
 
-argus_cloud_build_service_image() {
-  local service="$1"
-  local image="$2"
-  local dockerfile project_dir app_dll
-  dockerfile="$(argus_cloud_service_dockerfile "$service")"
-  project_dir="$(argus_cloud_service_project_dir "$service")"
-  app_dll="$(argus_cloud_service_app_dll "$service")"
-
-  local build_args=(
-    -f "$dockerfile"
-    --build-arg "PROJECT_DIR=$project_dir"
-    --build-arg "APP_DLL=$app_dll"
-    --build-arg "BUILD_SOURCE_STAMP=${BUILD_SOURCE_STAMP:-unknown}"
-    --build-arg "COMPONENT_VERSION=${ARGUS_ENGINE_VERSION:-2.6.3}"
-  )
-
-  if [[ "$service" == "worker-enum" ]]; then
-    build_args+=(
-      --build-arg "SUBFINDER_VERSION=${SUBFINDER_VERSION:-2.14.0}"
-      --build-arg "AMASS_VERSION=${AMASS_VERSION:-5.1.1}"
-    )
-  fi
-
-  echo "Building ${service}: ${image}"
-  docker build "${build_args[@]}" -t "$image" .
-}
-
-argus_cloud_build_base_images() {
-  if [[ ! -x "deploy/build-base-images.sh" ]]; then
-    echo "deploy/build-base-images.sh is missing or not executable; running with bash anyway." >&2
-  fi
-  bash deploy/build-base-images.sh
-}
-
-argus_cloud_export_build_stamp() {
-  if [[ -n "${BUILD_SOURCE_STAMP:-}" ]]; then
-    return 0
-  fi
-
-  if [[ -d .git ]] && command -v git >/dev/null 2>&1; then
-    BUILD_SOURCE_STAMP="$(git rev-parse --short=12 HEAD 2>/dev/null || true)"
-  fi
-  export BUILD_SOURCE_STAMP="${BUILD_SOURCE_STAMP:-manual}"
+argus_env_args_from_file() {
+  local file="$1"
+  [[ -f "$file" ]] || return 0
+  local keys key
+  mapfile -t keys < <(argus_parse_env_keys "$file")
+  # shellcheck disable=SC1090
+  set -a
+  source "$file"
+  set +a
+  for key in "${keys[@]}"; do
+    printf '%s=%s\0' "$key" "${!key-}"
+  done
 }

@@ -1,94 +1,88 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../cloud-common.sh
-source "$script_dir/../cloud-common.sh"
+source "$SCRIPT_DIR/../cloud-common.sh"
 
-repo_root="$(argus_cloud_find_repo_root "$script_dir")"
-cd "$repo_root"
+argus_warn_if_sudo
+argus_require_cmd az
 
-azure_dir="$repo_root/deploy/azure"
-mkdir -p "$azure_dir"
-env_example="$script_dir/.env.example"
-[[ -f "$env_example" ]] || env_example="$azure_dir/.env.example"
-env_file="$azure_dir/.env"
+argus_azure_bootstrap_env
+argus_azure_bootstrap_service_env
+argus_azure_ensure_resources
 
-argus_cloud_ensure_config_file "$env_file" "$env_example" "Azure deployment settings"
-argus_cloud_load_env_file "$env_file"
-argus_cloud_prompt_azure_env "$env_file"
-argus_cloud_require_env_vars "$env_file" AZURE_RESOURCE_GROUP AZURE_CONTAINERAPPS_ENV AZURE_ACR_NAME AZURE_IMAGE_PREFIX IMAGE_TAG SERVICE_ENV_FILE
+SERVICE_ENV_FILE="$(argus_azure_service_env_file)"
+LOGIN_SERVER="$(argus_azure_acr_login_server)"
+ACR_USER="$(argus_azure_acr_username)"
+ACR_PASS="$(argus_azure_acr_password)"
 
-SERVICE_ENV_FILE="$(argus_cloud_abs_path_from_repo "$repo_root" "$SERVICE_ENV_FILE")"
-service_env_example="$script_dir/service-env.example"
-[[ -f "$service_env_example" ]] || service_env_example="$azure_dir/service-env.example"
-argus_cloud_ensure_service_env "$SERVICE_ENV_FILE" "$service_env_example" "Azure Container Apps"
+SERVICES=("$@")
+if [[ ${#SERVICES[@]} -eq 0 ]]; then
+  mapfile -t SERVICES < <(argus_worker_services)
+fi
+argus_validate_services "${SERVICES[@]}"
 
-argus_cloud_azure_ensure_login_and_subscription
+mapfile -d '' ENV_PAIRS < <(argus_env_args_from_file "$SERVICE_ENV_FILE")
 
-login_server="$(az acr show --name "$AZURE_ACR_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --query loginServer -o tsv)"
-registry_user="$(az acr credential show --name "$AZURE_ACR_NAME" --query username -o tsv)"
-registry_pass="$(az acr credential show --name "$AZURE_ACR_NAME" --query 'passwords[0].value' -o tsv)"
+for service in "${SERVICES[@]}"; do
+  app_name="argus-${service}"
+  image_remote="$(argus_azure_image_name "$LOGIN_SERVER" "$service")"
 
-mapfile -t selected_services < <(argus_cloud_selected_services "$@")
+  argus_log "Deploying $app_name from $image_remote"
 
-for service in "${selected_services[@]}"; do
-  suffix="$(argus_cloud_sanitize_env_suffix "$service")"
-  app_var="AZURE_APP_NAME_${suffix}"
-  app_name="${!app_var:-argus-${service}}"
-  image="${login_server}/${AZURE_IMAGE_PREFIX}/${service}:${IMAGE_TAG}"
-
-  min_default="$(argus_cloud_service_default_instances "$service")"
-  min_replicas="$(argus_cloud_service_var_or_default AZURE_MIN_REPLICAS "$service" "${AZURE_MIN_REPLICAS:-$min_default}")"
-  max_replicas="$(argus_cloud_service_var_or_default AZURE_MAX_REPLICAS "$service" "${AZURE_MAX_REPLICAS:-3}")"
-  cpu="$(argus_cloud_service_var_or_default AZURE_CPU "$service" "$(argus_cloud_service_default_cpu_azure "$service")")"
-  memory="$(argus_cloud_service_var_or_default AZURE_MEMORY "$service" "$(argus_cloud_service_default_memory_azure "$service")")"
-
-  tmp_env="$(mktemp)"
-  trap 'rm -f "$tmp_env"' EXIT
-  argus_cloud_write_service_env_file "$SERVICE_ENV_FILE" "$service" "$tmp_env"
-  argus_cloud_env_file_to_azure_args "$tmp_env" env_args
-
-  echo "Deploying Azure Container App worker ${app_name} from ${image}"
-  if az containerapp show --name "$app_name" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
-    az containerapp registry set \
-      --name "$app_name" \
+  if az containerapp show --resource-group "$AZURE_RESOURCE_GROUP" --name "$app_name" >/dev/null 2>&1; then
+    az containerapp update \
       --resource-group "$AZURE_RESOURCE_GROUP" \
-      --server "$login_server" \
-      --username "$registry_user" \
-      --password "$registry_pass" \
-      >/dev/null
+      --name "$app_name" \
+      --image "$image_remote" \
+      --set-env-vars "${ENV_PAIRS[@]}" \
+      --output none
+
+    az containerapp registry set \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
+      --name "$app_name" \
+      --server "$LOGIN_SERVER" \
+      --username "$ACR_USER" \
+      --password "$ACR_PASS" \
+      --output none
 
     az containerapp update \
-      --name "$app_name" \
       --resource-group "$AZURE_RESOURCE_GROUP" \
-      --image "$image" \
-      --set-env-vars "${env_args[@]}" \
-      --cpu "$cpu" \
-      --memory "$memory" \
-      --min-replicas "$min_replicas" \
-      --max-replicas "$max_replicas" \
-      >/dev/null
+      --name "$app_name" \
+      --min-replicas 1 \
+      --max-replicas 2 \
+      --cpu 0.5 \
+      --memory 1.0Gi \
+      --output none
   else
     az containerapp create \
-      --name "$app_name" \
       --resource-group "$AZURE_RESOURCE_GROUP" \
       --environment "$AZURE_CONTAINERAPPS_ENV" \
-      --image "$image" \
-      --registry-server "$login_server" \
-      --registry-username "$registry_user" \
-      --registry-password "$registry_pass" \
-      --env-vars "${env_args[@]}" \
-      --cpu "$cpu" \
-      --memory "$memory" \
-      --min-replicas "$min_replicas" \
-      --max-replicas "$max_replicas" \
-      >/dev/null
+      --name "$app_name" \
+      --image "$image_remote" \
+      --registry-server "$LOGIN_SERVER" \
+      --registry-username "$ACR_USER" \
+      --registry-password "$ACR_PASS" \
+      --ingress disabled \
+      --min-replicas 1 \
+      --max-replicas 2 \
+      --cpu 0.5 \
+      --memory 1.0Gi \
+      --env-vars "${ENV_PAIRS[@]}" \
+      --output none
   fi
 
-  rm -f "$tmp_env"
-  trap - EXIT
-  echo "Deployed ${app_name} replicas ${min_replicas}-${max_replicas}, cpu=${cpu}, memory=${memory}"
+  argus_log "Deployed $app_name"
 done
 
-echo "Azure Container Apps worker deployment complete."
+cat <<EOF
+
+Worker deployment complete.
+
+List apps:
+  az containerapp list -g "$AZURE_RESOURCE_GROUP" -o table
+
+Follow logs for one worker:
+  az containerapp logs show -g "$AZURE_RESOURCE_GROUP" -n argus-worker-enum --follow
+EOF

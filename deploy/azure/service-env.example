@@ -1,29 +1,24 @@
-# Copy to deploy/azure/service-env and replace with production values.
-# Use hostnames/IPs that Azure Container Apps workers can reach.
+# Runtime environment variables for Argus Engine containers on Azure.
+# This file is copied to deploy/azure/service-env on first run.
+# The scripts prompt for placeholder values and write answers back to deploy/azure/service-env.
+#
+# IMPORTANT:
+# Azure Container Apps must be able to reach these endpoints.
+# AWS private VPC addresses like 172.x/10.x generally will not work from Azure unless you add VPN/private networking.
 
-ConnectionStrings__Postgres=Host=10.0.0.10;Port=5432;Database=argus_engine;Username=argus;Password=CHANGE_ME
-ConnectionStrings__FileStore=Host=10.0.0.10;Port=5432;Database=argus_engine_files;Username=argus;Password=CHANGE_ME
-ConnectionStrings__Redis=10.0.0.10:6379
+ConnectionStrings__Postgres='Host=CHANGE_ME;Port=5432;Database=argus_engine;Username=argus;Password=CHANGE_ME'
+ConnectionStrings__FileStore='Host=CHANGE_ME;Port=5432;Database=argus_engine_files;Username=argus;Password=CHANGE_ME'
+ConnectionStrings__Redis='CHANGE_ME:6379'
 
-RabbitMq__Host=10.0.0.10
-RabbitMq__Username=argus
-RabbitMq__Password=CHANGE_ME
-RabbitMq__VirtualHost=/
-RabbitMq__ManagementUrl=http://10.0.0.10:15672
+RabbitMq__Host='CHANGE_ME'
+RabbitMq__Username='argus'
+RabbitMq__Password='CHANGE_ME'
+RabbitMq__VirtualHost='/'
+RabbitMq__ManagementUrl='http://CHANGE_ME:15672'
 
-Argus__SkipStartupDatabase=true
-ARGUS_SKIP_STARTUP_DATABASE=1
+Argus__Diagnostics__ApiKey='CHANGE_ME'
+Argus__SkipStartupDatabase='true'
 
-Enumeration__UseSubfinder=true
-Enumeration__SubfinderPath=/usr/local/bin/subfinder
-Enumeration__SubfinderAllSources=true
-Enumeration__SubfinderRecursive=true
-Enumeration__SubfinderTimeoutSeconds=180
-Enumeration__UseAmass=true
-Enumeration__AmassPath=/usr/local/bin/amass
-Enumeration__AmassActive=true
-Enumeration__AmassBruteForce=true
-Enumeration__AmassTimeoutSeconds=900
-Enumeration__UseDnsFallback=true
-Enumeration__DnsFallbackMaxCandidates=300
-Enumeration__SubdomainWordlistPath=/opt/argus/wordlists/subdomains.txt
+# Conservative defaults to avoid exhausting database connections when replicas scale.
+Argus__Postgres__MaxPoolSize='3'
+Argus__FileStore__MaxPoolSize='1'

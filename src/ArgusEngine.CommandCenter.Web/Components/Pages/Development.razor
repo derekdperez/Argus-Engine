@@ -36,6 +36,13 @@
         <p>Execute internal test harnesses, manage local workers, watch real-time system events, and collect deployment-wide error context.</p>
     </section>
 
+    @if (_initError is not null)
+    {
+        <div class="alert alert-danger" style="margin: 20px; padding: 15px; border-radius: 8px; background-color: #fde8e8; color: #9b1c1c; border: 1px solid #f8b4b4;">
+            <strong>Initialization Error:</strong> @_initError
+        </div>
+    }
+
     <section class="surface-card">
         <div class="section-heading">
             <div>
@@ -471,14 +478,23 @@
     private string? _bugFixPrompt;
     private DateTimeOffset? _bugFixPromptGeneratedAtUtc;
     private string? _errorCollectionStatus;
+    private string? _initError;
     private readonly CancellationTokenSource _devPollCts = new();
 
     protected override async Task OnInitializedAsync()
     {
-        Realtime.DomainEventReceived += OnRealtimeEvent;
-        await Realtime.EnsureStartedAsync(_devPollCts.Token).ConfigureAwait(false);
-        await RefreshErrorsAsync().ConfigureAwait(false);
-        await LoadDockerWorkersAsync().ConfigureAwait(false);
+        try
+        {
+            Realtime.DomainEventReceived += OnRealtimeEvent;
+            await Realtime.EnsureStartedAsync(_devPollCts.Token).ConfigureAwait(false);
+            await RefreshErrorsAsync().ConfigureAwait(false);
+            await LoadDockerWorkersAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to initialize Development page.");
+            _initError = $"Initialization failed: {ex.Message}";
+        }
     }
 
     private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)

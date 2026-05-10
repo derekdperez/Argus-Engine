@@ -78,6 +78,11 @@ argus_env_is_placeholder() {
   [[ -z "$value" || "$value" == "CHANGE_ME" || "$value" == "<CHANGE_ME>" || "$value" == "changeme" || "$value" == "example" ]]
 }
 
+argus_env_contains_placeholder() {
+  local value="${1:-}"
+  [[ -z "$value" || "$value" == *"CHANGE_ME"* || "$value" == *"<CHANGE_ME>"* || "$value" == *"changeme"* || "$value" == *"10.0.0.10"* ]]
+}
+
 argus_upsert_env() {
   local file="$1"
   local key="$2"
@@ -155,11 +160,14 @@ argus_prompt_value() {
     fi
 
     if [[ -n "$answer" ]]; then
-      printf '%s\n' "$answer"
-      return 0
+      if ! argus_env_contains_placeholder "$answer"; then
+        printf '%s\n' "$answer"
+        return 0
+      fi
+      printf 'A real value is required; do not leave CHANGE_ME, changeme, or 10.0.0.10 placeholders.\n' > /dev/tty
+    else
+      printf 'A value is required.\n' > /dev/tty
     fi
-
-    printf 'A value is required.\n' > /dev/tty
   done
 }
 
@@ -356,6 +364,82 @@ argus_azure_ensure_containerapp_extension() {
   fi
 }
 
+argus_normalize_acr_name() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'
+}
+
+argus_acr_default_unique_candidate() {
+  local sub_part path_part
+  sub_part="$(printf '%s' "${AZURE_SUBSCRIPTION_ID:-}" | tr -cd 'a-zA-Z0-9' | tr '[:upper:]' '[:lower:]' | cut -c1-8)"
+  path_part="$(printf '%s' "$ARGUS_REPO_ROOT" | cksum | awk '{print $1}' | cut -c1-6)"
+  printf 'argusengine%s%s' "${sub_part:-az}" "$path_part"
+}
+
+argus_prompt_acr_name_collision() {
+  local current="$1"
+  local default="$2"
+  local answer=""
+
+  if [[ ! -t 0 && ! -r /dev/tty ]]; then
+    printf '%s\n' "$default"
+    return 0
+  fi
+
+  while true; do
+    printf 'Azure Container Registry name "%s" is already taken globally. Choose another ACR name [%s]: ' "$current" "$default" > /dev/tty
+    IFS= read -r answer < /dev/tty || true
+    answer="${answer:-$default}"
+    answer="$(argus_normalize_acr_name "$answer")"
+
+    if [[ ${#answer} -ge 5 && ${#answer} -le 50 ]]; then
+      printf '%s\n' "$answer"
+      return 0
+    fi
+
+    printf 'ACR name must be 5-50 characters and contain only letters/numbers.\n' > /dev/tty
+  done
+}
+
+argus_azure_resolve_acr_name() {
+  local env_file current available suggested
+  env_file="$(argus_azure_env_file)"
+
+  AZURE_ACR_NAME="$(argus_normalize_acr_name "$AZURE_ACR_NAME")"
+
+  while true; do
+    if [[ ${#AZURE_ACR_NAME} -lt 5 || ${#AZURE_ACR_NAME} -gt 50 ]]; then
+      suggested="$(argus_acr_default_unique_candidate)"
+      argus_warn "ACR name '$AZURE_ACR_NAME' is invalid after normalization."
+      AZURE_ACR_NAME="$(argus_prompt_acr_name_collision "$AZURE_ACR_NAME" "$suggested")"
+      argus_upsert_env "$env_file" AZURE_ACR_NAME "$AZURE_ACR_NAME"
+      continue
+    fi
+
+    if az acr show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_ACR_NAME" >/dev/null 2>&1; then
+      argus_log "Azure Container Registry already exists in this resource group: $AZURE_ACR_NAME"
+      argus_upsert_env "$env_file" AZURE_ACR_NAME "$AZURE_ACR_NAME"
+      export AZURE_ACR_NAME
+      return 0
+    fi
+
+    available="$(az acr check-name --name "$AZURE_ACR_NAME" --query nameAvailable --output tsv 2>/dev/null || printf 'false')"
+    if [[ "$available" == "true" ]]; then
+      argus_upsert_env "$env_file" AZURE_ACR_NAME "$AZURE_ACR_NAME"
+      export AZURE_ACR_NAME
+      return 0
+    fi
+
+    suggested="$(argus_acr_default_unique_candidate)"
+    if [[ "$suggested" == "$AZURE_ACR_NAME" ]]; then
+      suggested="argusengine$(date +%m%d%H%M%S)"
+    fi
+
+    argus_warn "ACR DNS name '${AZURE_ACR_NAME}.azurecr.io' is already in use outside this resource group."
+    AZURE_ACR_NAME="$(argus_prompt_acr_name_collision "$AZURE_ACR_NAME" "$suggested")"
+    argus_upsert_env "$env_file" AZURE_ACR_NAME "$AZURE_ACR_NAME"
+  done
+}
+
 argus_azure_ensure_resources() {
   argus_azure_login_if_needed
   argus_azure_ensure_containerapp_extension
@@ -365,6 +449,8 @@ argus_azure_ensure_resources() {
     --name "$AZURE_RESOURCE_GROUP" \
     --location "$AZURE_LOCATION" \
     --output none
+
+  argus_azure_resolve_acr_name
 
   if ! az acr show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_ACR_NAME" >/dev/null 2>&1; then
     argus_log "Creating Azure Container Registry: $AZURE_ACR_NAME"

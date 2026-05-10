@@ -1,4 +1,4 @@
-# Run from the repository root:
+﻿# Run from the repository root:
 # docker compose -f deploy/docker-compose.yml up -d --build
 #
 # Project-specific deployment version rule:
@@ -292,10 +292,18 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      command-center-bootstrapper:
+        condition: service_completed_successfully
 
-    param($m)
-    $m.Groups[1].Value + "    depends_on:`r`n      postgres:`r`n        condition: service_healthy`r`n      redis:`r`n        condition: service_healthy`r`n      rabbitmq:`r`n        condition: service_healthy`r`n      command-center-bootstrapper:`r`n        condition: service_completed_successfully`r`n" + $m.Groups[2].Value
-
+  command-center-realtime:
     image: argus-engine/command-center-realtime:${ARGUS_ENGINE_VERSION:-2.6.3}
     restart: unless-stopped
     build:
@@ -315,10 +323,18 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      command-center-bootstrapper:
+        condition: service_completed_successfully
 
-    param($m)
-    $m.Groups[1].Value + "    depends_on:`r`n      postgres:`r`n        condition: service_healthy`r`n      redis:`r`n        condition: service_healthy`r`n      rabbitmq:`r`n        condition: service_healthy`r`n      command-center-bootstrapper:`r`n        condition: service_completed_successfully`r`n" + $m.Groups[2].Value
-
+  command-center-bootstrapper:
     image: argus-engine/command-center-bootstrapper:${ARGUS_ENGINE_VERSION:-2.6.3}
 
     build:

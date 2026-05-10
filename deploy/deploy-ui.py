@@ -86,10 +86,14 @@ class State:
         self.phases = [{**d, "pct": 0, "status": "pending", "detail": "", "active_task": ""} for d in PHASE_DEFS]
         self.cur = 0
         self.logs = []          # filtered display logs
-        self.all_logs = []      # every raw line
+        self.all_logs = []      # every raw line (for error dump)
+        self.error_lines = []   # lines containing errors
         self.spin_i = 0
-        self.start = time.time()
-        self.phase_start = time.time()
+        now = time.time()
+        self.start = now
+        self.phase_start = now
+        self.last_activity = now   # watchdog: last time we saw output
+        self.stall_warned = False
         # build tracking
         self.build_total = 0;  self.build_done = 0
         self.pub_total   = 0;  self.pub_done   = 0
@@ -99,6 +103,9 @@ class State:
         self.compose_total = 21
         # events for verbose status
         self.current_event = ""   # short single-line current activity
+
+    STALL_WARN_SECS  = 60   # show warning after 60s silence
+    STALL_ABORT_SECS = 600  # suggest abort after 10min silence
 
     def ph(self, pid=None):
         if pid is None: return self.phases[self.cur] if self.cur < len(self.phases) else None
@@ -137,7 +144,14 @@ def feed(s: State, raw: str):
     ll = line.lower()
 
     s.all_logs.append(line)
-    if len(s.all_logs) > 1000: s.all_logs = s.all_logs[-1000:]
+    if len(s.all_logs) > 2000: s.all_logs = s.all_logs[-2000:]
+    s.last_activity = time.time()
+    s.stall_warned = False
+
+    # Track error lines for diagnostics
+    if any(x in ll for x in ("error", "fatal", "fail", "cannot", "permission denied", "exception")):
+        s.error_lines.append(line)
+        if len(s.error_lines) > 200: s.error_lines = s.error_lines[-200:]
 
     # Skip noise
     if line.startswith("+ ") or line.startswith("++ "): return
@@ -329,6 +343,10 @@ def render(s: State, final=False, rc=None):
     def hbar(row, ch="─"):
         out.append(f"{mv(row,1)}{C_SEP}{ch*W}{rst()}")
 
+    # ── Stall detection ───────────────────────────────────────────────────────
+    idle_secs = time.time() - s.last_activity if not final else 0
+    is_stalled = idle_secs >= State.STALL_WARN_SECS
+
     # ── Header ────────────────────────────────────────────────────────────────
     title = " ARGUS ENGINE  ▸  DEPLOYMENT "
     pad   = max(0, (W - len(title)) // 2)
@@ -399,34 +417,53 @@ def render(s: State, final=False, rc=None):
     wr(row, f"  {C_WHITE}{bold()}Overall  {rst()}{C_GREEN}{BF*of}{C_BAR_E}{BE*(OW-of)}{rst()}  {bold()}{ov:3d}%{rst()}")
     row += 1
 
-    # ── Current event banner ──────────────────────────────────────────────────
-    if s.current_event:
-        hbar(row, "─"); row += 1
-        ev = s.current_event[:W-6]
-        wr(row, f"  {C_AMBER}{bold()}▶ {ev}{rst()}")
+    # ── Heartbeat + current event banner ──────────────────────────────────────
+    hbar(row, "─"); row += 1
+    if is_stalled:
+        idle_m, idle_s = divmod(int(idle_secs), 60)
+        if idle_secs >= State.STALL_ABORT_SECS:
+            wr(row, f"  {C_RED}{bold()}⚠ STALL DETECTED: no output for {idle_m}m{idle_s}s — process may be hung. Press Ctrl+C to abort.{rst()}")
+        else:
+            wr(row, f"  {C_WARN}{bold()}⏳ Waiting for output… ({idle_m}m{idle_s}s since last activity){rst()}")
+        row += 1
+    elif s.current_event:
+        # Show last activity age when > 5s so user knows it's alive
+        idle_tag = ""
+        if idle_secs > 5:
+            idle_tag = f"  {dim()}{C_GREY}({int(idle_secs)}s ago){rst()}"
+        ev = s.current_event[:W-20]
+        wr(row, f"  {C_AMBER}{bold()}▶ {ev}{rst()}{idle_tag}")
+        row += 1
+    else:
+        wr(row, f"  {C_MUTED}{sp} Waiting for deployment output…{rst()}")
         row += 1
 
     # ── Final result ──────────────────────────────────────────────────────────
     if final:
-        hbar(row, "─"); row += 1
+        hbar(row, "═"); row += 1
         if rc == 0:
             wr(row, f"  {C_GREEN}{bold()}✔  Deployment complete  — {mins:02d}:{secs:02d}{rst()}")
         else:
-            wr(row, f"  {C_RED}{bold()}✘  Deployment FAILED (exit {rc})  — check log below{rst()}")
+            wr(row, f"  {C_RED}{bold()}✘  Deployment FAILED (exit {rc})  — diagnostic report saved below{rst()}")
         row += 1
 
     hbar(row); row += 1
 
     # ── Log pane ──────────────────────────────────────────────────────────────
     log_rows = max(3, rows - row - 1)
-    wr(row, f"  {dim()}{C_GREY}Recent Output{rst()}"); row += 1
+    label = "Errors" if final and rc and rc != 0 and s.error_lines else "Recent Output"
+    wr(row, f"  {dim()}{C_GREY}{label}{rst()}"); row += 1
 
-    SKIP = re.compile(r'^(ARGUS_|#\d+)')
-    visible = [l for l in s.logs if not SKIP.match(l)][-log_rows:]
+    SKIP_RE = re.compile(r'^(ARGUS_|#\d+)')
+    if final and rc and rc != 0 and s.error_lines:
+        visible = s.error_lines[-log_rows:]
+    else:
+        visible = [l for l in s.logs if not SKIP_RE.match(l)][-log_rows:]
+
     for lg in visible:
         if row >= rows: break
         ll2 = lg.lower()
-        if any(x in ll2 for x in ("error","fatal","failed","cannot","permission denied")):
+        if any(x in ll2 for x in ("error","fatal","failed","cannot","permission denied","exception")):
             c = C_RED
         elif any(x in ll2 for x in ("warning","warn")):
             c = C_WARN
@@ -487,18 +524,98 @@ def main():
             if not done: time.sleep(0.1)
 
         proc.wait()
-        if proc.returncode == 0:
+        rc = proc.returncode
+        if rc == 0:
             for p in state.phases:
                 if p["status"] not in ("skipped",): p["status"]="done"; p["pct"]=100
         else:
             for p in state.phases:
                 if p["status"] == "running": p["status"] = "failed"
-        render(state, final=True, rc=proc.returncode)
+
+        # Write structured error report for AI agent diagnostics
+        if rc != 0:
+            _write_error_report(state, rc)
+
+        render(state, final=True, rc=rc)
         try: sys.stdin.readline()
         except Exception: time.sleep(5)
     finally:
         sys.stdout.write(f"{E}[?25h{E}[?1049l"); sys.stdout.flush()
+
+    # After leaving alt-screen, print error report path if failed
+    if proc.returncode != 0:
+        report = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "logs", "deploy_error_report.txt")
+        if os.path.isfile(report):
+            print(f"\n{C_RED}{bold()}Deployment failed.{rst()}")
+            print(f"Structured error report saved to: {C_WARN}{report}{rst()}")
+            print(f"Paste the contents of that file to an AI coding agent for diagnosis.\n")
     sys.exit(proc.returncode)
+
+
+def _write_error_report(state: State, rc: int):
+    """Write a structured diagnostic file that can be pasted to an AI agent."""
+    report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    os.makedirs(report_dir, exist_ok=True)
+    report_path = os.path.join(report_dir, "deploy_error_report.txt")
+
+    elapsed = time.time() - state.start
+    mins, secs = divmod(int(elapsed), 60)
+
+    lines = []
+    lines.append("="*80)
+    lines.append("ARGUS ENGINE — DEPLOYMENT ERROR REPORT")
+    lines.append(f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"Exit code: {rc}")
+    lines.append(f"Total elapsed: {mins}m {secs}s")
+    lines.append(f"Command: {' '.join(sys.argv)}")
+    lines.append("="*80)
+
+    lines.append("\n## Phase Summary")
+    for ph in state.phases:
+        lines.append(f"  [{ph['status']:>8}] {ph['name']:<25} {ph['pct']:3d}%  {ph.get('detail','')}")
+
+    lines.append("\n## Failed Phase Detail")
+    for ph in state.phases:
+        if ph["status"] == "failed":
+            lines.append(f"  Phase: {ph['name']}")
+            lines.append(f"  Description: {ph['desc']}")
+            task_key = ph.get("active_task", "")
+            task_txt = ph.get("tasks", {}).get(task_key, "")
+            if task_txt:
+                lines.append(f"  Active task at failure: {task_txt}")
+
+    if state.error_lines:
+        lines.append(f"\n## Error Lines ({len(state.error_lines)} total)")
+        for el in state.error_lines[-50:]:
+            lines.append(f"  {el}")
+
+    lines.append(f"\n## Last 80 Lines of Raw Output")
+    for al in state.all_logs[-80:]:
+        lines.append(f"  {al}")
+
+    lines.append("\n## Build/Publish Service Status")
+    if state.pub_status:
+        for svc, st in sorted(state.pub_status.items()):
+            lines.append(f"  {svc}: {st}")
+    else:
+        lines.append("  (no service builds tracked)")
+
+    lines.append("\n## Compose Container Status")
+    if state.compose_up:
+        for c in sorted(state.compose_up):
+            lines.append(f"  {c}: started")
+        lines.append(f"  Total up: {len(state.compose_up)}/{state.compose_total}")
+    else:
+        lines.append("  (no containers tracked)")
+
+    lines.append("\n" + "="*80)
+    lines.append("To diagnose: paste this entire file to an AI coding agent.")
+    lines.append("="*80 + "\n")
+
+    with open(report_path, "w") as f:
+        f.write("\n".join(lines))
+
 
 if __name__ == "__main__":
     main()

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Show focused Docker Compose status and logs for Nightmare v2.
+# Show focused Docker Compose status and logs for Argus Engine.
 #
 # Usage:
 #   ./deploy/logs.sh
 #   ./deploy/logs.sh command-center worker-spider
 #   ./deploy/logs.sh --follow worker-enum
 #   TAIL=300 ./deploy/logs.sh --errors
+#   ERROR_CONTEXT=25 ./deploy/logs.sh --errors command-center-web
 set -euo pipefail
 
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,6 +20,40 @@ TAIL="${TAIL:-160}"
 FOLLOW=0
 ERRORS_ONLY=0
 SERVICES=()
+
+# Keep a minimum of 15 lines of context around errors. Callers may increase this
+# with ERROR_CONTEXT=25, but values lower than 15 are promoted to 15.
+ERROR_CONTEXT="${ERROR_CONTEXT:-15}"
+if ! [[ "$ERROR_CONTEXT" =~ ^[0-9]+$ ]]; then
+  ERROR_CONTEXT=15
+fi
+if (( ERROR_CONTEXT < 15 )); then
+  ERROR_CONTEXT=15
+fi
+
+# Match the same broad error-like strings as before, but print surrounding
+# context so stack traces and request details are visible.
+ERROR_PATTERN='(^|[^a-z])(fail|failed|fatal|panic|exception|error|critical|unhandled| 404 |status=404|optionsvalidationexception)([^a-z]|$)'
+
+usage() {
+  cat <<'EOF'
+Usage: ./deploy/logs.sh [--follow] [--errors] [--tail N] [service...]
+
+Examples:
+  ./deploy/logs.sh
+  ./deploy/logs.sh command-center worker-spider
+  ./deploy/logs.sh --errors
+  ./deploy/logs.sh --errors command-center-web
+  ERROR_CONTEXT=25 ./deploy/logs.sh --errors
+  ./deploy/logs.sh --follow worker-enum
+
+Options:
+  --errors        Show error-like log lines with at least 15 lines of context
+                  before and after each match.
+  --tail N        Number of recent log lines to inspect per selected service.
+  --follow        Follow logs.
+EOF
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -35,15 +70,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h | --help)
-      cat <<'EOF'
-Usage: ./deploy/logs.sh [--follow] [--errors] [--tail N] [service...]
-
-Examples:
-  ./deploy/logs.sh
-  ./deploy/logs.sh command-center worker-spider
-  ./deploy/logs.sh --errors
-  ./deploy/logs.sh --follow worker-enum
-EOF
+      usage
       exit 0
       ;;
     *)
@@ -53,15 +80,75 @@ EOF
   esac
 done
 
+print_error_context() {
+  local tmp
+  tmp="$(mktemp "${TMPDIR:-/tmp}/argus-logs-errors.XXXXXX")"
+
+  # Capture stderr too, because "no such service" and Docker/Compose failures are
+  # diagnostic context the caller needs.
+  compose logs --tail "$TAIL" "${SERVICES[@]}" >"$tmp" 2>&1 || true
+
+  awk -v ctx="$ERROR_CONTEXT" -v pat="$ERROR_PATTERN" '
+    {
+      lines[NR] = $0
+      lower = tolower($0)
+
+      if (lower ~ pat) {
+        start = NR - ctx
+        if (start < 1) {
+          start = 1
+        }
+
+        finish = NR + ctx
+        for (i = start; i <= finish; i++) {
+          mark[i] = 1
+        }
+
+        matched[NR] = 1
+      }
+    }
+
+    END {
+      printed = 0
+      in_block = 0
+      block_no = 0
+
+      for (i = 1; i <= NR; i++) {
+        if (mark[i]) {
+          if (!in_block) {
+            if (printed) {
+              print ""
+            }
+
+            block_no++
+            printf "---- error context block %d (±%d lines) ----\n", block_no, ctx
+            in_block = 1
+          }
+
+          prefix = matched[i] ? ">> " : "   "
+          printf "%s%s\n", prefix, lines[i]
+          printed = 1
+        } else {
+          in_block = 0
+        }
+      }
+
+      if (!printed) {
+        print "(no recent error-like log lines found)"
+      }
+    }
+  ' "$tmp"
+
+  rm -f "$tmp"
+}
+
 printf '== Compose status ==\n'
 compose ps || true
 printf '\n'
 
 if [[ "$ERRORS_ONLY" == "1" ]]; then
-  printf '== Recent error-like log lines ==\n'
-  compose logs --tail "$TAIL" "${SERVICES[@]}" \
-    | grep -Ei '(^|[^a-z])(fail|failed|fatal|panic|exception|error|critical|unhandled| 404 |status=404|OptionsValidationException)([^a-z]|$)' \
-    || true
+  printf '== Recent error-like log context, tail=%s, context=±%s ==\n' "$TAIL" "$ERROR_CONTEXT"
+  print_error_context
   exit 0
 fi
 
@@ -70,8 +157,6 @@ if [[ "$FOLLOW" == "1" ]]; then
   compose logs --tail "$TAIL" -f "${SERVICES[@]}"
 else
   compose logs --tail "$TAIL" "${SERVICES[@]}"
-  printf '\n== Error-like highlights ==\n'
-  compose logs --tail "$TAIL" "${SERVICES[@]}" \
-    | grep -Ei '(^|[^a-z])(fail|failed|fatal|panic|exception|error|critical|unhandled| 404 |status=404|OptionsValidationException)([^a-z]|$)' \
-    || true
+  printf '\n== Error-like highlights with context ==\n'
+  print_error_context
 fi

@@ -1,59 +1,52 @@
 @page "/development"
-
-@using System.Text
 @using System.Globalization
-@using System.Text.Json
 @using System.Net
+@using System.Net.Http.Json
 @using System.Net.Sockets
+@using System.Text
+@using System.Text.Json
+@using ArgusEngine.CommandCenter.Models
+@using ArgusEngine.CommandCenter.Realtime
+@using ArgusEngine.CommandCenter.Web.Clients
+@using ArgusEngine.Domain.Entities
+@using ArgusEngine.Harness.Core
 @using Microsoft.AspNetCore.Components
 @using Microsoft.Extensions.Configuration
 @using Microsoft.Extensions.Hosting
-@using ArgusEngine.Harness.Core
-@using ArgusEngine.Domain.Entities
-@using ArgusEngine.CommandCenter.Web.Clients
-
 @using Microsoft.Extensions.Logging
 @using Microsoft.JSInterop
 @inject MaintenanceApiClient MaintenanceApi
 @inject LocalDockerClient DockerClient
-
 @inject IJSRuntime Js
 @inject ILogger<Development> Logger
 @inject IConfiguration Configuration
 @inject IHostEnvironment HostEnvironment
-@using ArgusEngine.CommandCenter.Realtime
-@using ArgusEngine.CommandCenter.Models
 @inject DiscoveryRealtimeClient Realtime
 @inject NavigationManager Navigation
 @implements IDisposable
 
 <PageTitle>Development - Argus Engine</PageTitle>
 
-<div class="dev-page">
-    <div class="page-header">
-        <div class="header-content">
-            <p class="eyebrow">Diagnostic Suite</p>
-            <h1>Development & Diagnostics</h1>
-            <p class="description">Execute internal test harness to verify worker integrity and cross-component connectivity.</p>
-        </div>
-    </div>
+<div class="page-shell development-page">
+    <section class="hero-card">
+        <p class="eyebrow">Diagnostic Suite</p>
+        <h1>Development &amp; Diagnostics</h1>
+        <p>Execute internal test harnesses, manage local workers, watch real-time system events, and collect deployment-wide error context.</p>
+    </section>
 
-    <section class="panel">
+    <section class="surface-card">
         <div class="section-heading">
-            <div class="title-group">
+            <div>
                 <h2>Worker Test Harness</h2>
-                <p class="muted">Executes "Health Check" logic within each worker project to exercise core functionality.</p>
+                <p>Executes health-check logic within each worker project to exercise core functionality.</p>
             </div>
-
-            <button type="button" class="btn primary glow" disabled="@_busy" @onclick="RunHarnessAsync">
+            <button class="btn btn-primary" disabled="@_busy" @onclick="RunHarnessAsync">
                 @if (_busy)
                 {
-                    <span class="spinner"></span>
                     <span>Running Diagnostics...</span>
                 }
                 else
                 {
-                    <i class="ms-Icon ms-Icon--TestBeaker"></i>
                     <span>Run Test Harness</span>
                 }
             </button>
@@ -61,124 +54,98 @@
 
         @if (_result != null)
         {
-            <div class="harness-summary-card">
-                <div class="summary-stat">
-                    <span class="label">Executed At</span>
-                    <span class="value">@_result.ExecutedAtUtc.ToLocalTime().ToString("HH:mm:ss")</span>
-                </div>
-
-                <div class="summary-stat">
-                    <span class="label">Overall Status</span>
-                    @if (_result.WorkerResults.All(r => r.Success))
-                    {
-                        <span class="value success">HEALTHY</span>
-                    }
-                    else
-                    {
-                        <span class="value danger">DEGRADED</span>
-                    }
-                </div>
-
-                <div class="summary-stat">
-                    <span class="label">Success Rate</span>
-                    <span class="value">@(_result.WorkerResults.Count(r => r.Success)) / @(_result.WorkerResults.Count)</span>
-                </div>
+            <div class="stat-grid">
+                <article class="stat-card">
+                    <span>Executed At</span>
+                    <strong>@_result.ExecutedAtUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)</strong>
+                </article>
+                <article class="stat-card">
+                    <span>Overall Status</span>
+                    <strong>@(_result.WorkerResults.All(r => r.Success) ? "HEALTHY" : "DEGRADED")</strong>
+                </article>
+                <article class="stat-card">
+                    <span>Success Rate</span>
+                    <strong>@_result.WorkerResults.Count(r => r.Success) / @_result.WorkerResults.Count</strong>
+                </article>
             </div>
 
-            <div class="grid-container">
-                <RadzenDataGrid TItem="WorkerHealthCheckResultDto"
-                                Data="@_result.WorkerResults"
-                                AllowSorting="true"
-                                class="dev-grid">
-                    <Columns>
-                        <RadzenDataGridColumn TItem="WorkerHealthCheckResultDto" Property="WorkerName" Title="Worker Component" Width="220px">
-                            <Template Context="r">
-                                <div class="worker-name-cell">
-                                    <span class="kind-indicator"></span>
-                                    <strong>@r.WorkerName</strong>
-                                </div>
-                            </Template>
-                        </RadzenDataGridColumn>
-
-                        <RadzenDataGridColumn TItem="WorkerHealthCheckResultDto" Property="Success" Title="Result" Width="120px">
-                            <Template Context="r">
-                                <span class="badge @(r.Success ? "badge-green" : "badge-red")">
-                                    @(r.Success ? "PASSED" : "FAILED")
-                                </span>
-                            </Template>
-                        </RadzenDataGridColumn>
-
-                        <RadzenDataGridColumn TItem="WorkerHealthCheckResultDto" Property="Message" Title="Diagnostic Message" />
-
-                        <RadzenDataGridColumn TItem="WorkerHealthCheckResultDto" Title="Detailed Log" Width="140px" TextAlign="TextAlign.Center">
-                            <Template Context="r">
-                                @if (!string.IsNullOrEmpty(r.Output))
-                                {
-                                    <button type="button" class="btn small outline" @onclick="@(() => ShowOutputAsync(r))">View Output</button>
-                                }
-                                else
-                                {
-                                    <span class="muted small">No log available</span>
-                                }
-                            </Template>
-                        </RadzenDataGridColumn>
-                    </Columns>
-                </RadzenDataGrid>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Worker</th>
+                            <th>Status</th>
+                            <th>Output</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in _result.WorkerResults)
+                        {
+                            <tr>
+                                <td>@r.WorkerName</td>
+                                <td>@(r.Success ? "PASSED" : "FAILED")</td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(r.Output))
+                                    {
+                                        <button class="btn btn-secondary" @onclick="() => ShowOutputAsync(r)">View Output</button>
+                                    }
+                                    else
+                                    {
+                                        <span>No log available</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
             </div>
         }
         else if (!_busy)
         {
-            <div class="harness-empty">
-                <div class="empty-icon"></div>
+            <div class="empty-state">
                 <h3>Ready to test</h3>
                 <p>Click the button above to begin the automated worker health check suite.</p>
             </div>
         }
     </section>
 
-    <section class="panel">
+    <section class="surface-card">
         <div class="section-heading">
-            <div class="title-group">
+            <div>
                 <h2>Local Worker Scaling</h2>
-                <p class="muted">Manage local docker compose workers. Scaling down destroys containers immediately for failure testing.</p>
+                <p>Manage local Docker Compose workers. Scaling down destroys containers immediately for failure testing.</p>
             </div>
-            <button type="button" class="btn small outline" disabled="@_loadingDockerWorkers" @onclick="LoadDockerWorkersAsync">
+            <button class="btn btn-secondary" disabled="@_loadingDockerWorkers" @onclick="LoadDockerWorkersAsync">
                 @if (_loadingDockerWorkers)
                 {
-                    <span class="spinner"></span>
                     <span>Refreshing...</span>
                 }
                 else
                 {
-                    <i class="ms-Icon ms-Icon--Refresh"></i>
                     <span>Refresh</span>
                 }
             </button>
         </div>
 
-        <div class="grid-container">
-            <table class="dev-grid" style="width: 100%; border-collapse: collapse;">
+        <div class="table-wrap">
+            <table class="data-table">
                 <thead>
-                    <tr style="border-bottom: 1px solid var(--border-light); text-align: left;">
-                        <th style="padding: 12px 16px;">Worker Service</th>
-                        <th style="padding: 12px 16px;">Containers Running</th>
-                        <th style="padding: 12px 16px;">Actions</th>
+                    <tr>
+                        <th>Worker Service</th>
+                        <th>Containers Running</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var svc in _workerServices)
                     {
                         var count = _dockerWorkers.TryGetValue(svc, out var list) ? list.Count : 0;
-                        <tr style="border-bottom: 1px solid var(--border-light);">
-                            <td style="padding: 12px 16px;"><strong>@svc</strong></td>
-                            <td style="padding: 12px 16px;">@count</td>
-                            <td style="padding: 12px 16px;">
-                                <button class="btn small outline" @onclick="() => ScaleUpWorkerAsync(svc)" disabled="@(count == 0 && !_dockerWorkers.ContainsKey(svc))">
-                                    <i class="ms-Icon ms-Icon--Add"></i> Scale Up
-                                </button>
-                                <button class="btn small danger-outline" @onclick="() => ScaleDownWorkerAsync(svc)" disabled="@(count == 0)" style="margin-left: 8px;">
-                                    <i class="ms-Icon ms-Icon--Remove"></i> Scale Down (Kill)
-                                </button>
+                        <tr>
+                            <td>@svc</td>
+                            <td>@count</td>
+                            <td class="button-row">
+                                <button class="btn btn-secondary" @onclick="() => ScaleUpWorkerAsync(svc)">Scale Up</button>
+                                <button class="btn btn-danger" disabled="@(count == 0)" @onclick="() => ScaleDownWorkerAsync(svc)">Scale Down (Kill)</button>
                             </td>
                         </tr>
                     }
@@ -187,230 +154,214 @@
         </div>
     </section>
 
-    <section class="panel event-feed-panel">
+    <section class="surface-card">
         <div class="section-heading">
-            <div class="title-group">
+            <div>
                 <h2>Real-Time System Events</h2>
-                <p class="muted">Live chronological feed of domain events as they occur across the engine.</p>
+                <p>Live chronological feed of domain events as they occur across the engine.</p>
             </div>
-            <div class="actions">
-                <div class="realtime-status @(Realtime.IsConnected ? "online" : "offline")">
-                    <span class="status-dot"></span>
-                    <span>@(Realtime.IsConnected ? "Live" : "Connecting...")</span>
-                </div>
-                <button type="button" class="btn small outline" @onclick="() => _liveEvents.Clear()">
-                    <i class="ms-Icon ms-Icon--Delete"></i>
-                    <span>Clear Feed</span>
-                </button>
+            <div class="button-row">
+                <span class="status-pill @(Realtime.IsConnected ? "ok" : "loading")">@(Realtime.IsConnected ? "Live" : "Connecting...")</span>
+                <button class="btn btn-secondary" @onclick="() => _liveEvents.Clear()">Clear Feed</button>
             </div>
         </div>
 
-        <div class="event-feed-container">
-            @if (_liveEvents.Count == 0)
-            {
-                <div class="feed-empty">
-                    <p>Waiting for system events...</p>
-                </div>
-            }
-            else
-            {
-                <div class="feed-scroll">
-                    @foreach (var evt in _liveEvents.OrderByDescending(e => e.OccurredAtUtc))
-                    {
-                        <div class="feed-item" @key="evt.OccurredAtUtc.Ticks + evt.Kind.GetHashCode()">
-                            <span class="event-time">@evt.OccurredAtUtc.ToLocalTime().ToString("HH:mm:ss")</span>
-                            <span class="badge badge-scope @evt.Scope">@evt.Scope</span>
-                            <span class="event-kind">@evt.Kind</span>
-                            <span class="event-summary">@evt.Summary</span>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
+        @if (_liveEvents.Count == 0)
+        {
+            <div class="empty-state">Waiting for system events...</div>
+        }
+        else
+        {
+            <div class="event-list">
+                @foreach (var evt in _liveEvents.OrderByDescending(e => e.OccurredAtUtc))
+                {
+                    <article class="event-row">
+                        <time>@evt.OccurredAtUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)</time>
+                        <strong>@evt.Scope</strong>
+                        <span>@evt.Kind</span>
+                        <p>@evt.Summary</p>
+                    </article>
+                }
+            </div>
+        }
     </section>
 
-    <section class="panel error-log-panel">
+    <section class="surface-card">
         <div class="section-heading">
-            <div class="title-group">
+            <div>
                 <h2>System-Wide Error Log</h2>
-                <p class="muted">Centralized collection of all Critical and Error level logs from all system components.</p>
+                <p>
+                    Collects structured diagnostics plus Docker log errors from every Argus Compose container.
+                    Each Docker log match includes at least 15 lines of surrounding context.
+                </p>
+                @if (!string.IsNullOrWhiteSpace(_errorCollectionStatus))
+                {
+                    <p class="muted">@_errorCollectionStatus</p>
+                }
             </div>
-
-            <div class="actions">
-                <button type="button" class="btn small outline" @onclick="RefreshErrorsAsync">
+            <div class="button-row">
+                <button class="btn btn-secondary" disabled="@_errorsLoading" @onclick="RefreshErrorsAsync">
                     @if (_errorsLoading)
                     {
-                        <span class="spinner"></span>
                         <span>Loading...</span>
                     }
                     else
                     {
-                        <i class="ms-Icon ms-Icon--Refresh"></i>
                         <span>Refresh</span>
                     }
                 </button>
-
-                <button type="button" class="btn small outline" disabled="@(_errors.Count == 0)" @onclick="DownloadConcatenatedErrorsAsync">
-                    <i class="ms-Icon ms-Icon--Download"></i>
-                    <span>Concatenate All Errors</span>
-                </button>
-
-                <button type="button" class="btn small primary" disabled="@_generatingBugFixPrompt" @onclick="GenerateBugFixPromptAsync">
+                <button class="btn btn-secondary" disabled="@(_errorsLoading || _errors.Count == 0)" @onclick="DownloadConcatenatedErrorsAsync">Concatenate All Errors</button>
+                <button class="btn btn-secondary" disabled="@(_errorsLoading || _errors.Count == 0 || _generatingBugFixPrompt)" @onclick="GenerateBugFixPromptAsync">
                     @if (_generatingBugFixPrompt)
                     {
-                        <span class="spinner"></span>
                         <span>Generating...</span>
                     }
                     else
                     {
-                        <i class="ms-Icon ms-Icon--Robot"></i>
                         <span>Generate Bug Fix Prompt</span>
                     }
                 </button>
-
-                <button type="button" class="btn small danger-outline" @onclick="ClearErrorsAsync">
-                    <i class="ms-Icon ms-Icon--Delete"></i>
-                    <span>Clear All</span>
-                </button>
+                <button class="btn btn-danger" disabled="@_errorsLoading" @onclick="ClearErrorsAsync">Clear Structured Errors</button>
             </div>
+        </div>
+
+        <div class="stat-grid">
+            <article class="stat-card">
+                <span>Total Errors</span>
+                @if (_errorsLoading)
+                {
+                    <strong>Loading...</strong>
+                }
+                else
+                {
+                    <strong>@_errors.Count</strong>
+                }
+            </article>
+            <article class="stat-card">
+                <span>Components Covered</span>
+                @if (_errorsLoading)
+                {
+                    <strong>Loading...</strong>
+                }
+                else
+                {
+                    <strong>@_errors.Select(e => e.Component).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).Count()</strong>
+                }
+            </article>
+            <article class="stat-card">
+                <span>Docker Log Context</span>
+                <strong>±15 lines</strong>
+            </article>
         </div>
 
         @if (_selectedError != null)
         {
-            <div class="error-detail-card">
-                <div class="error-detail-header">
+            <aside class="detail-panel">
+                <div class="section-heading">
                     <div>
                         <p class="eyebrow">Selected Error</p>
                         <h3>@BuildErrorSummary(_selectedError)</h3>
-                        <p class="muted">@BuildContextLine(_selectedError)</p>
+                        <p>@BuildContextLine(_selectedError)</p>
                     </div>
-
-                    <button type="button" class="btn small outline" @onclick="CloseErrorDetail">Close</button>
+                    <button class="btn btn-secondary" @onclick="CloseErrorDetail">Close</button>
                 </div>
 
-                <div class="error-detail-meta">
-                    <div>
-                        <span class="label">Time</span>
-                        <strong>@_selectedError.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz")</strong>
-                    </div>
-                    <div>
-                        <span class="label">Component</span>
-                        <strong>@Fallback(_selectedError.Component, "unknown")</strong>
-                    </div>
-                    <div>
-                        <span class="label">Logger</span>
-                        <strong>@Fallback(_selectedError.LoggerName, "unknown")</strong>
-                    </div>
-                    <div>
-                        <span class="label">Machine</span>
-                        <strong>@Fallback(_selectedError.MachineName, "unknown")</strong>
-                    </div>
-                </div>
+                <dl class="detail-grid">
+                    <dt>Time</dt>
+                    <dd>@_selectedError.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture)</dd>
+                    <dt>Component</dt>
+                    <dd>@Fallback(_selectedError.Component, "unknown")</dd>
+                    <dt>Logger</dt>
+                    <dd>@Fallback(_selectedError.LoggerName, "unknown")</dd>
+                    <dt>Machine</dt>
+                    <dd>@Fallback(_selectedError.MachineName, "unknown")</dd>
+                </dl>
 
-                <pre class="stack-trace">@BuildFullErrorDetail(_selectedError)</pre>
-            </div>
+                <pre class="log-block">@BuildFullErrorDetail(_selectedError)</pre>
+            </aside>
         }
 
         @if (!string.IsNullOrWhiteSpace(_bugFixPrompt))
         {
-            <div class="bug-fix-prompt-card">
-                <div class="bug-fix-prompt-header">
+            <aside class="detail-panel">
+                <div class="section-heading">
                     <div>
                         <p class="eyebrow">Generated AI Agent Prompt</p>
                         <h3>Investigate System-Wide Errors and Create a PR</h3>
-                        <p class="muted">
-                            Generated @(_bugFixPromptGeneratedAtUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "unknown").
+                        <p>
+                            Generated @(_bugFixPromptGeneratedAtUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture) ?? "unknown").
                             Credential values are intentionally redacted; the agent must obtain them through approved secure channels.
                         </p>
                     </div>
-
-                    <div class="actions">
-                        <button type="button" class="btn small outline" @onclick="CopyBugFixPromptAsync">
-                            <i class="ms-Icon ms-Icon--Copy"></i>
-                            <span>Copy Prompt</span>
-                        </button>
-                        <button type="button" class="btn small outline" @onclick="CloseBugFixPrompt">
-                            <span>Close</span>
-                        </button>
+                    <div class="button-row">
+                        <button class="btn btn-secondary" @onclick="CopyBugFixPromptAsync">Copy Prompt</button>
+                        <button class="btn btn-secondary" @onclick="CloseBugFixPrompt">Close</button>
                     </div>
                 </div>
-
-                <textarea class="bug-fix-prompt-textarea" readonly>@_bugFixPrompt</textarea>
-            </div>
+                <pre class="log-block">@_bugFixPrompt</pre>
+            </aside>
         }
 
-        <div class="grid-container">
-            <RadzenDataGrid TItem="SystemError"
-                            Data="@_errors"
-                            AllowPaging="true"
-                            PageSize="10"
-                            AllowSorting="true"
-                            IsLoading="@_errorsLoading"
-                            class="dev-grid error-grid">
-                <Columns>
-                    <RadzenDataGridColumn TItem="SystemError" Property="Timestamp" Title="Time" Width="160px">
-                        <Template Context="e">
-                            @e.Timestamp.ToLocalTime().ToString("MM/dd HH:mm:ss")
-                        </Template>
-                    </RadzenDataGridColumn>
-
-                    <RadzenDataGridColumn TItem="SystemError" Property="Component" Title="Component" Width="140px">
-                        <Template Context="e">
-                            <span class="badge badge-component">@Fallback(e.Component, "unknown")</span>
-                        </Template>
-                    </RadzenDataGridColumn>
-
-                    <RadzenDataGridColumn TItem="SystemError" Property="LogLevel" Title="Level" Width="100px">
-                        <Template Context="e">
-                            <span class="badge @(e.LogLevel == "Critical" ? "badge-critical" : "badge-red")">
-                                @Fallback(e.LogLevel, "Error")
-                            </span>
-                        </Template>
-                    </RadzenDataGridColumn>
-
-                    <RadzenDataGridColumn TItem="SystemError" Property="Message" Title="Error Context">
-                        <Template Context="e">
-                            <div class="error-message-cell">
-                                <strong>@BuildErrorSummary(e)</strong>
-                                <span>@BuildContextLine(e)</span>
-                            </div>
-                        </Template>
-                    </RadzenDataGridColumn>
-
-                    <RadzenDataGridColumn TItem="SystemError" Title="Details" Width="130px" TextAlign="TextAlign.Center">
-                        <Template Context="e">
-                            <button type="button"
-                                    class="btn small outline"
-                                    @onclick="@(() => ToggleErrorDetail(e))">
-                                @(HasStackTrace(e) ? "Stack Trace" : "Details")
-                            </button>
-                        </Template>
-                    </RadzenDataGridColumn>
-                </Columns>
-            </RadzenDataGrid>
-        </div>
+        @if (_errorsLoading)
+        {
+            <div class="empty-state">Loading structured errors and Docker logs from every deployment component...</div>
+        }
+        else if (_errors.Count == 0)
+        {
+            <div class="empty-state">No errors found in structured diagnostics or recent Docker logs.</div>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Component</th>
+                            <th>Level</th>
+                            <th>Summary</th>
+                            <th>Context</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var e in _errors.OrderByDescending(e => e.Timestamp))
+                        {
+                            <tr class="clickable-row" @onclick="() => ToggleErrorDetail(e)">
+                                <td>@e.Timestamp.ToLocalTime().ToString("MM/dd HH:mm:ss", CultureInfo.InvariantCulture)</td>
+                                <td>@Fallback(e.Component, "unknown")</td>
+                                <td>@Fallback(e.LogLevel, "Error")</td>
+                                <td>@BuildErrorSummary(e)</td>
+                                <td>@BuildContextLine(e) @(HasStackTrace(e) ? " • Context captured" : "")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </section>
 </div>
 
 @code {
+    private const int DockerErrorContextLines = 15;
     private bool _busy;
     private bool _generatingBugFixPrompt;
     private bool _errorsLoading = true;
     private bool _errorsReloadRunning;
     private HarnessResultDto? _result;
     private List<SystemError> _errors = new();
-    private List<LiveUiEventDto> _liveEvents = new();
+    private readonly List<LiveUiEventDto> _liveEvents = new();
     private SystemError? _selectedError;
     private string? _bugFixPrompt;
     private DateTimeOffset? _bugFixPromptGeneratedAtUtc;
+    private string? _errorCollectionStatus;
     private readonly CancellationTokenSource _devPollCts = new();
 
     protected override async Task OnInitializedAsync()
     {
         Realtime.DomainEventReceived += OnRealtimeEvent;
-        await Realtime.EnsureStartedAsync(_devPollCts.Token);
-        await RefreshErrorsAsync();
-        await LoadDockerWorkersAsync();
+        await Realtime.EnsureStartedAsync(_devPollCts.Token).ConfigureAwait(false);
+        await RefreshErrorsAsync().ConfigureAwait(false);
+        await LoadDockerWorkersAsync().ConfigureAwait(false);
     }
 
     private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
@@ -418,10 +369,12 @@
         _ = InvokeAsync(() =>
         {
             _liveEvents.Insert(0, evt);
+
             if (_liveEvents.Count > 100)
             {
                 _liveEvents.RemoveAt(_liveEvents.Count - 1);
             }
+
             StateHasChanged();
         });
     }
@@ -435,18 +388,38 @@
 
         _errorsReloadRunning = true;
         _errorsLoading = true;
+        _errorCollectionStatus = "Loading structured diagnostics and Docker logs from every Compose container...";
+
         try
         {
-            _errors = await MaintenanceApi.Client.GetFromJsonAsync<List<SystemError>>("/api/diagnostics/system-errors") ?? new();
+            var structuredErrors = await MaintenanceApi.Client
+                .GetFromJsonAsync<List<SystemError>>("/api/diagnostics/system-errors", _devPollCts.Token)
+                .ConfigureAwait(false) ?? new List<SystemError>();
+
+            var dockerErrors = await DockerClient
+                .GetDeploymentSystemErrorsAsync(tailLines: 2500, contextLines: DockerErrorContextLines, ct: _devPollCts.Token)
+                .ConfigureAwait(false);
+
+            _errors = MergeErrors(structuredErrors, dockerErrors);
 
             if (_selectedError is not null)
             {
                 _selectedError = _errors.FirstOrDefault(error => error.Id == _selectedError.Id);
             }
+
+            _errorCollectionStatus =
+                $"Loaded {structuredErrors.Count.ToString(CultureInfo.InvariantCulture)} structured error(s) and " +
+                $"{dockerErrors.Count.ToString(CultureInfo.InvariantCulture)} Docker log error block(s) across " +
+                $"{_errors.Select(e => e.Component).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString(CultureInfo.InvariantCulture)} component(s).";
+        }
+        catch (OperationCanceledException)
+        {
+            _errorCollectionStatus = "Error collection was canceled.";
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to load system-wide errors for the development diagnostics page.");
+            _errorCollectionStatus = $"Failed to collect all deployment errors: {ex.Message}";
         }
         finally
         {
@@ -455,23 +428,34 @@
         }
     }
 
+    private static List<SystemError> MergeErrors(IEnumerable<SystemError> structuredErrors, IEnumerable<SystemError> dockerErrors)
+    {
+        return structuredErrors
+            .Concat(dockerErrors)
+            .GroupBy(error => error.Id)
+            .Select(group => group.First())
+            .OrderByDescending(error => error.Timestamp)
+            .Take(1000)
+            .ToList();
+    }
+
     private async Task ClearErrorsAsync()
     {
-        if (!await Js.InvokeAsync<bool>("confirm", "Are you sure you want to clear all system errors?"))
+        if (!await Js.InvokeAsync<bool>("confirm", "Are you sure you want to clear structured system errors? Docker log errors will remain until the container logs rotate or the services are recreated.").ConfigureAwait(false))
         {
             return;
         }
 
         try
         {
-            await MaintenanceApi.Client.DeleteAsync("/api/diagnostics/system-errors");
+            await MaintenanceApi.Client.DeleteAsync("/api/diagnostics/system-errors", _devPollCts.Token).ConfigureAwait(false);
             _selectedError = null;
-            await RefreshErrorsAsync();
+            await RefreshErrorsAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to clear system-wide errors from the development diagnostics page.");
-            await Js.InvokeVoidAsync("alert", $"Failed to clear errors: {ex.Message}");
+            await Js.InvokeVoidAsync("alert", $"Failed to clear structured errors: {ex.Message}").ConfigureAwait(false);
         }
     }
 
@@ -483,18 +467,20 @@
 
         try
         {
-            await Task.Delay(500);
-            _result = await MaintenanceApi.Client.GetFromJsonAsync<HarnessResultDto>("/api/diagnostics/harness");
+            await Task.Delay(500, _devPollCts.Token).ConfigureAwait(false);
+            _result = await MaintenanceApi.Client
+                .GetFromJsonAsync<HarnessResultDto>("/api/diagnostics/harness", _devPollCts.Token)
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Harness execution failed from the development diagnostics page.");
-            await Js.InvokeVoidAsync("alert", $"Harness Execution Error: {ex.Message}");
+            await Js.InvokeVoidAsync("alert", $"Harness Execution Error: {ex.Message}").ConfigureAwait(false);
         }
         finally
         {
             _busy = false;
-            await RefreshErrorsAsync();
+            await RefreshErrorsAsync().ConfigureAwait(false);
         }
     }
 
@@ -502,22 +488,22 @@
     {
         try
         {
-            await RefreshErrorsAsync();
-
+            await RefreshErrorsAsync().ConfigureAwait(false);
             var generatedAtUtc = DateTimeOffset.UtcNow;
             var contents = BuildConcatenatedErrorFile(_errors, generatedAtUtc);
             var fileName = $"argus-errors-{generatedAtUtc:yyyyMMdd-HHmmss}.txt";
 
             await Js.InvokeVoidAsync(
-                "argusUi.downloadTextFile",
-                fileName,
-                contents,
-                "text/plain;charset=utf-8");
+                    "argusUi.downloadTextFile",
+                    fileName,
+                    contents,
+                    "text/plain;charset=utf-8")
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to download concatenated system errors from the development diagnostics page.");
-            await Js.InvokeVoidAsync("alert", $"Failed to concatenate errors: {ex.Message}");
+            await Js.InvokeVoidAsync("alert", $"Failed to concatenate errors: {ex.Message}").ConfigureAwait(false);
         }
     }
 
@@ -528,15 +514,14 @@
 
         try
         {
-            await RefreshErrorsAsync();
-
+            await RefreshErrorsAsync().ConfigureAwait(false);
             _bugFixPromptGeneratedAtUtc = DateTimeOffset.UtcNow;
             _bugFixPrompt = BuildBugFixPrompt(_errors, _bugFixPromptGeneratedAtUtc.Value);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to generate the bug-fix prompt from the development diagnostics page.");
-            await Js.InvokeVoidAsync("alert", $"Failed to generate bug fix prompt: {ex.Message}");
+            await Js.InvokeVoidAsync("alert", $"Failed to generate bug fix prompt: {ex.Message}").ConfigureAwait(false);
         }
         finally
         {
@@ -553,12 +538,12 @@
 
         try
         {
-            await Js.InvokeVoidAsync("navigator.clipboard.writeText", _bugFixPrompt);
+            await Js.InvokeVoidAsync("navigator.clipboard.writeText", _bugFixPrompt).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Clipboard copy failed for the generated bug-fix prompt.");
-            await Js.InvokeVoidAsync("alert", "The browser blocked clipboard access. Select the prompt text and copy it manually.");
+            await Js.InvokeVoidAsync("alert", "The browser blocked clipboard access. Select the prompt text and copy it manually.").ConfigureAwait(false);
         }
     }
 
@@ -579,7 +564,7 @@
         sb.AppendLine("Argus Engine Concatenated Error Export");
         sb.AppendLine("=====================================");
         sb.AppendLine();
-        sb.AppendLine("This file contains every system error currently loaded on the Development page.");
+        sb.AppendLine("This file contains every structured diagnostic error and Docker-log error block currently loaded on the Development page.");
         sb.AppendLine("It is intended to be attached to an AI agent task or debugging ticket.");
         sb.AppendLine();
         sb.AppendLine($"Generated UTC: {generatedAtUtc:yyyy-MM-dd HH:mm:ss zzz}");
@@ -598,6 +583,7 @@
         }
 
         var index = 1;
+
         foreach (var error in orderedErrors)
         {
             sb.AppendLine($"--- Error {index.ToString(CultureInfo.InvariantCulture)} of {orderedErrors.Count.ToString(CultureInfo.InvariantCulture)} ---");
@@ -620,23 +606,15 @@
         sb.AppendLine("# Argus Engine System-Wide Error Bug Fix Task");
         sb.AppendLine();
         sb.AppendLine("You are an AI software engineering agent working on the Argus Engine repository.");
-        sb.AppendLine("Your job is to investigate every error listed below, identify shared root causes, implement fixes, add or update regression coverage, run the relevant validation commands, and create a pull request for a developer to review and merge.");
+        sb.AppendLine("Investigate every error listed below, identify shared root causes, implement fixes, add or update regression coverage, run validation commands, and create a pull request.");
         sb.AppendLine();
         sb.AppendLine("## Repository and PR instructions");
         sb.AppendLine("- Repository: https://github.com/derekdperez/Argus-Engine");
-        sb.AppendLine("- Create a new branch with a descriptive name, for example `fix/development-system-error-log-failures`.");
+        sb.AppendLine("- Create a new branch with a descriptive name.");
         sb.AppendLine("- Do not clear or mutate production diagnostics data as part of the fix.");
         sb.AppendLine("- Preserve existing behavior unless it is clearly broken by one of the logged failures.");
         sb.AppendLine("- Add targeted tests for each root cause whenever practical.");
-        sb.AppendLine("- Run `dotnet build ArgusEngine.slnx` and the relevant `dotnet test` commands before opening the PR.");
-        sb.AppendLine("- Open a PR that summarizes root causes, fixes, tests, deployment notes, and any follow-up work for the developer approver.");
-        sb.AppendLine();
-        sb.AppendLine("## Security and access rules");
-        sb.AppendLine("- Credential values are intentionally not embedded in this prompt.");
-        sb.AppendLine("- Use the credential references below only to determine what access is required.");
-        sb.AppendLine("- Obtain secrets through the project's approved secret manager, CI/CD secrets, deployment environment, or a human maintainer.");
-        sb.AppendLine("- Never paste secrets into the PR, logs, generated code, screenshots, or comments.");
-        sb.AppendLine("- Redact tokens, passwords, private keys, connection strings, cookies, and authorization headers from all investigation notes.");
+        sb.AppendLine("- Run `dotnet build ArgusEngine.slnx` and relevant `dotnet test` commands before opening the PR.");
         sb.AppendLine();
         sb.AppendLine("## Runtime context captured from the Development page");
         sb.AppendLine($"- Generated at UTC: {generatedAtUtc:yyyy-MM-dd HH:mm:ss zzz}");
@@ -649,6 +627,7 @@
         sb.AppendLine($"- Server OS: {Environment.OSVersion}");
         sb.AppendLine($"- Server IP address(es): {BuildServerIpAddressList()}");
         sb.AppendLine($"- Command Center URL visible to this browser: {Fallback(Navigation.Uri, "unknown")}");
+        sb.AppendLine($"- Docker log context: at least {DockerErrorContextLines.ToString(CultureInfo.InvariantCulture)} lines before and after each detected error line.");
         sb.AppendLine();
         sb.AppendLine("## Credentials, secrets, and service access likely required");
         sb.AppendLine("The following entries identify required or relevant credentials/configuration without exposing their values:");
@@ -659,7 +638,7 @@
         if (credentialReferences.Count == 0)
         {
             sb.AppendLine("- No credential-like configuration keys were visible to the Development page configuration provider.");
-            sb.AppendLine("- The agent will still likely need GitHub write access to create a branch/PR and read-only access to deployment logs, database diagnostics, message broker diagnostics, and service secrets through approved channels.");
+            sb.AppendLine("- The agent will still likely need GitHub write access, deployment log access, database diagnostics, message broker diagnostics, and service secrets through approved channels.");
         }
         else
         {
@@ -702,7 +681,7 @@
             if (!string.IsNullOrWhiteSpace(error.Exception))
             {
                 sb.AppendLine();
-                sb.AppendLine("Exception / stack trace:");
+                sb.AppendLine("Exception / Docker log context:");
                 sb.AppendLine("```text");
                 sb.AppendLine(error.Exception.Trim());
                 sb.AppendLine("```");
@@ -723,9 +702,9 @@
 
         sb.AppendLine("## Expected investigation workflow");
         sb.AppendLine("1. Group errors by component, logger, exception type, trace ID, and likely root cause.");
-        sb.AppendLine("2. Reproduce failures locally or in a safe staging environment using the redacted credential references above.");
+        sb.AppendLine("2. Reproduce failures locally or in a safe staging environment.");
         sb.AppendLine("3. Fix root causes, not just symptoms. Prefer small, reviewable commits.");
-        sb.AppendLine("4. Add regression coverage for the affected service/component boundaries.");
+        sb.AppendLine("4. Add regression coverage for affected service/component boundaries.");
         sb.AppendLine("5. Validate the Development page still shows contextual error messages and working stack-trace/details behavior.");
         sb.AppendLine("6. Create the PR and include exact build/test commands run, remaining risks, and deployment notes.");
 
@@ -739,10 +718,7 @@
             .Where(entry => IsCredentialOrServiceAccessKey(entry.Key))
             .Select(entry =>
             {
-                var status = string.IsNullOrWhiteSpace(entry.Value)
-                    ? "not configured or empty"
-                    : "configured; value redacted";
-
+                var status = string.IsNullOrWhiteSpace(entry.Value) ? "not configured or empty" : "configured; value redacted";
                 return $"{NormalizeConfigurationKey(entry.Key)}: [{status}]";
             })
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -798,17 +774,13 @@
         {
             var hostName = Dns.GetHostName();
             var addresses = Dns.GetHostAddresses(hostName)
-                .Where(address =>
-                    address.AddressFamily is AddressFamily.InterNetwork or AddressFamily.InterNetworkV6
-                    && !IPAddress.IsLoopback(address))
+                .Where(address => address.AddressFamily is AddressFamily.InterNetwork or AddressFamily.InterNetworkV6 && !IPAddress.IsLoopback(address))
                 .Select(address => address.ToString())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(address => address, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            return addresses.Count == 0
-                ? "none detected"
-                : string.Join(", ", addresses);
+            return addresses.Count == 0 ? "none detected" : string.Join(", ", addresses);
         }
         catch (Exception ex)
         {
@@ -818,7 +790,7 @@
 
     private async Task ShowOutputAsync(WorkerHealthCheckResultDto r)
     {
-        await Js.InvokeVoidAsync("alert", $"{r.WorkerName} Health Check Output:\n\n{r.Output}");
+        await Js.InvokeVoidAsync("alert", $"{r.WorkerName} Health Check Output:\n\n{r.Output}").ConfigureAwait(false);
     }
 
     private void ToggleErrorDetail(SystemError e)
@@ -840,25 +812,28 @@
     private Dictionary<string, List<DockerContainerDto>> _dockerWorkers = new();
     private bool _loadingDockerWorkers;
 
-    private readonly string[] _workerServices = new[] {
+    private readonly string[] _workerServices =
+    [
         "worker-spider",
         "worker-enum",
         "worker-portscan",
         "worker-highvalue",
         "worker-techid",
         "worker-http-requester"
-    };
+    ];
 
     private async Task LoadDockerWorkersAsync()
     {
         _loadingDockerWorkers = true;
         StateHasChanged();
+
         try
         {
             _dockerWorkers.Clear();
+
             foreach (var svc in _workerServices)
             {
-                var containers = await DockerClient.GetContainersAsync(svc, _devPollCts.Token);
+                var containers = await DockerClient.GetContainersAsync(svc, _devPollCts.Token).ConfigureAwait(false);
                 _dockerWorkers[svc] = containers;
             }
         }
@@ -874,16 +849,22 @@
 
     private async Task ScaleDownWorkerAsync(string serviceName)
     {
-        if (!_dockerWorkers.TryGetValue(serviceName, out var list) || list.Count == 0) return;
-        var container = list.Last(); // Kill the last one
+        if (!_dockerWorkers.TryGetValue(serviceName, out var list) || list.Count == 0)
+        {
+            return;
+        }
+
+        var container = list.Last();
+
         try
         {
-            await DockerClient.KillContainerAsync(container.Id, _devPollCts.Token);
-            await LoadDockerWorkersAsync();
+            await DockerClient.KillContainerAsync(container.Id, _devPollCts.Token).ConfigureAwait(false);
+            await LoadDockerWorkersAsync().ConfigureAwait(false);
+            await RefreshErrorsAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await Js.InvokeVoidAsync("alert", $"Failed to kill container: {ex.Message}");
+            await Js.InvokeVoidAsync("alert", $"Failed to kill container: {ex.Message}").ConfigureAwait(false);
         }
     }
 
@@ -891,12 +872,13 @@
     {
         try
         {
-            await DockerClient.ScaleUpAsync(serviceName, _devPollCts.Token);
-            await LoadDockerWorkersAsync();
+            await DockerClient.ScaleUpAsync(serviceName, _devPollCts.Token).ConfigureAwait(false);
+            await LoadDockerWorkersAsync().ConfigureAwait(false);
+            await RefreshErrorsAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await Js.InvokeVoidAsync("alert", $"Failed to scale up container: {ex.Message}");
+            await Js.InvokeVoidAsync("alert", $"Failed to scale up container: {ex.Message}").ConfigureAwait(false);
         }
     }
 
@@ -917,8 +899,10 @@
                 return exceptionHeadline;
             }
 
-            if (!message.Contains(exceptionHeadline, StringComparison.OrdinalIgnoreCase)
-                && !message.Contains(exceptionHeadline.Split(':', 2)[^1].Trim(), StringComparison.OrdinalIgnoreCase))
+            var exceptionDetail = exceptionHeadline.Split(':', 2)[^1].Trim();
+
+            if (!message.Contains(exceptionHeadline, StringComparison.OrdinalIgnoreCase) &&
+                !message.Contains(exceptionDetail, StringComparison.OrdinalIgnoreCase))
             {
                 return $"{message} — {exceptionHeadline}";
             }
@@ -941,6 +925,11 @@
 
         var metadata = ParseMetadata(e.MetadataJson);
 
+        if (metadata.TryGetValue("source", out var source) && !string.IsNullOrWhiteSpace(source))
+        {
+            context.Add($"Source: {source}");
+        }
+
         if (metadata.TryGetValue("event_id", out var eventId) && !string.IsNullOrWhiteSpace(eventId))
         {
             context.Add($"EventId: {eventId}");
@@ -956,6 +945,11 @@
             context.Add($"Trace: {traceId}");
         }
 
+        if (metadata.TryGetValue("containerId", out var containerId) && !string.IsNullOrWhiteSpace(containerId))
+        {
+            context.Add($"Container: {containerId}");
+        }
+
         return string.Join(" • ", context);
     }
 
@@ -963,11 +957,11 @@
     {
         var sb = new StringBuilder();
 
-        sb.AppendLine($"Time:      {e.Timestamp.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}");
+        sb.AppendLine($"Time: {e.Timestamp.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}");
         sb.AppendLine($"Component: {Fallback(e.Component, "unknown")}");
-        sb.AppendLine($"Level:     {Fallback(e.LogLevel, "Error")}");
-        sb.AppendLine($"Logger:    {Fallback(e.LoggerName, "unknown")}");
-        sb.AppendLine($"Machine:   {Fallback(e.MachineName, "unknown")}");
+        sb.AppendLine($"Level: {Fallback(e.LogLevel, "Error")}");
+        sb.AppendLine($"Logger: {Fallback(e.LoggerName, "unknown")}");
+        sb.AppendLine($"Machine: {Fallback(e.MachineName, "unknown")}");
         sb.AppendLine();
         sb.AppendLine("Message:");
         sb.AppendLine(Fallback(e.Message, "Error log entry did not include a message."));
@@ -975,7 +969,7 @@
         if (!string.IsNullOrWhiteSpace(e.Exception))
         {
             sb.AppendLine();
-            sb.AppendLine("Exception / stack trace:");
+            sb.AppendLine("Exception / Docker log context:");
             sb.AppendLine(e.Exception.Trim());
         }
 
@@ -1050,9 +1044,8 @@
                 .EnumerateObject()
                 .ToDictionary(
                     property => property.Name,
-                    property => property.Value.ValueKind == JsonValueKind.String
-                        ? property.Value.GetString()
-                        : property.Value.ToString());
+                    property => property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString() : property.Value.ToString(),
+                    StringComparer.OrdinalIgnoreCase);
         }
         catch
         {
@@ -1072,5 +1065,3 @@
         _devPollCts.Dispose();
     }
 }
-
-

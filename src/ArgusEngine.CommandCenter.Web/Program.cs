@@ -63,33 +63,48 @@ app.MapGet("/_framework/blazor.web.js", async context =>
         return;
     }
 
-    // Fallback: search in shared framework (Linux container path)
-    var sharedFxDir = "/usr/share/dotnet/shared/Microsoft.AspNetCore.App";
+    // Fallback 1: Deep search in /usr/share/dotnet
+    var sharedFxDir = "/usr/share/dotnet";
     if (Directory.Exists(sharedFxDir))
     {
-        var dirs = Directory.GetDirectories(sharedFxDir);
-        foreach (var dir in dirs)
+        try
         {
-            var fallbackPath = Path.Combine(dir, "wwwroot", "_framework", "blazor.web.js");
-            if (File.Exists(fallbackPath))
+            var files = Directory.GetFiles(sharedFxDir, "blazor.web.js", SearchOption.AllDirectories);
+            if (files.Length > 0)
             {
                 context.Response.ContentType = "application/javascript";
-                await context.Response.SendFileAsync(fallbackPath);
+                await context.Response.SendFileAsync(files[0]);
                 return;
             }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error searching /usr/share/dotnet: {ex.Message}");
+        }
+    }
 
-            fallbackPath = Path.Combine(dir, "blazor.web.js");
-            if (File.Exists(fallbackPath))
+    // Fallback 2: Deep search in /app
+    var appDir = "/app";
+    if (Directory.Exists(appDir))
+    {
+        try
+        {
+            var files = Directory.GetFiles(appDir, "blazor.web.js", SearchOption.AllDirectories);
+            if (files.Length > 0)
             {
                 context.Response.ContentType = "application/javascript";
-                await context.Response.SendFileAsync(fallbackPath);
+                await context.Response.SendFileAsync(files[0]);
                 return;
             }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error searching /app: {ex.Message}");
         }
     }
 
     context.Response.StatusCode = 404;
-    await context.Response.WriteAsync($"blazor.web.js not found on disk at {path} or in shared framework. WebRootPath is {builder.Environment.WebRootPath}");
+    await context.Response.WriteAsync($"blazor.web.js not found on disk at {path} or in shared framework (deep search failed). WebRootPath is {builder.Environment.WebRootPath}");
 });
 
 // Compatibility alias for clients, proxies, or stale HTML that still request the

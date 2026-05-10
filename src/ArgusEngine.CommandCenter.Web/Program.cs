@@ -60,12 +60,36 @@ app.MapGet("/_framework/blazor.web.js", async context =>
     {
         context.Response.ContentType = "application/javascript";
         await context.Response.SendFileAsync(path);
+        return;
     }
-    else
+
+    // Fallback: search in shared framework (Linux container path)
+    var sharedFxDir = "/usr/share/dotnet/shared/Microsoft.AspNetCore.App";
+    if (Directory.Exists(sharedFxDir))
     {
-        context.Response.StatusCode = 404;
-        await context.Response.WriteAsync($"blazor.web.js not found on disk at {path}. WebRootPath is {builder.Environment.WebRootPath}");
+        var dirs = Directory.GetDirectories(sharedFxDir);
+        foreach (var dir in dirs)
+        {
+            var fallbackPath = Path.Combine(dir, "wwwroot", "_framework", "blazor.web.js");
+            if (File.Exists(fallbackPath))
+            {
+                context.Response.ContentType = "application/javascript";
+                await context.Response.SendFileAsync(fallbackPath);
+                return;
+            }
+
+            fallbackPath = Path.Combine(dir, "blazor.web.js");
+            if (File.Exists(fallbackPath))
+            {
+                context.Response.ContentType = "application/javascript";
+                await context.Response.SendFileAsync(fallbackPath);
+                return;
+            }
+        }
     }
+
+    context.Response.StatusCode = 404;
+    await context.Response.WriteAsync($"blazor.web.js not found on disk at {path} or in shared framework. WebRootPath is {builder.Environment.WebRootPath}");
 });
 
 // Compatibility alias for clients, proxies, or stale HTML that still request the

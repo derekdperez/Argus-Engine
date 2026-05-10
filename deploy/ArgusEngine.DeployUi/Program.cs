@@ -1268,7 +1268,7 @@ internal sealed record ServiceDefinition(
     IReadOnlyList<string> ExtraSourceDirs)
 {
     public string ProjectFile(string repoRoot) => Path.Combine(repoRoot, "src", ProjectDir, $"{ProjectDir}.csproj");
-    public string ProjectSourceDir => NormalizePath($"src/{ProjectDir}");
+    public string ProjectSourceDir => ProjectDir.Replace('\\', '/').Trim('/');
 }
 
 internal static class ServiceCatalog
@@ -1843,7 +1843,7 @@ internal static class Ui
 
         var suffix = defaultValue ? "Y/n" : "y/N";
         var input = Prompt($"{prompt} ({suffix})", defaultValue ? "y" : "n");
-        return input.StartsWith('y', StringComparison.OrdinalIgnoreCase);
+        return input.StartsWith("y", StringComparison.OrdinalIgnoreCase);
     }
 
     public static void Header(string text)

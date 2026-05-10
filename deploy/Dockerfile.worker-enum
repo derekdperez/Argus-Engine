@@ -11,7 +11,6 @@ ARG AMASS_VERSION=5.1.1
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
-ARG PROJECT_DIR
 ARG COMPONENT_VERSION=2.6.1
 
 WORKDIR /src
@@ -33,7 +32,9 @@ RUN for f in src/*.csproj; do \
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=shared \
     cp -an /opt/argus-nuget/packages/. /root/.nuget/packages/ 2>/dev/null || true; \
-    dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
+    dotnet restore ArgusEngine.slnx
+
+ARG PROJECT_DIR
 
 # Copy the rest of the source
 COPY src/ src/

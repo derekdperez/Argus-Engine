@@ -13,7 +13,6 @@ window.argusUi.downloadTextFile = (fileName, contents, contentType) => {
     URL.revokeObjectURL(url);
 };
 
-
 window.argusUi.getLocalStorage = (key) => {
     try {
         return window.localStorage.getItem(key);
@@ -50,6 +49,7 @@ window.argusUi.importTargetFileInChunks = async (input, dotNetRef, globalMaxDept
         const start = Math.floor(lines.length * index / chunksTotal);
         const end = Math.floor(lines.length * (index + 1) / chunksTotal);
         const domains = lines.slice(start, end);
+
         const response = await fetch("/api/targets/bulk", {
             method: "POST",
             credentials: "same-origin",
@@ -57,10 +57,7 @@ window.argusUi.importTargetFileInChunks = async (input, dotNetRef, globalMaxDept
                 "Content-Type": "application/json",
                 "Accept": "application/json"
             },
-            body: JSON.stringify({
-                domains,
-                globalMaxDepth: depth
-            })
+            body: JSON.stringify({ domains, globalMaxDepth: depth })
         });
 
         if (!response.ok) {
@@ -104,3 +101,256 @@ window.argusUi.importTargetFileInChunks = async (input, dotNetRef, globalMaxDept
         SkippedDuplicateInBatch: totalSkippedDuplicateInBatch
     };
 };
+
+(() => {
+    const loadingTerms = [
+        "loading",
+        "refreshing",
+        "running diagnostics",
+        "generating",
+        "connecting",
+        "not loaded",
+        "waiting for system events"
+    ];
+
+    const activeLoadingTerms = [
+        "loading",
+        "refreshing",
+        "running diagnostics",
+        "generating",
+        "connecting",
+        "not loaded"
+    ];
+
+    const controlSelector = [
+        "button",
+        ".btn",
+        ".loading-inline",
+        ".muted",
+        ".badge",
+        ".realtime-status",
+        ".status-dot"
+    ].join(",");
+
+    const valueCardSelector = [
+        ".stat-card",
+        ".metric-card",
+        ".ops-page-lite .metric-card"
+    ].join(",");
+
+    const valueSelector = [
+        ".stat-value",
+        "strong"
+    ].join(",");
+
+    const tableSelector = [
+        ".grid",
+        ".ops-table",
+        ".rz-datatable-table",
+        ".rz-grid-table"
+    ].join(",");
+
+    let observerStarted = false;
+    let scanScheduled = false;
+    let lastScan = 0;
+
+    function normalizedText(element) {
+        return (element?.innerText || element?.textContent || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+    }
+
+    function isLoadingText(text) {
+        return loadingTerms.some(term => text.includes(term));
+    }
+
+    function hasActiveLoadingText(text) {
+        return activeLoadingTerms.some(term => text.includes(term));
+    }
+
+    function isZeroish(text) {
+        const normalized = (text || "")
+            .replace(/\u00a0/g, " ")
+            .replace(/,/g, "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+
+        if (!normalized) {
+            return false;
+        }
+
+        if (/^0$/.test(normalized)) {
+            return true;
+        }
+
+        if (/^0\s*(rows|row|requests|request|assets|asset|targets|target|subdomains|subdomain|queued|running|pending|active|events|event|containers|container|workers|worker)$/i.test(normalized)) {
+            return true;
+        }
+
+        if (/^0\s*\/\s*0(\s|$)/.test(normalized)) {
+            return true;
+        }
+
+        if (/^0\s+queued\s*\/\s*0\s+sent\/min$/.test(normalized)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    function tagLoadingControls(root, pageLoading) {
+        root.querySelectorAll(".argus-loading-control,.argus-loading-text").forEach(element => {
+            const text = normalizedText(element);
+            if (!isLoadingText(text)) {
+                element.classList.remove("argus-loading-control", "argus-loading-text");
+                element.removeAttribute("aria-busy");
+            }
+        });
+
+        if (!pageLoading) {
+            return;
+        }
+
+        root.querySelectorAll(controlSelector).forEach(element => {
+            if (element.closest(".argus-value-loading")) {
+                return;
+            }
+
+            const text = normalizedText(element);
+            if (!text || text.length > 80 || !isLoadingText(text)) {
+                return;
+            }
+
+            if (element.matches("button,.btn")) {
+                element.classList.add("argus-loading-control");
+            } else {
+                element.classList.add("argus-loading-text");
+            }
+
+            element.setAttribute("aria-busy", "true");
+        });
+    }
+
+    function tagZeroValueCards(root, pageLoading) {
+        root.querySelectorAll(".argus-value-loading").forEach(card => {
+            if (!pageLoading) {
+                card.classList.remove("argus-value-loading");
+                card.removeAttribute("aria-busy");
+            }
+        });
+
+        if (!pageLoading) {
+            return;
+        }
+
+        root.querySelectorAll(valueCardSelector).forEach(card => {
+            const value = card.querySelector(valueSelector);
+            if (!value) {
+                return;
+            }
+
+            const labelText = normalizedText(card);
+            const valueText = normalizedText(value);
+
+            if (!isZeroish(valueText)) {
+                card.classList.remove("argus-value-loading");
+                card.removeAttribute("aria-busy");
+                return;
+            }
+
+            // Only mask zeros while a page or sibling control is actively loading. This keeps genuine
+            // zeroes visible after a data load completes.
+            if (!hasActiveLoadingText(document.body.innerText || "") && !hasActiveLoadingText(labelText)) {
+                return;
+            }
+
+            card.classList.add("argus-value-loading");
+            card.setAttribute("aria-busy", "true");
+        });
+    }
+
+    function tagEmptyLazyTables(root, pageLoading) {
+        if (!pageLoading) {
+            root.querySelectorAll(".argus-loading-row").forEach(row => row.classList.remove("argus-loading-row"));
+            return;
+        }
+
+        root.querySelectorAll(tableSelector).forEach(table => {
+            const rows = Array.from(table.querySelectorAll("tbody tr"));
+            if (rows.length !== 1) {
+                return;
+            }
+
+            const rowText = normalizedText(rows[0]);
+            if (rowText && !isLoadingText(rowText) && rowText !== "0") {
+                return;
+            }
+
+            rows[0].classList.add("argus-loading-row");
+        });
+    }
+
+    function scan() {
+        scanScheduled = false;
+
+        if (!document.body) {
+            return;
+        }
+
+        // Avoid scanning too aggressively during Blazor render bursts.
+        const now = Date.now();
+        if (now - lastScan < 80) {
+            scheduleScan(100);
+            return;
+        }
+
+        lastScan = now;
+
+        const bodyText = normalizedText(document.body);
+        const pageLoading = hasActiveLoadingText(bodyText);
+
+        document.body.classList.toggle("argus-page-loading", pageLoading);
+        tagLoadingControls(document, pageLoading);
+        tagZeroValueCards(document, pageLoading);
+        tagEmptyLazyTables(document, pageLoading);
+    }
+
+    function scheduleScan(delay = 0) {
+        if (scanScheduled) {
+            return;
+        }
+
+        scanScheduled = true;
+        window.setTimeout(scan, delay);
+    }
+
+    function startObserver() {
+        if (observerStarted || !document.body) {
+            return;
+        }
+
+        observerStarted = true;
+        const observer = new MutationObserver(() => scheduleScan(50));
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+
+        scheduleScan(0);
+        window.addEventListener("pageshow", () => scheduleScan(0));
+        document.addEventListener("visibilitychange", () => {
+            if (!document.hidden) {
+                scheduleScan(0);
+            }
+        });
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", startObserver, { once: true });
+    } else {
+        startObserver();
+    }
+})();

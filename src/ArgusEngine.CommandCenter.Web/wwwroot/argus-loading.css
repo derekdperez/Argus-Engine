@@ -1,0 +1,183 @@
+/* Argus global loading indicators.
+   This stylesheet is intentionally additive and safe to load on every Command Center page. */
+
+:root {
+    --argus-loading-blue: #2563eb;
+    --argus-loading-blue-strong: #1d4ed8;
+    --argus-loading-blue-soft: rgba(37, 99, 235, 0.10);
+    --argus-loading-surface: rgba(239, 246, 255, 0.96);
+    --argus-loading-border: rgba(37, 99, 235, 0.34);
+}
+
+@keyframes argus-loading-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes argus-loading-pulse {
+    0%, 100% { opacity: 0.72; }
+    50% { opacity: 1; }
+}
+
+.argus-loading-spinner,
+.argus-loading-control::before,
+.argus-loading-text::before,
+.argus-value-loading .stat-value::after,
+.argus-value-loading strong::after {
+    content: "";
+    display: inline-block;
+    width: 1.05rem;
+    height: 1.05rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    border: 3px solid rgba(37, 99, 235, 0.20);
+    border-top-color: var(--argus-loading-blue);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.06);
+    animation: argus-loading-spin 0.72s linear infinite;
+}
+
+.argus-loading-text,
+.argus-loading-control {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    min-height: 2.15rem;
+    border: 1px solid var(--argus-loading-border) !important;
+    border-radius: 999px !important;
+    background:
+        linear-gradient(90deg, rgba(37, 99, 235, 0.12), rgba(37, 99, 235, 0.05)),
+        var(--argus-loading-surface) !important;
+    color: var(--argus-loading-blue-strong) !important;
+    font-weight: 850 !important;
+    letter-spacing: 0.01em;
+    padding: 0.35rem 0.75rem !important;
+    box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+    animation: argus-loading-pulse 1.15s ease-in-out infinite;
+}
+
+.argus-loading-control {
+    pointer-events: none;
+}
+
+.argus-loading-section {
+    position: relative;
+}
+
+.argus-loading-section::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.08), transparent);
+    background-size: 220% 100%;
+    animation: argus-loading-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes argus-loading-shimmer {
+    from { background-position: 220% 0; }
+    to { background-position: -220% 0; }
+}
+
+.stat-card.argus-value-loading,
+.metric-card.argus-value-loading {
+    position: relative;
+    border-color: var(--argus-loading-border) !important;
+    background:
+        radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 42%),
+        var(--argus-loading-surface) !important;
+    box-shadow: 0 16px 36px rgba(37, 99, 235, 0.14) !important;
+}
+
+.argus-value-loading .stat-value,
+.argus-value-loading strong {
+    position: relative;
+    min-height: 2.1rem;
+    color: transparent !important;
+    text-shadow: none !important;
+}
+
+.argus-value-loading .stat-value::after,
+.argus-value-loading strong::after {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform-origin: center;
+    transform: translateY(-50%);
+}
+
+.argus-value-loading .stat-value::before,
+.argus-value-loading strong::before {
+    content: "Loading data…";
+    position: absolute;
+    left: 1.55rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--argus-loading-blue-strong);
+    font-size: 0.88rem;
+    font-weight: 850;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+}
+
+.argus-loading-overlay {
+    position: relative;
+    min-height: 3rem;
+}
+
+.argus-loading-overlay::after {
+    content: "Loading data…";
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    border: 1px dashed var(--argus-loading-border);
+    border-radius: 0.85rem;
+    background: rgba(239, 246, 255, 0.82);
+    color: var(--argus-loading-blue-strong);
+    font-weight: 850;
+    z-index: 2;
+}
+
+.argus-loading-row {
+    min-height: 2.4rem;
+}
+
+.argus-loading-row td,
+.argus-loading-row th {
+    color: transparent !important;
+    position: relative;
+}
+
+.argus-loading-row td:first-child::before {
+    content: "Loading data…";
+    color: var(--argus-loading-blue-strong);
+    font-weight: 850;
+}
+
+.argus-loading-row td:first-child::after {
+    content: "";
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    margin-left: 0.55rem;
+    vertical-align: -0.15rem;
+    border-radius: 999px;
+    border: 3px solid rgba(37, 99, 235, 0.20);
+    border-top-color: var(--argus-loading-blue);
+    animation: argus-loading-spin 0.72s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .argus-loading-spinner,
+    .argus-loading-control::before,
+    .argus-loading-text::before,
+    .argus-value-loading .stat-value::after,
+    .argus-value-loading strong::after,
+    .argus-loading-row td:first-child::after,
+    .argus-loading-section::before,
+    .argus-loading-text,
+    .argus-loading-control {
+        animation: none !important;
+    }
+}

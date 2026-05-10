@@ -5,7 +5,7 @@
 @using ArgusEngine.CommandCenter.Web.Clients
 @inject DiscoveryApiClient DiscoveryApi
 @inject DiscoveryRealtimeClient Realtime
-
+@inject Microsoft.Extensions.Logging.ILogger<Technologies> Logger
 @rendermode InteractiveServer
 
 <PageTitle>Technologies and Tags · Argus Engine</PageTitle>
@@ -16,12 +16,14 @@
             <p class="eyebrow">Detection</p>
             <h1>Technologies and Tags</h1>
             <p class="hero-copy">Technologies identified across assets through headers, HTML content, cookies, and other fingerprints.</p>
+
             <div class="hero-meta">
                 <span class="live-pill @LiveStateCss">@Realtime.State</span>
                 <span>@(_lastLoadedAtUtc is null ? "Not loaded" : $"Last refresh {_lastLoadedAtUtc:yyyy-MM-dd HH:mm:ss} UTC")</span>
-                <span>@FilteredFindings.Count().ToString("N0") rows</span>
+                <span>@FilteredRows.Count.ToString("N0") rows</span>
             </div>
         </div>
+
         <div class="hero-actions">
             <button type="button" class="btn" @onclick="ReloadAsync" disabled="@_loading">@(_loading ? "Refreshing..." : "Refresh")</button>
         </div>
@@ -36,6 +38,13 @@
             <button type="button" class="btn ghost" @onclick="ClearFilters">Clear filters</button>
         </div>
 
+        @if (!string.IsNullOrWhiteSpace(_errorMessage))
+        {
+            <section class="panel">
+                <p class="muted">@_errorMessage</p>
+            </section>
+        }
+
         @if (_lastLoadedAtUtc is null)
         {
             <section class="panel">
@@ -44,61 +53,74 @@
         }
         else
         {
-        <RadzenDataGrid TItem="TechnologyDetectionRowDto"
-                        Data="@FilteredFindings"
-                        Count="@FilteredFindings.Count()"
-                        AllowSorting="true"
-                        AllowFiltering="false"
-                        AllowPaging="false"
-                        AllowGrouping="true"
-                        AllowVirtualization="true"
-                        Style="height: 860px"
-                        Density="Density.Compact"
-                        GridLines="DataGridGridLines.Both"
-                        IsLoading="@_loading"
-                        ColumnWidth="180px">
-            <Columns>
-                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="DetectedAtUtc" Title="Detected" Width="180px" SortOrder="SortOrder.Descending">
-                    <Template Context="r">@r.DetectedAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="TargetRootDomain" Title="Target" Width="200px" />
-                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="AssetCanonicalKey" Title="Subdomain" Width="240px">
-                    <Template Context="r">
-                        <span class="ops-rz-clip" title="@r.AssetCanonicalKey">@r.AssetCanonicalKey</span>
-                    </Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="TechnologyName" Title="Technology" Width="200px">
-                    <Template Context="r"><strong>@r.TechnologyName</strong></Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="Version" Title="Version" Width="120px" />
-                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="CategoryName" Title="Category" Width="180px" />
-                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="EvidenceSource" Title="Source" Width="120px" />
-                <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="MatchedText" Title="Evidence" Width="400px">
-                    <Template Context="r">
-                        @if (!string.IsNullOrEmpty(r.EvidenceKey))
-                        {
-                            <span class="muted">[@r.EvidenceKey]</span><br/>
-                        }
-                        <span class="ops-rz-clip" title="@r.MatchedText">@r.MatchedText</span>
-                        @if (!string.IsNullOrEmpty(r.Pattern))
-                        {
-                            <br/><code title="@r.Pattern">@r.Pattern</code>
-                        }
-                    </Template>
-                </RadzenDataGridColumn>
-            </Columns>
-        </RadzenDataGrid>
+            var rows = FilteredRows;
+
+            <RadzenDataGrid TItem="TechnologyDetectionRowDto"
+                            Data="@rows"
+                            Count="@rows.Count"
+                            AllowSorting="true"
+                            AllowFiltering="false"
+                            AllowPaging="false"
+                            AllowGrouping="true"
+                            AllowVirtualization="true"
+                            Style="height: 860px"
+                            Density="Density.Compact"
+                            GridLines="DataGridGridLines.Both"
+                            IsLoading="@_loading"
+                            ColumnWidth="180px">
+                <Columns>
+                    <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="DetectedAtUtc" Title="Detected" Width="180px" SortOrder="SortOrder.Descending">
+                        <Template Context="r">@r.DetectedAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="TargetRootDomain" Title="Target" Width="200px" />
+
+                    <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="AssetCanonicalKey" Title="Subdomain" Width="240px">
+                        <Template Context="r">
+                            <span class="ops-rz-clip" title="@r.AssetCanonicalKey">@r.AssetCanonicalKey</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="TechnologyName" Title="Technology" Width="200px">
+                        <Template Context="r"><strong>@r.TechnologyName</strong></Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="Version" Title="Version" Width="120px" />
+                    <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="CategoryName" Title="Category" Width="180px" />
+                    <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="EvidenceSource" Title="Source" Width="120px" />
+
+                    <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="MatchedText" Title="Evidence" Width="400px">
+                        <Template Context="r">
+                            @if (!string.IsNullOrEmpty(r.EvidenceKey))
+                            {
+                                <span class="muted">[@r.EvidenceKey]</span><br />
+                            }
+
+                            <span class="ops-rz-clip" title="@r.MatchedText">@r.MatchedText</span>
+
+                            @if (!string.IsNullOrEmpty(r.Pattern))
+                            {
+                                <br /><code title="@r.Pattern">@r.Pattern</code>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
         }
     </section>
 </div>
 
 @code {
     private readonly CancellationTokenSource _pollCts = new();
-    private readonly List<TechnologyDetectionRowDto> _rows = [];
+    private readonly SemaphoreSlim _reloadLock = new(1, 1);
+    private IReadOnlyList<TechnologyDetectionRowDto> _rows = Array.Empty<TechnologyDetectionRowDto>();
+
     private bool _initialLoadStarted;
     private bool _loading = true;
-    private bool _reloadRunning;
+    private bool _disposed;
     private DateTimeOffset? _lastLoadedAtUtc;
+    private string? _errorMessage;
+
     private string _search = "";
     private string _targetFilter = "";
     private string _subdomainFilter = "";
@@ -106,20 +128,22 @@
 
     private string LiveStateCss => Realtime.IsConnected ? "ok" : "warn";
 
-    private IEnumerable<TechnologyDetectionRowDto> FilteredFindings => _rows.Where(r =>
-        Matches(r.TargetRootDomain, _targetFilter)
-        && Matches(r.AssetCanonicalKey, _subdomainFilter)
-        && Matches(r.TechnologyName, _technologyFilter)
-        && (
-            Matches(r.TargetRootDomain, _search)
-            || Matches(r.AssetCanonicalKey, _search)
-            || Matches(r.TechnologyName, _search)
-            || Matches(r.CategoryName, _search)
-            || Matches(r.Version, _search)
-            || Matches(r.EvidenceSource, _search)
-            || Matches(r.EvidenceKey, _search)
-            || Matches(r.Pattern, _search)
-            || Matches(r.MatchedText, _search)));
+    private IReadOnlyList<TechnologyDetectionRowDto> FilteredRows => _rows
+        .Where(r =>
+            Matches(r.TargetRootDomain, _targetFilter)
+            && Matches(r.AssetCanonicalKey, _subdomainFilter)
+            && Matches(r.TechnologyName, _technologyFilter)
+            && (
+                Matches(r.TargetRootDomain, _search)
+                || Matches(r.AssetCanonicalKey, _search)
+                || Matches(r.TechnologyName, _search)
+                || Matches(r.CategoryName, _search)
+                || Matches(r.Version, _search)
+                || Matches(r.EvidenceSource, _search)
+                || Matches(r.EvidenceKey, _search)
+                || Matches(r.Pattern, _search)
+                || Matches(r.MatchedText, _search)))
+        .ToArray();
 
     protected override Task OnInitializedAsync()
     {
@@ -140,21 +164,33 @@
 
     private async Task LoadInitialAsync()
     {
-        await ReloadAsync().ConfigureAwait(false);
-        await StartRealtimeAsync().ConfigureAwait(false);
-        _ = PollAsync();
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await ReloadAsync();
+            await StartRealtimeAsync();
+            _ = PollAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Technology page failed during initial load.");
+            _errorMessage = "The technologies page failed to initialize. Check command-center-web logs for details.";
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task StartRealtimeAsync()
     {
         try
         {
-            await Realtime.EnsureStartedAsync(_pollCts.Token).ConfigureAwait(false);
+            await Realtime.EnsureStartedAsync(_pollCts.Token);
         }
-        catch
+        catch (OperationCanceledException) when (_pollCts.IsCancellationRequested)
         {
-            // Manual refresh and fallback polling remain available.
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Technology page realtime connection failed; polling remains active.");
         }
     }
 
@@ -162,12 +198,27 @@
     {
         // Technology detections are published as "assets" domain events.
         if (evt.Scope is not ("findings" or "assets" or "http"))
+        {
             return;
+        }
 
         _ = InvokeAsync(async () =>
         {
-            await ReloadAsync();
-            StateHasChanged();
+            if (_disposed)
+            {
+                return;
+            }
+
+            try
+            {
+                await ReloadAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Technology page realtime refresh failed.");
+                _errorMessage = "Realtime refresh failed. Manual refresh and polling remain available.";
+                StateHasChanged();
+            }
         });
     }
 
@@ -177,44 +228,74 @@
         {
             while (!_pollCts.IsCancellationRequested)
             {
-                await Task.Delay(TimeSpan.FromSeconds(30), _pollCts.Token).ConfigureAwait(false);
-                if (Realtime.IsConnected)
-                    continue;
+                await Task.Delay(TimeSpan.FromSeconds(30), _pollCts.Token);
 
-                await ReloadAsync().ConfigureAwait(false);
-                await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+                if (_disposed || Realtime.IsConnected)
+                {
+                    continue;
+                }
+
+                await InvokeAsync(async () =>
+                {
+                    if (!_disposed)
+                    {
+                        await ReloadAsync();
+                    }
+                });
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (_pollCts.IsCancellationRequested)
         {
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Technology page polling loop failed.");
         }
     }
 
     private async Task ReloadAsync()
     {
-        if (_reloadRunning)
+        if (_disposed)
+        {
             return;
+        }
 
-        _reloadRunning = true;
-        _loading = true;
+        if (!await _reloadLock.WaitAsync(0))
+        {
+            return;
+        }
+
         try
         {
-            var list = await DiscoveryApi.Client.GetFromJsonAsync<List<TechnologyDetectionRowDto>>($"/api/technologies?take=10000")
-                .ConfigureAwait(false);
-            _rows.Clear();
-            if (list is not null)
-                _rows.AddRange(list);
+            _loading = true;
+            _errorMessage = null;
+            await InvokeAsync(StateHasChanged);
 
+            var list = await DiscoveryApi.Client.GetFromJsonAsync<List<TechnologyDetectionRowDto>>(
+                "/api/technologies?take=10000",
+                _pollCts.Token);
+
+            _rows = list?.ToArray() ?? Array.Empty<TechnologyDetectionRowDto>();
             _lastLoadedAtUtc = DateTimeOffset.UtcNow;
         }
-        catch
+        catch (OperationCanceledException) when (_pollCts.IsCancellationRequested)
         {
-            _rows.Clear();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load technology detections.");
+            _rows = Array.Empty<TechnologyDetectionRowDto>();
+            _errorMessage = "Unable to load technology detections. Check command-center-web logs for details.";
         }
         finally
         {
             _loading = false;
-            _reloadRunning = false;
+            _reloadLock.Release();
+
+            if (!_disposed)
+            {
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 
@@ -232,10 +313,10 @@
 
     public void Dispose()
     {
+        _disposed = true;
         Realtime.DomainEventReceived -= OnRealtimeEvent;
         _pollCts.Cancel();
         _pollCts.Dispose();
+        _reloadLock.Dispose();
     }
 }
-
-

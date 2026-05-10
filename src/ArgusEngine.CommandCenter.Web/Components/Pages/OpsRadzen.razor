@@ -25,28 +25,28 @@
     <section class="metrics-grid ops-summary-grid">
         <article class="metric-card">
             <span>Targets</span>
-            <strong>@FormatNumber(TotalTargets)</strong>
+            <strong>@(_targetsLoading ? "—" : FormatNumber(TotalTargets))</strong>
         </article>
         <article class="metric-card">
             <span>Assets</span>
-            <strong>@FormatNumber(ConfirmedAssets)</strong>
+            <strong>@(_targetsLoading ? "—" : FormatNumber(ConfirmedAssets))</strong>
         </article>
         <article class="metric-card">
             <span>Subdomains</span>
-            <strong>@FormatNumber(ConfirmedSubdomains)</strong>
+            <strong>@(_targetsLoading ? "—" : FormatNumber(ConfirmedSubdomains))</strong>
         </article>
         <article class="metric-card">
             <span>Unique Technologies</span>
-            <strong>@FormatNumber(UniqueTechnologies)</strong>
+            <strong>@(_targetsLoading ? "—" : FormatNumber(UniqueTechnologies))</strong>
         </article>
         <article class="metric-card">
             <span>HTTP Queue</span>
-            <strong>@FormatNumber(HttpQueueQueuedCount) queued / @FormatNumber(HttpRequestsSentPerMinute) sent/min</strong>
+            <strong>@(_httpLoading ? "—" : $"{FormatNumber(HttpQueueQueuedCount)} queued / {FormatNumber(HttpRequestsSentPerMinute)} sent/min")</strong>
         </article>
         <article class="metric-card">
             <span>Asset Storage</span>
-            <strong>@FormatStorageSize(TotalTrackedStorageBytes)</strong>
-            <small>@StorageBreakdownLabel</small>
+            <strong>@(_targetsLoading ? "—" : FormatStorageSize(TotalTrackedStorageBytes))</strong>
+            @if (!_targetsLoading) { <small>@StorageBreakdownLabel</small> }
         </article>
     </section>
 
@@ -123,10 +123,6 @@
                 <div>
                     <p class="eyebrow">Scope</p>
                     <h2>Subdomains</h2>
-                    @if (_targetsLoading)
-                    {
-                        <span class="loading-inline"><span class="spinner"></span> Loading...</span>
-                    }
                 </div>
                 <span class="muted">@SelectedTargetLabel - @FormatNumber(SubdomainRows.Count)</span>
             </div>

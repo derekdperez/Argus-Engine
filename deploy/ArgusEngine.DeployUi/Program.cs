@@ -810,6 +810,131 @@ Global:
         }
     }
 
+    private async Task<int> RunCloudAsync(IReadOnlyList<string> args)
+    {
+        var action = args.Count == 0 ? "release-all" : args[0].ToLowerInvariant();
+        var services = args.Skip(1).ToList();
+
+        switch (action)
+        {
+            case "release-all":
+            case "all":
+                ValidateServicesOrDefault(services, cloudOnly: false);
+                Ui.Header("Cloud release: AWS");
+                var awsExit = await RunEcsAsync(new[] { "release" }.Concat(services).ToArray());
+                if (awsExit != 0)
+                {
+                    return awsExit;
+                }
+
+                Ui.Header("Cloud release: Azure");
+                var azureExit = await RunAzureAsync(new[] { "release" }.Concat(services).ToArray());
+                if (azureExit != 0)
+                {
+                    return azureExit;
+                }
+
+                Ui.Header("Cloud release: Google Cloud");
+                return await RunGoogleAsync(new[] { "release" }.Concat(services).ToArray());
+            default:
+                Ui.Error($"Unknown cloud action: {action}");
+                return 2;
+        }
+    }
+
+    private async Task<int> RunStatusAsync(IReadOnlyList<string> args)
+    {
+        var scope = args.Count == 0 ? "all" : args[0].ToLowerInvariant();
+        if (scope is not ("all" or "platforms"))
+        {
+            Ui.Error($"Unknown status scope: {scope}");
+            return 2;
+        }
+
+        var localExit = await RunLocalAsync(new[] { "status" });
+        var awsExit = await RunEcsAsync(new[] { "status" });
+        var azureExit = await RunAzureAsync(new[] { "status" });
+        var gcpExit = await RunGoogleAsync(new[] { "status" });
+        return FirstNonZero(localExit, awsExit, azureExit, gcpExit);
+    }
+
+    private async Task<int> RunLoginAsync(IReadOnlyList<string> args)
+    {
+        var provider = args.Count == 0 ? "all" : args[0].ToLowerInvariant();
+        var exitCodes = new List<int>();
+
+        if (provider is "all" or "aws")
+        {
+            Ui.Header("AWS login");
+            var stsExit = await _context.Runner.RunAsync("aws", new[] { "sts", "get-caller-identity" });
+            if (stsExit != 0 && Ui.Confirm("Run 'aws configure' now?", defaultValue: true, assumeYes: _context.AssumeYes))
+            {
+                stsExit = await _context.Runner.RunAsync("aws", new[] { "configure" });
+            }
+
+            exitCodes.Add(stsExit);
+        }
+
+        if (provider is "all" or "azure" or "az")
+        {
+            Ui.Header("Azure login");
+            var azExit = await _context.Runner.RunAsync("az", new[] { "account", "show", "--output", "table" });
+            if (azExit != 0 && Ui.Confirm("Run 'az login' now?", defaultValue: true, assumeYes: _context.AssumeYes))
+            {
+                azExit = await _context.Runner.RunAsync("az", new[] { "login" });
+            }
+
+            exitCodes.Add(azExit);
+        }
+
+        if (provider is "all" or "gcp" or "google")
+        {
+            Ui.Header("Google Cloud login");
+            var gcpExit = await _context.Runner.RunAsync("gcloud", new[] { "auth", "list" });
+            if (gcpExit != 0 && Ui.Confirm("Run 'gcloud auth login' now?", defaultValue: true, assumeYes: _context.AssumeYes))
+            {
+                gcpExit = await _context.Runner.RunAsync("gcloud", new[] { "auth", "login" });
+            }
+
+            exitCodes.Add(gcpExit);
+        }
+
+        if (exitCodes.Count == 0)
+        {
+            Ui.Error($"Unknown login provider: {provider}");
+            return 2;
+        }
+
+        return FirstNonZero(exitCodes.ToArray());
+    }
+
+    private async Task<int> RunConfigAsync(IReadOnlyList<string> args)
+    {
+        var action = args.Count == 0 ? "wizard" : args[0].ToLowerInvariant();
+        if (action is not ("wizard" or "setup"))
+        {
+            Ui.Error($"Unknown config action: {action}");
+            return 2;
+        }
+
+        var envPath = Path.Combine(_context.Paths.DeployDir, ".env.local");
+        var env = LoadEnv(envPath);
+        Ui.Header("Deployment configuration wizard");
+        Ui.Info($"Writing values to {_context.Paths.Rel(envPath)}");
+
+        SetEnvValue(env, "AWS_REGION", Ui.Prompt("AWS region", Get(env, "AWS_REGION", "us-east-1")));
+        SetEnvValue(env, "ECS_CLUSTER", Ui.Prompt("ECS cluster name", Get(env, "ECS_CLUSTER", "argus")));
+        SetEnvValue(env, "AZURE_RESOURCE_GROUP", Ui.Prompt("Azure resource group", Get(env, "AZURE_RESOURCE_GROUP", "argus-rg")));
+        SetEnvValue(env, "AZURE_LOCATION", Ui.Prompt("Azure location", Get(env, "AZURE_LOCATION", "eastus")));
+        SetEnvValue(env, "GOOGLE_REGION", Ui.Prompt("Google Cloud region", Get(env, "GOOGLE_REGION", "us-central1")));
+        SetEnvValue(env, "GOOGLE_CLOUD_PROJECT", Ui.Prompt("Google Cloud project", Get(env, "GOOGLE_CLOUD_PROJECT", string.Empty)));
+
+        WriteEnv(envPath, env);
+        EnvFileLoader.LoadKnownEnvironmentFiles(_context);
+        Ui.Info("Configuration saved.");
+        return await RunLoginAsync(new[] { "all" });
+    }
+
     private int ShowAffected()
     {
         var files = _context.ChangeDetector.GetChangedFiles();

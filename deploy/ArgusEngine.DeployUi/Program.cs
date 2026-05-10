@@ -1477,3 +1477,4 @@ internal sealed record CliOptions(
         return new CliOptions(root, withObservability, dryRun, yes, help);
     }
 }
+

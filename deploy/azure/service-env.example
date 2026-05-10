@@ -1,0 +1,29 @@
+# Copy to deploy/azure/service-env and replace with production values.
+# Use hostnames/IPs that Azure Container Apps workers can reach.
+
+ConnectionStrings__Postgres=Host=10.0.0.10;Port=5432;Database=argus_engine;Username=argus;Password=CHANGE_ME
+ConnectionStrings__FileStore=Host=10.0.0.10;Port=5432;Database=argus_engine_files;Username=argus;Password=CHANGE_ME
+ConnectionStrings__Redis=10.0.0.10:6379
+
+RabbitMq__Host=10.0.0.10
+RabbitMq__Username=argus
+RabbitMq__Password=CHANGE_ME
+RabbitMq__VirtualHost=/
+RabbitMq__ManagementUrl=http://10.0.0.10:15672
+
+Argus__SkipStartupDatabase=true
+ARGUS_SKIP_STARTUP_DATABASE=1
+
+Enumeration__UseSubfinder=true
+Enumeration__SubfinderPath=/usr/local/bin/subfinder
+Enumeration__SubfinderAllSources=true
+Enumeration__SubfinderRecursive=true
+Enumeration__SubfinderTimeoutSeconds=180
+Enumeration__UseAmass=true
+Enumeration__AmassPath=/usr/local/bin/amass
+Enumeration__AmassActive=true
+Enumeration__AmassBruteForce=true
+Enumeration__AmassTimeoutSeconds=900
+Enumeration__UseDnsFallback=true
+Enumeration__DnsFallbackMaxCandidates=300
+Enumeration__SubdomainWordlistPath=/opt/argus/wordlists/subdomains.txt

@@ -76,13 +76,20 @@ argus_parallel_publish() {
       )
 
       if command -v dotnet >/dev/null 2>&1; then
+        # Restore into the same redirected obj directory used by publish.
+        # Without this, publish --no-restore can fail with NETSDK1004 because
+        # project.assets.json was generated in the default src/<project>/obj.
+        NUGET_PACKAGES="$nuget_dir" \
+          dotnet restore "$csproj" \
+          "${msbuild_redirects[@]}" \
+          >"$log_file" 2>&1 && \
         NUGET_PACKAGES="$nuget_dir" \
           dotnet publish "$csproj" \
           -c Release \
           -o "$out_dir" \
           --no-restore \
           "${msbuild_redirects[@]}" \
-          >"$log_file" 2>&1
+          >>"$log_file" 2>&1
       else
         local uid gid
         uid="$(id -u)"
@@ -97,14 +104,20 @@ argus_parallel_publish() {
           -e DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
           -e NUGET_PACKAGES=/nuget \
           mcr.microsoft.com/dotnet/sdk:10.0 \
-          dotnet publish "$rel_csproj" \
-          -c Release \
-          -o "$rel_out" \
-          --no-restore \
-          "/p:UseAppHost=false" \
-          "/p:BaseIntermediateOutputPath=$rel_obj/" \
-          "/p:BaseOutputPath=$rel_obj/../bin/" \
-          "-p:maxcpucount" \
+          sh -c 'dotnet restore "$1" \
+                   "/p:UseAppHost=false" \
+                   "/p:BaseIntermediateOutputPath=$2/" \
+                   "/p:BaseOutputPath=$2/../bin/" \
+                   "-p:maxcpucount" && \
+                 dotnet publish "$1" \
+                   -c Release \
+                   -o "$3" \
+                   --no-restore \
+                   "/p:UseAppHost=false" \
+                   "/p:BaseIntermediateOutputPath=$2/" \
+                   "/p:BaseOutputPath=$2/../bin/" \
+                   "-p:maxcpucount"' \
+          sh "$rel_csproj" "$rel_obj" "$rel_out" \
           >"$log_file" 2>&1
       fi
 

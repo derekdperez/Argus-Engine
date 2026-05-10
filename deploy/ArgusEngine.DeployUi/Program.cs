@@ -1732,6 +1732,7 @@ internal static class EnvFileLoader
     public static void LoadKnownEnvironmentFiles(DeploymentContext context)
     {
         LoadIfExists(Path.Combine(context.Paths.DeployDir, ".env"));
+        LoadIfExists(Path.Combine(context.Paths.DeployDir, ".env.local"));
         LoadIfExists(Path.Combine(context.Paths.DeployDir, "aws", ".env"));
         LoadProviderEnvironmentFiles(context, "azure");
         LoadProviderEnvironmentFiles(context, "google");

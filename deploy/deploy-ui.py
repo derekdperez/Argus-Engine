@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
-"""
-Argus Engine Deployment UI — v3
-Verbose, informative full-screen ANSI deployment dashboard.
-"""
-import sys, os, subprocess, time, re, threading, queue, signal, shutil
+import sys, os, subprocess, time, re, threading, queue, signal, shutil, json
 
 if not sys.stdout.isatty():
     deploy_sh = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deploy.sh")
@@ -80,10 +75,29 @@ PHASE_DEFS = [
     },
 ]
 
+METRICS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".deploy-metrics.json")
+
+def load_metrics():
+    try:
+        if os.path.exists(METRICS_FILE):
+            with open(METRICS_FILE, "r") as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
+
 # ── State ────────────────────────────────────────────────────────────────────
 class State:
     def __init__(self):
-        self.phases = [{**d, "pct": 0, "status": "pending", "detail": "", "active_task": ""} for d in PHASE_DEFS]
+        metrics = load_metrics()
+        self.phases = []
+        for d in PHASE_DEFS:
+            p = {**d, "pct": 0, "status": "pending", "detail": "", "active_task": ""}
+            # Override estimate with historical average if available
+            if d["id"] in metrics:
+                p["est"] = metrics[d["id"]].get("avg", d["est"])
+            self.phases.append(p)
+            
         self.cur = 0
         self.logs = []          # filtered display logs
         self.all_logs = []      # every raw line (for error dump)
@@ -103,6 +117,7 @@ class State:
         self.compose_total = 21
         # events for verbose status
         self.current_event = ""   # short single-line current activity
+        self.phase_durations = {} # actual durations recorded
 
     STALL_WARN_SECS  = 60   # show warning after 60s silence
     STALL_ABORT_SECS = 600  # suggest abort after 10min silence
@@ -118,13 +133,16 @@ class State:
         return SPIN[self.spin_i]
 
     def advance(self, pid):
+        now = time.time()
         for i, p in enumerate(self.phases):
             if p["status"] == "running":
                 p["pct"] = 100; p["status"] = "done"; p["active_task"] = ""
+                duration = now - self.phase_start
+                self.phase_durations[p["id"]] = duration
             if p["id"] == pid and p["status"] == "pending":
                 p["status"] = "running"
                 self.cur = i
-                self.phase_start = time.time()
+                self.phase_start = now
                 break
 
     def set_task(self, pid, task_key):
@@ -351,10 +369,16 @@ def render(s: State, final=False, rc=None):
     title = " ARGUS ENGINE  ▸  DEPLOYMENT "
     pad   = max(0, (W - len(title)) // 2)
     wr(1, f"{C_HDR}{C_CYAN}{bold()}{' '*pad}{title}{' '*(W-pad-len(title))}{rst()}")
+    
     elapsed = time.time() - s.start
     mins, secs = divmod(int(elapsed), 60)
+    
+    # Calculate estimated total time based on historical metrics
+    est_total = sum(p["est"] for p in s.phases if p["status"] != "skipped")
+    est_mins, est_secs = divmod(int(est_total), 60)
+    
     mode = " ".join(sys.argv[1:]) or "hot-deploy"
-    wr(2, f"  {dim()}{C_GREY}Elapsed: {mins:02d}:{secs:02d}   Mode: {mode}{rst()}")
+    wr(2, f"  {dim()}{C_GREY}Elapsed: {mins:02d}:{secs:02d} / Est: {est_mins:02d}:{est_secs:02d}   Mode: {mode}{rst()}")
     hbar(3)
 
     row = 4
@@ -525,9 +549,18 @@ def main():
 
         proc.wait()
         rc = proc.returncode
+        now = time.time()
+        
+        # Record final phase duration if it was running
+        for p in state.phases:
+            if p["status"] == "running":
+                state.phase_durations[p["id"]] = now - state.phase_start
+                
         if rc == 0:
             for p in state.phases:
                 if p["status"] not in ("skipped",): p["status"]="done"; p["pct"]=100
+            # Save metrics on success
+            _save_metrics(state)
         else:
             for p in state.phases:
                 if p["status"] == "running": p["status"] = "failed"
@@ -615,6 +648,31 @@ def _write_error_report(state: State, rc: int):
 
     with open(report_path, "w") as f:
         f.write("\n".join(lines))
+
+
+def _save_metrics(state: State):
+    """Save phase durations and update historical averages."""
+    metrics = load_metrics()
+    
+    for pid, dur in state.phase_durations.items():
+        if pid not in metrics:
+            metrics[pid] = {"avg": dur, "count": 1}
+        else:
+            # Running average
+            count = metrics[pid].get("count", 0)
+            current_avg = metrics[pid].get("avg", 0.0)
+            
+            # Simple moving average or exponential? Let's use a simple moving average capped at N
+            new_count = min(count + 1, 10) # Keep weight of last 10 runs
+            new_avg = current_avg + (dur - current_avg) / new_count
+            
+            metrics[pid] = {"avg": new_avg, "count": new_count}
+            
+    try:
+        with open(METRICS_FILE, "w") as f:
+            json.dump(metrics, f, indent=2)
+    except:
+        pass
 
 
 if __name__ == "__main__":

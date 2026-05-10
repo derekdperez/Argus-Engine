@@ -1,21 +1,11 @@
 #!/usr/bin/env python3
-"""
-Argus Engine deployment console.
+"""Argus Engine deployment console.
 
-This script intentionally uses only the Python standard library so it can run on
-fresh EC2/local hosts before project dependencies are installed.
+This file is intentionally standard-library only so it works on fresh EC2/local
+hosts before application dependencies are installed.
 
-It is both:
-  1. a friendly menu-driven CLI for humans, and
-  2. a backwards-compatible deploy.sh handoff target.
-
-Examples:
-    ./deploy/deploy-ui.py
-    ./deploy/deploy-ui.py deploy --hot
-    ./deploy/deploy-ui.py deploy --image command-center-web worker-spider
-    ./deploy/deploy-ui.py scale local worker-spider=4 worker-enum=2
-    ./deploy/deploy-ui.py scale ecs worker-spider=6 worker-techid=1
-    ./deploy/deploy-ui.py monitor
+The console keeps deploy.sh compatibility, and adds an Automatic All-in-One path
+that can make the common local deployment decision tree for the operator.
 """
 
 from __future__ import annotations
@@ -35,8 +25,6 @@ from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
 
-# Keep this list in sync with deploy/docker-compose.yml. The script will prefer
-# `docker compose config --services` when Docker is available.
 FALLBACK_SERVICES = [
     "postgres",
     "filestore-db-init",
@@ -188,6 +176,7 @@ class Paths:
     deploy_sh: Path
     logs_sh: Path
     smoke_test: Path
+    auto_all_in_one: Path
     aws_dir: Path
 
     @staticmethod
@@ -207,6 +196,7 @@ class Paths:
                     deploy_sh=deploy_dir / "deploy.sh",
                     logs_sh=deploy_dir / "logs.sh",
                     smoke_test=deploy_dir / "smoke-test.sh",
+                    auto_all_in_one=deploy_dir / "auto-all-in-one.sh",
                     aws_dir=deploy_dir / "aws",
                 )
 
@@ -294,7 +284,7 @@ class Ui:
             print()
             self.info(title)
             for i, choice in enumerate(choices, 1):
-                print(f"  {i:2}. {choice}")
+                print(f" {i:2}. {choice}")
             raw = self.prompt("Choose", str(default))
             try:
                 idx = int(raw)
@@ -325,13 +315,7 @@ class Runner:
             env.update({k: str(v) for k, v in extra.items()})
         return env
 
-    def run(
-        self,
-        args: Sequence[str],
-        *,
-        env: Optional[Mapping[str, str]] = None,
-        check: bool = False,
-    ) -> int:
+    def run(self, args: Sequence[str], *, env: Optional[Mapping[str, str]] = None, check: bool = False) -> int:
         self.ui.command(args)
         if self.options.dry_run:
             return 0
@@ -388,7 +372,6 @@ def parse_env_file(path: Path) -> dict[str, str]:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
         return values
-
     for raw in lines:
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -432,22 +415,17 @@ class ArgusDeployConsole:
         self._compose_cmd: Optional[list[str]] = None
         self._services: Optional[list[str]] = None
 
-    # ---------- command discovery ----------
-
     def compose_cmd(self) -> list[str]:
         if self._compose_cmd is not None:
             return list(self._compose_cmd)
-
         code, _, _ = self.runner.capture(["docker", "compose", "version"])
         if code == 0:
             self._compose_cmd = ["docker", "compose"]
             return list(self._compose_cmd)
-
         if which("docker-compose"):
             self._compose_cmd = ["docker-compose"]
             return list(self._compose_cmd)
-
-        self.ui.error("Docker Compose was not found. Install Docker Compose v2 or run deploy.sh so it can bootstrap dependencies.")
+        self.ui.error("Docker Compose was not found. Run deploy.sh or auto-all-in-one so it can bootstrap dependencies.")
         self._compose_cmd = ["docker", "compose"]
         return list(self._compose_cmd)
 
@@ -457,7 +435,6 @@ class ArgusDeployConsole:
     def services(self) -> list[str]:
         if self._services is not None:
             return list(self._services)
-
         code, stdout, _ = self.runner.capture(self.compose("config", "--services"))
         services = [line.strip() for line in stdout.splitlines() if line.strip()] if code == 0 else []
         if not services:
@@ -473,7 +450,7 @@ class ArgusDeployConsole:
         available = set(self.services())
         return [service for service in WORKERS if service in available]
 
-    # ---------- top-level dispatch ----------
+    # ---------- dispatch ----------
 
     def run(self, argv: Sequence[str]) -> int:
         if not argv or argv[0].lower() in {"menu", "ui", "interactive"}:
@@ -482,7 +459,8 @@ class ArgusDeployConsole:
         command = argv[0].lower()
         rest = list(argv[1:])
 
-        # Compatibility with deploy.sh's historical handoff behavior.
+        if command in {"auto", "all-in-one", "allinone", "automatic"}:
+            return self.auto_all_in_one(rest)
         if command in {"up"}:
             return self.deploy_from_args(rest)
         if command in {"--fresh", "-fresh"}:
@@ -493,7 +471,6 @@ class ArgusDeployConsole:
             return self.deploy_sh(["--hot", *rest])
         if command in {"--image", "-image"}:
             return self.deploy_sh(["--image", *rest])
-
         if command in {"deploy", "update"}:
             return self.deploy_from_args(rest)
         if command in {"scale", "workers", "worker"}:
@@ -520,6 +497,8 @@ class ArgusDeployConsole:
         if command in {"changed", "affected"}:
             self.show_changed_services()
             return 0
+        if command in {"preflight", "doctor"}:
+            return self.preflight()
         if command in {"help", "-h", "--help"}:
             self.print_help()
             return 0
@@ -534,10 +513,10 @@ class ArgusDeployConsole:
         while True:
             self.ui.header("Argus Engine deployment console")
             self.show_context(compact=True)
-
             choice = self.ui.choose(
                 "What do you want to do?",
                 [
+                    "Automatic all-in-one local deploy — preflight, build, bootstrap, verify",
                     "Deploy or update the local Docker Compose stack",
                     "Scale local or ECS workers",
                     "Monitor health, status, logs, queues, and worker counts",
@@ -548,33 +527,60 @@ class ArgusDeployConsole:
                     "Exit",
                 ],
             )
-
             if choice == 0:
-                code = self.deploy_menu()
+                code = self.auto_all_in_one_menu()
             elif choice == 1:
-                code = self.scale_menu()
+                code = self.deploy_menu()
             elif choice == 2:
-                code = self.monitor_menu()
+                code = self.scale_menu()
             elif choice == 3:
-                code = self.operations_menu()
+                code = self.monitor_menu()
             elif choice == 4:
-                code = self.ecs_menu()
+                code = self.operations_menu()
             elif choice == 5:
+                code = self.ecs_menu()
+            elif choice == 6:
                 self.show_changed_services()
                 code = 0
-            elif choice == 6:
+            elif choice == 7:
                 code = self.custom_shell()
             else:
                 return 0
 
             if code != 0:
                 self.ui.warn(f"Last action exited with code {code}.")
-            self.ui.pause()
+                self.ui.pause()
+
+    def auto_all_in_one_menu(self) -> int:
+        if not self.paths.auto_all_in_one.exists():
+            self.ui.error(f"Automatic deployment helper not found: {self.paths.rel(self.paths.auto_all_in_one)}")
+            return 2
+
+        choice = self.ui.choose(
+            "Automatic all-in-one local deployment",
+            [
+                "Smart deploy — ask only when a choice is needed",
+                "Smart deploy with safe defaults — no prompts",
+                "Full fresh rebuild, then bootstrap and verify",
+                "Reset local volumes, then full fresh rebuild",
+                "Back",
+            ],
+        )
+        if choice == 0:
+            return self.auto_all_in_one([])
+        if choice == 1:
+            return self.auto_all_in_one(["--yes"])
+        if choice == 2:
+            return self.auto_all_in_one(["--fresh"])
+        if choice == 3:
+            return self.auto_all_in_one(["--reset-volumes", "--fresh"])
+        return 0
 
     def deploy_menu(self) -> int:
         choice = self.ui.choose(
             "Deploy/update",
             [
+                "Automatic all-in-one local deploy — recommended",
                 "Incremental hot deploy — fastest for source-only changes",
                 "Incremental image deploy — rebuild changed images",
                 "Full fresh rebuild — no-cache image rebuild and recreate",
@@ -584,14 +590,16 @@ class ArgusDeployConsole:
             ],
         )
         if choice == 0:
-            return self.deploy_sh(["--hot"])
+            return self.auto_all_in_one_menu()
         if choice == 1:
-            return self.deploy_sh(["--image"])
+            return self.deploy_sh(["--hot"])
         if choice == 2:
-            return self.deploy_sh(["--fresh"])
+            return self.deploy_sh(["--image"])
         if choice == 3:
-            return self.selected_component_deploy()
+            return self.deploy_sh(["--fresh"])
         if choice == 4:
+            return self.selected_component_deploy()
+        if choice == 5:
             return self.deploy_sh(["--ecs-workers"])
         return 0
 
@@ -600,7 +608,6 @@ class ArgusDeployConsole:
         if not services:
             self.ui.warn("No components selected.")
             return 0
-
         mode = self.ui.choose(
             "Selected component action",
             [
@@ -611,7 +618,6 @@ class ArgusDeployConsole:
                 "Tail logs for selected components",
             ],
         )
-
         if mode == 0:
             build = self.runner.run(self.compose("build", *services))
             if build != 0:
@@ -776,10 +782,12 @@ class ArgusDeployConsole:
 
     # ---------- direct commands ----------
 
+    def auto_all_in_one(self, args: Sequence[str]) -> int:
+        return self.runner.bash_script(self.paths.auto_all_in_one, list(args))
+
     def deploy_from_args(self, args: Sequence[str]) -> int:
         args = list(args)
         scale_counts, remaining = self.extract_scale_args(args)
-
         if "--ecs-workers" in remaining:
             code = self.deploy_sh(["--ecs-workers", *[a for a in remaining if a != "--ecs-workers"]])
         elif "--fresh" in remaining or "-fresh" in remaining:
@@ -795,7 +803,6 @@ class ArgusDeployConsole:
         else:
             services = [a for a in remaining if not a.startswith("-")]
             code = self.deploy_sh(["--hot", *services])
-
         if code == 0 and scale_counts:
             return self.apply_local_worker_scale(scale_counts)
         return code
@@ -804,7 +811,6 @@ class ArgusDeployConsole:
         args = list(args)
         if not args:
             return self.scale_menu()
-
         target = args[0].lower()
         if target in {"local", "compose"}:
             counts = self.parse_count_pairs(args[1:])
@@ -814,8 +820,6 @@ class ArgusDeployConsole:
             return self.apply_ecs_worker_scale(counts)
         if target in {"autoscale", "auto"}:
             return self.run_aws_script("autoscale-ecs-workers.sh", args[1:])
-
-        # Default to local for convenience: deploy-ui.py scale worker-spider=3
         counts = self.parse_count_pairs(args)
         return self.apply_local_worker_scale(counts)
 
@@ -826,7 +830,6 @@ class ArgusDeployConsole:
             return self.deploy_sh(["status", *rest])
         if not rest:
             return self.monitor_menu()
-
         topic = rest[0].lower()
         if topic in {"health", "check"}:
             return self.health_checks()
@@ -850,7 +853,6 @@ class ArgusDeployConsole:
             return self.ecs_menu()
         action = args[0].lower()
         rest = list(args[1:])
-
         if action in {"hybrid", "workers"}:
             return self.deploy_sh(["--ecs-workers", *rest])
         if action == "repos":
@@ -875,7 +877,6 @@ class ArgusDeployConsole:
             return self.apply_ecs_worker_scale(self.parse_count_pairs(rest))
         if action == "status":
             return self.ecs_status()
-
         self.ui.error(f"Unknown ECS action: {action}")
         return 2
 
@@ -934,41 +935,33 @@ class ArgusDeployConsole:
             (
                 "Worker heartbeats",
                 """
-SELECT "WorkerKey",
-       "HostName",
-       "IsHealthy",
-       "ActiveConsumerCount",
-       "LastHeartbeatUtc",
-       now() - "LastHeartbeatUtc" AS heartbeat_age,
-       "HealthMessage"
-FROM worker_heartbeats
-ORDER BY "LastHeartbeatUtc" DESC
-LIMIT 50;
-""",
+                SELECT "WorkerKey", "HostName", "IsHealthy", "ActiveConsumerCount",
+                       "LastHeartbeatUtc", now() - "LastHeartbeatUtc" AS heartbeat_age,
+                       "HealthMessage"
+                FROM worker_heartbeats
+                ORDER BY "LastHeartbeatUtc" DESC
+                LIMIT 50;
+                """,
             ),
             (
                 "HTTP request queue by state",
                 """
-SELECT state, count(*) AS rows
-FROM http_request_queue
-GROUP BY state
-ORDER BY rows DESC;
-""",
+                SELECT state, count(*) AS rows
+                FROM http_request_queue
+                GROUP BY state
+                ORDER BY rows DESC;
+                """,
             ),
             (
                 "Recent bus consumer activity",
                 """
-SELECT direction,
-       consumer_type,
-       host_name,
-       max(occurred_at_utc) AS last_seen,
-       count(*) AS events
-FROM bus_journal
-WHERE occurred_at_utc >= now() - interval '30 minutes'
-GROUP BY direction, consumer_type, host_name
-ORDER BY last_seen DESC
-LIMIT 50;
-""",
+                SELECT direction, consumer_type, host_name, max(occurred_at_utc) AS last_seen, count(*) AS events
+                FROM bus_journal
+                WHERE occurred_at_utc >= now() - interval '30 minutes'
+                GROUP BY direction, consumer_type, host_name
+                ORDER BY last_seen DESC
+                LIMIT 50;
+                """,
             ),
         ]
 
@@ -999,13 +992,11 @@ LIMIT 50;
         status_script = self.paths.aws_dir / "ecs-command-center-status.sh"
         if status_script.exists():
             return self.runner.bash_script(status_script)
-
         region = self.get_env("AWS_REGION", "us-east-1")
         cluster = self.get_env("ECS_CLUSTER", "argus-engine")
         service_names = [self.ecs_service_name(worker) for worker in self.worker_services()]
         if not service_names:
             service_names = [str(meta["ecs_default"]) for meta in WORKERS.values()]
-
         return self.runner.run(
             [
                 "aws",
@@ -1028,19 +1019,15 @@ LIMIT 50;
         if not counts:
             self.ui.warn("No worker counts provided.")
             return 0
-
         normalized = self.normalize_worker_counts(counts)
         env_updates = {str(WORKERS[service]["local_env"]): str(count) for service, count in normalized.items()}
         args: list[str] = ["up", "-d"]
-
         for service, count in normalized.items():
             args.extend(["--scale", f"{service}={count}"])
         args.extend(normalized.keys())
-
         self.ui.section("Applying local worker scale")
         for service, count in normalized.items():
             self.ui.info(f"{service}: {count} replica(s)")
-
         code = self.runner.run(self.compose(*args), env=env_updates)
         if code == 0:
             self.show_worker_counts()
@@ -1050,11 +1037,9 @@ LIMIT 50;
         if not counts:
             self.ui.warn("No ECS worker counts provided.")
             return 0
-
         normalized = self.normalize_worker_counts(counts, include_http_requester=True)
         region = self.get_env("AWS_REGION", "us-east-1")
         cluster = self.get_env("ECS_CLUSTER", "argus-engine")
-
         self.ui.section("Applying ECS desired worker counts")
         exit_code = 0
         for service, count in normalized.items():
@@ -1079,7 +1064,7 @@ LIMIT 50;
                 exit_code = code
         return exit_code
 
-    # ---------- info/display ----------
+    # ---------- display ----------
 
     def show_context(self, *, compact: bool = False) -> None:
         if compact:
@@ -1126,7 +1111,7 @@ LIMIT 50;
             ("Maintenance API", "http://localhost:8086/health/ready"),
             ("Updates API", "http://localhost:8087/health/ready"),
             ("Realtime host", "http://localhost:8088/health/ready"),
-            ("RabbitMQ admin", "http://localhost:15672/  user/pass: argus / argus"),
+            ("RabbitMQ admin", "http://localhost:15672/ user/pass: argus / argus"),
             ("Postgres", "localhost:5432 db=argus_engine user=argus"),
         ]
         for name, url in urls:
@@ -1143,7 +1128,7 @@ LIMIT 50;
         for worker in self.worker_services():
             count = self.local_service_count(worker)
             meta = WORKERS[worker]
-            print(f"{worker:<30} {count:>3}  {meta['description']}")
+            print(f"{worker:<30} {count:>3} {meta['description']}")
 
     def show_changed_services(self) -> None:
         changed = self.changed_files()
@@ -1228,7 +1213,6 @@ LIMIT 50;
             else:
                 self.ui.warn(f"Ignoring unknown component: {token}")
 
-        # De-duplicate while preserving order.
         deduped: list[str] = []
         for service in selected:
             if service not in deduped:
@@ -1264,7 +1248,6 @@ LIMIT 50;
     def changed_files(self) -> list[str]:
         if not (self.paths.repo_root / ".git").exists():
             return []
-
         files: set[str] = set()
 
         def collect(args: Sequence[str]) -> None:
@@ -1292,7 +1275,6 @@ LIMIT 50;
     def changed_services(self, files: Sequence[str]) -> list[str]:
         if not files:
             return []
-
         normalized = [f.replace("\\", "/") for f in files]
         if any(file in GLOBAL_INVALIDATORS or file.startswith("deploy/") for file in normalized):
             return sorted(self.app_services())
@@ -1302,6 +1284,7 @@ LIMIT 50;
             for file in normalized:
                 if any(file.startswith(hint) for hint in hints):
                     affected.add(service)
+
         return sorted(service for service in affected if service in self.services())
 
     def extract_scale_args(self, args: Sequence[str]) -> tuple[dict[str, int], list[str]]:
@@ -1319,6 +1302,7 @@ LIMIT 50;
                 counts[legacy_to_worker[arg]] = self.parse_count(args[i + 1])
                 i += 2
                 continue
+
             if arg.startswith("--scale-") and "=" in arg:
                 flag, value = arg.split("=", 1)
                 worker = legacy_to_worker.get(flag)
@@ -1326,6 +1310,7 @@ LIMIT 50;
                     counts[worker] = self.parse_count(value)
                     i += 1
                     continue
+
             remaining.append(arg)
             i += 1
 
@@ -1335,7 +1320,6 @@ LIMIT 50;
         counts: dict[str, int] = {}
         if not tokens:
             return counts
-
         for token in tokens:
             if "=" not in token:
                 self.ui.warn(f"Ignoring scale token without '=': {token}")
@@ -1354,12 +1338,7 @@ LIMIT 50;
             raise SystemExit("Worker counts must be non-negative.")
         return value
 
-    def normalize_worker_counts(
-        self,
-        counts: Mapping[str, int],
-        *,
-        include_http_requester: bool = True,
-    ) -> dict[str, int]:
+    def normalize_worker_counts(self, counts: Mapping[str, int], *, include_http_requester: bool = True) -> dict[str, int]:
         normalized: dict[str, int] = {}
         for raw_worker, count in counts.items():
             worker = self.normalize_worker_name(raw_worker)
@@ -1411,6 +1390,12 @@ Interactive:
   deploy/deploy-ui.py
   deploy/deploy-ui.py menu
 
+Automatic all-in-one:
+  deploy/deploy-ui.py auto
+  deploy/deploy-ui.py auto --yes
+  deploy/deploy-ui.py auto --fresh
+  deploy/deploy-ui.py auto --reset-volumes --fresh
+
 Deploy/update:
   deploy/deploy-ui.py deploy --hot [service...]
   deploy/deploy-ui.py deploy --image [service...]
@@ -1442,22 +1427,22 @@ AWS/ECS:
 
 Global options:
   --dry-run, -n       Print commands without executing them
-  --yes, -y          Assume yes for destructive confirmations
-  --repo-root PATH   Run against a specific checkout
-  --no-color         Disable ANSI color output
-  --verbose          Print discovery commands too
+  --yes, -y           Assume yes for destructive confirmations
+  --repo-root PATH    Run against a specific checkout
+  --no-color          Disable ANSI color output
+  --verbose           Print discovery commands too
 
 Compatibility:
   deploy-ui.py still accepts deploy.sh handoff-style arguments such as:
-  up, --fresh, -fresh, --ecs-workers, --hot, --image, logs, status, restart, down, smoke.
-""".strip()
+  up, --fresh, -fresh, --ecs-workers, --hot, --image, logs, status, restart,
+  down, smoke.
+            """.strip()
         )
 
     def preflight(self) -> int:
         self.ui.header("Preflight")
         self.show_context()
         failures = 0
-
         checks = [
             ("Python", sys.executable),
             ("Docker", "docker"),
@@ -1465,7 +1450,6 @@ Compatibility:
             ("Bash", "bash"),
             ("AWS CLI", "aws"),
         ]
-
         for name, exe in checks:
             found = which(exe) if exe != sys.executable else exe
             if found:
@@ -1476,20 +1460,20 @@ Compatibility:
 
         compose_code, compose_out, _ = self.runner.capture(["docker", "compose", "version"])
         if compose_code == 0:
-            self.ui.ok(f"Compose    {compose_out.strip()}")
+            self.ui.ok(f"Compose {compose_out.strip()}")
         elif which("docker-compose"):
             code, out, _ = self.runner.capture(["docker-compose", "--version"])
-            self.ui.ok(f"Compose    {out.strip() if code == 0 else 'docker-compose'}")
+            self.ui.ok(f"Compose {out.strip() if code == 0 else 'docker-compose'}")
         else:
             failures += 1
-            self.ui.warn("Compose    not found")
+            self.ui.warn("Compose not found")
 
-        for path in [self.paths.compose_file, self.paths.deploy_sh, self.paths.logs_sh]:
+        for path in [self.paths.compose_file, self.paths.deploy_sh, self.paths.logs_sh, self.paths.auto_all_in_one]:
             if path.exists():
-                self.ui.ok(f"File       {self.paths.rel(path)}")
+                self.ui.ok(f"File {self.paths.rel(path)}")
             else:
                 failures += 1
-                self.ui.warn(f"File       missing: {self.paths.rel(path)}")
+                self.ui.warn(f"File missing: {self.paths.rel(path)}")
 
         return 1 if failures else 0
 
@@ -1502,8 +1486,8 @@ def parse_global_options(argv: Sequence[str]) -> tuple[Options, list[str]]:
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--repo-root", type=Path)
     parser.add_argument("-h", "--help", action="store_true")
-
     ns, remaining = parser.parse_known_args(argv)
+
     options = Options(
         dry_run=ns.dry_run,
         assume_yes=ns.yes,

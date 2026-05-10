@@ -53,59 +53,7 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.MapStaticAssets();
 app.UseStaticFiles();
 
-app.MapGet("/_framework/blazor.web.js", async context =>
-{
-    var path = Path.Combine(builder.Environment.WebRootPath ?? "wwwroot", "_framework", "blazor.web.js");
-    if (File.Exists(path))
-    {
-        context.Response.ContentType = "application/javascript";
-        await context.Response.SendFileAsync(path);
-        return;
-    }
 
-    // Fallback 1: Deep search in /usr/share/dotnet
-    var sharedFxDir = "/usr/share/dotnet";
-    if (Directory.Exists(sharedFxDir))
-    {
-        try
-        {
-            var files = Directory.GetFiles(sharedFxDir, "blazor.web.js", SearchOption.AllDirectories);
-            if (files.Length > 0)
-            {
-                context.Response.ContentType = "application/javascript";
-                await context.Response.SendFileAsync(files[0]);
-                return;
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error searching /usr/share/dotnet: {ex.Message}");
-        }
-    }
-
-    // Fallback 2: Deep search in /app
-    var appDir = "/app";
-    if (Directory.Exists(appDir))
-    {
-        try
-        {
-            var files = Directory.GetFiles(appDir, "blazor.web.js", SearchOption.AllDirectories);
-            if (files.Length > 0)
-            {
-                context.Response.ContentType = "application/javascript";
-                await context.Response.SendFileAsync(files[0]);
-                return;
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error searching /app: {ex.Message}");
-        }
-    }
-
-    context.Response.StatusCode = 404;
-    await context.Response.WriteAsync($"blazor.web.js not found on disk at {path} or in shared framework (deep search failed). WebRootPath is {builder.Environment.WebRootPath}");
-});
 
 // Compatibility alias for clients, proxies, or stale HTML that still request the
 // pre-split Command Center CSS isolation bundle name. The current web project

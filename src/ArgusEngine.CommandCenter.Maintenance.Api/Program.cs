@@ -13,24 +13,7 @@ builder.Services.AddScoped<HttpQueueArtifactBackfillService>();
 
 var app = builder.Build();
 
-app.MapGet("/health/live", () => Results.Ok(new { status = "live" })).AllowAnonymous();
 
-app.MapGet(
-    "/health/ready",
-    async (ArgusDbContext db, CancellationToken ct) =>
-    {
-        try
-        {
-            return await db.Database.CanConnectAsync(ct).ConfigureAwait(false)
-                ? Results.Ok(new { status = "ready", postgres = "ok" })
-                : Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
-        }
-        catch
-        {
-            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
-        }
-    })
-    .AllowAnonymous();
 
 app.MapAdminUsageEndpoints();
 app.MapBusJournalEndpoints();

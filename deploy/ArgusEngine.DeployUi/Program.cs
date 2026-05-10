@@ -1094,6 +1094,59 @@ Global:
             throw new ArgumentException($"{commandName} requires at least one service.");
         }
     }
+
+    private static int FirstNonZero(params int[] values) => values.FirstOrDefault(code => code != 0);
+
+    private static Dictionary<string, string> LoadEnv(string path)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!File.Exists(path))
+        {
+            return map;
+        }
+
+        foreach (var raw in File.ReadAllLines(path))
+        {
+            var line = raw.Trim();
+            if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#'))
+            {
+                continue;
+            }
+
+            var idx = line.IndexOf('=');
+            if (idx <= 0)
+            {
+                continue;
+            }
+
+            map[line[..idx].Trim()] = line[(idx + 1)..].Trim();
+        }
+
+        return map;
+    }
+
+    private static string Get(IReadOnlyDictionary<string, string> env, string key, string fallback) =>
+        env.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : Environment.GetEnvironmentVariable(key) ?? fallback;
+
+    private static void SetEnvValue(IDictionary<string, string> env, string key, string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            env[key] = value.Trim();
+        }
+    }
+
+    private static void WriteEnv(string path, IReadOnlyDictionary<string, string> env)
+    {
+        var lines = env
+            .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(kv => $"{kv.Key}={kv.Value}")
+            .ToArray();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllLines(path, lines);
+    }
 }
 
 internal sealed class ScriptCatalog

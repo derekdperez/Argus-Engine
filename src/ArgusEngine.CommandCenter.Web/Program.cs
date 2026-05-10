@@ -44,6 +44,20 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+
+// Prevent browsers from caching the HTML shell — it embeds fingerprinted asset URLs
+// (blazor.web.js, app.css, etc.) that change on every deploy. A stale cached shell
+// causes 404s for those assets until the user hard-refreshes.
+app.Use(async (context, next) =>
+{
+    await next();
+    if (context.Response.ContentType?.StartsWith("text/html", StringComparison.OrdinalIgnoreCase) == true)
+    {
+        context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+        context.Response.Headers.Pragma = "no-cache";
+    }
+});
+
 app.MapStaticAssets();
 app.UseStaticFiles();
 

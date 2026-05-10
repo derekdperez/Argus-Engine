@@ -202,6 +202,7 @@ argus_fast_hot_swap() {
 
   if [[ "$need_restore" == "1" ]]; then
     echo "ARGUS_PHASE:restore"
+    echo "NuGet package cache is cold — running dotnet restore for all projects before parallel publish…"
     if command -v dotnet >/dev/null 2>&1; then
       dotnet restore "$ROOT/ArgusEngine.slnx" --packages "$nuget_dir" 2>&1 | \
         grep -E '^  Restored|error|Error' || true
@@ -223,6 +224,7 @@ argus_fast_hot_swap() {
 
   # ── Step 2: Parallel publish ───────────────────────────────────────────────
   echo "ARGUS_PHASE:publish"
+  echo "Starting parallel publish for ${#services[@]} service(s): ${services[*]}"
   argus_parallel_publish "${services[@]}"
 
   # Check which succeeded

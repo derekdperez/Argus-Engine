@@ -1,49 +1,28 @@
 #!/usr/bin/env python3
 """
-Argus Engine Deployment UI — v2
-Full-screen ANSI terminal dashboard for ./deploy/deploy.sh.
-Uses alternate screen buffer so nothing leaks to scrollback.
-Tracks structured ARGUS_* markers emitted by the deploy scripts for
-accurate per-phase progress, plus counts container Started/Healthy events
-for a live Compose-up bar.
+Argus Engine Deployment UI — v3
+Verbose, informative full-screen ANSI deployment dashboard.
 """
 import sys, os, subprocess, time, re, threading, queue, signal, shutil
 
-# ── Fall-through if non-interactive ────────────────────────────────────────
 if not sys.stdout.isatty():
     deploy_sh = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deploy.sh")
     os.execvp("bash", ["bash", deploy_sh] + sys.argv[1:])
 
-# ── ANSI helpers ────────────────────────────────────────────────────────────
 E = "\033"
-def mv(r, c):        return f"{E}[{r};{c}H"
-def clr():           return f"{E}[2J{E}[H"
-def eol():           return f"{E}[K"
-def bold():          return f"{E}[1m"
-def dim():           return f"{E}[2m"
-def rst():           return f"{E}[0m"
-def fg(n):           return f"{E}[38;5;{n}m"
-def bg(n):           return f"{E}[48;5;{n}m"
-def hide_cur():      return f"{E}[?25l"
-def show_cur():      return f"{E}[?25h"
-def alt_on():        return f"{E}[?1049h"
-def alt_off():       return f"{E}[?1049l"
+def mv(r,c):    return f"{E}[{r};{c}H"
+def eol():      return f"{E}[K"
+def rst():      return f"{E}[0m"
+def bold():     return f"{E}[1m"
+def dim():      return f"{E}[2m"
+def fg(n):      return f"{E}[38;5;{n}m"
+def bg(n):      return f"{E}[48;5;{n}m"
 
-C_CYAN      = fg(51)
-C_AMBER     = fg(220)
-C_GREEN     = fg(82)
-C_RED       = fg(196)
-C_GREY      = fg(245)
-C_DARK      = fg(238)
-C_WHITE     = fg(255)
-C_DIM_GREY  = fg(240)
-C_BAR_F     = fg(39)
-C_BAR_E     = fg(236)
-C_SEP       = fg(238)
-C_HEADER_BG = bg(234)
-C_LOG_ERR   = fg(203)
-C_LOG_OK    = fg(77)
-C_LOG_NRM   = fg(248)
+C_CYAN   = fg(51);  C_AMBER  = fg(220); C_GREEN  = fg(82)
+C_RED    = fg(196); C_GREY   = fg(245); C_DARK   = fg(238)
+C_WHITE  = fg(255); C_SEP    = fg(238); C_MUTED  = fg(243)
+C_HDR    = bg(234); C_BAR_F  = fg(39);  C_BAR_E  = fg(236)
+C_WARN   = fg(214); C_INFO   = fg(75)
 
 SPIN = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
 BF, BE = "█", "░"
@@ -52,463 +31,474 @@ def termsize():
     s = shutil.get_terminal_size((120, 40))
     return s.lines, s.columns
 
-# ── Compose service names (for counting started containers) ─────────────────
-# Covers all services defined in docker-compose.yml.
-COMPOSE_SERVICES = [
-    "postgres", "redis", "rabbitmq", "filestore-db-init",
-    "command-center-gateway", "command-center-operations-api",
-    "command-center-discovery-api", "command-center-worker-control-api",
-    "command-center-maintenance-api", "command-center-updates-api",
-    "command-center-realtime", "command-center-bootstrapper",
-    "command-center-spider-dispatcher", "command-center-web",
-    "gatekeeper",
-    "worker-spider", "worker-http-requester", "worker-enum",
-    "worker-portscan", "worker-highvalue", "worker-techid",
-]
-COMPOSE_TOTAL = len(COMPOSE_SERVICES)  # 21 — adjusted at runtime if we see more
-
-# ── Phase definitions ───────────────────────────────────────────────────────
-#   id, label, weight(%), estimated wall-seconds (for time-nudge)
+# ── Phase descriptions shown to user ────────────────────────────────────────
 PHASE_DEFS = [
-    ("init",    "Initialize & Fingerprint",  3,   8),
-    ("build",   "Build / Publish",           62, 180),
-    ("up",      "Apply Compose Stack",       28,  50),
-    ("verify",  "Verify & Finalize",          7,  15),
+    {
+        "id": "init",
+        "name": "Initialize",
+        "weight": 3, "est": 8,
+        "desc": "Reading git state, computing source fingerprints for all services, and deciding what needs to be rebuilt.",
+        "tasks": {
+            "fingerprint":  "Hashing source files for each service to detect changes since last deploy…",
+            "compare":      "Comparing fingerprints against last successful deployment…",
+            "plan":         "Building deployment plan: deciding hot-swap vs. image rebuild vs. skip…",
+        }
+    },
+    {
+        "id": "build",
+        "name": "Build / Publish",
+        "weight": 62, "est": 180,
+        "desc": "Compiling changed .NET services and producing deployable artifacts. Source-only changes are published directly; Dockerfile changes trigger a full image rebuild via Docker BuildKit.",
+        "tasks": {
+            "restore":      "Restoring NuGet packages into shared cache…",
+            "publish":      "Compiling and publishing changed services in parallel (no Docker build required)…",
+            "docker_build": "Running docker compose build for services with Dockerfile/image changes…",
+            "copy":         "Copying publish output into running containers…",
+            "restart":      "Restarting updated containers to pick up new binaries…",
+        }
+    },
+    {
+        "id": "up",
+        "name": "Apply Compose Stack",
+        "weight": 28, "est": 50,
+        "desc": "Running docker compose up to reconcile the desired state: starting any stopped services, applying config changes, and ensuring all containers are healthy.",
+        "tasks": {
+            "up":           "Bringing all compose services up and waiting for containers to start…",
+            "health":       "Waiting for services to become healthy…",
+        }
+    },
+    {
+        "id": "verify",
+        "name": "Verify & Finalize",
+        "weight": 7, "est": 15,
+        "desc": "Confirming the deployment succeeded: checking that the Command Center web UI is reachable and Blazor assets are correctly served.",
+        "tasks": {
+            "blazor":       "Verifying Blazor static assets (blazor.web.js) inside the running container…",
+            "http":         "Confirming the web UI responds with HTTP 200 on the expected port…",
+            "stamp":        "Saving deployment fingerprints so the next run knows what was last deployed…",
+        }
+    },
 ]
 
-def make_phases():
-    return [{
-        "id": d[0], "name": d[1], "weight": d[2], "est": d[3],
-        "pct": 0, "status": "pending", "detail": "",
-    } for d in PHASE_DEFS]
-
-# ── State ───────────────────────────────────────────────────────────────────
+# ── State ────────────────────────────────────────────────────────────────────
 class State:
     def __init__(self):
-        self.phases = make_phases()
-        self.cur    = 0          # active phase index
-        self.logs   = []         # all raw log lines
+        self.phases = [{**d, "pct": 0, "status": "pending", "detail": "", "active_task": ""} for d in PHASE_DEFS]
+        self.cur = 0
+        self.logs = []          # filtered display logs
+        self.all_logs = []      # every raw line
         self.spin_i = 0
-        # build sub-tracking
-        self.build_svcs_total  = 0
-        self.build_svcs_done   = 0
-        self.build_svcs_status = {}  # name → "building"|"done"|"fail"
-        # parallel publish sub-tracking
-        self.pub_svcs_total  = 0
-        self.pub_svcs_done   = 0
-        self.pub_svcs_status = {}  # name → "publishing"|"ok"|"fail"
-        # compose-up sub-tracking (accurate)
-        self.compose_started = set()   # container names that emitted Started/Healthy
-        self.compose_total   = COMPOSE_TOTAL
-        # timing
-        self.start      = time.time()
-        self.phase_start= time.time()
+        self.start = time.time()
+        self.phase_start = time.time()
+        # build tracking
+        self.build_total = 0;  self.build_done = 0
+        self.pub_total   = 0;  self.pub_done   = 0
+        self.pub_status  = {}  # svc→status str
+        # compose tracking
+        self.compose_up   = set()
+        self.compose_total = 21
+        # events for verbose status
+        self.current_event = ""   # short single-line current activity
 
-    def phase(self): return self.phases[self.cur] if self.cur < len(self.phases) else None
+    def ph(self, pid=None):
+        if pid is None: return self.phases[self.cur] if self.cur < len(self.phases) else None
+        for p in self.phases:
+            if p["id"] == pid: return p
+        return None
+
     def spin(self):
         self.spin_i = (self.spin_i + 1) % len(SPIN)
         return SPIN[self.spin_i]
 
-    def advance(self, phase_id: str):
-        """Mark current phase done and activate phase_id."""
+    def advance(self, pid):
         for i, p in enumerate(self.phases):
             if p["status"] == "running":
-                p["pct"] = 100
-                p["status"] = "done"
-            if p["id"] == phase_id and p["status"] == "pending":
+                p["pct"] = 100; p["status"] = "done"; p["active_task"] = ""
+            if p["id"] == pid and p["status"] == "pending":
                 p["status"] = "running"
                 self.cur = i
                 self.phase_start = time.time()
                 break
 
-    def overall_pct(self):
-        total_w = sum(p["weight"] for p in self.phases)
-        done_w  = sum(p["pct"] * p["weight"] / 100 for p in self.phases)
-        return min(100, int(done_w * 100 / total_w))
+    def set_task(self, pid, task_key):
+        ph = self.ph(pid)
+        if ph: ph["active_task"] = task_key
 
-# ── Log parser ──────────────────────────────────────────────────────────────
-def feed(state: State, raw: str):
+    def overall(self):
+        tw = sum(p["weight"] for p in self.phases)
+        dw = sum(p["pct"] * p["weight"] / 100 for p in self.phases)
+        return min(100, int(dw * 100 / tw))
+
+
+# ── Parser ───────────────────────────────────────────────────────────────────
+def feed(s: State, raw: str):
     line = raw.rstrip()
     if not line: return
     ll = line.lower()
 
-    # Skip bash trace lines and BuildKit internal lines
+    s.all_logs.append(line)
+    if len(s.all_logs) > 1000: s.all_logs = s.all_logs[-1000:]
+
+    # Skip noise
     if line.startswith("+ ") or line.startswith("++ "): return
-    if re.match(r'^#\d+ \[', line): return      # BuildKit step lines
+    if re.match(r'^#\d+ \[', line): return
 
-    state.logs.append(line)
-    if len(state.logs) > 500: state.logs = state.logs[-500:]
+    s.logs.append(line)
+    if len(s.logs) > 300: s.logs = s.logs[-300:]
 
-    # ── Structured markers from deploy scripts ──────────────────────────────
+    # ── ARGUS structured markers ──────────────────────────────────────────────
     m = re.match(r'^ARGUS_PHASE:(\S+)', line)
     if m:
-        state.advance(m.group(1))
+        pid = m.group(1)
+        s.advance(pid)
+        if pid == "build":
+            s.set_task("build", "docker_build")
+        elif pid == "up":
+            s.set_task("up", "up")
+        elif pid == "copy_restart":
+            s.set_task("build", "copy")
         return
 
     m = re.match(r'^ARGUS_FAST_HOT_SWAP_START:(.+)', line)
     if m:
         svcs = m.group(1).split()
-        state.pub_svcs_total = len(svcs)
-        for s in svcs:
-            state.pub_svcs_status[s] = "publishing"
-        state.advance("build")
+        s.pub_total = len(svcs)
+        for sv in svcs: s.pub_status[sv] = "queued"
+        s.advance("build"); s.set_task("build", "publish")
+        s.current_event = f"Parallel publish starting for {len(svcs)} service(s): {', '.join(svcs[:4])}{'…' if len(svcs)>4 else ''}"
         return
 
     m = re.match(r'^ARGUS_PUBLISH_START:(\S+)', line)
     if m:
-        state.pub_svcs_status[m.group(1)] = "publishing"
-        state.pub_svcs_total = max(state.pub_svcs_total, len(state.pub_svcs_status))
+        sv = m.group(1); s.pub_status[sv] = "building"
+        s.current_event = f"Compiling {sv}…"
         return
 
     m = re.match(r'^ARGUS_STATUS:(\S+):(ok|fail)', line)
     if m:
-        svc, result = m.group(1), m.group(2)
-        state.pub_svcs_status[svc] = result
-        state.pub_svcs_done = sum(1 for v in state.pub_svcs_status.values() if v in ("ok","fail"))
-        _update_build_pct(state)
+        sv, res = m.group(1), m.group(2)
+        s.pub_status[sv] = res
+        s.pub_done = sum(1 for v in s.pub_status.values() if v in ("ok","fail"))
+        _build_pct(s)
+        s.current_event = f"{'✔' if res=='ok' else '✘'} {sv} publish {res}  ({s.pub_done}/{s.pub_total})"
         return
 
     m = re.match(r'^ARGUS_COPY_DONE:(\S+)', line)
     if m:
-        ph = _find_phase(state, "build")
-        if ph: ph["detail"] = f"Copying → {m.group(1)}"
+        s.set_task("build", "copy")
+        s.current_event = f"Copied binaries into {m.group(1)} container"
         return
 
     m = re.match(r'^ARGUS_ALL_COPIES_DONE', line)
     if m:
-        ph = _find_phase(state, "build")
-        if ph: ph["detail"] = "Restarting services…"
+        s.set_task("build", "restart")
+        s.current_event = "All containers updated — restarting services…"
         return
 
     m = re.match(r'^ARGUS_RESTART_DONE:(\S+)', line)
     if m:
-        ph = _find_phase(state, "build")
-        if ph: ph["detail"] = f"Restarted {m.group(1)}"
+        s.current_event = f"✔ {m.group(1)} restarted"
         return
 
     m = re.match(r'^ARGUS_ALL_RESTARTS_DONE', line)
     if m:
-        state.advance("up")
+        s.advance("up"); s.set_task("up", "up")
+        s.current_event = "All services restarted — reconciling compose stack…"
         return
 
-    # ── Init phase signals ─────────────────────────────────────────────────
-    if state.cur == 0:
-        ph = state.phases[0]
-        ph["status"] = "running"
-        if any(x in ll for x in ["build_source_stamp", "hot deploy plan", "fresh deploy",
-                                   "fast deploy", "skip build", "image rebuild service"]):
-            # Parse how many services will be built
+    # ── Init phase ────────────────────────────────────────────────────────────
+    if s.cur == 0:
+        ph = s.ph("init"); ph["status"] = "running"
+        s.set_task("init", "fingerprint")
+        if "build_source_stamp" in ll:
+            ph["detail"] = line[:80]
+            s.current_event = f"Build stamp computed: {line.split('=',1)[-1][:40]}"
+        elif "hot deploy plan" in ll:
+            s.set_task("init", "plan")
+            s.current_event = "Deployment plan ready — inspecting what changed…"
+        elif "image rebuild service" in ll:
             m2 = re.search(r'image rebuild service.*?:\s*(.+)', line, re.I)
             if m2:
-                svcs = m2.group(1).split()
-                state.build_svcs_total = len(svcs)
-                for s in svcs:
-                    state.build_svcs_status[s] = "pending"
-
-            if "skip build" in ll or "no unapplied" in ll:
-                ph["pct"] = 100; ph["status"] = "done"
-                _find_phase(state, "build")["pct"] = 100
-                _find_phase(state, "build")["status"] = "skipped"
-                state.advance("up")
-            else:
-                ph["pct"] = 100; ph["status"] = "done"
-                state.advance("build")
-        else:
-            if ph["pct"] < 85:
-                ph["pct"] = min(85, ph["pct"] + 10)
-        ph["detail"] = line[:90]
+                svcs = m2.group(1).split(); s.build_total = len(svcs)
+                for sv in svcs: s.pub_status.setdefault(sv, "pending")
+            s.current_event = f"Will rebuild {s.build_total} service image(s)"
+        elif "hot-swap service" in ll:
+            s.current_event = f"Source-only change detected — will hot-swap: {line.split(':',1)[-1].strip()[:60]}"
+        elif "skip build" in ll or "no unapplied" in ll:
+            s.current_event = "No changes detected — skipping build entirely"
+            ph["pct"] = 100; ph["status"] = "done"
+            bph = s.ph("build"); bph["pct"] = 100; bph["status"] = "skipped"; bph["detail"] = "No source or image changes — build skipped"
+            s.advance("up"); s.set_task("up", "up")
+            return
+        if "image rebuild service" in ll or "hot deploy plan" in ll or "fast deploy" in ll:
+            ph["pct"] = 100; ph["status"] = "done"
+            s.advance("build")
+        elif ph["pct"] < 85:
+            ph["pct"] = min(85, ph["pct"] + 12)
+        ph["detail"] = s.current_event
         return
 
-    # ── Build phase: Docker BuildKit plain-text parsing ────────────────────
-    if _find_phase(state, "build") and _find_phase(state, "build")["status"] == "running":
-        ph = _find_phase(state, "build")
-
-        # Service completed (exporting or named-image writing)
-        m2 = re.match(r'^#\d+\s+\[([a-z0-9_-]+)\s+(?:build|final)\s+\d+/\d+\]\s+.*DONE', line, re.I)
-        if not m2:
-            m2 = re.match(r'^\s*✔\s+([a-z0-9_-]+).*(?:Built|Done)', line, re.I)
-        if m2:
-            svc = m2.group(1).replace("_","-")
-            if state.build_svcs_status.get(svc) != "done":
-                state.build_svcs_status[svc] = "done"
-                state.build_svcs_done += 1
-                _update_build_pct(state)
-
-        # Build step step X/Y per service
+    # ── Build phase ───────────────────────────────────────────────────────────
+    if s.ph("build") and s.ph("build")["status"] == "running":
+        ph = s.ph("build")
+        # restore step
+        if "determining projects to restore" in ll or "restoring" in ll:
+            s.set_task("build", "restore")
+            s.current_event = "Restoring NuGet dependencies…"
+        # docker build step lines
         m3 = re.match(r'^#\d+\s+\[([a-z0-9_-]+)\s+build\s+(\d+)/(\d+)\]', line, re.I)
         if m3:
-            svc = m3.group(1).replace("_","-")
-            step, total = int(m3.group(2)), int(m3.group(3))
-            state.build_svcs_status[svc] = f"{step}/{total}"
-            if state.build_svcs_total == 0: state.build_svcs_total = 1
-            ph["detail"] = f"Building {svc} ({step}/{total})"
-            _update_build_pct(state)
-
-        # Publish lines from fast-hot-swap
-        m4 = re.search(r'Publishing\s+(\S+)\s+with cached', line, re.I)
-        if m4:
-            ph["detail"] = f"Publishing {m4.group(1)}"
-
-        # Transition to up: compose starting containers
-        if any(x in ll for x in ["running network argus", "network argus", "creating argus-engine",
-                                   "starting argus-engine", "container argus"]):
+            sv, step, total = m3.group(1).replace("_","-"), int(m3.group(2)), int(m3.group(3))
+            s.pub_status[sv] = f"{step}/{total}"
+            s.set_task("build", "docker_build")
+            s.current_event = f"docker build  {sv}  step {step}/{total}"
+            _build_pct(s)
+        # BuildKit service done
+        if "exporting" in ll or "writing image" in ll:
+            m4 = re.match(r'^#\d+\s+\[([a-z0-9_-]+)\s+(?:final|export)', line, re.I)
+            if m4:
+                sv = m4.group(1).replace("_","-")
+                if s.pub_status.get(sv) != "ok":
+                    s.pub_status[sv] = "ok"; s.build_done += 1
+                s.current_event = f"✔ Image built: {sv}  ({s.build_done}/{s.build_total or '?'})"
+                _build_pct(s)
+        # Transition to up
+        if any(x in ll for x in ["running network argus", "creating argus-engine", "starting argus-engine"]):
             ph["pct"] = 100; ph["status"] = "done"
-            state.advance("up")
+            s.advance("up"); s.set_task("up", "up")
+        ph["detail"] = s.current_event
         return
 
-    # ── Compose-up phase: count Started / Healthy events ──────────────────
-    if _find_phase(state, "up") and _find_phase(state, "up")["status"] == "running":
-        ph = _find_phase(state, "up")
-
-        # docker compose up lines: " ✔ Container argus-engine-postgres-1  Healthy"
-        # or:                      " Container argus-engine-web-1  Starting"
-        m2 = re.search(r'container\s+(argus-engine-[a-z0-9_-]+-\d+)\s+(started|healthy|running|created)', ll)
-        if m2:
-            cname = m2.group(1)
-            state.compose_started.add(cname)
-            # dynamically grow total if we see more containers than expected
-            state.compose_total = max(state.compose_total, len(state.compose_started) + 1)
-            pct = int(len(state.compose_started) / state.compose_total * 95)
-            ph["pct"] = max(ph["pct"], pct)
-            ph["detail"] = f"{len(state.compose_started)}/{state.compose_total} containers up"
-
-        # Detect end of compose up
+    # ── Compose-up phase ──────────────────────────────────────────────────────
+    if s.ph("up") and s.ph("up")["status"] == "running":
+        ph = s.ph("up")
+        m5 = re.search(r'container\s+(argus-engine-[a-z0-9_-]+-\d+)\s+(started|healthy|running|created)', ll)
+        if m5:
+            cname = m5.group(1); s.compose_up.add(cname)
+            s.compose_total = max(s.compose_total, len(s.compose_up) + 1)
+            ph["pct"] = max(ph["pct"], min(95, int(len(s.compose_up) / s.compose_total * 95)))
+            s.current_event = f"Container up: {cname.replace('argus-engine-','')}  ({len(s.compose_up)}/{s.compose_total})"
+            s.set_task("up", "health")
+            ph["detail"] = f"{len(s.compose_up)} / {s.compose_total} containers running"
         if any(x in ll for x in ["argus v2 is running", "useful commands", "command center gateway"]):
-            # Mark every remaining container as done
             ph["pct"] = 100; ph["status"] = "done"
-            state.advance("verify")
+            s.advance("verify"); s.set_task("verify", "blazor")
+            s.current_event = "All containers up — running post-deploy verification…"
         return
 
-    # ── Verify phase ───────────────────────────────────────────────────────
-    if _find_phase(state, "verify") and _find_phase(state, "verify")["status"] == "running":
-        ph = _find_phase(state, "verify")
-        ph["detail"] = line[:90]
-        ph["pct"] = min(95, ph["pct"] + 15)
-        return
+    # ── Verify phase ─────────────────────────────────────────────────────────
+    if s.ph("verify") and s.ph("verify")["status"] == "running":
+        ph = s.ph("verify")
+        if "blazor static asset" in ll or "blazor.web.js" in ll:
+            s.set_task("verify", "blazor"); s.current_event = line[:90]
+        elif "fingerprint" in ll or "last deploy" in ll or "commit" in ll:
+            s.set_task("verify", "stamp"); s.current_event = "Saving deployment fingerprints…"
+        elif "http 200" in ll or "served" in ll or "passed" in ll:
+            s.set_task("verify", "http"); s.current_event = f"✔ {line[:80]}"
+        else:
+            s.current_event = line[:90]
+        ph["detail"] = s.current_event
+        ph["pct"] = min(95, ph["pct"] + 20)
 
 
-def _find_phase(state, pid):
-    for p in state.phases:
-        if p["id"] == pid: return p
-    return None
-
-def _update_build_pct(state):
-    ph = _find_phase(state, "build")
-    if not ph or ph["status"] not in ("running",): return
-    total = max(state.build_svcs_total, state.pub_svcs_total, 1)
-    done  = max(state.build_svcs_done,  state.pub_svcs_done)
-    frac  = done / total
-    ph["pct"] = max(ph["pct"], min(95, int(frac * 95)))
-    if done >= total > 0:
-        ph["detail"] = f"All {total} services built"
-
-# ── Time-nudge (moves bar forward using expected duration when no events) ───
-def time_nudge(state):
-    ph = state.phase()
+def _build_pct(s: State):
+    ph = s.ph("build")
     if not ph or ph["status"] != "running": return
-    elapsed  = time.time() - state.phase_start
-    est      = ph["est"]
-    # Logarithmic: fast early, slow as it approaches 95%
-    target   = min(95, int(95 * (1 - 2 ** (-elapsed / max(est, 1) * 1.5))))
-    if target > ph["pct"]:
-        ph["pct"] = target
+    total = max(s.build_total, s.pub_total, 1)
+    done  = max(s.build_done, s.pub_done)
+    ph["pct"] = max(ph["pct"], min(95, int(done / total * 95)))
 
-# ── Renderer ────────────────────────────────────────────────────────────────
-def render(state: State, final=False, rc=None):
+
+def time_nudge(s: State):
+    ph = s.ph()
+    if not ph or ph["status"] != "running": return
+    elapsed = time.time() - s.phase_start
+    target  = min(95, int(95 * (1 - 2 ** (-elapsed / max(ph["est"], 1) * 1.5))))
+    if target > ph["pct"]: ph["pct"] = target
+
+
+# ── Renderer ─────────────────────────────────────────────────────────────────
+def render(s: State, final=False, rc=None):
     rows, cols = termsize()
     out = []
     W = cols
 
-    def line(row, text):
+    def wr(row, text):
         out.append(f"{mv(row,1)}{text}{eol()}")
 
-    def hbar(row):
-        out.append(f"{mv(row,1)}{C_SEP}{'─'*W}{rst()}")
+    def hbar(row, ch="─"):
+        out.append(f"{mv(row,1)}{C_SEP}{ch*W}{rst()}")
 
-    # ── Header ──────────────────────────────────────────────────────────────
-    title = "  ARGUS ENGINE  ▸  DEPLOYMENT  "
+    # ── Header ────────────────────────────────────────────────────────────────
+    title = " ARGUS ENGINE  ▸  DEPLOYMENT "
     pad   = max(0, (W - len(title)) // 2)
-    line(1, f"{C_HEADER_BG}{C_CYAN}{bold()}{' '*pad}{title}{' '*(W-pad-len(title))}{rst()}")
-
-    elapsed = time.time() - state.start
+    wr(1, f"{C_HDR}{C_CYAN}{bold()}{' '*pad}{title}{' '*(W-pad-len(title))}{rst()}")
+    elapsed = time.time() - s.start
     mins, secs = divmod(int(elapsed), 60)
     mode = " ".join(sys.argv[1:]) or "hot-deploy"
-    line(2, f"  {dim()}{C_GREY}Elapsed: {mins:02d}:{secs:02d}   Mode: {mode}{rst()}")
+    wr(2, f"  {dim()}{C_GREY}Elapsed: {mins:02d}:{secs:02d}   Mode: {mode}{rst()}")
     hbar(3)
 
-    # ── Phase bars ──────────────────────────────────────────────────────────
     row = 4
-    BAR_W = max(20, W - 50)
-    spin_char = state.spin() if not final else " "
+    BAR_W = max(20, W - 48)
+    sp = s.spin() if not final else " "
 
-    for ph in state.phases:
+    # ── Phase bars ────────────────────────────────────────────────────────────
+    for ph in s.phases:
         pct    = ph["pct"]
         status = ph["status"]
-
-        if status == "done":
-            icon = f"{C_GREEN}✔{rst()}"; nc = C_GREEN
-        elif status == "skipped":
-            icon = f"{C_GREY}–{rst()}"; nc = C_GREY
-        elif status == "running":
-            icon = f"{C_AMBER}{spin_char}{rst()}"; nc = f"{C_AMBER}{bold()}"
-        elif status == "failed":
-            icon = f"{C_RED}✘{rst()}"; nc = C_RED
-        else:
-            icon = f"{C_DARK}·{rst()}"; nc = C_DARK
+        if   status == "done":    icon=f"{C_GREEN}✔{rst()}"; nc=C_GREEN
+        elif status == "skipped": icon=f"{C_GREY}–{rst()}"; nc=C_GREY
+        elif status == "running": icon=f"{C_AMBER}{sp}{rst()}"; nc=f"{C_AMBER}{bold()}"
+        elif status == "failed":  icon=f"{C_RED}✘{rst()}";  nc=C_RED
+        else:                     icon=f"{C_DARK}·{rst()}"; nc=C_DARK
 
         filled = int(pct / 100 * BAR_W)
         bar    = f"{C_BAR_F}{BF*filled}{C_BAR_E}{BE*(BAR_W-filled)}{rst()}"
-        pct_s  = f"{bold()}{pct:3d}%{rst()}"
-        name_s = f"{nc}{ph['name']:<28}{rst()}"
-        line(row, f"  {icon}  {name_s}  {bar}  {pct_s}")
+        wr(row, f"  {icon}  {nc}{ph['name']:<22}{rst()}  {bar}  {bold()}{pct:3d}%{rst()}")
         row += 1
 
-        detail = ph.get("detail","")
-        if status == "running" and ph["id"] == "build":
-            pub_t = state.pub_svcs_total; pub_d = state.pub_svcs_done
-            bld_t = state.build_svcs_total; bld_d = state.build_svcs_done
-            if pub_t > 0:
-                detail = f"Publishing in parallel: {pub_d}/{pub_t}   {detail}"
-            elif bld_t > 0:
-                detail = f"Images: {bld_d}/{bld_t}   {detail}"
-        if status == "running" and ph["id"] == "up" and state.compose_started:
-            detail = f"Containers up: {len(state.compose_started)}/{state.compose_total}"
+        # Description shown only when running
+        if status == "running" and row < rows - 6:
+            wr(row, f"       {dim()}{C_INFO}{ph['desc'][:W-10]}{rst()}")
+            row += 1
 
-        if detail:
-            line(row, f"     {dim()}{C_GREY}{detail[:W-8]}{rst()}")
+        # Active sub-task
+        task_key = ph.get("active_task","")
+        task_txt = ph.get("tasks",{}).get(task_key,"")
+        if task_txt and status == "running" and row < rows - 5:
+            wr(row, f"       {C_WARN}→ {task_txt[:W-12]}{rst()}")
+            row += 1
+
+        # Build/publish sub-counters
+        if ph["id"] == "build" and status == "running" and row < rows - 4:
+            pt = s.pub_total or s.build_total
+            pd = s.pub_done  or s.build_done
+            if pt:
+                bar_s = max(0, W - 40)
+                sf = int(pd / pt * bar_s)
+                sub_bar = f"{C_GREEN}{BF*sf}{C_BAR_E}{BE*(bar_s-sf)}{rst()}"
+                wr(row, f"       {C_MUTED}Services: {pd}/{pt}  {sub_bar}{rst()}")
+                row += 1
+
+        # Compose-up counter
+        if ph["id"] == "up" and status == "running" and s.compose_up and row < rows - 4:
+            ct = s.compose_total; cd = len(s.compose_up)
+            bar_s = max(0, W - 40)
+            sf = int(cd / ct * bar_s)
+            sub_bar = f"{C_GREEN}{BF*sf}{C_BAR_E}{BE*(bar_s-sf)}{rst()}"
+            wr(row, f"       {C_MUTED}Containers: {cd}/{ct}  {sub_bar}{rst()}")
             row += 1
 
     hbar(row); row += 1
 
-    # ── Overall bar ─────────────────────────────────────────────────────────
-    ov = state.overall_pct()
+    # ── Overall bar ───────────────────────────────────────────────────────────
+    ov = s.overall()
     OW = W - 18
     of = int(ov / 100 * OW)
-    ov_bar = f"{C_GREEN}{BF*of}{C_BAR_E}{BE*(OW-of)}{rst()}"
-    line(row, f"  {C_WHITE}{bold()}Overall  {rst()}{ov_bar}  {bold()}{ov:3d}%{rst()}")
+    wr(row, f"  {C_WHITE}{bold()}Overall  {rst()}{C_GREEN}{BF*of}{C_BAR_E}{BE*(OW-of)}{rst()}  {bold()}{ov:3d}%{rst()}")
     row += 1
+
+    # ── Current event banner ──────────────────────────────────────────────────
+    if s.current_event:
+        hbar(row, "─"); row += 1
+        ev = s.current_event[:W-6]
+        wr(row, f"  {C_AMBER}{bold()}▶ {ev}{rst()}")
+        row += 1
+
+    # ── Final result ──────────────────────────────────────────────────────────
+    if final:
+        hbar(row, "─"); row += 1
+        if rc == 0:
+            wr(row, f"  {C_GREEN}{bold()}✔  Deployment complete  — {mins:02d}:{secs:02d}{rst()}")
+        else:
+            wr(row, f"  {C_RED}{bold()}✘  Deployment FAILED (exit {rc})  — check log below{rst()}")
+        row += 1
+
     hbar(row); row += 1
 
-    # ── Final status ─────────────────────────────────────────────────────────
-    if final:
-        if rc == 0:
-            line(row, f"  {C_GREEN}{bold()}✔  Deployment complete  — {mins:02d}:{secs:02d}{rst()}")
-        else:
-            line(row, f"  {C_RED}{bold()}✘  Deployment FAILED (exit {rc})  — {mins:02d}:{secs:02d}{rst()}")
-        row += 1
-        hbar(row); row += 1
+    # ── Log pane ──────────────────────────────────────────────────────────────
+    log_rows = max(3, rows - row - 1)
+    wr(row, f"  {dim()}{C_GREY}Recent Output{rst()}"); row += 1
 
-    # ── Log pane ─────────────────────────────────────────────────────────────
-    log_rows = rows - row - 1
-    line(row, f"  {dim()}{C_GREY}Output{rst()}"); row += 1
-
-    visible = [l for l in state.logs
-               if not (l.startswith("+ ") or l.startswith("++ ")
-                       or re.match(r'^#\d+ \[', l)
-                       or re.match(r'^ARGUS_', l))][-max(3, log_rows):]
-
+    SKIP = re.compile(r'^(ARGUS_|#\d+)')
+    visible = [l for l in s.logs if not SKIP.match(l)][-log_rows:]
     for lg in visible:
         if row >= rows: break
-        if any(x in lg.lower() for x in ("error","fatal","fail","cannot")):
-            c = C_LOG_ERR
-        elif any(x in lg.lower() for x in ("done","started","healthy","ok","complete")):
-            c = C_LOG_OK
+        ll2 = lg.lower()
+        if any(x in ll2 for x in ("error","fatal","failed","cannot","permission denied")):
+            c = C_RED
+        elif any(x in ll2 for x in ("warning","warn")):
+            c = C_WARN
+        elif any(x in ll2 for x in ("done","started","healthy","ok","complete","passed","✔")):
+            c = C_GREEN
+        elif any(x in ll2 for x in ("building","publishing","restoring","copying")):
+            c = C_AMBER
         else:
-            c = C_LOG_NRM
-        line(row, f"  {c}{lg[:W-4]}{rst()}")
-        row += 1
+            c = C_MUTED
+        wr(row, f"  {c}{lg[:W-4]}{rst()}"); row += 1
 
     while row <= rows - 1:
         out.append(f"{mv(row,1)}{eol()}"); row += 1
-
     if final:
         out.append(f"{mv(rows,1)}{dim()}  Press Enter to exit…{rst()}{eol()}")
 
-    sys.stdout.write("".join(out))
-    sys.stdout.flush()
+    sys.stdout.write("".join(out)); sys.stdout.flush()
 
 
-# ── Main ────────────────────────────────────────────────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     deploy_dir = os.path.dirname(os.path.abspath(__file__))
     env = os.environ.copy()
-    env["ARGUS_NO_UI"]        = "1"
-    env["BUILDKIT_PROGRESS"]  = "plain"
-
-    cmd  = ["bash", os.path.join(deploy_dir, "deploy.sh")] + sys.argv[1:]
+    env["ARGUS_NO_UI"]       = "1"
+    env["BUILDKIT_PROGRESS"] = "plain"
+    cmd = ["bash", os.path.join(deploy_dir, "deploy.sh")] + sys.argv[1:]
     logQ: queue.Queue = queue.Queue()
-
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             text=True, bufsize=1, env=env,
-                             cwd=os.path.dirname(deploy_dir))
-
+                            text=True, bufsize=1, env=env,
+                            cwd=os.path.dirname(deploy_dir))
     def _read():
         for ln in iter(proc.stdout.readline, ""):
             logQ.put(ln)
         logQ.put(None)
-
     threading.Thread(target=_read, daemon=True).start()
 
     state = State()
+    sys.stdout.write(f"{E}[?1049h{E}[?25l{E}[2J{E}[H"); sys.stdout.flush()
 
-    sys.stdout.write(alt_on() + hide_cur() + clr())
-    sys.stdout.flush()
-
-    def cleanup(sig=None, _frame=None):
-        sys.stdout.write(show_cur() + alt_off())
-        sys.stdout.flush()
+    def cleanup(sig=None, _f=None):
+        sys.stdout.write(f"{E}[?25h{E}[?1049l"); sys.stdout.flush()
         if proc.poll() is None: proc.terminate()
         sys.exit(130)
+    signal.signal(signal.SIGINT, cleanup); signal.signal(signal.SIGTERM, cleanup)
 
-    signal.signal(signal.SIGINT, cleanup)
-    signal.signal(signal.SIGTERM, cleanup)
-
-    tick = 0
-    done = False
+    tick = 0; done = False
     try:
         while not done:
             drained = 0
             while drained < 80:
-                try:
-                    item = logQ.get_nowait()
-                except queue.Empty:
-                    break
-                if item is None:
-                    done = True; break
-                feed(state, item)
-                drained += 1
-
+                try:   item = logQ.get_nowait()
+                except queue.Empty: break
+                if item is None: done = True; break
+                feed(state, item); drained += 1
             time_nudge(state)
-
-            if tick % 2 == 0:
-                render(state)
+            if tick % 2 == 0: render(state)
             tick += 1
-            if not done:
-                time.sleep(0.1)
+            if not done: time.sleep(0.1)
 
         proc.wait()
-        elapsed = time.time() - state.start
-
-        # Finalise phases on success
         if proc.returncode == 0:
             for p in state.phases:
-                if p["status"] not in ("skipped",):
-                    p["status"] = "done"; p["pct"] = 100
+                if p["status"] not in ("skipped",): p["status"]="done"; p["pct"]=100
         else:
             for p in state.phases:
-                if p["status"] == "running":
-                    p["status"] = "failed"
-
+                if p["status"] == "running": p["status"] = "failed"
         render(state, final=True, rc=proc.returncode)
         try: sys.stdin.readline()
         except Exception: time.sleep(5)
-
     finally:
-        sys.stdout.write(show_cur() + alt_off())
-        sys.stdout.flush()
-
+        sys.stdout.write(f"{E}[?25h{E}[?1049l"); sys.stdout.flush()
     sys.exit(proc.returncode)
-
 
 if __name__ == "__main__":
     main()

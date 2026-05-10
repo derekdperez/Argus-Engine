@@ -404,6 +404,7 @@ if [[ "$argus_ECS_WORKERS" == "1" ]]; then
 fi
 
 argus_maybe_git_pull "$ROOT"
+echo "Computing build stamp and component versions…"
 argus_export_build_stamp "$ROOT"
 argus_export_component_versions "$ROOT"
 if [[ "$argus_ECS_WORKERS" == "1" && "${argus_ECS_USE_MUTABLE_TAG:-0}" != "1" ]]; then
@@ -418,8 +419,9 @@ if [[ "$argus_ECS_WORKERS" == "1" && "${argus_ECS_USE_MUTABLE_TAG:-0}" != "1" ]]
 fi
 if [[ "${argus_USER_SKIP_BUILD:-0}" == "1" ]]; then
   export argus_DEPLOY_SKIP_BUILD=1
-  echo "Deploy requested with --skip-build; docker compose up will apply runtime configuration only."
+  echo "--skip-build requested: image build step will be skipped. Only compose configuration changes will be applied."
 else
+  echo "Analyzing source fingerprints for all ${#}services to determine what changed since last deploy…"
   argus_decide_incremental_deploy
 fi
 

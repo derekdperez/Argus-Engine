@@ -298,7 +298,6 @@ restart_application_services() {
 
   if [[ ${#existing[@]} -gt 0 ]]; then
     compose up -d "${existing[@]}"
-    compose restart "${existing[@]}" || true
   fi
 }
 

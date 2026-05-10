@@ -1069,9 +1069,10 @@ argus_hot_swap_services() {
 argus_compose_image_deploy_for_services() {
   local services=("$@")
   [[ ${#services[@]} -gt 0 ]] || return 0
+  # Build images (caller already emitted ARGUS_PHASE:build)
   argus_compose_build_service_list "${services[@]}"
-  argus_compose_up_redeploy
-  argus_compose_force_recreate_services "${services[@]}"
+  # NOTE: compose up is NOT called here — argus_compose_hot_deploy emits
+  # ARGUS_PHASE:up and calls argus_compose_up_redeploy after all build work.
 }
 
 argus_compose_hot_deploy() {
@@ -1079,18 +1080,18 @@ argus_compose_hot_deploy() {
   local image_services=( ${argus_IMAGE_REBUILD_SERVICES:-} )
   # shellcheck disable=SC2206
   local hot_services=( ${argus_HOT_SWAP_SERVICES:-} )
-  local compose_up_ran=0
 
+  # ── Step 1: Build any image-rebuild services ────────────────────────────
   if [[ ${#image_services[@]} -gt 0 ]]; then
     echo "ARGUS_PHASE:build"
-    argus_compose_image_deploy_for_services "${image_services[@]}"
-    compose_up_ran=1
+    echo "Building ${#image_services[@]} service image(s): ${image_services[*]}"
+    argus_compose_build_service_list "${image_services[@]}"
   fi
 
+  # ── Step 2: Hot-swap any source-only changed services ───────────────────
   if [[ ${#hot_services[@]} -gt 0 ]]; then
-    # Use parallel fast hot-swap when only .NET source changed (no Dockerfile/compose change)
-    # shellcheck source=deploy/lib-fast-hot-swap.sh
     if [[ -f "$DEPLOY_DIR/lib-fast-hot-swap.sh" ]]; then
+      # shellcheck source=deploy/lib-fast-hot-swap.sh
       source "$DEPLOY_DIR/lib-fast-hot-swap.sh"
       argus_fast_hot_swap "${hot_services[@]}"
     else
@@ -1101,34 +1102,42 @@ argus_compose_hot_deploy() {
     local fallback_services=( ${argus_HOT_SWAP_FALLBACK_SERVICES:-} )
     if [[ ${#fallback_services[@]} -gt 0 ]]; then
       echo "ARGUS_PHASE:build"
-      argus_compose_image_deploy_for_services "${fallback_services[@]}"
-      compose_up_ran=1
+      echo "Hot-swap fallback: rebuilding ${#fallback_services[@]} service image(s): ${fallback_services[*]}"
+      argus_compose_build_service_list "${fallback_services[@]}"
     fi
   fi
 
-  if [[ "${argus_RUNTIME_CONFIG_CHANGED:-0}" == "1" && "$compose_up_ran" != "1" ]]; then
-    echo "ARGUS_PHASE:up"
-    argus_compose_up_redeploy
+  # ── Step 3: Compose up — always emit marker here, once, for all paths ─────
+  echo "ARGUS_PHASE:up"
+  echo "Applying compose stack — starting / reconciling all services…"
+  argus_compose_up_redeploy
+
+  # Force-recreate any services whose images were just rebuilt so they pick up
+  # the new image even if the container was already running.
+  if [[ ${#image_services[@]} -gt 0 ]]; then
+    echo "Force-recreating updated image services: ${image_services[*]}"
+    argus_compose_force_recreate_services "${image_services[@]}" 2>&1 || true
+  fi
+  local fallback_services2=( ${argus_HOT_SWAP_FALLBACK_SERVICES:-} )
+  if [[ ${#fallback_services2[@]} -gt 0 ]]; then
+    argus_compose_force_recreate_services "${fallback_services2[@]}" 2>&1 || true
   fi
 }
 
 argus_compose_deploy_all() {
   if [[ "${argus_DEPLOY_SKIP_BUILD:-}" == "1" ]]; then
+    echo "ARGUS_PHASE:build"
+    echo "Build skipped — applying compose stack directly…"
     echo "ARGUS_PHASE:up"
     argus_compose_up_redeploy
   elif [[ "${argus_DEPLOY_MODE:-image}" == "hot" ]]; then
+    # argus_compose_hot_deploy always emits ARGUS_PHASE:build and ARGUS_PHASE:up internally
     argus_compose_hot_deploy
-    # If hot-swap handled it all, still ensure compose is up for infra services
-    if [[ -z "${argus_IMAGE_REBUILD_SERVICES:-}" && -z "${argus_HOT_SWAP_FALLBACK_SERVICES:-}" \
-          && "${argus_RUNTIME_CONFIG_CHANGED:-0}" != "1" ]]; then
-      echo "ARGUS_PHASE:up"
-      compose up -d --remove-orphans --no-recreate 2>&1 | \
-        grep -v '^#' || true
-    fi
   else
     echo "ARGUS_PHASE:build"
     argus_compose_build
     echo "ARGUS_PHASE:up"
+    echo "Applying compose stack — starting / reconciling all services…"
     argus_compose_up_redeploy
     # docker compose up does not always recreate a running container when the image tag is stable
     # (for example argus-v2/command-center-web:local). Force only rebuilt services to use the
@@ -1137,6 +1146,8 @@ argus_compose_deploy_all() {
     local rebuilt_services=( ${argus_BUILT_SERVICES:-} )
     argus_compose_force_recreate_services "${rebuilt_services[@]}"
   fi
+  echo "ARGUS_PHASE:verify"
+  echo "Saving deployment fingerprints and committing state…"
   argus_record_built_service_fingerprints
   argus_commit_current_fingerprints
   argus_write_last_deploy_stamp

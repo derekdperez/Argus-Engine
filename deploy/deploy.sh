@@ -36,6 +36,7 @@
 #   you ran "docker compose ..." without the Compose plugin — "compose" was ignored and
 #   "up -d" was parsed as invalid global docker flags. Install the plugin or use docker-compose.
 set -euo pipefail
+export COMPOSE_PARALLEL_LIMIT=10
 
 # Resolve absolute paths before cd: dirname of ./deploy.sh is ".", so a relative
 # lib path would wrongly resolve against the post-cd working directory.

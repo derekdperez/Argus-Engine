@@ -37,6 +37,7 @@ COPY src/ src/
 COPY src/Resources/ src/Resources/
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=shared \
+    --mount=type=cache,id=argus-obj-${PROJECT_DIR},target=/src/src/${PROJECT_DIR}/obj \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
       -c Release -o /app/publish /p:UseAppHost=false --no-restore \
       -p:maxcpucount -p:ParallelizePublish=true \

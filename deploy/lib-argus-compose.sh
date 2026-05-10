@@ -1082,32 +1082,53 @@ argus_compose_hot_deploy() {
   local compose_up_ran=0
 
   if [[ ${#image_services[@]} -gt 0 ]]; then
+    echo "ARGUS_PHASE:build"
     argus_compose_image_deploy_for_services "${image_services[@]}"
     compose_up_ran=1
   fi
 
   if [[ ${#hot_services[@]} -gt 0 ]]; then
-    argus_hot_swap_services "${hot_services[@]}"
+    # Use parallel fast hot-swap when only .NET source changed (no Dockerfile/compose change)
+    # shellcheck source=deploy/lib-fast-hot-swap.sh
+    if [[ -f "$DEPLOY_DIR/lib-fast-hot-swap.sh" ]]; then
+      source "$DEPLOY_DIR/lib-fast-hot-swap.sh"
+      argus_fast_hot_swap "${hot_services[@]}"
+    else
+      argus_hot_swap_services "${hot_services[@]}"
+    fi
+    # Handle any services that failed to hot-swap and need an image rebuild
     # shellcheck disable=SC2206
     local fallback_services=( ${argus_HOT_SWAP_FALLBACK_SERVICES:-} )
     if [[ ${#fallback_services[@]} -gt 0 ]]; then
+      echo "ARGUS_PHASE:build"
       argus_compose_image_deploy_for_services "${fallback_services[@]}"
       compose_up_ran=1
     fi
   fi
 
   if [[ "${argus_RUNTIME_CONFIG_CHANGED:-0}" == "1" && "$compose_up_ran" != "1" ]]; then
+    echo "ARGUS_PHASE:up"
     argus_compose_up_redeploy
   fi
 }
 
 argus_compose_deploy_all() {
   if [[ "${argus_DEPLOY_SKIP_BUILD:-}" == "1" ]]; then
+    echo "ARGUS_PHASE:up"
     argus_compose_up_redeploy
   elif [[ "${argus_DEPLOY_MODE:-image}" == "hot" ]]; then
     argus_compose_hot_deploy
+    # If hot-swap handled it all, still ensure compose is up for infra services
+    if [[ -z "${argus_IMAGE_REBUILD_SERVICES:-}" && -z "${argus_HOT_SWAP_FALLBACK_SERVICES:-}" \
+          && "${argus_RUNTIME_CONFIG_CHANGED:-0}" != "1" ]]; then
+      echo "ARGUS_PHASE:up"
+      compose up -d --remove-orphans --no-recreate 2>&1 | \
+        grep -v '^#' || true
+    fi
   else
+    echo "ARGUS_PHASE:build"
     argus_compose_build
+    echo "ARGUS_PHASE:up"
     argus_compose_up_redeploy
     # docker compose up does not always recreate a running container when the image tag is stable
     # (for example argus-v2/command-center-web:local). Force only rebuilt services to use the

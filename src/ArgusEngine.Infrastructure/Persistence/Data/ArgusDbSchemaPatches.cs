@@ -45,6 +45,10 @@ public static partial class ArgusDbSchemaPatches
     [LoggerMessage(Level = LogLevel.Debug, Message = "Ensuring system_errors table...")]
     static partial void LogEnsuringSystemErrors(ILogger logger);
 
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Ensuring ai_bug_fix_runs table...")]
+    static partial void LogEnsuringAiBugFixRuns(ILogger logger);
+
+
     [LoggerMessage(Level = LogLevel.Debug, Message = "Patching worker_heartbeats primary key...")]
     static partial void LogPatchingHeartbeats(ILogger logger);
 
@@ -436,6 +440,48 @@ public static partial class ArgusDbSchemaPatches
                 """,
                 cancellationToken)
             .ConfigureAwait(false);
+
+        LogEnsuringAiBugFixRuns(logger);
+        await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS ai_bug_fix_runs (
+                    id uuid PRIMARY KEY,
+                    created_at_utc timestamptz NOT NULL DEFAULT now(),
+                    updated_at_utc timestamptz NOT NULL DEFAULT now(),
+                    requested_by text NULL,
+                    requested_from_ip text NULL,
+                    source_url text NULL,
+                    status text NOT NULL,
+                    status_message text NULL,
+                    error_count integer NOT NULL DEFAULT 0,
+                    component_scope text[] NOT NULL DEFAULT ARRAY[]::text[],
+                    error_snapshot_json jsonb NOT NULL DEFAULT '[]'::jsonb,
+                    prompt_text text NOT NULL DEFAULT '',
+                    prompt_sha256 text NOT NULL DEFAULT '',
+                    github_owner text NOT NULL DEFAULT 'derekdperez',
+                    github_repo text NOT NULL DEFAULT 'Argus-Engine',
+                    github_branch text NULL,
+                    github_pr_number integer NULL,
+                    github_pr_url text NULL,
+                    github_workflow_run_id bigint NULL,
+                    github_workflow_url text NULL,
+                    github_merge_sha text NULL,
+                    deployment_run_id text NULL,
+                    deployment_url text NULL,
+                    deployment_completed_at_utc timestamptz NULL,
+                    smoke_test_result_json jsonb NULL,
+                    failure_detail text NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_ai_bug_fix_runs_created_at
+                    ON ai_bug_fix_runs (created_at_utc DESC);
+
+                CREATE INDEX IF NOT EXISTS ix_ai_bug_fix_runs_status
+                    ON ai_bug_fix_runs (status);
+                """,
+                cancellationToken)
+            .ConfigureAwait(false);
+
 
         LogPatchingHeartbeats(logger);
         await db.Database.ExecuteSqlRawAsync(

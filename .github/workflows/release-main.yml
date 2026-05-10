@@ -204,3 +204,48 @@ jobs:
         run: |
           echo "No deployable services were affected."
           echo "Reason: ${{ needs.detect-affected-services.outputs.reason }}"
+
+  report-ai-bugfix-deploy:
+    name: Report AI bug fix deployment status
+    runs-on: ubuntu-latest
+    needs:
+      - deploy-production
+      - no-production-deploy-needed
+    if: always()
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Report Deployment Status
+        env:
+          ARGUS_AI_BUGFIX_CALLBACK_TOKEN: ${{ secrets.ARGUS_AI_BUGFIX_CALLBACK_TOKEN }}
+          ARGUS_MAINTENANCE_API_BASE_URL: ${{ vars.ARGUS_MAINTENANCE_API_BASE_URL }}
+          COMMIT_MSG: ${{ github.event.head_commit.message || '' }}
+          WORKFLOW_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          # Try to extract runId from the commit message: "Automated merge of AI bug fix for run <uuid>"
+          if [[ "$COMMIT_MSG" =~ "Automated merge of AI bug fix for run "([a-fA-F0-9-]+) ]]; then
+            export ARGUS_AI_BUGFIX_RUN_ID="${BASH_REMATCH[1]}"
+            echo "Detected AI bug fix run ID: $ARGUS_AI_BUGFIX_RUN_ID"
+            
+            # Determine overall success from the needs context
+            # Since needs is a matrix of results, we check if any failed
+            # deploy-production can be skipped if no changes
+            export STATUS="Deployed"
+            export STATUS_MSG="Release pipeline completed."
+            export DEPLOYMENT_URL="$WORKFLOW_URL"
+
+            # Check if any dependencies failed
+            if [ "${{ needs.deploy-production.result }}" == "failure" ] || [ "${{ needs.e2e-tests.result }}" == "failure" ] || [ "${{ needs.build-and-unit-tests.result }}" == "failure" ]; then
+              export STATUS="Failed"
+              export STATUS_MSG="Release pipeline failed."
+              export FAILURE_DETAIL="Deployment failed. See workflow $WORKFLOW_URL"
+            fi
+            
+            node scripts/ai-bugfix/report-status.mjs
+          else
+            echo "Not an AI bug fix merge. Skipping report."
+          fi
+

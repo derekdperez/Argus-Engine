@@ -5,6 +5,7 @@ using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
 using Microsoft.EntityFrameworkCore;
 
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
@@ -16,10 +17,12 @@ var app = builder.Build();
 
 
 app.MapAdminUsageEndpoints();
+app.MapAiBugFixEndpoints();
 app.MapBusJournalEndpoints();
 app.MapDataMaintenanceEndpoints();
 app.MapDataRetentionAdminEndpoints();
 app.MapDiagnosticsEndpoints();
 app.MapHttpArtifactBackfillEndpoints();
+
 
 await app.RunAsync().ConfigureAwait(false);

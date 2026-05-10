@@ -5,6 +5,7 @@
 @using System.Net.Sockets
 @using System.Text
 @using System.Text.Json
+@using ArgusEngine.CommandCenter.Contracts
 @using ArgusEngine.CommandCenter.Models
 @using ArgusEngine.CommandCenter.Realtime
 @using ArgusEngine.CommandCenter.Web.Clients
@@ -15,6 +16,7 @@
 @using Microsoft.Extensions.Hosting
 @using Microsoft.Extensions.Logging
 @using Microsoft.JSInterop
+
 @inject MaintenanceApiClient MaintenanceApi
 @inject LocalDockerClient DockerClient
 @inject IJSRuntime Js
@@ -339,7 +341,122 @@
             </div>
         }
     </section>
+
+    <section class="surface-card ai-bugfix-card">
+        <div class="section-heading">
+            <div>
+                <h2>AI Bug Fix Automation</h2>
+                <p>
+                    Gather all current errors, dispatch an AI coding workflow to generate fixes,
+                    open a PR, wait for human approval, merge, and deploy — all from here.
+                </p>
+                @if (!string.IsNullOrWhiteSpace(_aiBugFixError))
+                {
+                    <p class="status-pill fail" style="margin-top:0.5rem">@_aiBugFixError</p>
+                }
+            </div>
+            <div class="button-row">
+                @if (_latestAiBugFixRun is not null && _latestAiBugFixRun.Status == AiBugFixRunStatus.Failed)
+                {
+                    <button class="btn btn-secondary" disabled="@_aiBugFixActionBusy" @onclick="RetryAiBugFixRunAsync">Retry Failed Run</button>
+                }
+                @if (_latestAiBugFixRun is not null && AiBugFixRunStatus.IsActive(_latestAiBugFixRun.Status))
+                {
+                    <button class="btn btn-danger" disabled="@_aiBugFixActionBusy" @onclick="CancelAiBugFixRunAsync">Cancel Run</button>
+                }
+                <button class="btn btn-secondary" disabled="@_aiBugFixActionBusy" @onclick="() => RefreshAiBugFixRunAsync()">Refresh Status</button>
+                <button class="btn btn-primary"
+                        disabled="@(_aiBugFixActionBusy || (_latestAiBugFixRun is not null && AiBugFixRunStatus.IsActive(_latestAiBugFixRun.Status)))"
+                        @onclick="StartAiBugFixAsync">
+                    @if (_aiBugFixStarting)
+                    {
+                        <span>Starting...</span>
+                    }
+                    else
+                    {
+                        <span>Fix Bugs with AI</span>
+                    }
+                </button>
+            </div>
+        </div>
+
+        @if (_latestAiBugFixRun is not null)
+        {
+            <dl class="bugfix-status-grid">
+                <dt>Status</dt>
+                <dd>
+                    <span class="status-pill @StatusBadgeClass(_latestAiBugFixRun.Status)">
+                        @_latestAiBugFixRun.Status
+                    </span>
+                </dd>
+
+                <dt>Errors captured</dt>
+                <dd>@_latestAiBugFixRun.ErrorCount</dd>
+
+                <dt>Branch</dt>
+                <dd>@Fallback(_latestAiBugFixRun.GitHubBranch, "—")</dd>
+
+                <dt>Pull Request</dt>
+                <dd>
+                    @if (_latestAiBugFixRun.GitHubPrUrl is not null)
+                    {
+                        <a href="@_latestAiBugFixRun.GitHubPrUrl" target="_blank" rel="noopener noreferrer">
+                            #@_latestAiBugFixRun.GitHubPrNumber — View PR
+                        </a>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </dd>
+
+                <dt>Workflow</dt>
+                <dd>
+                    @if (_latestAiBugFixRun.GitHubWorkflowUrl is not null)
+                    {
+                        <a href="@_latestAiBugFixRun.GitHubWorkflowUrl" target="_blank" rel="noopener noreferrer">View Actions run</a>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </dd>
+
+                <dt>Deployment</dt>
+                <dd>
+                    @if (_latestAiBugFixRun.DeploymentUrl is not null)
+                    {
+                        <a href="@_latestAiBugFixRun.DeploymentUrl" target="_blank" rel="noopener noreferrer">View deployment</a>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </dd>
+
+                <dt>Last message</dt>
+                <dd>@Fallback(_latestAiBugFixRun.StatusMessage, "—")</dd>
+
+                @if (!string.IsNullOrWhiteSpace(_latestAiBugFixRun.FailureDetail))
+                {
+                    <dt>Failure detail</dt>
+                    <dd class="failure-detail">@_latestAiBugFixRun.FailureDetail</dd>
+                }
+            </dl>
+
+            <p class="muted" style="margin-top:0.5rem">
+                Run started @_latestAiBugFixRun.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture) •
+                Last updated @_latestAiBugFixRun.UpdatedAtUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)
+            </p>
+        }
+        else
+        {
+            <div class="empty-state">No AI bug-fix runs yet. Click <strong>Fix Bugs with AI</strong> to start the first run.</div>
+        }
+    </section>
+
 </div>
+
 
 @code {
     private const int DockerErrorContextLines = 15;
@@ -1058,9 +1175,189 @@
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
     }
 
+    // ── AI Bug Fix ────────────────────────────────────────────────────────────
+
+    private AiBugFixRunDto?  _latestAiBugFixRun;
+    private bool             _aiBugFixStarting;
+    private bool             _aiBugFixActionBusy;
+    private string?          _aiBugFixError;
+    private CancellationTokenSource? _aiBugFixPollCts;
+
+    private async Task StartAiBugFixAsync()
+    {
+        _aiBugFixError   = null;
+        _aiBugFixStarting = true;
+        _aiBugFixActionBusy = true;
+        StateHasChanged();
+
+        try
+        {
+            // Always use fresh errors
+            await RefreshErrorsAsync().ConfigureAwait(false);
+
+            var request = new CreateAiBugFixRunRequest(
+                Scope: "all",
+                Components: null,
+                ErrorIds: null,
+                IncludeDockerLogs: true,
+                IncludeStructuredErrors: true);
+
+            var response = await MaintenanceApi.Client
+                .PostAsJsonAsync("/api/diagnostics/ai-bug-fixes", request, _devPollCts.Token)
+                .ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(_devPollCts.Token).ConfigureAwait(false);
+                _aiBugFixError = $"Failed to start run ({(int)response.StatusCode}): {body}";
+                return;
+            }
+
+            var result = await response.Content
+                .ReadFromJsonAsync<CreateAiBugFixRunResponse>(_devPollCts.Token)
+                .ConfigureAwait(false);
+
+            await RefreshAiBugFixRunAsync().ConfigureAwait(false);
+
+            if (result is not null && AiBugFixRunStatus.IsActive(result.Status))
+                StartAiBugFixPoll();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to start AI bug-fix run.");
+            _aiBugFixError = $"Unexpected error: {ex.Message}";
+        }
+        finally
+        {
+            _aiBugFixStarting   = false;
+            _aiBugFixActionBusy = false;
+        }
+    }
+
+    private async Task RefreshAiBugFixRunAsync()
+    {
+        try
+        {
+            var runs = await MaintenanceApi.Client
+                .GetFromJsonAsync<List<AiBugFixRunDto>>("/api/diagnostics/ai-bug-fixes", _devPollCts.Token)
+                .ConfigureAwait(false);
+
+            _latestAiBugFixRun = runs?.FirstOrDefault();
+
+            if (_latestAiBugFixRun is not null && AiBugFixRunStatus.IsActive(_latestAiBugFixRun.Status))
+                StartAiBugFixPoll();
+            else
+                StopAiBugFixPoll();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to refresh AI bug-fix run status.");
+        }
+        finally
+        {
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+    }
+
+    private void StartAiBugFixPoll()
+    {
+        if (_aiBugFixPollCts is not null) return; // already polling
+
+        _aiBugFixPollCts = CancellationTokenSource.CreateLinkedTokenSource(_devPollCts.Token);
+        var pollToken    = _aiBugFixPollCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            while (!pollToken.IsCancellationRequested)
+            {
+                try { await Task.Delay(5_000, pollToken).ConfigureAwait(false); }
+                catch (OperationCanceledException) { break; }
+
+                await RefreshAiBugFixRunAsync().ConfigureAwait(false);
+
+                if (_latestAiBugFixRun is null || AiBugFixRunStatus.IsTerminal(_latestAiBugFixRun.Status))
+                    break;
+            }
+
+            StopAiBugFixPoll();
+        }, pollToken);
+    }
+
+    private void StopAiBugFixPoll()
+    {
+        _aiBugFixPollCts?.Cancel();
+        _aiBugFixPollCts?.Dispose();
+        _aiBugFixPollCts = null;
+    }
+
+    private async Task CancelAiBugFixRunAsync()
+    {
+        if (_latestAiBugFixRun is null) return;
+        _aiBugFixActionBusy = true;
+        StateHasChanged();
+        try
+        {
+            await MaintenanceApi.Client
+                .PostAsync($"/api/diagnostics/ai-bug-fixes/{_latestAiBugFixRun.Id}/cancel", null, _devPollCts.Token)
+                .ConfigureAwait(false);
+            await RefreshAiBugFixRunAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _aiBugFixError = $"Cancel failed: {ex.Message}";
+        }
+        finally
+        {
+            _aiBugFixActionBusy = false;
+        }
+    }
+
+    private async Task RetryAiBugFixRunAsync()
+    {
+        if (_latestAiBugFixRun is null) return;
+        _aiBugFixActionBusy = true;
+        StateHasChanged();
+        try
+        {
+            var response = await MaintenanceApi.Client
+                .PostAsync($"/api/diagnostics/ai-bug-fixes/{_latestAiBugFixRun.Id}/retry", null, _devPollCts.Token)
+                .ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(_devPollCts.Token).ConfigureAwait(false);
+                _aiBugFixError = $"Retry failed ({(int)response.StatusCode}): {body}";
+                return;
+            }
+
+            await RefreshAiBugFixRunAsync().ConfigureAwait(false);
+            StartAiBugFixPoll();
+        }
+        catch (Exception ex)
+        {
+            _aiBugFixError = $"Retry failed: {ex.Message}";
+        }
+        finally
+        {
+            _aiBugFixActionBusy = false;
+        }
+    }
+
+    private static string StatusBadgeClass(string status) => status switch
+    {
+        AiBugFixRunStatus.Deployed            => "ok",
+        AiBugFixRunStatus.MergeReady
+            or AiBugFixRunStatus.WaitingForApproval
+            or AiBugFixRunStatus.PullRequestOpen  => "info",
+        AiBugFixRunStatus.Failed
+            or AiBugFixRunStatus.Canceled         => "fail",
+        _                                         => "loading",
+    };
+
     public void Dispose()
     {
         Realtime.DomainEventReceived -= OnRealtimeEvent;
+        StopAiBugFixPoll();
         _devPollCts.Cancel();
         _devPollCts.Dispose();
     }

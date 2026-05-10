@@ -50,6 +50,7 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 // causes 404s for those assets until the user hard-refreshes.
 
 
+app.MapStaticAssets();
 app.UseStaticFiles();
 
 // Compatibility alias for clients, proxies, or stale HTML that still request the

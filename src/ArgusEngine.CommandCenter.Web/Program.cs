@@ -12,60 +12,28 @@ builder.Services
 
 builder.Services.AddHttpContextAccessor();
 
-// Radzen components used by App.razor/layout/pages.
+// Register the Radzen services used by the Web UI without relying on the
+// AddRadzenComponents extension method being visible to this project at compile time.
 builder.Services.AddScoped<DialogService>();
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<TooltipService>();
 builder.Services.AddScoped<ContextMenuService>();
 builder.Services.AddScoped<ThemeService>();
 
-// Plain HttpClient remains request-relative for components that deliberately use the web host.
-// Split-service API clients below must not use the current request host, because in Docker that
-// resolves to command-center-web:8080 and causes /api/* calls to hit the Blazor app instead of
-// the gateway/API services.
-builder.Services.AddScoped(sp => new HttpClient
-{
-    BaseAddress = ResolveRequestBaseAddress(sp),
-});
-
-builder.Services.AddHttpClient<DiscoveryApiClient>((sp, client) =>
-    client.BaseAddress = ResolveServiceBaseAddress(
-        sp,
-        "Discovery",
-        "http://command-center-discovery-api:8080/"));
-
-builder.Services.AddHttpClient<OperationsApiClient>((sp, client) =>
-    client.BaseAddress = ResolveServiceBaseAddress(
-        sp,
-        "Operations",
-        "http://command-center-operations-api:8080/"));
-
-builder.Services.AddHttpClient<WorkerControlApiClient>((sp, client) =>
-    client.BaseAddress = ResolveServiceBaseAddress(
-        sp,
-        "WorkerControl",
-        "http://command-center-worker-control-api:8080/"));
-
-builder.Services.AddHttpClient<MaintenanceApiClient>((sp, client) =>
-    client.BaseAddress = ResolveServiceBaseAddress(
-        sp,
-        "Maintenance",
-        "http://command-center-maintenance-api:8080/"));
-
-builder.Services.AddHttpClient<UpdatesApiClient>((sp, client) =>
-    client.BaseAddress = ResolveServiceBaseAddress(
-        sp,
-        "Updates",
-        "http://command-center-updates-api:8080/"));
-
-builder.Services.AddHttpClient<RealtimeApiClient>((sp, client) =>
-    client.BaseAddress = ResolveServiceBaseAddress(
-        sp,
-        "Realtime",
-        "http://command-center-realtime:8080/"));
-
-builder.Services.AddScoped<DiscoveryRealtimeClient>();
 builder.Services.AddScoped<LocalDockerClient>();
+builder.Services.AddScoped<DiscoveryRealtimeClient>();
+
+// Blazor server components execute on the server.  Relative HttpClient calls
+// must therefore target the Command Center gateway, not command-center-web
+// itself.  The gateway owns split-service routing for /api and /hubs paths.
+builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveGatewayBaseAddress(sp) });
+
+builder.Services.AddHttpClient<DiscoveryApiClient>((sp, client) => client.BaseAddress = ResolveGatewayBaseAddress(sp));
+builder.Services.AddHttpClient<OperationsApiClient>((sp, client) => client.BaseAddress = ResolveGatewayBaseAddress(sp));
+builder.Services.AddHttpClient<WorkerControlApiClient>((sp, client) => client.BaseAddress = ResolveGatewayBaseAddress(sp));
+builder.Services.AddHttpClient<MaintenanceApiClient>((sp, client) => client.BaseAddress = ResolveGatewayBaseAddress(sp));
+builder.Services.AddHttpClient<UpdatesApiClient>((sp, client) => client.BaseAddress = ResolveGatewayBaseAddress(sp));
+builder.Services.AddHttpClient<RealtimeApiClient>((sp, client) => client.BaseAddress = ResolveGatewayBaseAddress(sp));
 
 var app = builder.Build();
 
@@ -76,7 +44,6 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-
 app.MapStaticAssets();
 app.UseStaticFiles();
 
@@ -97,8 +64,30 @@ app.MapRazorComponents<App>()
 
 await app.RunAsync().ConfigureAwait(false);
 
-static Uri ResolveRequestBaseAddress(IServiceProvider services)
+static Uri ResolveGatewayBaseAddress(IServiceProvider services)
 {
+    var configuration = services.GetRequiredService<IConfiguration>();
+
+    var configured =
+        configuration["CommandCenter:GatewayBaseUrl"] ??
+        configuration["Argus:CommandCenter:GatewayBaseUrl"] ??
+        configuration["CommandCenter:Services:Gateway"] ??
+        configuration["Argus:CommandCenter:Services:Gateway"];
+
+    if (!string.IsNullOrWhiteSpace(configured) &&
+        Uri.TryCreate(EnsureTrailingSlash(configured), UriKind.Absolute, out var configuredUri))
+    {
+        return configuredUri;
+    }
+
+    // In Docker Compose the environment sets CommandCenter__GatewayBaseUrl.
+    // This local-network fallback keeps the deployed container from routing API
+    // calls back into itself if that setting is accidentally omitted.
+    if (!IsDevelopment(services))
+    {
+        return new Uri("http://command-center-gateway:8080/");
+    }
+
     var request = services.GetService<IHttpContextAccessor>()?.HttpContext?.Request;
     if (request is not null)
     {
@@ -115,26 +104,13 @@ static Uri ResolveRequestBaseAddress(IServiceProvider services)
     return new Uri("http://localhost/");
 }
 
-static Uri ResolveServiceBaseAddress(IServiceProvider services, string serviceName, string localDefault)
+static bool IsDevelopment(IServiceProvider services)
 {
-    var configuration = services.GetRequiredService<IConfiguration>();
-
-    var value =
-        configuration[$"CommandCenter:Services:{serviceName}"] ??
-        configuration[$"Argus:CommandCenter:Services:{serviceName}"] ??
-        configuration[$"CommandCenter:{serviceName}BaseUrl"] ??
-        configuration[$"Argus:CommandCenter:{serviceName}BaseUrl"] ??
-        localDefault;
-
-    if (Uri.TryCreate(EnsureTrailingSlash(value), UriKind.Absolute, out var uri))
-    {
-        return uri;
-    }
-
-    throw new InvalidOperationException(
-        $"Invalid Command Center split-service URL for '{serviceName}': '{value}'. " +
-        $"Configure CommandCenter:Services:{serviceName}.");
+    var environment = services.GetService<IWebHostEnvironment>();
+    return environment?.IsDevelopment() == true;
 }
 
-static string EnsureTrailingSlash(string value) =>
-    value.Length > 0 && value[^1] == '/' ? value : value + "/";
+static string EnsureTrailingSlash(string value)
+{
+    return value.Length > 0 && value[^1] == '/' ? value : value + "/";
+}

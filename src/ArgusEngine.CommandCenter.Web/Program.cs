@@ -50,12 +50,17 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 // causes 404s for those assets until the user hard-refreshes.
 app.Use(async (context, next) =>
 {
-    await next();
-    if (context.Response.ContentType?.StartsWith("text/html", StringComparison.OrdinalIgnoreCase) == true)
+    context.Response.OnStarting(() =>
     {
-        context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
-        context.Response.Headers.Pragma = "no-cache";
-    }
+        if (context.Response.ContentType?.StartsWith("text/html", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+            context.Response.Headers.Pragma = "no-cache";
+        }
+        return Task.CompletedTask;
+    });
+    
+    await next();
 });
 
 app.MapStaticAssets();

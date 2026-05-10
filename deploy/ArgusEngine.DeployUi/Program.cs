@@ -1166,25 +1166,31 @@ internal sealed class ScriptCatalog
             "azure/deploy-container-apps.sh",
             "azure/deploy-aca-services.sh",
             "azure/deploy-azure-container-apps.sh",
+            "azure/deploy-containerapps-workers.sh",
             "deploy/azure/deploy-container-apps.sh",
             "deploy/azure/deploy-aca-services.sh",
-            "deploy/azure/deploy-azure-container-apps.sh");
+            "deploy/azure/deploy-azure-container-apps.sh",
+            "deploy/azure/deploy-containerapps-workers.sh");
         GoogleBuildScript = FindFirst(
             "google/build-push-gar.sh",
             "gcp/build-push-gar.sh",
             "google/build-push-gcr.sh",
+            "gcp/build-push-artifact-registry.sh",
             "deploy/google/build-push-gar.sh",
             "deploy/gcp/build-push-gar.sh",
-            "deploy/google/build-push-gcr.sh");
+            "deploy/google/build-push-gcr.sh",
+            "deploy/gcp/build-push-artifact-registry.sh");
         GoogleDeployScript = FindFirst(
             "google/deploy-cloud-run.sh",
             "google/deploy-cloudrun-services.sh",
             "gcp/deploy-cloud-run.sh",
             "gcp/deploy-cloudrun-services.sh",
+            "gcp/deploy-cloudrun-worker-pools.sh",
             "deploy/google/deploy-cloud-run.sh",
             "deploy/google/deploy-cloudrun-services.sh",
             "deploy/gcp/deploy-cloud-run.sh",
-            "deploy/gcp/deploy-cloudrun-services.sh");
+            "deploy/gcp/deploy-cloudrun-services.sh",
+            "deploy/gcp/deploy-cloudrun-worker-pools.sh");
     }
 
     public string? AzureBuildScript { get; }

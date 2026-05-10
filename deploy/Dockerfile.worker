@@ -19,12 +19,23 @@ COPY deploy/artifacts/nuget/packages/ /opt/argus-nuget/packages/
 # Copy all project files to perform a global restore.
 COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
 COPY src/*/*.csproj ./src/
+COPY src/tests/*/*.csproj ./src/tests/
 RUN for f in src/*.csproj; do \
+      [ -e "$f" ] || continue; \
       p="${f#src/}"; \
       p="${p%.csproj}"; \
       mkdir -p "src/$p"; \
       mv "$f" "src/$p/"; \
-    done
+    done; \
+    if [ -d "src/tests" ]; then \
+      for f in src/tests/*.csproj; do \
+        [ -e "$f" ] || continue; \
+        p="${f#src/tests/}"; \
+        p="${p%.csproj}"; \
+        mkdir -p "src/tests/$p"; \
+        mv "$f" "src/tests/$p/"; \
+      done; \
+    fi
 
 RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=shared \
     cp -an /opt/argus-nuget/packages/. /root/.nuget/packages/ 2>/dev/null || true; \

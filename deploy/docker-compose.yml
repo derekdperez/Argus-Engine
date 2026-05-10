@@ -1,4 +1,4 @@
-﻿# Run from the repository root:
+# Run from the repository root:
 # docker compose -f deploy/docker-compose.yml up -d --build
 #
 # Project-specific deployment version rule:
@@ -25,6 +25,7 @@ x-enum-build-args: &enum-build-args
   AMASS_VERSION: ${AMASS_VERSION:-5.1.1}
 
 x-common-env: &common-env
+  ASPNETCORE_ENVIRONMENT: Development
   ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=argus_engine;Username=argus;Password=argus
   ConnectionStrings__FileStore: Host=postgres;Port=5432;Database=argus_engine_files;Username=argus;Password=argus
   # Conservative defaults for services that do not override their own pool sizes.

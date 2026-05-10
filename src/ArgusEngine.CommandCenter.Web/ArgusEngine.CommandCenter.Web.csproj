@@ -14,5 +14,9 @@
     <PackageReference Include="Radzen.Blazor" />
     <PackageReference Include="Microsoft.AspNetCore.Components.QuickGrid" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <PackageReference Include="AWSSDK.ECS" />
+    <PackageReference Include="Azure.ResourceManager.AppContainers" />
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Google.Cloud.Run.V2" />
   </ItemGroup>
 </Project>

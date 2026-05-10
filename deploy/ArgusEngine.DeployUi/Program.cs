@@ -1,919 +1,1354 @@
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
-using System.Threading;
 using System.Text;
-using System.Text.RegularExpressions;
-using Spectre.Console;
+using System.Xml.Linq;
+
+namespace ArgusEngine.DeployUi;
 
 internal static class Program
 {
-    private static int Main(string[] args)
+    private static async Task<int> Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
 
-        var options = CliOptions.Parse(args);
-        if (options.ShowHelp)
-        {
-            ShowHelp();
-            return 0;
-        }
-
-        var repoRoot = ResolveRepoRoot(options.Root);
-        var context = new CliContext(repoRoot, options);
-
-        RenderHeader(context);
-
-        if (!context.IsRepoRoot)
-        {
-            AnsiConsole.MarkupLine("[yellow]Warning:[/] could not find ArgusEngine.slnx and deploy/docker-compose.yml from the current directory.");
-            AnsiConsole.MarkupLine($"Using [grey]{Escape(context.Root)}[/]. Use [green]--root <path>[/] to point at the repo root.");
-            AnsiConsole.WriteLine();
-        }
-
         try
         {
-            RunMainMenu(context);
-            return 0;
+            var parsed = GlobalOptions.Parse(args);
+            var context = DeploymentContext.Create(parsed.DryRun, parsed.Yes, parsed.BaseRef);
+            EnvFileLoader.LoadKnownEnvironmentFiles(context);
+
+            if (parsed.Arguments.Count == 0 || Is(parsed.Arguments[0], "menu"))
+            {
+                return await new DeploymentMenu(context).RunAsync();
+            }
+
+            return await new CommandDispatcher(context).RunAsync(parsed.Arguments);
+        }
+        catch (OperationCanceledException)
+        {
+            Ui.Warn("Cancelled.");
+            return 130;
         }
         catch (Exception ex)
         {
-            AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths | ExceptionFormats.ShortenTypes | ExceptionFormats.ShortenMethods);
+            Ui.Error(ex.Message);
             return 1;
         }
     }
 
-    private static void RunMainMenu(CliContext context)
+    private static bool Is(string value, string expected) =>
+        string.Equals(value, expected, StringComparison.OrdinalIgnoreCase);
+}
+
+internal sealed record GlobalOptions(bool DryRun, bool Yes, string? BaseRef, IReadOnlyList<string> Arguments)
+{
+    public static GlobalOptions Parse(string[] args)
+    {
+        var dryRun = false;
+        var yes = false;
+        string? baseRef = Environment.GetEnvironmentVariable("ARGUS_DEPLOY_BASE_REF");
+        var remaining = new List<string>();
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+
+            if (arg is "--dry-run" or "-n")
+            {
+                dryRun = true;
+                continue;
+            }
+
+            if (arg is "--yes" or "-y")
+            {
+                yes = true;
+                continue;
+            }
+
+            if (arg is "--base" or "--base-ref")
+            {
+                if (i + 1 >= args.Length)
+                {
+                    throw new ArgumentException($"{arg} requires a value.");
+                }
+
+                baseRef = args[++i];
+                continue;
+            }
+
+            remaining.Add(arg);
+        }
+
+        return new GlobalOptions(dryRun, yes, baseRef, remaining);
+    }
+}
+
+internal sealed class DeploymentContext
+{
+    private DeploymentContext(PathResolver paths, bool dryRun, bool assumeYes, string? baseRef)
+    {
+        Paths = paths;
+        DryRun = dryRun;
+        AssumeYes = assumeYes;
+        BaseRef = baseRef;
+        Runner = new ProcessRunner(paths.RepoRoot, dryRun);
+        Services = ServiceCatalog.Load(paths);
+        ChangeDetector = new ChangeDetector(paths, Services, baseRef);
+        Scripts = new ScriptCatalog(paths);
+    }
+
+    public PathResolver Paths { get; }
+    public bool DryRun { get; }
+    public bool AssumeYes { get; }
+    public string? BaseRef { get; }
+    public ProcessRunner Runner { get; }
+    public IReadOnlyList<ServiceDefinition> Services { get; }
+    public ChangeDetector ChangeDetector { get; }
+    public ScriptCatalog Scripts { get; }
+
+    public static DeploymentContext Create(bool dryRun, bool assumeYes, string? baseRef)
+    {
+        var paths = PathResolver.Resolve();
+        return new DeploymentContext(paths, dryRun, assumeYes, baseRef);
+    }
+}
+
+internal sealed class PathResolver
+{
+    private PathResolver(string repoRoot)
+    {
+        RepoRoot = repoRoot;
+        DeployDir = Path.Combine(repoRoot, "deploy");
+        ComposeFile = Path.Combine(DeployDir, "docker-compose.yml");
+        LocalDeployScript = Path.Combine(DeployDir, "deploy.sh");
+        ServiceCatalogFile = Path.Combine(DeployDir, "service-catalog.tsv");
+    }
+
+    public string RepoRoot { get; }
+    public string DeployDir { get; }
+    public string ComposeFile { get; }
+    public string LocalDeployScript { get; }
+    public string ServiceCatalogFile { get; }
+
+    public static PathResolver Resolve()
+    {
+        var current = new DirectoryInfo(Directory.GetCurrentDirectory());
+
+        while (current is not null)
+        {
+            var slnx = Path.Combine(current.FullName, "ArgusEngine.slnx");
+            var deploy = Path.Combine(current.FullName, "deploy");
+
+            if (File.Exists(slnx) && Directory.Exists(deploy))
+            {
+                return new PathResolver(current.FullName);
+            }
+
+            current = current.Parent;
+        }
+
+        throw new DirectoryNotFoundException(
+            "Could not find the Argus repo root. Run this CLI from inside the argus-engine checkout.");
+    }
+
+    public string Rel(string path)
+    {
+        try
+        {
+            return Path.GetRelativePath(RepoRoot, path);
+        }
+        catch
+        {
+            return path;
+        }
+    }
+}
+
+internal sealed class DeploymentMenu
+{
+    private readonly DeploymentContext _context;
+    private readonly CommandDispatcher _dispatcher;
+
+    public DeploymentMenu(DeploymentContext context)
+    {
+        _context = context;
+        _dispatcher = new CommandDispatcher(context);
+    }
+
+    public async Task<int> RunAsync()
     {
         while (true)
         {
-            var choice = PromptMenu(
-                "What do you want to do?",
-                new[]
-                {
-                    new MenuChoice("System overview / inventory", ShowOverview),
-                    new MenuChoice("Check and diagnose prerequisites", CheckMenu),
-                    new MenuChoice("Monitor services and containers", MonitorMenu),
-                    new MenuChoice("Build and test projects", BuildTestMenu),
-                    new MenuChoice("Deploy stack", DeployMenu),
-                    new MenuChoice("Manage services and containers", ServicesMenu),
-                    new MenuChoice("Scale workers/services", ScaleMenu),
-                    new MenuChoice("Restart / recreate services", RestartMenu),
-                    new MenuChoice("Logs", LogsMenu),
-                    new MenuChoice("Run existing deploy scripts", ScriptsMenu),
-                    new MenuChoice("Stop / clean up stack", CleanupMenu),
-                    new MenuChoice("Exit", _ => { })
-                });
-
-            if (choice.Label == "Exit")
+            Ui.Header("Argus deployment console");
+            Ui.Info($"Repo: {_context.Paths.RepoRoot}");
+            if (_context.DryRun)
             {
-                AnsiConsole.MarkupLine("[green]Done.[/]");
-                return;
+                Ui.Warn("Dry-run mode: commands will be printed, not executed.");
             }
 
-            AnsiConsole.Clear();
-            RenderHeader(context);
-            choice.Execute(context);
-
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[grey]Press Enter to return to the main menu.[/]");
-            Console.ReadLine();
-            AnsiConsole.Clear();
-            RenderHeader(context);
-        }
-    }
-
-    private static void ShowOverview(CliContext context)
-    {
-        var projects = DiscoverProjects(context);
-        var services = DiscoverServices(context, includeObservability: context.Options.WithObservability);
-        var workers = services.Where(IsWorkerLikeService).ToArray();
-
-        var summary = new Table().Border(TableBorder.Rounded);
-        summary.AddColumn("Area");
-        summary.AddColumn("Count");
-        summary.AddColumn("Notes");
-        summary.AddRow("Repo root", context.IsRepoRoot ? "OK" : "Not verified", Escape(context.Root));
-        summary.AddRow(".NET projects", projects.Count.ToString(), "Discovered from src/ and deploy/");
-        summary.AddRow("Compose services", services.Count.ToString(), "Discovered through docker compose config, compose files, or known defaults");
-        summary.AddRow("Workers", workers.Length.ToString(), string.Join(", ", workers.Take(6)) + (workers.Length > 6 ? "..." : ""));
-        summary.AddRow("Observability overlay", context.Options.WithObservability ? "Enabled" : "Disabled", "Use --with-observability to include Grafana/Prometheus/OTel compose overlay");
-
-        AnsiConsole.Write(summary);
-
-        AnsiConsole.WriteLine();
-        RenderServicesTable("Compose services", services, workers);
-        AnsiConsole.WriteLine();
-        RenderProjectsTable(context, projects);
-    }
-
-    private static void CheckMenu(CliContext context)
-    {
-        var choice = PromptMenu(
-            "Checks and diagnostics",
-            new[]
+            var choice = Ui.Choose("Choose an action", new[]
             {
-                new MenuChoice("Run all local checks", c =>
-                {
-                    CheckTools(c);
-                    CheckRepoShape(c);
-                    ValidateCompose(c);
-                    RunHttpHealthChecks(c);
-                }),
-                new MenuChoice("Check required tools", CheckTools),
-                new MenuChoice("Check repo layout", CheckRepoShape),
-                new MenuChoice("Validate Docker Compose config", ValidateCompose),
-                new MenuChoice("Check HTTP health endpoints", RunHttpHealthChecks),
-                new MenuChoice("Show docker compose config services", c =>
-                {
-                    RunCompose(c, new[] { "config", "--services" });
-                }),
-                new MenuChoice("Back", _ => { })
+                "Deploy local changed services — fastest hot-swap path",
+                "Deploy local changed services — image rebuild path",
+                "Deploy selected local services precisely",
+                "Check local Docker Compose status",
+                "View or follow local logs",
+                "Restart selected local services",
+                "Run smoke tests",
+                "AWS ECS / ECR deployment",
+                "Azure Container Apps / ACR deployment",
+                "Google Cloud deployment",
+                "Deploy selected services to all cloud platforms",
+                "Check status across all platforms",
+                "Configure deployment environment",
+                "Run cloud login checks / login helpers",
+                "Show affected services from Git changes",
+                "Run a custom command through this deployment shell",
+                "Exit"
             });
 
-        if (choice.Label != "Back")
-        {
-            choice.Execute(context);
-        }
-    }
-
-    private static void MonitorMenu(CliContext context)
-    {
-        var choice = PromptMenu(
-            "Monitoring",
-            new[]
+            switch (choice)
             {
-                new MenuChoice("Show compose status once", c => RunCompose(c, new[] { "ps" })),
-                new MenuChoice("Watch compose status", WatchComposeStatus),
-                new MenuChoice("Show container resource stats once", c => RunCommand(c, "docker", new[] { "stats", "--no-stream" })),
-                new MenuChoice("Stream container resource stats", c => RunCommand(c, "docker", new[] { "stats" })),
-                new MenuChoice("Show compose top", c => RunCompose(c, new[] { "top" })),
-                new MenuChoice("Follow logs", FollowLogs),
-                new MenuChoice("Back", _ => { })
-            });
-
-        if (choice.Label != "Back")
-        {
-            choice.Execute(context);
-        }
-    }
-
-    private static void BuildTestMenu(CliContext context)
-    {
-        var choice = PromptMenu(
-            "Build and test",
-            new[]
-            {
-                new MenuChoice("dotnet restore solution", c => RunCommand(c, "dotnet", new[] { "restore", "ArgusEngine.slnx" })),
-                new MenuChoice("dotnet build solution", c => RunCommand(c, "dotnet", new[] { "build", "ArgusEngine.slnx" })),
-                new MenuChoice("dotnet test solution", c => RunCommand(c, "dotnet", new[] { "test", "ArgusEngine.slnx" })),
-                new MenuChoice("Build selected project", BuildSelectedProject),
-                new MenuChoice("Test selected project", TestSelectedProject),
-                new MenuChoice("Docker compose build all", c => RunCompose(c, new[] { "build" })),
-                new MenuChoice("Docker compose build selected service(s)", BuildSelectedServices),
-                new MenuChoice("Run smoke test", RunSmokeTest),
-                new MenuChoice("Back", _ => { })
-            });
-
-        if (choice.Label != "Back")
-        {
-            choice.Execute(context);
-        }
-    }
-
-    private static void DeployMenu(CliContext context)
-    {
-        var choice = PromptMenu(
-            "Deploy",
-            new[]
-            {
-                new MenuChoice("Incremental hot deploy via deploy.sh", c => RunDeployScript(c, new[] { "up" })),
-                new MenuChoice("Incremental image deploy via deploy.sh", c => RunDeployScript(c, new[] { "--image", "up" })),
-                new MenuChoice("Fresh no-cache deploy via deploy.sh", c => RunDeployScript(c, new[] { "-fresh", "up" })),
-                new MenuChoice("Deploy with ECS workers via deploy.sh", c => RunDeployScript(c, new[] { "--ecs-workers", "up" })),
-                new MenuChoice("Compose up -d --build full stack", c => RunCompose(c, new[] { "up", "-d", "--build" })),
-                new MenuChoice("Compose up selected service(s)", ComposeUpSelectedServices),
-                new MenuChoice("Compose up full stack with observability overlay", ComposeUpWithObservability),
-                new MenuChoice("Back", _ => { })
-            });
-
-        if (choice.Label != "Back")
-        {
-            choice.Execute(context);
-        }
-    }
-
-    private static void ServicesMenu(CliContext context)
-    {
-        var choice = PromptMenu(
-            "Services and containers",
-            new[]
-            {
-                new MenuChoice("List compose services", c => RenderServicesTable("Compose services", DiscoverServices(c, c.Options.WithObservability), DiscoverServices(c, c.Options.WithObservability).Where(IsWorkerLikeService).ToArray())),
-                new MenuChoice("Show compose ps", c => RunCompose(c, new[] { "ps" })),
-                new MenuChoice("Start selected service(s)", StartSelectedServices),
-                new MenuChoice("Stop selected service(s)", StopSelectedServices),
-                new MenuChoice("Pause selected service(s)", PauseSelectedServices),
-                new MenuChoice("Unpause selected service(s)", UnpauseSelectedServices),
-                new MenuChoice("Open shell in service container", ExecShellInService),
-                new MenuChoice("Run one-off service command", RunOneOffCommand),
-                new MenuChoice("Back", _ => { })
-            });
-
-        if (choice.Label != "Back")
-        {
-            choice.Execute(context);
-        }
-    }
-
-    private static void ScaleMenu(CliContext context)
-    {
-        var choice = PromptMenu(
-            "Scale",
-            new[]
-            {
-                new MenuChoice("Scale one worker/service", ScaleOneService),
-                new MenuChoice("Scale multiple workers/services", ScaleMultipleServices),
-                new MenuChoice("Scale all workers to a replica count", ScaleAllWorkers),
-                new MenuChoice("Apply EC2 worker scale helper if present", RunEc2ScaleHelper),
-                new MenuChoice("Back", _ => { })
-            });
-
-        if (choice.Label != "Back")
-        {
-            choice.Execute(context);
-        }
-    }
-
-    private static void RestartMenu(CliContext context)
-    {
-        var choice = PromptMenu(
-            "Restart and recreate",
-            new[]
-            {
-                new MenuChoice("Restart selected service(s)", RestartSelectedServices),
-                new MenuChoice("Restart all compose services", c => RunCompose(c, new[] { "restart" })),
-                new MenuChoice("Recreate selected service(s)", RecreateSelectedServices),
-                new MenuChoice("Recreate all services without build", c => ConfirmThen(c, "Recreate every compose service?", () => RunCompose(c, new[] { "up", "-d", "--force-recreate", "--no-build" }))),
-                new MenuChoice("Run deploy.sh restart", c => RunDeployScript(c, new[] { "restart" })),
-                new MenuChoice("Back", _ => { })
-            });
-
-        if (choice.Label != "Back")
-        {
-            choice.Execute(context);
-        }
-    }
-
-    private static void LogsMenu(CliContext context)
-    {
-        var choice = PromptMenu(
-            "Logs",
-            new[]
-            {
-                new MenuChoice("Show recent logs for all services", c => RunCompose(c, new[] { "logs", "--tail", PromptTail() })),
-                new MenuChoice("Show recent logs for selected service(s)", ShowSelectedLogs),
-                new MenuChoice("Follow logs for selected service(s)", FollowLogs),
-                new MenuChoice("Run deploy/logs.sh if present", RunLogsScript),
-                new MenuChoice("Back", _ => { })
-            });
-
-        if (choice.Label != "Back")
-        {
-            choice.Execute(context);
-        }
-    }
-
-    private static void ScriptsMenu(CliContext context)
-    {
-        var scripts = Directory.Exists(context.DeployDir)
-            ? Directory.GetFiles(context.DeployDir, "*.sh", SearchOption.TopDirectoryOnly)
-                .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
-                .ToArray()
-            : Array.Empty<string>();
-
-        if (scripts.Length == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No deploy/*.sh scripts found.[/]");
-            return;
-        }
-
-        var selected = AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title("Select a script to run")
-                .PageSize(20)
-                .AddChoices(scripts.Select(s => Path.GetRelativePath(context.Root, s))));
-
-        var extra = AnsiConsole.Prompt(
-            new TextPrompt<string>("Extra arguments? [grey](leave blank for none)[/]")
-                .AllowEmpty());
-
-        var args = new List<string> { selected };
-        args.AddRange(SplitArgs(extra));
-        RunCommand(context, "bash", args);
-    }
-
-    private static void CleanupMenu(CliContext context)
-    {
-        var choice = PromptMenu(
-            "Stop / clean up",
-            new[]
-            {
-                new MenuChoice("Compose down --remove-orphans", c => ConfirmThen(c, "Stop the stack and remove orphans?", () => RunCompose(c, new[] { "down", "--remove-orphans" }))),
-                new MenuChoice("Compose down --remove-orphans --volumes", c => ConfirmThen(c, "Remove containers AND compose volumes? This deletes local data.", () => RunCompose(c, new[] { "down", "--remove-orphans", "--volumes" }))),
-                new MenuChoice("Run deploy.sh clean", c => ConfirmThen(c, "Run deploy.sh clean? This removes compose volumes when confirmed.", () => RunDeployScript(c, new[] { "clean" }, new Dictionary<string, string> { ["CONFIRM_ARGUS_CLEAN"] = "yes" }))),
-                new MenuChoice("Prune dangling Docker build cache", c => ConfirmThen(c, "Run docker builder prune?", () => RunCommand(c, "docker", new[] { "builder", "prune" }))),
-                new MenuChoice("Back", _ => { })
-            });
-
-        if (choice.Label != "Back")
-        {
-            choice.Execute(context);
-        }
-    }
-
-    private static void CheckTools(CliContext context)
-    {
-        var rows = new[]
-        {
-            CheckTool(context, "dotnet", new[] { "--version" }),
-            CheckDockerCompose(context),
-            CheckTool(context, "docker", new[] { "version", "--format", "{{.Server.Version}}" }),
-            CheckTool(context, "git", new[] { "--version" }),
-            CheckTool(context, "bash", new[] { "--version" }),
-            CheckTool(context, "curl", new[] { "--version" })
-        };
-
-        var table = new Table().Border(TableBorder.Rounded);
-        table.AddColumn("Tool");
-        table.AddColumn("Status");
-        table.AddColumn("Details");
-
-        foreach (var row in rows)
-        {
-            table.AddRow(Escape(row.Name), row.Ok ? "[green]OK[/]" : "[red]Missing/failed[/]", Escape(row.Details));
-        }
-
-        AnsiConsole.Write(table);
-    }
-
-    private static ToolCheck CheckTool(CliContext context, string command, IReadOnlyList<string> args)
-    {
-        var result = RunCapture(context, command, args, allowFailure: true, quiet: true);
-        var details = string.IsNullOrWhiteSpace(result.Output)
-            ? result.Error.Trim()
-            : result.Output.Trim().Split('\n').FirstOrDefault()?.Trim() ?? string.Empty;
-
-        return new ToolCheck(command, result.ExitCode == 0, details);
-    }
-
-    private static ToolCheck CheckDockerCompose(CliContext context)
-    {
-        var result = RunCapture(context, "docker", new[] { "compose", "version" }, allowFailure: true, quiet: true);
-        if (result.ExitCode == 0)
-        {
-            return new ToolCheck("docker compose", true, result.Output.Trim());
-        }
-
-        result = RunCapture(context, "docker-compose", new[] { "version" }, allowFailure: true, quiet: true);
-        return new ToolCheck("docker-compose", result.ExitCode == 0, string.IsNullOrWhiteSpace(result.Output) ? result.Error.Trim() : result.Output.Trim());
-    }
-
-    private static void CheckRepoShape(CliContext context)
-    {
-        var checks = new (string Name, string Path, bool Ok)[]
-        {
-            ("Solution", "ArgusEngine.slnx", File.Exists(Path.Combine(context.Root, "ArgusEngine.slnx"))),
-            ("Deploy compose", "deploy/docker-compose.yml", File.Exists(Path.Combine(context.Root, "deploy", "docker-compose.yml"))),
-            ("Deploy script", "deploy/deploy.sh", File.Exists(Path.Combine(context.Root, "deploy", "deploy.sh"))),
-            ("Smoke test", "deploy/smoke-test.sh", File.Exists(Path.Combine(context.Root, "deploy", "smoke-test.sh"))),
-            ("Source folder", "src", Directory.Exists(Path.Combine(context.Root, "src"))),
-            ("Deploy UI project", "deploy/ArgusEngine.DeployUi/ArgusEngine.DeployUi.csproj", File.Exists(Path.Combine(context.Root, "deploy", "ArgusEngine.DeployUi", "ArgusEngine.DeployUi.csproj")))
-        };
-
-        var table = new Table().Border(TableBorder.Rounded);
-        table.AddColumn("Check");
-        table.AddColumn("Status");
-        table.AddColumn("Path");
-
-        foreach (var check in checks)
-        {
-            table.AddRow(Escape(check.Name), check.Ok ? "[green]OK[/]" : "[red]Missing[/]", Escape(check.Path));
-        }
-
-        AnsiConsole.Write(table);
-    }
-
-    private static void ValidateCompose(CliContext context)
-    {
-        RunCompose(context, new[] { "config", "--quiet" });
-    }
-
-    private static void RunHttpHealthChecks(CliContext context)
-    {
-        var endpoints = new[]
-        {
-            ("Gateway ready", "http://127.0.0.1:8081/health/ready"),
-            ("Web ready", "http://127.0.0.1:8082/health/ready"),
-            ("Operations API ready", "http://127.0.0.1:8083/health/ready"),
-            ("Discovery API ready", "http://127.0.0.1:8084/health/ready"),
-            ("Worker Control API ready", "http://127.0.0.1:8085/health/ready"),
-            ("Maintenance API ready", "http://127.0.0.1:8086/health/ready"),
-            ("Updates API ready", "http://127.0.0.1:8087/health/ready"),
-            ("Realtime ready", "http://127.0.0.1:8088/health/ready"),
-            ("Prometheus", "http://127.0.0.1:9090/-/ready"),
-            ("Grafana", "http://127.0.0.1:3000/api/health")
-        };
-
-        using var client = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(4)
-        };
-
-        var table = new Table().Border(TableBorder.Rounded);
-        table.AddColumn("Endpoint");
-        table.AddColumn("Status");
-        table.AddColumn("URL");
-
-        foreach (var (name, url) in endpoints)
-        {
-            try
-            {
-                using var response = client.GetAsync(url).GetAwaiter().GetResult();
-                var color = response.IsSuccessStatusCode ? "green" : "yellow";
-                table.AddRow(Escape(name), $"[{color}]{(int)response.StatusCode} {Escape(response.ReasonPhrase ?? "")}[/]", Escape(url));
-            }
-            catch (Exception ex)
-            {
-                table.AddRow(Escape(name), "[red]Unavailable[/]", Escape($"{url} ({ex.Message})"));
+                case 0:
+                    return await _dispatcher.RunAsync(new[] { "local", "hot" });
+                case 1:
+                    return await _dispatcher.RunAsync(new[] { "local", "image" });
+                case 2:
+                    return await RunSelectedLocalDeployAsync();
+                case 3:
+                    return await _dispatcher.RunAsync(new[] { "local", "status" });
+                case 4:
+                    return await RunLogsMenuAsync();
+                case 5:
+                    return await RunRestartMenuAsync();
+                case 6:
+                    return await _dispatcher.RunAsync(new[] { "local", "smoke" });
+                case 7:
+                    return await RunAwsMenuAsync();
+                case 8:
+                    return await RunAzureMenuAsync();
+                case 9:
+                    return await RunGoogleMenuAsync();
+                case 10:
+                    return await RunCloudReleaseAllAsync();
+                case 11:
+                    return await _dispatcher.RunAsync(new[] { "status", "all" });
+                case 12:
+                    return await _dispatcher.RunAsync(new[] { "config", "wizard" });
+                case 13:
+                    return await _dispatcher.RunAsync(new[] { "login", "all" });
+                case 14:
+                    ShowAffectedServices();
+                    Ui.Pause();
+                    break;
+                case 15:
+                    return await RunCustomCommandAsync();
+                default:
+                    return 0;
             }
         }
-
-        AnsiConsole.Write(table);
     }
 
-    private static void WatchComposeStatus(CliContext context)
+    private async Task<int> RunSelectedLocalDeployAsync()
     {
-        var seconds = AnsiConsole.Prompt(
-            new TextPrompt<int>("Refresh interval seconds?")
-                .DefaultValue(5)
-                .Validate(v => v <= 0 ? ValidationResult.Error("Use a positive interval.") : ValidationResult.Success()));
-
-        using var cts = new CancellationTokenSource();
-        ConsoleCancelEventHandler handler = (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cts.Cancel();
-        };
-
-        Console.CancelKeyPress += handler;
-        try
-        {
-            while (!cts.IsCancellationRequested)
-            {
-                AnsiConsole.Clear();
-                RenderHeader(context);
-                AnsiConsole.MarkupLine($"[grey]{Escape(DateTimeOffset.Now.ToString("u"))}[/] [yellow]Press Ctrl+C to stop watching.[/]");
-                AnsiConsole.WriteLine();
-
-                var result = RunCapture(context, ComposeCommand(context), ComposeArguments(context, new[] { "ps" }), allowFailure: true, quiet: true);
-                WriteCommandOutput(result);
-
-                Thread.Sleep(TimeSpan.FromSeconds(seconds));
-            }
-        }
-        finally
-        {
-            Console.CancelKeyPress -= handler;
-        }
-    }
-
-    private static void BuildSelectedProject(CliContext context)
-    {
-        var project = SelectProject(context, "Build which project?");
-        if (project is null)
-        {
-            return;
-        }
-
-        RunCommand(context, "dotnet", new[] { "build", project });
-    }
-
-    private static void TestSelectedProject(CliContext context)
-    {
-        var project = SelectProject(context, "Test which project?");
-        if (project is null)
-        {
-            return;
-        }
-
-        RunCommand(context, "dotnet", new[] { "test", project });
-    }
-
-    private static void BuildSelectedServices(CliContext context)
-    {
-        var services = SelectServices(context, "Build which service(s)?", workersOnly: false);
+        var services = SelectServices(preferChanged: true, ecrOnly: false);
         if (services.Count == 0)
         {
-            return;
-        }
-
-        RunCompose(context, new[] { "build" }.Concat(services).ToArray());
-    }
-
-    private static void RunSmokeTest(CliContext context)
-    {
-        var path = Path.Combine(context.DeployDir, "smoke-test.sh");
-        if (!File.Exists(path))
-        {
-            AnsiConsole.MarkupLine("[red]deploy/smoke-test.sh not found.[/]");
-            return;
-        }
-
-        var baseUrl = AnsiConsole.Prompt(
-            new TextPrompt<string>("BASE_URL?")
-                .DefaultValue("http://localhost:8082"));
-
-        RunCommand(
-            context,
-            "bash",
-            new[] { "deploy/smoke-test.sh" },
-            new Dictionary<string, string> { ["BASE_URL"] = baseUrl });
-    }
-
-    private static void ComposeUpSelectedServices(CliContext context)
-    {
-        var services = SelectServices(context, "Deploy which service(s)?", workersOnly: false);
-        if (services.Count == 0)
-        {
-            return;
-        }
-
-        RunCompose(context, new[] { "up", "-d", "--build" }.Concat(services).ToArray());
-    }
-
-    private static void ComposeUpWithObservability(CliContext context)
-    {
-        var clone = context with { Options = context.Options with { WithObservability = true } };
-        RunCompose(clone, new[] { "up", "-d", "--build" });
-    }
-
-    private static void StartSelectedServices(CliContext context)
-    {
-        var services = SelectServices(context, "Start which service(s)?", workersOnly: false);
-        if (services.Count == 0)
-        {
-            return;
-        }
-
-        RunCompose(context, new[] { "start" }.Concat(services).ToArray());
-    }
-
-    private static void StopSelectedServices(CliContext context)
-    {
-        var services = SelectServices(context, "Stop which service(s)?", workersOnly: false);
-        if (services.Count == 0)
-        {
-            return;
-        }
-
-        ConfirmThen(context, $"Stop {services.Count} service(s)?", () => RunCompose(context, new[] { "stop" }.Concat(services).ToArray()));
-    }
-
-    private static void PauseSelectedServices(CliContext context)
-    {
-        var services = SelectServices(context, "Pause which service(s)?", workersOnly: false);
-        if (services.Count == 0)
-        {
-            return;
-        }
-
-        RunCompose(context, new[] { "pause" }.Concat(services).ToArray());
-    }
-
-    private static void UnpauseSelectedServices(CliContext context)
-    {
-        var services = SelectServices(context, "Unpause which service(s)?", workersOnly: false);
-        if (services.Count == 0)
-        {
-            return;
-        }
-
-        RunCompose(context, new[] { "unpause" }.Concat(services).ToArray());
-    }
-
-    private static void ExecShellInService(CliContext context)
-    {
-        var service = SelectOneService(context, "Open a shell in which service?", workersOnly: false);
-        if (service is null)
-        {
-            return;
-        }
-
-        var shell = AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title("Shell")
-                .AddChoices("sh", "bash"));
-
-        RunCompose(context, new[] { "exec", service, shell });
-    }
-
-    private static void RunOneOffCommand(CliContext context)
-    {
-        var service = SelectOneService(context, "Run command in which service image?", workersOnly: false);
-        if (service is null)
-        {
-            return;
-        }
-
-        var command = AnsiConsole.Prompt(
-            new TextPrompt<string>("Command?")
-                .DefaultValue("sh -lc 'env | sort | head -50'"));
-
-        var args = new List<string> { "run", "--rm", service };
-        args.AddRange(SplitArgs(command));
-        RunCompose(context, args);
-    }
-
-    private static void ScaleOneService(CliContext context)
-    {
-        var service = SelectOneService(context, "Scale which service?", workersOnly: false);
-        if (service is null)
-        {
-            return;
-        }
-
-        var replicas = PromptReplicaCount();
-        RunCompose(context, new[] { "up", "-d", "--no-build", "--scale", $"{service}={replicas}", service });
-    }
-
-    private static void ScaleMultipleServices(CliContext context)
-    {
-        var services = SelectServices(context, "Scale which service(s)?", workersOnly: false);
-        if (services.Count == 0)
-        {
-            return;
-        }
-
-        var replicas = PromptReplicaCount();
-        var args = new List<string> { "up", "-d", "--no-build" };
-        args.AddRange(services.SelectMany(service => new[] { "--scale", $"{service}={replicas}" }));
-        args.AddRange(services);
-        RunCompose(context, args);
-    }
-
-    private static void ScaleAllWorkers(CliContext context)
-    {
-        var workers = DiscoverServices(context, context.Options.WithObservability)
-            .Where(IsWorkerLikeService)
-            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        if (workers.Length == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No worker-like services discovered.[/]");
-            return;
-        }
-
-        var replicas = PromptReplicaCount();
-        var args = new List<string> { "up", "-d", "--no-build" };
-        args.AddRange(workers.SelectMany(service => new[] { "--scale", $"{service}={replicas}" }));
-        args.AddRange(workers);
-
-        ConfirmThen(context, $"Scale {workers.Length} worker services to {replicas} replica(s)?", () => RunCompose(context, args));
-    }
-
-    private static void RunEc2ScaleHelper(CliContext context)
-    {
-        var path = Path.Combine(context.DeployDir, "apply-ec2-worker-scale.sh");
-        if (!File.Exists(path))
-        {
-            AnsiConsole.MarkupLine("[yellow]deploy/apply-ec2-worker-scale.sh not found.[/]");
-            return;
-        }
-
-        var extra = AnsiConsole.Prompt(
-            new TextPrompt<string>("Arguments for apply-ec2-worker-scale.sh?")
-                .AllowEmpty());
-
-        var args = new List<string> { "deploy/apply-ec2-worker-scale.sh" };
-        args.AddRange(SplitArgs(extra));
-        RunCommand(context, "bash", args);
-    }
-
-    private static void RestartSelectedServices(CliContext context)
-    {
-        var services = SelectServices(context, "Restart which service(s)?", workersOnly: false);
-        if (services.Count == 0)
-        {
-            return;
-        }
-
-        RunCompose(context, new[] { "restart" }.Concat(services).ToArray());
-    }
-
-    private static void RecreateSelectedServices(CliContext context)
-    {
-        var services = SelectServices(context, "Recreate which service(s)?", workersOnly: false);
-        if (services.Count == 0)
-        {
-            return;
-        }
-
-        ConfirmThen(context, $"Force recreate {services.Count} service(s)?", () => RunCompose(context, new[] { "up", "-d", "--force-recreate", "--no-deps", "--no-build" }.Concat(services).ToArray()));
-    }
-
-    private static void ShowSelectedLogs(CliContext context)
-    {
-        var services = SelectServices(context, "Show logs for which service(s)?", workersOnly: false);
-        if (services.Count == 0)
-        {
-            return;
-        }
-
-        RunCompose(context, new[] { "logs", "--tail", PromptTail() }.Concat(services).ToArray());
-    }
-
-    private static void FollowLogs(CliContext context)
-    {
-        var services = SelectServices(context, "Follow logs for which service(s)?", workersOnly: false);
-        var args = new List<string> { "logs", "--tail", PromptTail(), "-f" };
-        args.AddRange(services);
-        RunCompose(context, args);
-    }
-
-    private static void RunLogsScript(CliContext context)
-    {
-        var path = Path.Combine(context.DeployDir, "logs.sh");
-        if (!File.Exists(path))
-        {
-            AnsiConsole.MarkupLine("[yellow]deploy/logs.sh not found.[/]");
-            return;
-        }
-
-        var extra = AnsiConsole.Prompt(
-            new TextPrompt<string>("Arguments for logs.sh?")
-                .DefaultValue("--errors"));
-
-        var args = new List<string> { "deploy/logs.sh" };
-        args.AddRange(SplitArgs(extra));
-        RunCommand(context, "bash", args);
-    }
-
-    private static void RunDeployScript(CliContext context, IReadOnlyList<string> args, IReadOnlyDictionary<string, string>? environment = null)
-    {
-        var script = Path.Combine(context.DeployDir, "deploy.sh");
-        if (!File.Exists(script))
-        {
-            AnsiConsole.MarkupLine("[red]deploy/deploy.sh not found.[/]");
-            return;
-        }
-
-        RunCommand(context, "bash", new[] { "deploy/deploy.sh" }.Concat(args).ToArray(), environment);
-    }
-
-    private static void RunCompose(CliContext context, IEnumerable<string> args)
-    {
-        RunCommand(context, ComposeCommand(context), ComposeArguments(context, args));
-    }
-
-    private static string ComposeCommand(CliContext context)
-    {
-        var dockerCompose = RunCapture(context, "docker", new[] { "compose", "version" }, allowFailure: true, quiet: true);
-        return dockerCompose.ExitCode == 0 ? "docker" : "docker-compose";
-    }
-
-    private static IReadOnlyList<string> ComposeArguments(CliContext context, IEnumerable<string> args)
-    {
-        var result = new List<string>();
-
-        if (ComposeCommand(context) == "docker")
-        {
-            result.Add("compose");
-        }
-
-        result.Add("-f");
-        result.Add("deploy/docker-compose.yml");
-
-        var observability = Path.Combine(context.DeployDir, "docker-compose.observability.yml");
-        if (context.Options.WithObservability && File.Exists(observability))
-        {
-            result.Add("-f");
-            result.Add("deploy/docker-compose.observability.yml");
-        }
-
-        result.AddRange(args);
-        return result;
-    }
-
-    private static int RunCommand(
-        CliContext context,
-        string command,
-        IEnumerable<string> args,
-        IReadOnlyDictionary<string, string>? environment = null)
-    {
-        var argList = args.ToArray();
-        AnsiConsole.Write(new Rule($"[yellow]{Escape(DisplayCommand(command, argList))}[/]").LeftJustified());
-
-        if (context.Options.DryRun)
-        {
-            AnsiConsole.MarkupLine("[grey]Dry run: command not executed.[/]");
+            Ui.Warn("No services selected.");
             return 0;
         }
 
-        var psi = new ProcessStartInfo(command)
+        var mode = Ui.Choose("Selected-service local action", new[]
         {
-            WorkingDirectory = context.Root,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
+            "Hot deploy selected services via deploy.sh",
+            "Build selected Docker images and run only those services",
+            "Recreate selected containers without rebuilding",
+            "Restart selected containers only"
+        });
+
+        return mode switch
+        {
+            0 => await _dispatcher.RunAsync(new[] { "local", "hot" }.Concat(services).ToArray()),
+            1 => await _dispatcher.RunAsync(new[] { "local", "selected-image" }.Concat(services).ToArray()),
+            2 => await _dispatcher.RunAsync(new[] { "local", "selected-up" }.Concat(services).ToArray()),
+            _ => await _dispatcher.RunAsync(new[] { "local", "restart" }.Concat(services).ToArray())
         };
+    }
 
-        foreach (var arg in argList)
+    private async Task<int> RunLogsMenuAsync()
+    {
+        var services = SelectServices(preferChanged: false, ecrOnly: false, allowEmpty: true);
+        var follow = Ui.Confirm("Follow logs?", defaultValue: false, assumeYes: false);
+        var args = new List<string> { "local", "logs" };
+        if (follow)
         {
-            psi.ArgumentList.Add(arg);
+            args.Add("--follow");
         }
 
-        if (environment is not null)
+        args.AddRange(services);
+        return await _dispatcher.RunAsync(args);
+    }
+
+    private async Task<int> RunRestartMenuAsync()
+    {
+        var services = SelectServices(preferChanged: true, ecrOnly: false, allowEmpty: false);
+        return await _dispatcher.RunAsync(new[] { "local", "restart" }.Concat(services).ToArray());
+    }
+
+    private async Task<int> RunAwsMenuAsync()
+    {
+        var choice = Ui.Choose("AWS ECS / ECR", new[]
         {
-            foreach (var (key, value) in environment)
+            "EC2 hybrid release: local core stack + changed ECS workers",
+            "Build and push selected ECR images",
+            "Deploy selected ECS services",
+            "Build, push, and deploy selected ECS services",
+            "Replace selected ECS worker tasks",
+            "Run ECS autoscale pass",
+            "Show ECS / Command Center status",
+            "Back"
+        });
+
+        if (choice == 7)
+        {
+            return 0;
+        }
+
+        var needsServices = choice is 1 or 2 or 3 or 4;
+        var services = needsServices ? SelectServices(preferChanged: true, ecrOnly: true) : new List<string>();
+
+        return choice switch
+        {
+            0 => await _dispatcher.RunAsync(new[] { "ecs", "hybrid" }),
+            1 => await _dispatcher.RunAsync(new[] { "ecs", "build" }.Concat(services).ToArray()),
+            2 => await _dispatcher.RunAsync(new[] { "ecs", "deploy" }.Concat(services).ToArray()),
+            3 => await _dispatcher.RunAsync(new[] { "ecs", "release" }.Concat(services).ToArray()),
+            4 => await _dispatcher.RunAsync(new[] { "ecs", "replace" }.Concat(services).ToArray()),
+            5 => await _dispatcher.RunAsync(new[] { "ecs", "autoscale" }),
+            _ => await _dispatcher.RunAsync(new[] { "ecs", "status" })
+        };
+    }
+
+    private async Task<int> RunAzureMenuAsync()
+    {
+        var choice = Ui.Choose("Azure Container Apps / ACR", new[]
+        {
+            "Build and push selected ACR images",
+            "Deploy selected Container Apps",
+            "Build, push, and deploy selected services",
+            "Show Container Apps status",
+            "Back"
+        });
+
+        if (choice == 4)
+        {
+            return 0;
+        }
+
+        var services = choice is 0 or 1 or 2 ? SelectServices(preferChanged: true, ecrOnly: false) : new List<string>();
+
+        return choice switch
+        {
+            0 => await _dispatcher.RunAsync(new[] { "azure", "build" }.Concat(services).ToArray()),
+            1 => await _dispatcher.RunAsync(new[] { "azure", "deploy" }.Concat(services).ToArray()),
+            2 => await _dispatcher.RunAsync(new[] { "azure", "release" }.Concat(services).ToArray()),
+            _ => await _dispatcher.RunAsync(new[] { "azure", "status" })
+        };
+    }
+
+    private async Task<int> RunGoogleMenuAsync()
+    {
+        var choice = Ui.Choose("Google Cloud", new[]
+        {
+            "Build and push selected Artifact Registry images",
+            "Deploy selected Cloud Run services",
+            "Build, push, and deploy selected services",
+            "Show Cloud Run service status",
+            "Back"
+        });
+
+        if (choice == 4)
+        {
+            return 0;
+        }
+
+        var services = choice is 0 or 1 or 2 ? SelectServices(preferChanged: true, ecrOnly: false) : new List<string>();
+
+        return choice switch
+        {
+            0 => await _dispatcher.RunAsync(new[] { "gcp", "build" }.Concat(services).ToArray()),
+            1 => await _dispatcher.RunAsync(new[] { "gcp", "deploy" }.Concat(services).ToArray()),
+            2 => await _dispatcher.RunAsync(new[] { "gcp", "release" }.Concat(services).ToArray()),
+            _ => await _dispatcher.RunAsync(new[] { "gcp", "status" })
+        };
+    }
+
+    private async Task<int> RunCloudReleaseAllAsync()
+    {
+        var services = SelectServices(preferChanged: true, ecrOnly: false);
+        if (services.Count == 0)
+        {
+            Ui.Warn("No services selected.");
+            return 0;
+        }
+
+        return await _dispatcher.RunAsync(new[] { "cloud", "release-all" }.Concat(services).ToArray());
+    }
+
+    private async Task<int> RunCustomCommandAsync()
+    {
+        Ui.Info("Enter a command to run from the repository root. Example: docker compose -f deploy/docker-compose.yml ps");
+        var command = Ui.Prompt("Command");
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            return 0;
+        }
+
+        return await _context.Runner.RunShellAsync(command);
+    }
+
+    private List<string> SelectServices(bool preferChanged, bool ecrOnly, bool allowEmpty = false)
+    {
+        var candidates = _context.Services
+            .Where(s => !ecrOnly || s.EcrEnabled)
+            .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            Ui.Warn("No services were found in deploy/service-catalog.tsv.");
+            return new List<string>();
+        }
+
+        var changed = _context.ChangeDetector.GetAffectedServiceNames()
+            .Where(name => candidates.Any(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        Ui.WriteLine();
+        Ui.Info("Services:");
+        for (var i = 0; i < candidates.Count; i++)
+        {
+            var marker = changed.Contains(candidates[i].Name, StringComparer.OrdinalIgnoreCase) ? "*" : " ";
+            var cloud = candidates[i].EcrEnabled ? "cloud" : "local";
+            Ui.WriteLine($"  {i + 1,2}. {marker} {candidates[i].Name,-42} {cloud}");
+        }
+
+        if (changed.Count > 0)
+        {
+            Ui.WriteLine();
+            Ui.Info("* = affected by current Git changes.");
+        }
+
+        var defaultHint = preferChanged && changed.Count > 0 ? "changed" : allowEmpty ? "none" : "all";
+        var input = Ui.Prompt(
+            $"Select services by number/name, comma-separated. Use 'all', 'changed', or 'none' [default: {defaultHint}]",
+            defaultHint);
+
+        if (string.Equals(input, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return allowEmpty ? new List<string>() : changed;
+        }
+
+        if (string.Equals(input, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            return candidates.Select(s => s.Name).ToList();
+        }
+
+        if (string.Equals(input, "changed", StringComparison.OrdinalIgnoreCase))
+        {
+            if (changed.Count > 0)
             {
-                psi.Environment[key] = value;
+                return changed;
+            }
+
+            Ui.Warn("No affected services were detected; falling back to all services.");
+            return candidates.Select(s => s.Name).ToList();
+        }
+
+        var selected = new List<string>();
+        var tokens = input.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        foreach (var token in tokens)
+        {
+            if (int.TryParse(token, out var index) && index >= 1 && index <= candidates.Count)
+            {
+                selected.Add(candidates[index - 1].Name);
+                continue;
+            }
+
+            var match = candidates.FirstOrDefault(s => string.Equals(s.Name, token, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                selected.Add(match.Name);
+                continue;
+            }
+
+            Ui.Warn($"Ignoring unknown service selection: {token}");
+        }
+
+        return selected.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private void ShowAffectedServices()
+    {
+        var changedFiles = _context.ChangeDetector.GetChangedFiles();
+        var affected = _context.ChangeDetector.GetAffectedServiceNames();
+
+        Ui.Header("Changed files");
+        if (changedFiles.Count == 0)
+        {
+            Ui.Warn("No Git changes detected with the current base/ref settings.");
+        }
+        else
+        {
+            foreach (var file in changedFiles)
+            {
+                Ui.WriteLine($"  {file}");
             }
         }
 
-        try
+        Ui.Header("Affected services");
+        if (affected.Count == 0)
         {
-            using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-
-            process.OutputDataReceived += (_, e) =>
+            Ui.Warn("No affected services detected.");
+        }
+        else
+        {
+            foreach (var service in affected)
             {
-                if (e.Data is not null)
+                Ui.WriteLine($"  {service}");
+            }
+        }
+    }
+}
+
+internal sealed class CommandDispatcher
+{
+    private readonly DeploymentContext _context;
+
+    public CommandDispatcher(DeploymentContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<int> RunAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count == 0)
+        {
+            return await new DeploymentMenu(_context).RunAsync();
+        }
+
+        var command = args[0].ToLowerInvariant();
+        var rest = args.Skip(1).ToArray();
+
+        return command switch
+        {
+            "help" or "-h" or "--help" => ShowHelp(),
+
+            // Compatibility for deploy.sh's old Python-UI handoff.
+            // deploy.sh used to exec deploy-ui.py with its own arguments before parsing them.
+            "up" => await RunLocalAsync(new[] { "hot" }.Concat(rest).ToArray()),
+            "--hot" or "-hot" => await RunLocalAsync(new[] { "hot" }.Concat(rest).ToArray()),
+            "--image" or "-image" => await RunLocalAsync(new[] { "image" }.Concat(rest).ToArray()),
+            "--fresh" or "-fresh" => await RunLocalAsync(new[] { "fresh" }.Concat(rest).ToArray()),
+            "--ecs-workers" => await RunEcsAsync(new[] { "hybrid" }.Concat(rest).ToArray()),
+
+            "local" => await RunLocalAsync(rest),
+            "ecs" or "aws" => await RunEcsAsync(rest),
+            "azure" or "az" => await RunAzureAsync(rest),
+            "gcp" or "google" => await RunGoogleAsync(rest),
+            "cloud" => await RunCloudAsync(rest),
+            "status" => await RunStatusAsync(rest),
+            "config" or "configure" => await RunConfigAsync(rest),
+            "login" => await RunLoginAsync(rest),
+            "changed" or "changes" or "affected" => ShowAffected(),
+            "services" => ShowServices(),
+            _ => Unknown(command)
+        };
+    }
+
+    private int ShowHelp()
+    {
+        Ui.Header("Argus Deploy CLI");
+        Ui.WriteLine("""
+Usage:
+  dotnet run --project deploy/ArgusEngine.DeployUi -- [--dry-run] [--yes] <command>
+
+Interactive:
+  menu                                      Start the menu UI.
+
+Local Docker Compose:
+  local hot [service...]                    Incremental hot deploy via deploy/deploy.sh.
+  local image [service...]                  Image deploy; selected services use direct compose build/up.
+  local fresh                               Full no-cache rebuild/recreate via deploy/deploy.sh.
+  local selected-image <service...>         Build and up only the listed compose services.
+  local selected-up <service...>            Up only listed compose services without rebuilding.
+  local status [service...]                 docker compose ps.
+  local logs [--follow] [service...]        docker compose logs.
+  local restart [service...]                Restart listed services or all services.
+  local smoke | down | clean                Run existing deployment actions.
+
+AWS ECS / ECR:
+  ecs hybrid                                EC2 hybrid mode: local core + changed ECS workers.
+  ecs build [service...]                    Build/push selected ECR images.
+  ecs deploy [service...]                   Create/update selected ECS services.
+  ecs release [service...]                  ECR build/push then ECS deploy.
+  ecs replace [service...]                  Replace selected worker tasks.
+  ecs autoscale                             Run one ECS autoscale pass.
+  ecs status                                Show ECS / Command Center status.
+
+Azure:
+  azure build [service...]                  Build/push selected ACR images.
+  azure deploy [service...]                 Deploy selected Azure Container Apps.
+  azure release [service...]                Build/push then deploy.
+  azure status                              Show Container Apps status.
+
+Google Cloud:
+  gcp build [service...]                    Build/push selected Artifact Registry images.
+  gcp deploy [service...]                   Deploy selected Cloud Run services.
+  gcp release [service...]                  Build/push then deploy.
+  gcp status                                Show Cloud Run services.
+
+Analysis:
+  changed [--base <ref>]                    Show files and services affected by Git changes.
+  services                                  List known deployable services.
+  status all                                Show local/AWS/Azure/GCP status.
+  login [all|aws|azure|gcp]                Run cloud login checks and optional login.
+  config wizard                             Configure deployment env vars in deploy/.env.local.
+  cloud release-all [service...]            Build/deploy services across AWS + Azure + GCP.
+
+Global:
+  --dry-run | -n                            Print commands without running them.
+  --yes | -y                                Assume yes for destructive confirmations.
+  --base | --base-ref <ref>                 Override change-detection base ref.
+""");
+        return 0;
+    }
+
+    private async Task<int> RunLocalAsync(IReadOnlyList<string> args)
+    {
+        var action = args.Count == 0 ? "hot" : args[0].ToLowerInvariant();
+        var services = args.Skip(1).Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToList();
+
+        switch (action)
+        {
+            case "hot":
+                return await RunScriptRequiredAsync(_context.Paths.LocalDeployScript, new[] { "--hot" }.Concat(services));
+            case "image":
+                if (services.Count > 0)
                 {
-                    Console.WriteLine(e.Data);
+                    return await RunComposeImageDeployAsync(services, build: true, forceRecreate: false);
                 }
-            };
 
-            process.ErrorDataReceived += (_, e) =>
-            {
-                if (e.Data is not null)
-                {
-                    var previous = Console.ForegroundColor;
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.Error.WriteLine(e.Data);
-                    Console.ForegroundColor = previous;
-                }
-            };
-
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            process.WaitForExit();
-
-            if (process.ExitCode == 0)
-            {
-                AnsiConsole.MarkupLine("[green]Command completed successfully.[/]");
-            }
-            else
-            {
-                AnsiConsole.MarkupLine($"[red]Command failed with exit code {process.ExitCode}.[/]");
-            }
-
-            return process.ExitCode;
-        }
-        catch (Exception ex)
-        {
-            AnsiConsole.MarkupLine($"[red]Failed to start command:[/] {Escape(ex.Message)}");
-            return -1;
+                return await RunScriptRequiredAsync(_context.Paths.LocalDeployScript, new[] { "--image" });
+            case "fresh":
+            case "--fresh":
+            case "-fresh":
+                return await RunScriptRequiredAsync(_context.Paths.LocalDeployScript, new[] { "--fresh" });
+            case "selected-image":
+                RequireServices(services, "local selected-image");
+                return await RunComposeImageDeployAsync(services, build: true, forceRecreate: false);
+            case "selected-up":
+                RequireServices(services, "local selected-up");
+                return await RunComposeImageDeployAsync(services, build: false, forceRecreate: true);
+            case "status":
+            case "ps":
+                return await RunScriptRequiredAsync(_context.Paths.LocalDeployScript, new[] { "status" }.Concat(args.Skip(1)));
+            case "logs":
+                return await RunScriptRequiredAsync(_context.Paths.LocalDeployScript, new[] { "logs" }.Concat(args.Skip(1)));
+            case "restart":
+                return await RunScriptRequiredAsync(_context.Paths.LocalDeployScript, new[] { "restart" }.Concat(args.Skip(1)));
+            case "smoke":
+            case "down":
+            case "clean":
+                return await RunScriptRequiredAsync(_context.Paths.LocalDeployScript, new[] { action }.Concat(args.Skip(1)));
+            default:
+                Ui.Error($"Unknown local action: {action}");
+                return 2;
         }
     }
 
-    private static RunResult RunCapture(
-        CliContext context,
-        string command,
-        IEnumerable<string> args,
-        bool allowFailure = false,
-        bool quiet = false)
+    private async Task<int> RunComposeImageDeployAsync(IReadOnlyList<string> services, bool build, bool forceRecreate)
     {
-        var argList = args.ToArray();
+        ValidateServices(services, allowUnknown: true);
 
-        if (context.Options.DryRun && !quiet)
+        if (build)
         {
-            AnsiConsole.MarkupLine($"[grey]Dry run capture:[/] {Escape(DisplayCommand(command, argList))}");
-            return new RunResult(0, string.Empty, string.Empty);
+            var buildArgs = new List<string> { "compose", "-f", "deploy/docker-compose.yml", "build" };
+            buildArgs.AddRange(services);
+            var buildExit = await _context.Runner.RunAsync("docker", buildArgs);
+            if (buildExit != 0)
+            {
+                return buildExit;
+            }
         }
 
-        var psi = new ProcessStartInfo(command)
+        var upArgs = new List<string> { "compose", "-f", "deploy/docker-compose.yml", "up", "-d", "--no-deps" };
+        if (forceRecreate)
         {
-            WorkingDirectory = context.Root,
+            upArgs.Add("--force-recreate");
+        }
+
+        upArgs.AddRange(services);
+        return await _context.Runner.RunAsync("docker", upArgs);
+    }
+
+    private async Task<int> RunEcsAsync(IReadOnlyList<string> args)
+    {
+        var action = args.Count == 0 ? "status" : args[0].ToLowerInvariant();
+        var services = args.Skip(1).ToList();
+
+        switch (action)
+        {
+            case "hybrid":
+            case "workers":
+                return await RunScriptRequiredAsync(_context.Paths.LocalDeployScript, new[] { "--ecs-workers" });
+            case "repos":
+                return await RunScriptRequiredAsync(_context.Scripts.Required("aws/create-ecr-repos.sh"), services);
+            case "build":
+                ValidateServicesOrDefault(services, cloudOnly: true);
+                return await RunScriptRequiredAsync(_context.Scripts.Required("aws/build-push-ecr.sh"), services);
+            case "deploy":
+                ValidateServicesOrDefault(services, cloudOnly: true);
+                return await RunScriptRequiredAsync(_context.Scripts.Required("aws/deploy-ecs-services.sh"), services);
+            case "replace":
+                ValidateServicesOrDefault(services, cloudOnly: true);
+                return await RunScriptRequiredAsync(_context.Scripts.Required("aws/replace-ecs-worker-tasks.sh"), services);
+            case "release":
+                ValidateServicesOrDefault(services, cloudOnly: true);
+                var createExit = await RunScriptRequiredAsync(_context.Scripts.Required("aws/create-ecr-repos.sh"), Array.Empty<string>());
+                if (createExit != 0)
+                {
+                    return createExit;
+                }
+
+                var buildExit = await RunScriptRequiredAsync(_context.Scripts.Required("aws/build-push-ecr.sh"), services);
+                if (buildExit != 0)
+                {
+                    return buildExit;
+                }
+
+                return await RunScriptRequiredAsync(_context.Scripts.Required("aws/deploy-ecs-services.sh"), services);
+            case "autoscale":
+                return await RunScriptRequiredAsync(_context.Scripts.Required("aws/autoscale-ecs-workers.sh"), Array.Empty<string>());
+            case "status":
+                var statusScript = _context.Scripts.Find("aws/ecs-command-center-status.sh");
+                if (statusScript is not null)
+                {
+                    return await RunScriptRequiredAsync(statusScript, services);
+                }
+
+                return await _context.Runner.RunAsync("aws", new[] { "ecs", "list-services", "--cluster", RequireEnv("ECS_CLUSTER"), "--output", "table" });
+            default:
+                Ui.Error($"Unknown ECS action: {action}");
+                return 2;
+        }
+    }
+
+    private async Task<int> RunAzureAsync(IReadOnlyList<string> args)
+    {
+        EnvFileLoader.LoadProviderEnvironmentFiles(_context, "azure");
+        var action = args.Count == 0 ? "status" : args[0].ToLowerInvariant();
+        var services = args.Skip(1).ToList();
+
+        switch (action)
+        {
+            case "build":
+                ValidateServicesOrDefault(services, cloudOnly: false);
+                return await RunProviderScriptAsync("Azure ACR build", _context.Scripts.AzureBuildScript, services);
+            case "deploy":
+                ValidateServicesOrDefault(services, cloudOnly: false);
+                return await RunProviderScriptAsync("Azure Container Apps deploy", _context.Scripts.AzureDeployScript, services);
+            case "release":
+                ValidateServicesOrDefault(services, cloudOnly: false);
+                var buildExit = await RunProviderScriptAsync("Azure ACR build", _context.Scripts.AzureBuildScript, services);
+                if (buildExit != 0)
+                {
+                    return buildExit;
+                }
+
+                return await RunProviderScriptAsync("Azure Container Apps deploy", _context.Scripts.AzureDeployScript, services);
+            case "status":
+                return await RunAzureStatusAsync();
+            default:
+                Ui.Error($"Unknown Azure action: {action}");
+                return 2;
+        }
+    }
+
+    private async Task<int> RunGoogleAsync(IReadOnlyList<string> args)
+    {
+        EnvFileLoader.LoadProviderEnvironmentFiles(_context, "google");
+        EnvFileLoader.LoadProviderEnvironmentFiles(_context, "gcp");
+
+        var action = args.Count == 0 ? "status" : args[0].ToLowerInvariant();
+        var services = args.Skip(1).ToList();
+
+        switch (action)
+        {
+            case "build":
+                ValidateServicesOrDefault(services, cloudOnly: false);
+                return await RunProviderScriptAsync("Google Artifact Registry build", _context.Scripts.GoogleBuildScript, services);
+            case "deploy":
+                ValidateServicesOrDefault(services, cloudOnly: false);
+                return await RunProviderScriptAsync("Google Cloud Run deploy", _context.Scripts.GoogleDeployScript, services);
+            case "release":
+                ValidateServicesOrDefault(services, cloudOnly: false);
+                var buildExit = await RunProviderScriptAsync("Google Artifact Registry build", _context.Scripts.GoogleBuildScript, services);
+                if (buildExit != 0)
+                {
+                    return buildExit;
+                }
+
+                return await RunProviderScriptAsync("Google Cloud Run deploy", _context.Scripts.GoogleDeployScript, services);
+            case "status":
+                return await RunGoogleStatusAsync();
+            default:
+                Ui.Error($"Unknown Google action: {action}");
+                return 2;
+        }
+    }
+
+    private int ShowAffected()
+    {
+        var files = _context.ChangeDetector.GetChangedFiles();
+        var services = _context.ChangeDetector.GetAffectedServiceNames();
+
+        Ui.Header("Changed files");
+        foreach (var file in files)
+        {
+            Ui.WriteLine(file);
+        }
+
+        if (files.Count == 0)
+        {
+            Ui.Warn("No changed files detected.");
+        }
+
+        Ui.Header("Affected services");
+        foreach (var service in services)
+        {
+            Ui.WriteLine(service);
+        }
+
+        if (services.Count == 0)
+        {
+            Ui.Warn("No affected services detected.");
+        }
+
+        return 0;
+    }
+
+    private int ShowServices()
+    {
+        Ui.Header("Services");
+        foreach (var service in _context.Services.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var cloud = service.EcrEnabled ? "cloud" : "local";
+            Ui.WriteLine($"{service.Name,-42} {cloud,-6} {service.ProjectDir}");
+        }
+
+        return 0;
+    }
+
+    private int Unknown(string command)
+    {
+        Ui.Error($"Unknown command: {command}");
+        Ui.Info("Run with --help for usage.");
+        return 2;
+    }
+
+    private async Task<int> RunProviderScriptAsync(string displayName, string? scriptPath, IReadOnlyList<string> services)
+    {
+        if (scriptPath is null)
+        {
+            Ui.Error($"{displayName} script was not found.");
+            Ui.Info("Expected one of the provider scripts under deploy/azure, deploy/google, deploy/gcp, or a sibling argus-multicloud-deploy-scripts checkout.");
+            return 2;
+        }
+
+        return await RunScriptRequiredAsync(scriptPath, services);
+    }
+
+    private async Task<int> RunAzureStatusAsync()
+    {
+        var resourceGroup = Environment.GetEnvironmentVariable("AZURE_RESOURCE_GROUP");
+        if (string.IsNullOrWhiteSpace(resourceGroup))
+        {
+            resourceGroup = Ui.Prompt("AZURE_RESOURCE_GROUP");
+        }
+
+        return await _context.Runner.RunAsync("az", new[]
+        {
+            "containerapp", "list",
+            "--resource-group", resourceGroup,
+            "--output", "table"
+        });
+    }
+
+    private async Task<int> RunGoogleStatusAsync()
+    {
+        var region = Environment.GetEnvironmentVariable("GOOGLE_REGION")
+            ?? Environment.GetEnvironmentVariable("GCP_REGION")
+            ?? Environment.GetEnvironmentVariable("CLOUD_RUN_REGION");
+
+        if (string.IsNullOrWhiteSpace(region))
+        {
+            region = Ui.Prompt("Cloud Run region", "us-central1");
+        }
+
+        return await _context.Runner.RunAsync("gcloud", new[]
+        {
+            "run", "services", "list",
+            "--platform", "managed",
+            "--region", region
+        });
+    }
+
+    private async Task<int> RunScriptRequiredAsync(string scriptPath, IEnumerable<string> args)
+    {
+        if (!File.Exists(scriptPath))
+        {
+            Ui.Error($"Required script was not found: {_context.Paths.Rel(scriptPath)}");
+            return 2;
+        }
+
+        return await _context.Runner.RunScriptAsync(scriptPath, args.ToList());
+    }
+
+    private static string RequireEnv(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException($"Set {name} before running this command.");
+        }
+
+        return value;
+    }
+
+    private void ValidateServicesOrDefault(IReadOnlyList<string> services, bool cloudOnly)
+    {
+        if (services.Count == 0)
+        {
+            return;
+        }
+
+        ValidateServices(services, allowUnknown: false, cloudOnly);
+    }
+
+    private void ValidateServices(IReadOnlyList<string> services, bool allowUnknown, bool cloudOnly = false)
+    {
+        var known = _context.Services.ToDictionary(s => s.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var service in services)
+        {
+            if (!known.TryGetValue(service, out var definition))
+            {
+                if (allowUnknown)
+                {
+                    Ui.Warn($"Service '{service}' is not in deploy/service-catalog.tsv; passing it through to the underlying tool.");
+                    continue;
+                }
+
+                throw new ArgumentException($"Unknown service '{service}'. Run 'services' to list valid services.");
+            }
+
+            if (cloudOnly && !definition.EcrEnabled)
+            {
+                throw new ArgumentException($"Service '{service}' is not marked as cloud/ECR deployable in deploy/service-catalog.tsv.");
+            }
+        }
+    }
+
+    private static void RequireServices(IReadOnlyList<string> services, string commandName)
+    {
+        if (services.Count == 0)
+        {
+            throw new ArgumentException($"{commandName} requires at least one service.");
+        }
+    }
+}
+
+internal sealed class ScriptCatalog
+{
+    private readonly PathResolver _paths;
+    private readonly List<string> _searchRoots;
+
+    public ScriptCatalog(PathResolver paths)
+    {
+        _paths = paths;
+        _searchRoots = BuildSearchRoots(paths).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        AzureBuildScript = FindFirst(
+            "azure/build-push-acr.sh",
+            "deploy/azure/build-push-acr.sh",
+            "build-push-acr.sh");
+        AzureDeployScript = FindFirst(
+            "azure/deploy-container-apps.sh",
+            "azure/deploy-aca-services.sh",
+            "azure/deploy-azure-container-apps.sh",
+            "deploy/azure/deploy-container-apps.sh",
+            "deploy/azure/deploy-aca-services.sh",
+            "deploy/azure/deploy-azure-container-apps.sh");
+        GoogleBuildScript = FindFirst(
+            "google/build-push-gar.sh",
+            "gcp/build-push-gar.sh",
+            "google/build-push-gcr.sh",
+            "deploy/google/build-push-gar.sh",
+            "deploy/gcp/build-push-gar.sh",
+            "deploy/google/build-push-gcr.sh");
+        GoogleDeployScript = FindFirst(
+            "google/deploy-cloud-run.sh",
+            "google/deploy-cloudrun-services.sh",
+            "gcp/deploy-cloud-run.sh",
+            "gcp/deploy-cloudrun-services.sh",
+            "deploy/google/deploy-cloud-run.sh",
+            "deploy/google/deploy-cloudrun-services.sh",
+            "deploy/gcp/deploy-cloud-run.sh",
+            "deploy/gcp/deploy-cloudrun-services.sh");
+    }
+
+    public string? AzureBuildScript { get; }
+    public string? AzureDeployScript { get; }
+    public string? GoogleBuildScript { get; }
+    public string? GoogleDeployScript { get; }
+
+    public string? Find(string relativePath)
+    {
+        var direct = Path.Combine(_paths.DeployDir, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        if (File.Exists(direct))
+        {
+            return direct;
+        }
+
+        foreach (var root in _searchRoots)
+        {
+            var candidate = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            var deployCandidate = Path.Combine(root, "deploy", relativePath.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(deployCandidate))
+            {
+                return deployCandidate;
+            }
+        }
+
+        return null;
+    }
+
+    public string Required(string relativePath) =>
+        Find(relativePath) ?? Path.Combine(_paths.DeployDir, relativePath.Replace('/', Path.DirectorySeparatorChar));
+
+    private string? FindFirst(params string[] relativePaths)
+    {
+        foreach (var relativePath in relativePaths)
+        {
+            foreach (var root in _searchRoots)
+            {
+                var candidate = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> BuildSearchRoots(PathResolver paths)
+    {
+        yield return paths.DeployDir;
+        yield return paths.RepoRoot;
+        yield return Path.Combine(paths.RepoRoot, "argus-multicloud-deploy-scripts");
+
+        var parent = Directory.GetParent(paths.RepoRoot)?.FullName;
+        if (!string.IsNullOrWhiteSpace(parent))
+        {
+            yield return Path.Combine(parent, "argus-multicloud-deploy-scripts");
+        }
+    }
+}
+
+internal sealed record ServiceDefinition(
+    string Name,
+    string ProjectDir,
+    string AppDll,
+    string Dockerfile,
+    bool EcrEnabled,
+    string Kind,
+    IReadOnlyList<string> ExtraSourceDirs)
+{
+    public string ProjectFile(string repoRoot) => Path.Combine(repoRoot, "src", ProjectDir, $"{ProjectDir}.csproj");
+    public string ProjectSourceDir => NormalizePath($"src/{ProjectDir}");
+}
+
+internal static class ServiceCatalog
+{
+    private static readonly string[] FallbackServices =
+    {
+        "command-center-gateway",
+        "command-center-operations-api",
+        "command-center-discovery-api",
+        "command-center-worker-control-api",
+        "command-center-maintenance-api",
+        "command-center-updates-api",
+        "command-center-realtime",
+        "command-center-web",
+        "gatekeeper",
+        "worker-spider",
+        "worker-http-requester",
+        "worker-enum",
+        "worker-portscan",
+        "worker-highvalue",
+        "worker-techid"
+    };
+
+    public static IReadOnlyList<ServiceDefinition> Load(PathResolver paths)
+    {
+        if (!File.Exists(paths.ServiceCatalogFile))
+        {
+            return FallbackServices
+                .Select(name => new ServiceDefinition(name, string.Empty, string.Empty, string.Empty, true, "unknown", Array.Empty<string>()))
+                .ToList();
+        }
+
+        var services = new List<ServiceDefinition>();
+
+        foreach (var rawLine in File.ReadAllLines(paths.ServiceCatalogFile))
+        {
+            var line = rawLine.Trim();
+            if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#'))
+            {
+                continue;
+            }
+
+            var columns = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (columns.Length < 6)
+            {
+                continue;
+            }
+
+            var extras = columns.Length >= 7
+                ? columns[6].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(NormalizePath)
+                    .ToArray()
+                : Array.Empty<string>();
+
+            services.Add(new ServiceDefinition(
+                Name: columns[0],
+                ProjectDir: columns[1],
+                AppDll: columns[2],
+                Dockerfile: NormalizePath(columns[3]),
+                EcrEnabled: columns[4] == "1" || columns[4].Equals("true", StringComparison.OrdinalIgnoreCase),
+                Kind: columns[5],
+                ExtraSourceDirs: extras));
+        }
+
+        return services;
+    }
+
+    private static string NormalizePath(string value) => value.Replace('\\', '/').Trim('/');
+}
+
+internal sealed class ChangeDetector
+{
+    private readonly PathResolver _paths;
+    private readonly IReadOnlyList<ServiceDefinition> _services;
+    private readonly string? _baseRef;
+    private IReadOnlyList<string>? _cachedChangedFiles;
+    private IReadOnlyList<string>? _cachedAffectedServices;
+
+    private static readonly HashSet<string> GlobalInvalidators = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ArgusEngine.slnx",
+        "Directory.Build.props",
+        "Directory.Build.targets",
+        "Directory.Packages.props",
+        "global.json",
+        "deploy/docker-compose.yml",
+        "deploy/service-catalog.tsv",
+        ".dockerignore"
+    };
+
+    public ChangeDetector(PathResolver paths, IReadOnlyList<ServiceDefinition> services, string? baseRef)
+    {
+        _paths = paths;
+        _services = services;
+        _baseRef = baseRef;
+    }
+
+    public IReadOnlyList<string> GetChangedFiles()
+    {
+        if (_cachedChangedFiles is not null)
+        {
+            return _cachedChangedFiles;
+        }
+
+        if (!Directory.Exists(Path.Combine(_paths.RepoRoot, ".git")))
+        {
+            _cachedChangedFiles = Array.Empty<string>();
+            return _cachedChangedFiles;
+        }
+
+        var files = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var file in RunGitLines("diff", "--name-only"))
+        {
+            files.Add(NormalizePath(file));
+        }
+
+        foreach (var file in RunGitLines("diff", "--cached", "--name-only"))
+        {
+            files.Add(NormalizePath(file));
+        }
+
+        foreach (var file in RunGitLines("ls-files", "--others", "--exclude-standard"))
+        {
+            files.Add(NormalizePath(file));
+        }
+
+        var baseRef = ResolveBaseRef();
+        if (!string.IsNullOrWhiteSpace(baseRef))
+        {
+            foreach (var file in RunGitLines("diff", "--name-only", $"{baseRef}...HEAD"))
+            {
+                files.Add(NormalizePath(file));
+            }
+        }
+
+        _cachedChangedFiles = files.ToList();
+        return _cachedChangedFiles;
+    }
+
+    public IReadOnlyList<string> GetAffectedServiceNames()
+    {
+        if (_cachedAffectedServices is not null)
+        {
+            return _cachedAffectedServices;
+        }
+
+        var changedFiles = GetChangedFiles();
+        if (changedFiles.Count == 0)
+        {
+            _cachedAffectedServices = Array.Empty<string>();
+            return _cachedAffectedServices;
+        }
+
+        if (changedFiles.Any(file => GlobalInvalidators.Contains(file)))
+        {
+            _cachedAffectedServices = _services
+                .Where(s => s.EcrEnabled || !string.IsNullOrWhiteSpace(s.ProjectDir))
+                .Select(s => s.Name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return _cachedAffectedServices;
+        }
+
+        var graph = ProjectDependencyGraph.Build(_paths, _services);
+        var affected = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var service in _services)
+        {
+            var directories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                service.ProjectSourceDir
+            };
+
+            foreach (var dir in service.ExtraSourceDirs)
+            {
+                directories.Add(dir);
+            }
+
+            if (graph.ServiceSourceDirectories.TryGetValue(service.Name, out var referencedDirectories))
+            {
+                foreach (var dir in referencedDirectories)
+                {
+                    directories.Add(dir);
+                }
+            }
+
+            foreach (var file in changedFiles)
+            {
+                if (directories.Any(dir => IsUnder(file, dir)))
+                {
+                    affected.Add(service.Name);
+                    break;
+                }
+
+                if (!string.IsNullOrWhiteSpace(service.Dockerfile)
+                    && string.Equals(file, service.Dockerfile, StringComparison.OrdinalIgnoreCase))
+                {
+                    affected.Add(service.Name);
+                    break;
+                }
+            }
+        }
+
+        _cachedAffectedServices = affected.ToList();
+        return _cachedAffectedServices;
+    }
+
+    private string? ResolveBaseRef()
+    {
+        if (!string.IsNullOrWhiteSpace(_baseRef))
+        {
+            return _baseRef;
+        }
+
+        var upstream = RunGitSingle("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}");
+        if (!string.IsNullOrWhiteSpace(upstream))
+        {
+            var mergeBase = RunGitSingle("merge-base", "HEAD", upstream);
+            if (!string.IsNullOrWhiteSpace(mergeBase))
+            {
+                return mergeBase;
+            }
+        }
+
+        return null;
+    }
+
+    private IEnumerable<string> RunGitLines(params string[] args)
+    {
+        var result = RunGit(args);
+        if (result.ExitCode != 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        return result.Output
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line => !string.IsNullOrWhiteSpace(line));
+    }
+
+    private string? RunGitSingle(params string[] args)
+    {
+        var result = RunGit(args);
+        if (result.ExitCode != 0)
+        {
+            return null;
+        }
+
+        return result.Output.Trim();
+    }
+
+    private CommandCapture RunGit(params string[] args)
+    {
+        var psi = new ProcessStartInfo("git")
+        {
+            WorkingDirectory = _paths.RepoRoot,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false
         };
 
-        foreach (var arg in argList)
+        foreach (var arg in args)
         {
             psi.ArgumentList.Add(arg);
         }
@@ -923,558 +1358,356 @@ internal static class Program
             using var process = Process.Start(psi);
             if (process is null)
             {
-                return new RunResult(-1, string.Empty, $"Failed to start {command}");
+                return new CommandCapture(1, string.Empty);
             }
 
-            var outputTask = process.StandardOutput.ReadToEndAsync();
-            var errorTask = process.StandardError.ReadToEndAsync();
+            var stdout = process.StandardOutput.ReadToEnd();
+            _ = process.StandardError.ReadToEnd();
             process.WaitForExit();
-
-            var result = new RunResult(process.ExitCode, outputTask.GetAwaiter().GetResult(), errorTask.GetAwaiter().GetResult());
-            if (!allowFailure && result.ExitCode != 0)
-            {
-                throw new InvalidOperationException($"{DisplayCommand(command, argList)} failed: {result.Error}");
-            }
-
-            return result;
+            return new CommandCapture(process.ExitCode, stdout);
         }
-        catch (Exception ex) when (allowFailure)
+        catch
         {
-            return new RunResult(-1, string.Empty, ex.Message);
+            return new CommandCapture(1, string.Empty);
         }
     }
 
-    private static void WriteCommandOutput(RunResult result)
+    private static bool IsUnder(string file, string directory)
     {
-        if (!string.IsNullOrWhiteSpace(result.Output))
-        {
-            Console.WriteLine(result.Output.TrimEnd());
-        }
-
-        if (!string.IsNullOrWhiteSpace(result.Error))
-        {
-            var previous = Console.ForegroundColor;
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.Error.WriteLine(result.Error.TrimEnd());
-            Console.ForegroundColor = previous;
-        }
-
-        if (result.ExitCode != 0)
-        {
-            AnsiConsole.MarkupLine($"[red]Exit code: {result.ExitCode}[/]");
-        }
+        directory = NormalizePath(directory);
+        file = NormalizePath(file);
+        return file.Equals(directory, StringComparison.OrdinalIgnoreCase)
+            || file.StartsWith(directory + "/", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IReadOnlyList<string> DiscoverServices(CliContext context, bool includeObservability)
+    private static string NormalizePath(string value) => value.Replace('\\', '/').Trim('/');
+}
+
+internal sealed record CommandCapture(int ExitCode, string Output);
+
+internal sealed class ProjectDependencyGraph
+{
+    private ProjectDependencyGraph(Dictionary<string, HashSet<string>> serviceSourceDirectories)
     {
-        var clone = context with { Options = context.Options with { WithObservability = includeObservability } };
-        var result = RunCapture(clone, ComposeCommand(clone), ComposeArguments(clone, new[] { "config", "--services" }), allowFailure: true, quiet: true);
-
-        if (result.ExitCode == 0 && !string.IsNullOrWhiteSpace(result.Output))
-        {
-            return result.Output
-                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-        }
-
-        var fromFiles = ParseComposeServicesFromFiles(context, includeObservability);
-        if (fromFiles.Count > 0)
-        {
-            return fromFiles
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-        }
-
-        return KnownComposeServices(includeObservability)
-            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        ServiceSourceDirectories = serviceSourceDirectories;
     }
 
-    private static IReadOnlyList<string> ParseComposeServicesFromFiles(CliContext context, bool includeObservability)
+    public Dictionary<string, HashSet<string>> ServiceSourceDirectories { get; }
+
+    public static ProjectDependencyGraph Build(PathResolver paths, IReadOnlyList<ServiceDefinition> services)
     {
-        var files = new List<string> { Path.Combine(context.DeployDir, "docker-compose.yml") };
-        if (includeObservability)
-        {
-            files.Add(Path.Combine(context.DeployDir, "docker-compose.observability.yml"));
-        }
+        var result = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var memo = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
-        var reserved = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        foreach (var service in services)
         {
-            "services",
-            "volumes",
-            "configs",
-            "environment",
-            "ports",
-            "depends_on",
-            "healthcheck",
-            "build",
-            "args",
-            "image",
-            "command",
-            "restart",
-            "volumes",
-            "entrypoint",
-            "labels",
-            "networks",
-            "deploy"
-        };
-
-        var services = new List<string>();
-
-        foreach (var file in files.Where(File.Exists))
-        {
-            var text = File.ReadAllText(file);
-            var serviceBlockMatch = Regex.Match(text, @"services:\s*(?<body>.*?)(?:\s+volumes:|\s+networks:|\z)", RegexOptions.Singleline);
-            if (!serviceBlockMatch.Success)
+            if (string.IsNullOrWhiteSpace(service.ProjectDir))
             {
                 continue;
             }
 
-            var body = serviceBlockMatch.Groups["body"].Value;
-            foreach (Match match in Regex.Matches(body, @"(?:^|\s)(?<name>[A-Za-z0-9][A-Za-z0-9_.-]*):\s+(?:image:|build:|environment:|command:|depends_on:|ports:|restart:)", RegexOptions.Singleline))
+            var project = service.ProjectFile(paths.RepoRoot);
+            result[service.Name] = CollectProjectDirectories(paths, project, memo);
+        }
+
+        return new ProjectDependencyGraph(result);
+    }
+
+    private static HashSet<string> CollectProjectDirectories(PathResolver paths, string projectFile, Dictionary<string, HashSet<string>> memo)
+    {
+        projectFile = Path.GetFullPath(projectFile);
+
+        if (memo.TryGetValue(projectFile, out var cached))
+        {
+            return new HashSet<string>(cached, StringComparer.OrdinalIgnoreCase);
+        }
+
+        var directories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (!File.Exists(projectFile))
+        {
+            memo[projectFile] = directories;
+            return directories;
+        }
+
+        var projectDirectory = Path.GetDirectoryName(projectFile);
+        if (!string.IsNullOrWhiteSpace(projectDirectory))
+        {
+            directories.Add(NormalizePath(Path.GetRelativePath(paths.RepoRoot, projectDirectory)));
+        }
+
+        XDocument document;
+        try
+        {
+            document = XDocument.Load(projectFile);
+        }
+        catch
+        {
+            memo[projectFile] = directories;
+            return directories;
+        }
+
+        var references = document
+            .Descendants()
+            .Where(e => e.Name.LocalName.Equals("ProjectReference", StringComparison.OrdinalIgnoreCase))
+            .Select(e => e.Attribute("Include")?.Value)
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Cast<string>();
+
+        foreach (var reference in references)
+        {
+            var referencedProject = Path.GetFullPath(Path.Combine(projectDirectory ?? paths.RepoRoot, reference));
+            foreach (var dir in CollectProjectDirectories(paths, referencedProject, memo))
             {
-                var name = match.Groups["name"].Value;
-                if (!reserved.Contains(name) && !services.Contains(name, StringComparer.OrdinalIgnoreCase))
-                {
-                    services.Add(name);
-                }
+                directories.Add(dir);
             }
         }
 
-        return services;
+        memo[projectFile] = new HashSet<string>(directories, StringComparer.OrdinalIgnoreCase);
+        return directories;
     }
 
-    private static IReadOnlyList<string> KnownComposeServices(bool includeObservability)
+    private static string NormalizePath(string value) => value.Replace('\\', '/').Trim('/');
+}
+
+internal sealed class ProcessRunner
+{
+    private readonly string _workingDirectory;
+    private readonly bool _dryRun;
+
+    public ProcessRunner(string workingDirectory, bool dryRun)
     {
-        var services = new List<string>
+        _workingDirectory = workingDirectory;
+        _dryRun = dryRun;
+    }
+
+    public async Task<int> RunScriptAsync(string scriptPath, IReadOnlyList<string> args)
+    {
+        if (OperatingSystem.IsWindows())
         {
-            "postgres",
-            "filestore-db-init",
-            "redis",
-            "rabbitmq",
-            "command-center-gateway",
-            "command-center-operations-api",
-            "command-center-discovery-api",
-            "command-center-worker-control-api",
-            "command-center-maintenance-api",
-            "command-center-updates-api",
-            "command-center-realtime",
-            "command-center-bootstrapper",
-            "command-center-spider-dispatcher",
-            "command-center-web",
-            "gatekeeper",
-            "worker-spider",
-            "worker-http-requester",
-            "worker-enum",
-            "worker-portscan",
-            "worker-highvalue",
-            "worker-techid"
+            if (scriptPath.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase))
+            {
+                return await RunAsync("pwsh", new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath }.Concat(args));
+            }
+
+            return await RunAsync("bash", new[] { scriptPath }.Concat(args));
+        }
+
+        return await RunAsync("bash", new[] { scriptPath }.Concat(args));
+    }
+
+    public async Task<int> RunShellAsync(string command)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return await RunAsync("pwsh", new[] { "-NoProfile", "-Command", command });
+        }
+
+        return await RunAsync("bash", new[] { "-lc", command });
+    }
+
+    public async Task<int> RunAsync(string executable, IEnumerable<string> args)
+    {
+        var argList = args.ToList();
+        Ui.Command(executable, argList);
+
+        if (_dryRun)
+        {
+            return 0;
+        }
+
+        var psi = new ProcessStartInfo(executable)
+        {
+            WorkingDirectory = _workingDirectory,
+            UseShellExecute = false
         };
 
-        if (includeObservability)
+        // Prevent deploy/deploy.sh from launching this UI again when the CLI calls
+        // the existing shell deployment backend.
+        psi.Environment["ARGUS_NO_UI"] = "1";
+
+        foreach (var arg in argList)
         {
-            services.AddRange(new[] { "otel-collector", "prometheus", "grafana" });
+            psi.ArgumentList.Add(arg);
         }
 
-        return services;
-    }
-
-    private static IReadOnlyList<string> DiscoverProjects(CliContext context)
-    {
-        var projects = new List<string>();
-
-        var src = Path.Combine(context.Root, "src");
-        if (Directory.Exists(src))
+        using var process = Process.Start(psi);
+        if (process is null)
         {
-            projects.AddRange(Directory.GetFiles(src, "*.csproj", SearchOption.AllDirectories));
+            Ui.Error($"Failed to start command: {executable}");
+            return 1;
         }
 
-        var deployUi = Path.Combine(context.Root, "deploy", "ArgusEngine.DeployUi");
-        if (Directory.Exists(deployUi))
+        await process.WaitForExitAsync();
+        return process.ExitCode;
+    }
+}
+
+internal static class EnvFileLoader
+{
+    public static void LoadKnownEnvironmentFiles(DeploymentContext context)
+    {
+        LoadIfExists(Path.Combine(context.Paths.DeployDir, ".env"));
+        LoadIfExists(Path.Combine(context.Paths.DeployDir, "aws", ".env"));
+        LoadProviderEnvironmentFiles(context, "azure");
+        LoadProviderEnvironmentFiles(context, "google");
+        LoadProviderEnvironmentFiles(context, "gcp");
+    }
+
+    public static void LoadProviderEnvironmentFiles(DeploymentContext context, string provider)
+    {
+        var candidates = new[]
         {
-            projects.AddRange(Directory.GetFiles(deployUi, "*.csproj", SearchOption.AllDirectories));
+            Path.Combine(context.Paths.DeployDir, provider, ".env"),
+            Path.Combine(context.Paths.RepoRoot, "argus-multicloud-deploy-scripts", "deploy", provider, ".env"),
+            Path.Combine(Directory.GetParent(context.Paths.RepoRoot)?.FullName ?? context.Paths.RepoRoot, "argus-multicloud-deploy-scripts", "deploy", provider, ".env")
+        };
+
+        foreach (var candidate in candidates)
+        {
+            LoadIfExists(candidate);
         }
-
-        return projects
-            .Select(path => Path.GetRelativePath(context.Root, path))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
     }
 
-    private static void RenderServicesTable(string title, IReadOnlyList<string> services, IReadOnlyCollection<string> workers)
+    private static void LoadIfExists(string path)
     {
-        AnsiConsole.Write(new Rule($"[bold]{Escape(title)}[/]").LeftJustified());
-        var table = new Table().Border(TableBorder.Rounded);
-        table.AddColumn("Service");
-        table.AddColumn("Kind");
-
-        foreach (var service in services)
+        if (!File.Exists(path))
         {
-            var kind = workers.Contains(service) || IsWorkerLikeService(service)
-                ? "[cyan]worker[/]"
-                : service.Contains("postgres", StringComparison.OrdinalIgnoreCase) ||
-                  service.Contains("redis", StringComparison.OrdinalIgnoreCase) ||
-                  service.Contains("rabbitmq", StringComparison.OrdinalIgnoreCase)
-                    ? "[purple]dependency[/]"
-                    : service.Contains("grafana", StringComparison.OrdinalIgnoreCase) ||
-                      service.Contains("prometheus", StringComparison.OrdinalIgnoreCase) ||
-                      service.Contains("otel", StringComparison.OrdinalIgnoreCase)
-                        ? "[blue]observability[/]"
-                        : "[green]app[/]";
-
-            table.AddRow(Escape(service), kind);
-        }
-
-        AnsiConsole.Write(table);
-    }
-
-    private static void RenderProjectsTable(CliContext context, IReadOnlyList<string> projects)
-    {
-        AnsiConsole.Write(new Rule("[bold]Projects[/]").LeftJustified());
-        var table = new Table().Border(TableBorder.Rounded);
-        table.AddColumn("Project");
-        table.AddColumn("Kind");
-
-        foreach (var project in projects)
-        {
-            var kind = project.Contains(".Workers.", StringComparison.OrdinalIgnoreCase)
-                ? "[cyan]worker[/]"
-                : project.Contains(".CommandCenter.", StringComparison.OrdinalIgnoreCase)
-                    ? "[green]command-center[/]"
-                    : project.Contains("tests", StringComparison.OrdinalIgnoreCase)
-                        ? "[yellow]test[/]"
-                        : project.Contains("DeployUi", StringComparison.OrdinalIgnoreCase)
-                            ? "[blue]deploy-cli[/]"
-                            : "[grey]library/app[/]";
-            table.AddRow(Escape(project), kind);
-        }
-
-        AnsiConsole.Write(table);
-    }
-
-    private static IReadOnlyList<string> SelectServices(CliContext context, string title, bool workersOnly)
-    {
-        var services = DiscoverServices(context, context.Options.WithObservability)
-            .Where(service => !workersOnly || IsWorkerLikeService(service))
-            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        if (services.Length == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No services discovered.[/]");
-            return Array.Empty<string>();
-        }
-
-        var selected = AnsiConsole.Prompt(
-            new MultiSelectionPrompt<string>()
-                .Title(title)
-                .PageSize(20)
-                .NotRequired()
-                .InstructionsText("[grey](Space to toggle, Enter to accept. Leave empty to cancel.)[/]")
-                .AddChoices(services));
-
-        return selected;
-    }
-
-    private static string? SelectOneService(CliContext context, string title, bool workersOnly)
-    {
-        var services = DiscoverServices(context, context.Options.WithObservability)
-            .Where(service => !workersOnly || IsWorkerLikeService(service))
-            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        if (services.Length == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No services discovered.[/]");
-            return null;
-        }
-
-        return AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title(title)
-                .PageSize(20)
-                .AddChoices(services));
-    }
-
-    private static string? SelectProject(CliContext context, string title)
-    {
-        var projects = DiscoverProjects(context);
-        if (projects.Count == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No .csproj files discovered.[/]");
-            return null;
-        }
-
-        return AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title(title)
-                .PageSize(20)
-                .AddChoices(projects));
-    }
-
-    private static int PromptReplicaCount()
-    {
-        return AnsiConsole.Prompt(
-            new TextPrompt<int>("Replica count?")
-                .DefaultValue(1)
-                .Validate(value => value < 0
-                    ? ValidationResult.Error("Replica count must be zero or greater.")
-                    : ValidationResult.Success()));
-    }
-
-    private static string PromptTail()
-    {
-        var value = AnsiConsole.Prompt(
-            new TextPrompt<int>("Tail lines?")
-                .DefaultValue(200)
-                .Validate(v => v <= 0 ? ValidationResult.Error("Use a positive number.") : ValidationResult.Success()));
-
-        return value.ToString();
-    }
-
-    private static void ConfirmThen(CliContext context, string message, Action action)
-    {
-        if (!context.Options.Yes && !AnsiConsole.Confirm(message, false))
-        {
-            AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
             return;
         }
 
-        action();
-    }
-
-    private static bool IsWorkerLikeService(string service)
-    {
-        return service.StartsWith("worker-", StringComparison.OrdinalIgnoreCase) ||
-               service.Contains("spider-dispatcher", StringComparison.OrdinalIgnoreCase) ||
-               service.Equals("gatekeeper", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static MenuChoice PromptMenu(string title, IEnumerable<MenuChoice> choices)
-    {
-        return AnsiConsole.Prompt(
-            new SelectionPrompt<MenuChoice>()
-                .Title(title)
-                .PageSize(18)
-                .UseConverter(choice => choice.Label)
-                .AddChoices(choices));
-    }
-
-    private static string ResolveRepoRoot(string? explicitRoot)
-    {
-        if (!string.IsNullOrWhiteSpace(explicitRoot))
+        foreach (var rawLine in File.ReadAllLines(path))
         {
-            return Path.GetFullPath(explicitRoot);
-        }
-
-        var current = new DirectoryInfo(Directory.GetCurrentDirectory());
-        while (current is not null)
-        {
-            var solution = Path.Combine(current.FullName, "ArgusEngine.slnx");
-            var compose = Path.Combine(current.FullName, "deploy", "docker-compose.yml");
-            if (File.Exists(solution) && File.Exists(compose))
+            var line = rawLine.Trim();
+            if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#'))
             {
-                return current.FullName;
+                continue;
             }
 
-            current = current.Parent;
+            if (line.StartsWith("export ", StringComparison.Ordinal))
+            {
+                line = line["export ".Length..].Trim();
+            }
+
+            var equals = line.IndexOf('=');
+            if (equals <= 0)
+            {
+                continue;
+            }
+
+            var key = line[..equals].Trim();
+            var value = line[(equals + 1)..].Trim().Trim('"', '\'');
+
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key)))
+            {
+                Environment.SetEnvironmentVariable(key, value);
+            }
         }
-
-        return Directory.GetCurrentDirectory();
     }
+}
 
-    private static void RenderHeader(CliContext context)
+internal static class Ui
+{
+    public static int Choose(string prompt, IReadOnlyList<string> choices)
     {
-        AnsiConsole.Write(
-            new FigletText("Argus Deploy")
-                .LeftJustified());
-
-        var options = new List<string>();
-        if (context.Options.DryRun)
+        while (true)
         {
-            options.Add("dry-run");
-        }
+            WriteLine();
+            Info(prompt);
+            for (var i = 0; i < choices.Count; i++)
+            {
+                WriteLine($"  {i + 1}. {choices[i]}");
+            }
 
-        if (context.Options.Yes)
+            var input = Prompt("Selection", "1");
+            if (int.TryParse(input, out var selected) && selected >= 1 && selected <= choices.Count)
+            {
+                return selected - 1;
+            }
+
+            Warn("Enter a valid number.");
+        }
+    }
+
+    public static string Prompt(string prompt, string? defaultValue = null)
+    {
+        if (defaultValue is null)
         {
-            options.Add("yes");
+            Write($"{prompt}: ");
         }
-
-        if (context.Options.WithObservability)
+        else
         {
-            options.Add("observability");
+            Write($"{prompt} [{defaultValue}]: ");
         }
 
-        var suffix = options.Count == 0 ? string.Empty : $" [{string.Join(", ", options)}]";
-        AnsiConsole.MarkupLine($"[grey]Root:[/] {Escape(context.Root)}{Escape(suffix)}");
-        AnsiConsole.WriteLine();
+        var input = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(input) && defaultValue is not null)
+        {
+            return defaultValue;
+        }
+
+        return input?.Trim() ?? string.Empty;
     }
 
-    private static void ShowHelp()
+    public static bool Confirm(string prompt, bool defaultValue, bool assumeYes)
     {
-        AnsiConsole.MarkupLine("[bold]ArgusEngine.DeployUi[/]");
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("Interactive deployment and operations menu for Argus Engine.");
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[bold]Options[/]");
-        AnsiConsole.MarkupLine("  [green]--root <path>[/]             Use a specific repository root.");
-        AnsiConsole.MarkupLine("  [green]--with-observability[/]     Include deploy/docker-compose.observability.yml for compose operations.");
-        AnsiConsole.MarkupLine("  [green]--dry-run[/]                Print commands without executing them.");
-        AnsiConsole.MarkupLine("  [green]-y, --yes[/]                Skip confirmation prompts for destructive actions.");
-        AnsiConsole.MarkupLine("  [green]-h, --help[/]               Show this help.");
+        if (assumeYes)
+        {
+            return true;
+        }
+
+        var suffix = defaultValue ? "Y/n" : "y/N";
+        var input = Prompt($"{prompt} ({suffix})", defaultValue ? "y" : "n");
+        return input.StartsWith('y', StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string DisplayCommand(string command, IEnumerable<string> args)
+    public static void Header(string text)
     {
-        return string.Join(" ", new[] { command }.Concat(args).Select(Quote));
+        WriteLine();
+        WithColor(ConsoleColor.Cyan, () => WriteLine($"== {text} =="));
     }
 
-    private static string Quote(string value)
+    public static void Info(string text) => WithColor(ConsoleColor.Green, () => WriteLine(text));
+    public static void Warn(string text) => WithColor(ConsoleColor.Yellow, () => WriteLine(text));
+    public static void Error(string text) => WithColor(ConsoleColor.Red, () => WriteLine(text));
+
+    public static void Command(string executable, IReadOnlyList<string> args)
     {
-        if (string.IsNullOrEmpty(value))
+        WithColor(ConsoleColor.DarkGray, () => WriteLine($"> {executable} {string.Join(' ', args.Select(QuoteIfNeeded))}"));
+    }
+
+    public static void Pause()
+    {
+        WriteLine();
+        Write("Press Enter to continue...");
+        _ = Console.ReadLine();
+    }
+
+    public static void Write(string text) => Console.Write(text);
+    public static void WriteLine() => Console.WriteLine();
+    public static void WriteLine(string text) => Console.WriteLine(text);
+
+    private static void WithColor(ConsoleColor color, Action action)
+    {
+        var original = Console.ForegroundColor;
+        try
+        {
+            Console.ForegroundColor = color;
+            action();
+        }
+        finally
+        {
+            Console.ForegroundColor = original;
+        }
+    }
+
+    private static string QuoteIfNeeded(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
         {
             return "\"\"";
         }
 
-        return value.Any(char.IsWhiteSpace) || value.Contains('"')
-            ? "\"" + value.Replace("\"", "\\\"") + "\""
-            : value;
-    }
-
-    private static IReadOnlyList<string> SplitArgs(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return Array.Empty<string>();
-        }
-
-        var args = new List<string>();
-        var current = new StringBuilder();
-        var inSingle = false;
-        var inDouble = false;
-
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-
-            if (c == '\'' && !inDouble)
-            {
-                inSingle = !inSingle;
-                continue;
-            }
-
-            if (c == '"' && !inSingle)
-            {
-                inDouble = !inDouble;
-                continue;
-            }
-
-            if (char.IsWhiteSpace(c) && !inSingle && !inDouble)
-            {
-                if (current.Length > 0)
-                {
-                    args.Add(current.ToString());
-                    current.Clear();
-                }
-
-                continue;
-            }
-
-            if (c == '\\' && i + 1 < value.Length)
-            {
-                i++;
-                current.Append(value[i]);
-                continue;
-            }
-
-            current.Append(c);
-        }
-
-        if (current.Length > 0)
-        {
-            args.Add(current.ToString());
-        }
-
-        return args;
-    }
-
-    private static string Escape(string? value)
-    {
-        return Markup.Escape(value ?? string.Empty);
+        return value.Any(char.IsWhiteSpace) ? $"\"{value.Replace("\"", "\\\"")}\"" : value;
     }
 }
-
-internal sealed record MenuChoice(string Label, Action<CliContext> Execute);
-
-internal sealed record ToolCheck(string Name, bool Ok, string Details);
-
-internal sealed record RunResult(int ExitCode, string Output, string Error);
-
-internal sealed record CliContext(string Root, CliOptions Options)
-{
-    public string DeployDir => Path.Combine(Root, "deploy");
-
-    public bool IsRepoRoot =>
-        File.Exists(Path.Combine(Root, "ArgusEngine.slnx")) &&
-        File.Exists(Path.Combine(Root, "deploy", "docker-compose.yml"));
-}
-
-internal sealed record CliOptions(
-    string? Root,
-    bool WithObservability,
-    bool DryRun,
-    bool Yes,
-    bool ShowHelp)
-{
-    public static CliOptions Parse(string[] args)
-    {
-        string? root = null;
-        var withObservability = false;
-        var dryRun = false;
-        var yes = false;
-        var help = false;
-
-        for (var i = 0; i < args.Length; i++)
-        {
-            switch (args[i])
-            {
-                case "--root":
-                    if (i + 1 >= args.Length)
-                    {
-                        throw new ArgumentException("--root requires a path.");
-                    }
-
-                    root = args[++i];
-                    break;
-
-                case "--with-observability":
-                    withObservability = true;
-                    break;
-
-                case "--dry-run":
-                    dryRun = true;
-                    break;
-
-                case "-y":
-                case "--yes":
-                    yes = true;
-                    break;
-
-                case "-h":
-                case "--help":
-                    help = true;
-                    break;
-
-                default:
-                    throw new ArgumentException($"Unknown option: {args[i]}");
-            }
-        }
-
-        return new CliOptions(root, withObservability, dryRun, yes, help);
-    }
-}
-

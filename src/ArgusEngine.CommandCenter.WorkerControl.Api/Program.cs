@@ -16,6 +16,13 @@ builder.Services.AddSingleton<EcsServiceNameResolver>();
 builder.Services.AddSingleton<EcsWorkerServiceManager>();
 builder.Services.AddScoped<RootSpiderSeedService>();
 
+// Register the built-in autoscaler background service
+var autoscalerEnabled = builder.Configuration.GetValue<bool>("Argus:Autoscaler:Enabled", defaultValue: true);
+if (autoscalerEnabled)
+{
+    builder.Services.AddHostedService<WorkerAutoscalerBackgroundService>();
+}
+
 var app = builder.Build();
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" })).AllowAnonymous();

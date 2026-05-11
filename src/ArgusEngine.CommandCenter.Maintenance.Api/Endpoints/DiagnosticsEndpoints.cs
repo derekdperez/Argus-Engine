@@ -144,9 +144,13 @@ public static class DiagnosticsEndpoints
 
     private static bool TryAuthorizeDiagnostics(HttpContext http, IConfiguration config, out IResult? rejected)
     {
-        var enabled = config.GetValue(
-            "Argus:Diagnostics:Enabled",
-            config.GetValue("Nightmare:Diagnostics:Enabled", false));
+        var requiredKey = config["Argus:Diagnostics:ApiKey"]?.Trim();
+        if (string.IsNullOrWhiteSpace(requiredKey))
+        {
+            requiredKey = config["Nightmare:Diagnostics:ApiKey"]?.Trim();
+        }
+
+        var enabled = ResolveDiagnosticsEnabled(config, !string.IsNullOrWhiteSpace(requiredKey));
 
         if (!enabled)
         {
@@ -154,17 +158,11 @@ public static class DiagnosticsEndpoints
             return false;
         }
 
-        var requiredKey = config["Argus:Diagnostics:ApiKey"]?.Trim();
-        if (string.IsNullOrWhiteSpace(requiredKey))
-        {
-            requiredKey = config["Nightmare:Diagnostics:ApiKey"]?.Trim();
-        }
-
         if (string.IsNullOrWhiteSpace(requiredKey))
         {
             rejected = Results.Problem(
                 title: "Diagnostics endpoint misconfigured",
-                detail: "Argus:Diagnostics:Enabled=true requires Argus:Diagnostics:ApiKey to be configured.",
+                detail: "Diagnostics are enabled, but Argus:Diagnostics:ApiKey is not configured. The legacy Nightmare:Diagnostics:ApiKey setting is still accepted for backward compatibility.",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
             return false;
         }
@@ -183,6 +181,23 @@ public static class DiagnosticsEndpoints
 
         rejected = null;
         return true;
+    }
+
+    private static bool ResolveDiagnosticsEnabled(IConfiguration config, bool defaultWhenApiKeyIsConfigured)
+    {
+        var argusValue = config["Argus:Diagnostics:Enabled"];
+        if (bool.TryParse(argusValue, out var argusEnabled))
+        {
+            return argusEnabled;
+        }
+
+        var legacyValue = config["Nightmare:Diagnostics:Enabled"];
+        if (bool.TryParse(legacyValue, out var legacyEnabled))
+        {
+            return legacyEnabled;
+        }
+
+        return defaultWhenApiKeyIsConfigured;
     }
 
     private static async Task<DependencyCheck> CheckPostgresAsync(ArgusDbContext db, CancellationToken ct)

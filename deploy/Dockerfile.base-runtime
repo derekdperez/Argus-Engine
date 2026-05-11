@@ -2,7 +2,8 @@
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 
 # Common dependencies for Argus Engine runtime.
-# docker-cli-compose is required because the autoscaler executes `docker compose`.
+# docker-cli-compose is required because command-center-worker-control-api shells out to
+# `docker compose` for autoscaling and for the development-page manual scale buttons.
 RUN apk add --no-cache \
     ca-certificates \
     krb5-libs \

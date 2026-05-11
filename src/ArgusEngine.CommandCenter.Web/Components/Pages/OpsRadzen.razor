@@ -23,31 +23,41 @@
     }
 
     <section class="metrics-grid ops-summary-grid">
-        <article class="metric-card">
-            <span>Targets</span>
-            <strong>@(_targetsLoading ? "—" : FormatNumber(TotalTargets))</strong>
-        </article>
-        <article class="metric-card">
-            <span>Assets</span>
-            <strong>@(_targetsLoading ? "—" : FormatNumber(ConfirmedAssets))</strong>
-        </article>
-        <article class="metric-card">
-            <span>Subdomains</span>
-            <strong>@(_targetsLoading ? "—" : FormatNumber(ConfirmedSubdomains))</strong>
-        </article>
-        <article class="metric-card">
-            <span>Unique Technologies</span>
-            <strong>@(_targetsLoading ? "—" : FormatNumber(UniqueTechnologies))</strong>
-        </article>
-        <article class="metric-card">
-            <span>HTTP Queue</span>
-            <strong>@(_httpLoading ? "—" : $"{FormatNumber(HttpQueueQueuedCount)} queued / {FormatNumber(HttpRequestsSentPerMinute)} sent/min")</strong>
-        </article>
-        <article class="metric-card">
-            <span>Asset Storage</span>
-            <strong>@(_targetsLoading ? "—" : FormatStorageSize(TotalTrackedStorageBytes))</strong>
-            @if (!_targetsLoading) { <small>@StorageBreakdownLabel</small> }
-        </article>
+        @if (_initialLoadStarted && _targetsLoading && TotalTargets == 0 && ConfirmedAssets == 0)
+        {
+            <article class="metric-card loading">
+                <span>Loading...</span>
+                <strong>—</strong>
+            </article>
+        }
+        else
+        {
+            <article class="metric-card">
+                <span>Targets</span>
+                <strong>@FormatNumber(TotalTargets)</strong>
+            </article>
+            <article class="metric-card">
+                <span>Assets</span>
+                <strong>@FormatNumber(ConfirmedAssets)</strong>
+            </article>
+            <article class="metric-card">
+                <span>Subdomains</span>
+                <strong>@FormatNumber(ConfirmedSubdomains)</strong>
+            </article>
+            <article class="metric-card">
+                <span>Unique Technologies</span>
+                <strong>@FormatNumber(UniqueTechnologies)</strong>
+            </article>
+            <article class="metric-card">
+                <span>HTTP Queue</span>
+                <strong>@(_httpLoading && HttpQueueQueuedCount == 0 ? "—" : $"{FormatNumber(HttpQueueQueuedCount)} queued / {FormatNumber(HttpRequestsSentPerMinute)} sent/min")</strong>
+            </article>
+            <article class="metric-card">
+                <span>Asset Storage</span>
+                <strong>@FormatStorageSize(TotalTrackedStorageBytes)</strong>
+                <small>@StorageBreakdownLabel</small>
+            </article>
+        }
     </section>
 
     <section class="ops-scope-grid">

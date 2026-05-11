@@ -1,6 +1,4 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,8 +9,8 @@ namespace ArgusEngine.Infrastructure.Data;
 
 public static class ArgusDbBootstrap
 {
-    private const long SchemaBootstrapAdvisoryLockKey = 542017296183746291L;
-    private const int MaxBootstrapAttempts = 5;
+    private const long BootstrapAdvisoryLockKey = 542017296183746291L;
+    private const int MaxBootstrapAttempts = 3;
 
     private static readonly Action<ILogger, Exception?> LogStartupDatabaseBootstrapSkipped =
         LoggerMessage.Define(
@@ -32,37 +30,18 @@ public static class ArgusDbBootstrap
             new EventId(3, nameof(LogStartupDatabaseBootstrapEnsureCreated)),
             "Startup database bootstrap used EnsureCreated compatibility mode. Set Argus:Database:BootstrapMode=Migrate after adding migrations.");
 
-    private static readonly Action<ILogger, string, int, int, int, Exception?> LogStartupDatabaseBootstrapRetry =
-        LoggerMessage.Define<string, int, int, int>(
-            LogLevel.Warning,
-            new EventId(4, nameof(LogStartupDatabaseBootstrapRetry)),
-            "Startup database bootstrap hit transient PostgreSQL error {SqlState}; retrying attempt {Attempt}/{MaxAttempts} after {DelayMs}ms.");
-
-    private static readonly Action<ILogger, Exception?> LogStartupDatabaseBootstrapUnlockFailed =
+    private static readonly Action<ILogger, Exception?> LogStartupDatabaseBootstrapMigrateFallback =
         LoggerMessage.Define(
             LogLevel.Warning,
-            new EventId(5, nameof(LogStartupDatabaseBootstrapUnlockFailed)),
-            "Failed to release the startup database bootstrap advisory lock. The connection close will release any remaining session-level advisory locks.");
+            new EventId(4, nameof(LogStartupDatabaseBootstrapMigrateFallback)),
+            "Startup database bootstrap requested Migrate mode, but no EF migrations were found. Falling back to EnsureCreated compatibility mode.");
 
-    public static Task InitializeAsync(
+    public static async Task InitializeAsync(
         IServiceProvider services,
         IConfiguration configuration,
         ILogger logger,
         bool includeFileStore,
         CancellationToken cancellationToken = default)
-    {
-        return ExecuteWithBootstrapRetriesAsync(
-            () => InitializeOnceAsync(services, configuration, logger, includeFileStore, cancellationToken),
-            logger,
-            cancellationToken);
-    }
-
-    private static async Task InitializeOnceAsync(
-        IServiceProvider services,
-        IConfiguration configuration,
-        ILogger logger,
-        bool includeFileStore,
-        CancellationToken cancellationToken)
     {
         if (ShouldSkipStartupDatabase(configuration))
         {
@@ -73,115 +52,136 @@ public static class ArgusDbBootstrap
         var mode = (configuration["Argus:Database:BootstrapMode"] ?? "EnsureCreated").Trim();
 
         using var scope = services.CreateScope();
+
         var db = scope.ServiceProvider.GetRequiredService<ArgusDbContext>();
 
-        await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-
-        var advisoryLockHeld = false;
-        try
-        {
-            await db.Database.ExecuteSqlRawAsync(
-                    $"SELECT pg_advisory_lock({SchemaBootstrapAdvisoryLockKey});",
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            advisoryLockHeld = true;
-
-            if (mode.Equals("Migrate", StringComparison.OrdinalIgnoreCase))
-            {
-                await db.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
-                await ArgusDbSeeder.SeedWorkerSwitchesAsync(db, cancellationToken).ConfigureAwait(false);
-
-                if (includeFileStore)
+        await ExecuteWithBootstrapRetryAsync(
+                db,
+                logger,
+                async () =>
                 {
-                    var fileStoreFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ArgusFileStoreDbContext>>();
-                    await using var fs = await fileStoreFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-                    await fs.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
-                }
+                    if (mode.Equals("Migrate", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var migrations = db.Database.GetMigrations();
+                        if (!migrations.Any())
+                        {
+                            LogStartupDatabaseBootstrapMigrateFallback(logger, null);
+                            await BootstrapEnsureCreatedAsync(scope.ServiceProvider, db, logger, includeFileStore, cancellationToken)
+                                .ConfigureAwait(false);
+                            return;
+                        }
 
-                LogStartupDatabaseBootstrapMigrated(logger, null);
-                return;
-            }
+                        await db.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
 
-            await db.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
-            await ArgusDbSchemaPatches.ApplyAfterEnsureCreatedAsync(db, logger, cancellationToken).ConfigureAwait(false);
-            await ArgusDbSeeder.SeedWorkerSwitchesAsync(db, cancellationToken).ConfigureAwait(false);
+                        await ArgusDbSeeder.SeedWorkerSwitchesAsync(db, cancellationToken).ConfigureAwait(false);
 
-            if (includeFileStore)
-            {
-                var fileStoreFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ArgusFileStoreDbContext>>();
-                await using var fs = await fileStoreFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-                await fs.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
-            }
+                        if (includeFileStore)
+                        {
+                            var fileStoreFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FileStoreDbContext>>();
+                            await using var fs = await fileStoreFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+                            await fs.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+                        }
 
-            LogStartupDatabaseBootstrapEnsureCreated(logger, null);
-        }
-        finally
-        {
-            if (advisoryLockHeld)
-            {
-                try
-                {
-                    await db.Database.ExecuteSqlRawAsync(
-                            $"SELECT pg_advisory_unlock({SchemaBootstrapAdvisoryLockKey});",
-                            CancellationToken.None)
+                        LogStartupDatabaseBootstrapMigrated(logger, null);
+                        return;
+                    }
+
+                    await BootstrapEnsureCreatedAsync(scope.ServiceProvider, db, logger, includeFileStore, cancellationToken)
                         .ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    LogStartupDatabaseBootstrapUnlockFailed(logger, ex);
-                }
-            }
-
-            await db.Database.CloseConnectionAsync().ConfigureAwait(false);
-        }
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
-    private static async Task ExecuteWithBootstrapRetriesAsync(
-        Func<Task> operation,
+    private static async Task ExecuteWithBootstrapRetryAsync(
+        ArgusDbContext db,
         ILogger logger,
+        Func<Task> operation,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
             try
             {
-                await operation().ConfigureAwait(false);
+                await ExecuteWithBootstrapLockAsync(db, logger, operation, cancellationToken).ConfigureAwait(false);
                 return;
             }
-            catch (PostgresException ex) when (
-                attempt < MaxBootstrapAttempts &&
-                IsRetryableBootstrapException(ex) &&
-                !cancellationToken.IsCancellationRequested)
+            catch (PostgresException ex) when (IsTransientBootstrapFailure(ex) && attempt < MaxBootstrapAttempts)
             {
-                var delay = TimeSpan.FromMilliseconds(1000 * attempt);
-                LogStartupDatabaseBootstrapRetry(
-                    logger,
+                logger.LogWarning(
+                    ex,
+                    "Transient PostgreSQL bootstrap failure {SqlState} on attempt {Attempt}/{MaxAttempts}. Retrying.",
                     ex.SqlState,
                     attempt,
-                    MaxBootstrapAttempts,
-                    (int)delay.TotalMilliseconds,
-                    ex);
+                    MaxBootstrapAttempts);
 
-                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), cancellationToken).ConfigureAwait(false);
             }
         }
     }
 
-    private static bool IsRetryableBootstrapException(PostgresException exception)
+    private static async Task ExecuteWithBootstrapLockAsync(
+        ArgusDbContext db,
+        ILogger logger,
+        Func<Task> operation,
+        CancellationToken cancellationToken)
     {
-        return exception.SqlState is
-            PostgresErrorCodes.DeadlockDetected or
-            PostgresErrorCodes.LockNotAvailable or
-            PostgresErrorCodes.SerializationFailure;
+        var connection = db.Database.GetDbConnection();
+        var closeConnection = connection.State != ConnectionState.Open;
+
+        if (closeConnection)
+        {
+            await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                    $"SELECT pg_advisory_lock({BootstrapAdvisoryLockKey});",
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            try
+            {
+                await operation().ConfigureAwait(false);
+            }
+            finally
+            {
+                try
+                {
+                    await db.Database.ExecuteSqlRawAsync(
+                            $"SELECT pg_advisory_unlock({BootstrapAdvisoryLockKey});",
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to release PostgreSQL bootstrap advisory lock.");
+                }
+            }
+        }
+        finally
+        {
+            if (closeConnection)
+            {
+                db.Database.CloseConnection();
+            }
+        }
+    }
+
+    private static bool IsTransientBootstrapFailure(PostgresException ex)
+    {
+        return string.Equals(ex.SqlState, PostgresErrorCodes.DeadlockDetected, StringComparison.Ordinal)
+            || string.Equals(ex.SqlState, PostgresErrorCodes.LockNotAvailable, StringComparison.Ordinal)
+            || string.Equals(ex.SqlState, PostgresErrorCodes.SerializationFailure, StringComparison.Ordinal);
     }
 
     private static bool ShouldSkipStartupDatabase(IConfiguration configuration)
     {
         var configuredSkip = configuration["Argus:SkipStartupDatabase"] ?? configuration["ARGUS_SKIP_STARTUP_DATABASE"];
 
-        if (string.Equals(configuredSkip, "true", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(configuredSkip, "1", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(configuredSkip, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(configuredSkip, "1", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
@@ -190,5 +190,29 @@ public static class ArgusDbBootstrap
             Environment.GetEnvironmentVariable("ARGUS_SKIP_STARTUP_DATABASE"),
             "1",
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task BootstrapEnsureCreatedAsync(
+        IServiceProvider services,
+        ArgusDbContext db,
+        ILogger logger,
+        bool includeFileStore,
+        CancellationToken cancellationToken)
+    {
+        await db.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
+
+        await ArgusDbSchemaPatches.ApplyAfterEnsureCreatedAsync(db, logger, cancellationToken).ConfigureAwait(false);
+
+        await ArgusDbSeeder.SeedWorkerSwitchesAsync(db, cancellationToken).ConfigureAwait(false);
+
+        if (includeFileStore)
+        {
+            var fileStoreFactory = services.GetRequiredService<IDbContextFactory<FileStoreDbContext>>();
+            await using var fs = await fileStoreFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+
+            await fs.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        LogStartupDatabaseBootstrapEnsureCreated(logger, null);
     }
 }

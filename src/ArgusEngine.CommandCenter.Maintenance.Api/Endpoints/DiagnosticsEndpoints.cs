@@ -10,126 +10,132 @@ namespace ArgusEngine.CommandCenter.Maintenance.Api.Endpoints;
 public static class DiagnosticsEndpoints
 {
     private const string ArgusDiagnosticsKeyHeader = "X-Argus-Diagnostics-Key";
-    private const string NightmareDiagnosticsKeyHeader = "X-Nightmare-Diagnostics-Key";
+    private const string LegacyDiagnosticsKeyHeader = "X-Nightmare-Diagnostics-Key";
 
     public static IEndpointRouteBuilder MapDiagnosticsEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet(
-            "/health",
-            () => Results.Ok(new { status = "live", at = DateTimeOffset.UtcNow }))
+                "/health",
+                () => Results.Ok(new { status = "live", at = DateTimeOffset.UtcNow }))
             .WithName("HealthLive")
             .AllowAnonymous();
 
         app.MapGet(
-            "/health/ready",
-            async (ArgusDbContext db, CancellationToken ct) =>
-            {
-                try
+                "/health/ready",
+                async (ArgusDbContext db, CancellationToken ct) =>
                 {
-                    if (!await db.Database.CanConnectAsync(ct).ConfigureAwait(false))
-                        return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+                    try
+                    {
+                        if (!await db.Database.CanConnectAsync(ct).ConfigureAwait(false))
+                        {
+                            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+                        }
 
-                    return Results.Ok(new { status = "ready", postgres = "ok", at = DateTimeOffset.UtcNow });
-                }
-                catch (Exception)
-                {
-                    return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
-                }
-            })
+                        return Results.Ok(new { status = "ready", postgres = "ok", at = DateTimeOffset.UtcNow });
+                    }
+                    catch (Exception)
+                    {
+                        return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+                    }
+                })
             .WithName("HealthReady")
             .AllowAnonymous();
 
         app.MapGet(
-            "/api/diagnostics/self",
-            async (
-                HttpContext http,
-                IConfiguration config,
-                ArgusDbContext db,
-                IDbContextFactory<FileStoreDbContext> fileStoreFactory,
-                IWebHostEnvironment env,
-                CancellationToken ct) =>
-            {
-                if (!TryAuthorizeDiagnostics(http, config, out var rejected))
-                    return rejected!;
-
-                var postgres = await CheckPostgresAsync(db, ct).ConfigureAwait(false);
-                var fileStore = await CheckFileStoreAsync(fileStoreFactory, ct).ConfigureAwait(false);
-                var asm = typeof(DiagnosticsEndpoints).Assembly;
-                var informational =
-                    asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-                    ?? asm.GetName().Version?.ToString()
-                    ?? "?";
-                var proc = Process.GetCurrentProcess();
-                var uptime = DateTimeOffset.UtcNow - proc.StartTime.ToUniversalTime();
-
-                return Results.Json(
-                    new
+                "/api/diagnostics/self",
+                async (
+                    HttpContext http,
+                    IConfiguration config,
+                    ArgusDbContext db,
+                    IDbContextFactory<FileStoreDbContext> fileStoreFactory,
+                    IWebHostEnvironment env,
+                    CancellationToken ct) =>
+                {
+                    if (!TryAuthorizeDiagnostics(http, config, out var rejected))
                     {
-                        at = DateTimeOffset.UtcNow,
-                        service = "command-center",
-                        environment = env.EnvironmentName,
-                        machine = Environment.MachineName,
-                        processId = Environment.ProcessId,
-                        uptimeSeconds = (int)Math.Floor(uptime.TotalSeconds),
-                        buildStamp = Environment.GetEnvironmentVariable("ARGUS_BUILD_STAMP")
-                                     ?? Environment.GetEnvironmentVariable("NIGHTMARE_BUILD_STAMP")
-                                     ?? "(not set)",
-                        assemblyInformationalVersion = informational,
-                        contentRoot = env.ContentRootPath,
-                        webRoot = env.WebRootPath,
-                        postgres = postgres.Status,
-                        fileStore = fileStore.Status,
-                        rabbitHost = config["RabbitMq:Host"],
-                        rabbitVirtualHost = config["RabbitMq:VirtualHost"],
-                        rabbitManagementUrlConfigured = !string.IsNullOrWhiteSpace(config["RabbitMq:ManagementUrl"]),
-                        redisConfigured = !string.IsNullOrWhiteSpace(config.GetConnectionString("Redis")),
-                        expectedBlazorScriptPath = "/_framework/blazor.web.js",
-                    });
-            })
+                        return rejected!;
+                    }
+
+                    var postgres = await CheckPostgresAsync(db, ct).ConfigureAwait(false);
+                    var fileStore = await CheckFileStoreAsync(fileStoreFactory, ct).ConfigureAwait(false);
+
+                    var asm = typeof(DiagnosticsEndpoints).Assembly;
+                    var informational = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                                        ?? asm.GetName().Version?.ToString()
+                                        ?? "?";
+                    var proc = Process.GetCurrentProcess();
+                    var uptime = DateTimeOffset.UtcNow - proc.StartTime.ToUniversalTime();
+
+                    return Results.Json(
+                        new
+                        {
+                            at = DateTimeOffset.UtcNow,
+                            service = "command-center",
+                            environment = env.EnvironmentName,
+                            machine = Environment.MachineName,
+                            processId = Environment.ProcessId,
+                            uptimeSeconds = (int)Math.Floor(uptime.TotalSeconds),
+                            buildStamp = Environment.GetEnvironmentVariable("ARGUS_BUILD_STAMP")
+                                         ?? Environment.GetEnvironmentVariable("NIGHTMARE_BUILD_STAMP")
+                                         ?? "(not set)",
+                            assemblyInformationalVersion = informational,
+                            contentRoot = env.ContentRootPath,
+                            webRoot = env.WebRootPath,
+                            postgres = postgres.Status,
+                            fileStore = fileStore.Status,
+                            rabbitHost = config["RabbitMq:Host"],
+                            rabbitVirtualHost = config["RabbitMq:VirtualHost"],
+                            rabbitManagementUrlConfigured = !string.IsNullOrWhiteSpace(config["RabbitMq:ManagementUrl"]),
+                            redisConfigured = !string.IsNullOrWhiteSpace(config.GetConnectionString("Redis")),
+                            expectedBlazorScriptPath = "/_framework/blazor.web.js",
+                        });
+                })
             .WithName("DiagnosticsSelf")
             .AllowAnonymous();
 
         app.MapGet(
-            "/api/diagnostics/dependencies",
-            async (
-                HttpContext http,
-                IConfiguration config,
-                ArgusDbContext db,
-                IDbContextFactory<FileStoreDbContext> fileStoreFactory,
-                IConnectionMultiplexer redis,
-                CancellationToken ct) =>
-            {
-                if (!TryAuthorizeDiagnostics(http, config, out var rejected))
-                    return rejected!;
-
-                var postgres = await CheckPostgresAsync(db, ct).ConfigureAwait(false);
-                var fileStore = await CheckFileStoreAsync(fileStoreFactory, ct).ConfigureAwait(false);
-                var redisCheck = await CheckRedisAsync(redis, ct).ConfigureAwait(false);
-                var rabbit = await CheckRabbitMqTcpAsync(config, ct).ConfigureAwait(false);
-                var staticAssets = CheckStaticAssets(config);
-
-                var checks = new[]
+                "/api/diagnostics/dependencies",
+                async (
+                    HttpContext http,
+                    IConfiguration config,
+                    ArgusDbContext db,
+                    IDbContextFactory<FileStoreDbContext> fileStoreFactory,
+                    IConnectionMultiplexer redis,
+                    CancellationToken ct) =>
                 {
-                    postgres,
-                    fileStore,
-                    redisCheck,
-                    rabbit,
-                    staticAssets,
-                };
-
-                var overall = checks.All(c => string.Equals(c.Status, "ok", StringComparison.Ordinal))
-                    ? "ok"
-                    : "degraded";
-
-                return Results.Json(
-                    new
+                    if (!TryAuthorizeDiagnostics(http, config, out var rejected))
                     {
-                        at = DateTimeOffset.UtcNow,
-                        service = "command-center",
-                        overall,
-                        checks = checks.ToDictionary(c => c.Name),
-                    });
-            })
+                        return rejected!;
+                    }
+
+                    var postgres = await CheckPostgresAsync(db, ct).ConfigureAwait(false);
+                    var fileStore = await CheckFileStoreAsync(fileStoreFactory, ct).ConfigureAwait(false);
+                    var redisCheck = await CheckRedisAsync(redis, ct).ConfigureAwait(false);
+                    var rabbit = await CheckRabbitMqTcpAsync(config, ct).ConfigureAwait(false);
+                    var staticAssets = CheckStaticAssets(config);
+
+                    var checks = new[]
+                    {
+                        postgres,
+                        fileStore,
+                        redisCheck,
+                        rabbit,
+                        staticAssets,
+                    };
+
+                    var overall = checks.All(c => string.Equals(c.Status, "ok", StringComparison.Ordinal))
+                        ? "ok"
+                        : "degraded";
+
+                    return Results.Json(
+                        new
+                        {
+                            at = DateTimeOffset.UtcNow,
+                            service = "command-center",
+                            overall,
+                            checks = checks.ToDictionary(c => c.Name),
+                        });
+                })
             .WithName("DiagnosticsDependencies")
             .AllowAnonymous();
 
@@ -148,22 +154,26 @@ public static class DiagnosticsEndpoints
             return false;
         }
 
-        var requiredKey =
-            config["Argus:Diagnostics:ApiKey"]?.Trim()
-            ?? config["Nightmare:Diagnostics:ApiKey"]?.Trim();
+        var requiredKey = config["Argus:Diagnostics:ApiKey"]?.Trim();
+        if (string.IsNullOrWhiteSpace(requiredKey))
+        {
+            requiredKey = config["Nightmare:Diagnostics:ApiKey"]?.Trim();
+        }
 
         if (string.IsNullOrWhiteSpace(requiredKey))
         {
             rejected = Results.Problem(
                 title: "Diagnostics endpoint misconfigured",
-                detail: "Argus:Diagnostics:Enabled=true requires Argus:Diagnostics:ApiKey to be configured. The legacy Nightmare:Diagnostics:ApiKey setting is still accepted for backward compatibility.",
+                detail: "Argus:Diagnostics:Enabled=true requires Argus:Diagnostics:ApiKey to be configured.",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
             return false;
         }
 
         var suppliedKey = http.Request.Headers[ArgusDiagnosticsKeyHeader].ToString();
         if (string.IsNullOrWhiteSpace(suppliedKey))
-            suppliedKey = http.Request.Headers[NightmareDiagnosticsKeyHeader].ToString();
+        {
+            suppliedKey = http.Request.Headers[LegacyDiagnosticsKeyHeader].ToString();
+        }
 
         if (!string.Equals(suppliedKey, requiredKey, StringComparison.Ordinal))
         {
@@ -200,7 +210,6 @@ public static class DiagnosticsEndpoints
         {
             await using var fs = await fileStoreFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
             var ok = await fs.Database.CanConnectAsync(ct).ConfigureAwait(false);
-
             return DependencyCheck.From("fileStore", ok ? "ok" : "fail", sw.ElapsedMilliseconds);
         }
         catch (Exception ex)
@@ -216,7 +225,6 @@ public static class DiagnosticsEndpoints
         try
         {
             var latency = await redis.GetDatabase().PingAsync().WaitAsync(TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
-
             return DependencyCheck.From("redis", redis.IsConnected ? "ok" : "fail", sw.ElapsedMilliseconds, $"ping={latency.TotalMilliseconds:0}ms");
         }
         catch (Exception ex)
@@ -233,7 +241,6 @@ public static class DiagnosticsEndpoints
         try
         {
             using var client = new TcpClient();
-
             await client.ConnectAsync(endpoint.Host, endpoint.Port).WaitAsync(TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
 
             return DependencyCheck.From(
@@ -262,7 +269,7 @@ public static class DiagnosticsEndpoints
             "staticAssets",
             "ok",
             0,
-            new Dictionary<string, string?>
+            new Dictionary<string, string>
             {
                 ["blazorScriptPath"] = "/_framework/blazor.web.js",
                 ["appCssPath"] = "/app.css",
@@ -274,18 +281,23 @@ public static class DiagnosticsEndpoints
     private static (string Host, int Port) ResolveRabbitEndpoint(IConfiguration config)
     {
         var raw = config["RabbitMq:Host"]?.Trim();
-
         if (string.IsNullOrWhiteSpace(raw))
+        {
             return ("localhost", 5672);
+        }
 
         if (Uri.TryCreate(raw, UriKind.Absolute, out var uri))
+        {
             return (uri.Host, uri.Port > 0 ? uri.Port : 5672);
+        }
 
         var port = 5672;
         var host = raw;
-        var lastColon = raw.LastIndexOf(':');
 
-        if (lastColon > 0 && lastColon < raw.Length - 1 && int.TryParse(raw[(lastColon + 1)..], out var parsedPort))
+        var lastColon = raw.LastIndexOf(':');
+        if (lastColon > 0
+            && lastColon < raw.Length - 1
+            && int.TryParse(raw[(lastColon + 1)..], out var parsedPort))
         {
             host = raw[..lastColon];
             port = parsedPort;
@@ -298,13 +310,13 @@ public static class DiagnosticsEndpoints
         string Name,
         string Status,
         long DurationMs,
-        IReadOnlyDictionary<string, string?> Details)
+        IReadOnlyDictionary<string, string> Details)
     {
         public static DependencyCheck From(string name, string status, long durationMs, string? detail = null)
         {
             var details = string.IsNullOrWhiteSpace(detail)
-                ? new Dictionary<string, string?>()
-                : new Dictionary<string, string?> { ["detail"] = detail };
+                ? new Dictionary<string, string>()
+                : new Dictionary<string, string> { ["detail"] = detail };
 
             return new DependencyCheck(name, status, durationMs, details);
         }

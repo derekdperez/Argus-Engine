@@ -144,13 +144,8 @@ public static class DiagnosticsEndpoints
 
     private static bool TryAuthorizeDiagnostics(HttpContext http, IConfiguration config, out IResult? rejected)
     {
-        var requiredKey = config["Argus:Diagnostics:ApiKey"]?.Trim();
-        if (string.IsNullOrWhiteSpace(requiredKey))
-        {
-            requiredKey = config["Nightmare:Diagnostics:ApiKey"]?.Trim();
-        }
-
-        var enabled = ResolveDiagnosticsEnabled(config, !string.IsNullOrWhiteSpace(requiredKey));
+        var requiredKey = ResolveDiagnosticsApiKey(config);
+        var enabled = !string.IsNullOrWhiteSpace(requiredKey) || IsDiagnosticsExplicitlyEnabled(config);
 
         if (!enabled)
         {
@@ -162,7 +157,7 @@ public static class DiagnosticsEndpoints
         {
             rejected = Results.Problem(
                 title: "Diagnostics endpoint misconfigured",
-                detail: "Diagnostics are enabled, but Argus:Diagnostics:ApiKey is not configured. The legacy Nightmare:Diagnostics:ApiKey setting is still accepted for backward compatibility.",
+                detail: "Diagnostics are enabled, but no diagnostics API key is configured. Configure Argus:Diagnostics:ApiKey or the legacy Nightmare:Diagnostics:ApiKey.",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
             return false;
         }
@@ -183,21 +178,53 @@ public static class DiagnosticsEndpoints
         return true;
     }
 
-    private static bool ResolveDiagnosticsEnabled(IConfiguration config, bool defaultWhenApiKeyIsConfigured)
+    private static string? ResolveDiagnosticsApiKey(IConfiguration config)
     {
-        var argusValue = config["Argus:Diagnostics:Enabled"];
-        if (bool.TryParse(argusValue, out var argusEnabled))
+        var key = config["Argus:Diagnostics:ApiKey"]?.Trim();
+        if (!string.IsNullOrWhiteSpace(key))
+        {
+            return key;
+        }
+
+        key = config["Nightmare:Diagnostics:ApiKey"]?.Trim();
+        if (!string.IsNullOrWhiteSpace(key))
+        {
+            return key;
+        }
+
+        key = config["ARGUS_DIAGNOSTICS_API_KEY"]?.Trim();
+        if (!string.IsNullOrWhiteSpace(key))
+        {
+            return key;
+        }
+
+        key = config["NIGHTMARE_DIAGNOSTICS_API_KEY"]?.Trim();
+        return string.IsNullOrWhiteSpace(key) ? null : key;
+    }
+
+    private static bool IsDiagnosticsExplicitlyEnabled(IConfiguration config)
+    {
+        if (bool.TryParse(config["Argus:Diagnostics:Enabled"], out var argusEnabled))
         {
             return argusEnabled;
         }
 
-        var legacyValue = config["Nightmare:Diagnostics:Enabled"];
-        if (bool.TryParse(legacyValue, out var legacyEnabled))
+        if (bool.TryParse(config["Nightmare:Diagnostics:Enabled"], out var legacyEnabled))
         {
             return legacyEnabled;
         }
 
-        return defaultWhenApiKeyIsConfigured;
+        if (bool.TryParse(config["ARGUS_DIAGNOSTICS_ENABLED"], out var argusEnvEnabled))
+        {
+            return argusEnvEnabled;
+        }
+
+        if (bool.TryParse(config["NIGHTMARE_DIAGNOSTICS_ENABLED"], out var legacyEnvEnabled))
+        {
+            return legacyEnvEnabled;
+        }
+
+        return false;
     }
 
     private static async Task<DependencyCheck> CheckPostgresAsync(ArgusDbContext db, CancellationToken ct)

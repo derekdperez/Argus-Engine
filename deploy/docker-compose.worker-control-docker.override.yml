@@ -1,0 +1,8 @@
+services:
+  command-center-worker-control-api:
+    environment:
+      Argus__Autoscaler__DockerComposePath: /home/derekdperez_dev/argus-engine/deploy/docker-compose.yml
+      Argus__Autoscaler__DockerComposeProject: argus-engine
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/derekdperez_dev/argus-engine:/home/derekdperez_dev/argus-engine:ro

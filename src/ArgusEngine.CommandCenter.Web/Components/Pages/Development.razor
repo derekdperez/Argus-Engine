@@ -16,8 +16,8 @@
 @using Microsoft.Extensions.Hosting
 @using Microsoft.Extensions.Logging
 @using Microsoft.JSInterop
-
 @inject MaintenanceApiClient MaintenanceApi
+@inject WorkerControlApiClient WorkerControl
 @inject LocalDockerClient DockerClient
 @inject IJSRuntime Js
 @inject ILogger<Development> Logger
@@ -29,30 +29,35 @@
 
 <PageTitle>Development - Argus Engine</PageTitle>
 
-<div class="page-shell development-page">
-    <section class="hero-card">
-        <p class="eyebrow">Diagnostic Suite</p>
-        <h1>Development &amp; Diagnostics</h1>
-        <p>Execute internal test harnesses, manage local workers, watch real-time system events, and collect deployment-wide error context.</p>
-    </section>
+<div class="dev-page">
+    <header class="page-header">
+        <div class="eyebrow">Diagnostic Suite</div>
+        <div class="header-content">
+            <h1>Development &amp; Diagnostics</h1>
+            <p class="description">
+                Execute internal test harnesses, manage local workers, watch real-time system events,
+                and collect deployment-wide error context.
+            </p>
+        </div>
+    </header>
 
     @if (_initError is not null)
     {
-        <div class="alert alert-danger" style="margin: 20px; padding: 15px; border-radius: 8px; background-color: #fde8e8; color: #9b1c1c; border: 1px solid #f8b4b4;">
+        <div class="error-detail-card">
             <strong>Initialization Error:</strong> @_initError
         </div>
     }
 
-    <section class="surface-card">
+    <section>
         <div class="section-heading">
-            <div>
+            <div class="title-group">
                 <h2>Worker Test Harness</h2>
                 <p>Executes health-check logic within each worker project to exercise core functionality.</p>
             </div>
-            <button class="btn btn-primary" disabled="@_busy" @onclick="RunHarnessAsync">
+            <button class="btn primary glow" @onclick="RunHarnessAsync" disabled="@_busy">
                 @if (_busy)
                 {
-                    <span>Running Diagnostics...</span>
+                    <span><span class="spinner"></span>Running Diagnostics...</span>
                 }
                 else
                 {
@@ -63,71 +68,80 @@
 
         @if (_result != null)
         {
-            <div class="stat-grid">
-                <article class="stat-card">
-                    <span>Executed At</span>
-                    <strong>@_result.ExecutedAtUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)</strong>
-                </article>
-                <article class="stat-card">
-                    <span>Overall Status</span>
-                    <strong>@(_result.WorkerResults.All(r => r.Success) ? "HEALTHY" : "DEGRADED")</strong>
-                </article>
-                <article class="stat-card">
-                    <span>Success Rate</span>
-                    <strong>@_result.WorkerResults.Count(r => r.Success) / @_result.WorkerResults.Count</strong>
-                </article>
+            <div class="harness-summary-card">
+                <div class="summary-stat">
+                    <span class="label">Executed At</span>
+                    <span class="value">@_result.ExecutedAtUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)</span>
+                </div>
+                <div class="summary-stat">
+                    <span class="label">Overall Status</span>
+                    <span class="value @(_result.WorkerResults.All(r => r.Success) ? "success" : "danger")">
+                        @(_result.WorkerResults.All(r => r.Success) ? "HEALTHY" : "DEGRADED")
+                    </span>
+                </div>
+                <div class="summary-stat">
+                    <span class="label">Success Rate</span>
+                    <span class="value">@_result.WorkerResults.Count(r => r.Success) / @_result.WorkerResults.Count</span>
+                </div>
             </div>
 
-            <div class="table-wrap">
-                <table class="data-table">
-                    <thead>
+            <table class="dev-grid">
+                <thead>
+                    <tr>
+                        <th>Worker</th>
+                        <th>Status</th>
+                        <th>Output</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _result.WorkerResults)
+                    {
                         <tr>
-                            <th>Worker</th>
-                            <th>Status</th>
-                            <th>Output</th>
+                            <td>
+                                <span class="worker-name-cell">
+                                    <span class="kind-indicator"></span>
+                                    @r.WorkerName
+                                </span>
+                            </td>
+                            <td>@(r.Success ? "PASSED" : "FAILED")</td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(r.Output))
+                                {
+                                    <button class="btn secondary" @onclick="() => ShowOutputAsync(r)">View Output</button>
+                                }
+                                else
+                                {
+                                    <span>No log available</span>
+                                }
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var r in _result.WorkerResults)
-                        {
-                            <tr>
-                                <td>@r.WorkerName</td>
-                                <td>@(r.Success ? "PASSED" : "FAILED")</td>
-                                <td>
-                                    @if (!string.IsNullOrEmpty(r.Output))
-                                    {
-                                        <button class="btn btn-secondary" @onclick="() => ShowOutputAsync(r)">View Output</button>
-                                    }
-                                    else
-                                    {
-                                        <span>No log available</span>
-                                    }
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
+                    }
+                </tbody>
+            </table>
         }
         else if (!_busy)
         {
-            <div class="empty-state">
+            <div class="harness-empty">
+                <div class="empty-icon">🧪</div>
                 <h3>Ready to test</h3>
                 <p>Click the button above to begin the automated worker health check suite.</p>
             </div>
         }
     </section>
 
-    <section class="surface-card">
+    <section>
         <div class="section-heading">
-            <div>
+            <div class="title-group">
                 <h2>Local Worker Scaling</h2>
-                <p>Manage local Docker Compose workers. Scaling down destroys containers immediately for failure testing.</p>
+                <p>
+                    Manage Docker Compose worker services through the Worker Control API.
+                    Scale down uses Compose desired-count changes instead of killing containers directly.
+                </p>
             </div>
-            <button class="btn btn-secondary" disabled="@_loadingDockerWorkers" @onclick="LoadDockerWorkersAsync">
+            <button class="btn secondary" @onclick="LoadDockerWorkersAsync" disabled="@_loadingDockerWorkers">
                 @if (_loadingDockerWorkers)
                 {
-                    <span>Refreshing...</span>
+                    <span><span class="spinner"></span>Refreshing...</span>
                 }
                 else
                 {
@@ -136,91 +150,135 @@
             </button>
         </div>
 
-        <div class="table-wrap">
-            <table class="data-table">
-                <thead>
+        @if (_dockerWorkerSnapshot is not null && !_dockerWorkerSnapshot.DockerAvailable)
+        {
+            <div class="error-detail-card">
+                Docker worker status unavailable: @_dockerWorkerSnapshot.Error
+            </div>
+        }
+
+        <table class="dev-grid">
+            <thead>
+                <tr>
+                    <th>Worker Service</th>
+                    <th>Running</th>
+                    <th>Total Containers</th>
+                    <th>State</th>
+                    <th>Last Action</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var service in WorkerRows)
+                {
                     <tr>
-                        <th>Worker Service</th>
-                        <th>Containers Running</th>
-                        <th>Actions</th>
+                        <td>
+                            <strong>@service.ServiceName</strong>
+                            <div>@service.DisplayName</div>
+                        </td>
+                        <td>@service.RunningCount</td>
+                        <td>@service.TotalCount</td>
+                        <td>
+                            <span class="badge-component">@service.OverallState</span>
+                        </td>
+                        <td>@(_workerScaleStatus.TryGetValue(service.ServiceName, out var status) ? status : "—")</td>
+                        <td>
+                            <button class="btn primary"
+                                    @onclick="() => ScaleUpWorkerAsync(service.ServiceName)"
+                                    disabled="@IsWorkerScaleBusy(service.ServiceName)">
+                                Scale Up
+                            </button>
+                            <button class="btn secondary"
+                                    @onclick="() => ScaleDownWorkerAsync(service.ServiceName)"
+                                    disabled="@(IsWorkerScaleBusy(service.ServiceName) || service.RunningCount <= 0)">
+                                Scale Down
+                            </button>
+                        </td>
                     </tr>
-                </thead>
-                <tbody>
-                    @foreach (var svc in _workerServices)
+
+                    @if (service.Containers.Count > 0)
                     {
-                        var count = _dockerWorkers.TryGetValue(svc, out var list) ? list.Count : 0;
                         <tr>
-                            <td>@svc</td>
-                            <td>@count</td>
-                            <td class="button-row">
-                                <button class="btn btn-secondary" @onclick="() => ScaleUpWorkerAsync(svc)">Scale Up</button>
-                                <button class="btn btn-danger" disabled="@(count == 0)" @onclick="() => ScaleDownWorkerAsync(svc)">Scale Down (Kill)</button>
+                            <td colspan="6">
+                                <small>
+                                    @string.Join(", ", service.Containers.Select(c => $"{c.Name} [{c.State}]"))
+                                </small>
                             </td>
                         </tr>
                     }
-                </tbody>
-            </table>
-        </div>
+                }
+            </tbody>
+        </table>
     </section>
 
-    <section class="surface-card">
+    <section>
         <div class="section-heading">
-            <div>
+            <div class="title-group">
                 <h2>Real-Time System Events</h2>
                 <p>Live chronological feed of domain events as they occur across the engine.</p>
             </div>
-            <div class="button-row">
-                <span class="status-pill @(Realtime.IsConnected ? "ok" : "loading")">@(Realtime.IsConnected ? "Live" : "Connecting...")</span>
-                <button class="btn btn-secondary" @onclick="() => _liveEvents.Clear()">Clear Feed</button>
+            <div class="actions">
+                <span>@(Realtime.IsConnected ? "Live" : "Connecting...")</span>
+                <button class="btn secondary" @onclick="() => _liveEvents.Clear()">Clear Feed</button>
             </div>
         </div>
 
         @if (_liveEvents.Count == 0)
         {
-            <div class="empty-state">Waiting for system events...</div>
+            <p>Waiting for system events...</p>
         }
         else
         {
-            <div class="event-list">
-                @foreach (var evt in _liveEvents.OrderByDescending(e => e.OccurredAtUtc))
-                {
-                    <article class="event-row">
-                        <time>@evt.OccurredAtUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)</time>
-                        <strong>@evt.Scope</strong>
-                        <span>@evt.Kind</span>
-                        <p>@evt.Summary</p>
-                    </article>
-                }
-            </div>
+            <table class="dev-grid">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Scope</th>
+                        <th>Kind</th>
+                        <th>Summary</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var evt in _liveEvents.OrderByDescending(e => e.OccurredAtUtc))
+                    {
+                        <tr>
+                            <td>@evt.OccurredAtUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)</td>
+                            <td>@evt.Scope</td>
+                            <td>@evt.Kind</td>
+                            <td>@evt.Summary</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
         }
     </section>
 
-    <section class="surface-card">
+    <section class="error-log-panel">
         <div class="section-heading">
-            <div>
+            <div class="title-group">
                 <h2>System-Wide Error Log</h2>
                 <p>
                     Collects structured diagnostics plus Docker log errors from every Argus Compose container.
-                    Each Docker log match includes at least 15 lines of surrounding context.
+                    Each Docker log match includes at least @DockerErrorContextLines lines of surrounding context.
                 </p>
                 @if (!string.IsNullOrWhiteSpace(_errorCollectionStatus))
                 {
-                    <p class="muted">@_errorCollectionStatus</p>
+                    <p>@_errorCollectionStatus</p>
                 }
             </div>
-            <div class="button-row">
-                <button class="btn btn-secondary" disabled="@_errorsLoading" @onclick="RefreshErrorsAsync">
+            <div class="actions">
+                <button class="btn secondary" @onclick="RefreshErrorsAsync" disabled="@_errorsLoading">
                     @if (_errorsLoading)
                     {
-                        <span>Loading...</span>
+                        <span><span class="spinner"></span>Loading...</span>
                     }
                     else
                     {
                         <span>Refresh</span>
                     }
                 </button>
-                <button class="btn btn-secondary" disabled="@(_errorsLoading || _errors.Count == 0)" @onclick="DownloadConcatenatedErrorsAsync">Concatenate All Errors</button>
-                <button class="btn btn-secondary" disabled="@(_errorsLoading || _errors.Count == 0 || _generatingBugFixPrompt)" @onclick="GenerateBugFixPromptAsync">
+                <button class="btn secondary" @onclick="DownloadConcatenatedErrorsAsync">Concatenate All Errors</button>
+                <button class="btn secondary" @onclick="GenerateBugFixPromptAsync" disabled="@_generatingBugFixPrompt">
                     @if (_generatingBugFixPrompt)
                     {
                         <span>Generating...</span>
@@ -230,128 +288,113 @@
                         <span>Generate Bug Fix Prompt</span>
                     }
                 </button>
-                <button class="btn btn-danger" disabled="@_errorsLoading" @onclick="ClearErrorsAsync">Clear Structured Errors</button>
+                <button class="btn danger" @onclick="ClearErrorsAsync">Clear Structured Errors</button>
             </div>
         </div>
 
-        <div class="stat-grid">
-            <article class="stat-card">
-                <span>Total Errors</span>
-                @if (_errorsLoading)
-                {
-                    <strong>Loading...</strong>
-                }
-                else
-                {
-                    <strong>@_errors.Count</strong>
-                }
-            </article>
-            <article class="stat-card">
-                <span>Components Covered</span>
-                @if (_errorsLoading)
-                {
-                    <strong>Loading...</strong>
-                }
-                else
-                {
-                    <strong>@_errors.Select(e => e.Component).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).Count()</strong>
-                }
-            </article>
-            <article class="stat-card">
-                <span>Docker Log Context</span>
-                <strong>±15 lines</strong>
-            </article>
+        <div class="harness-summary-card">
+            <div class="summary-stat">
+                <span class="label">Total Errors</span>
+                <span class="value">@(_errorsLoading ? "Loading..." : _errors.Count.ToString(CultureInfo.InvariantCulture))</span>
+            </div>
+            <div class="summary-stat">
+                <span class="label">Components Covered</span>
+                <span class="value">
+                    @(_errorsLoading
+                        ? "Loading..."
+                        : _errors.Select(e => e.Component).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString(CultureInfo.InvariantCulture))
+                </span>
+            </div>
+            <div class="summary-stat">
+                <span class="label">Docker Log Context</span>
+                <span class="value">±@DockerErrorContextLines lines</span>
+            </div>
         </div>
 
         @if (_selectedError != null)
         {
-            <aside class="detail-panel">
-                <div class="section-heading">
+            <div class="error-detail-card">
+                <div class="error-detail-header">
                     <div>
-                        <p class="eyebrow">Selected Error</p>
+                        <div class="eyebrow">Selected Error</div>
                         <h3>@BuildErrorSummary(_selectedError)</h3>
                         <p>@BuildContextLine(_selectedError)</p>
                     </div>
-                    <button class="btn btn-secondary" @onclick="CloseErrorDetail">Close</button>
+                    <button class="btn secondary" @onclick="CloseErrorDetail">Close</button>
                 </div>
-
-                <dl class="detail-grid">
-                    <dt>Time</dt>
-                    <dd>@_selectedError.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture)</dd>
-                    <dt>Component</dt>
-                    <dd>@Fallback(_selectedError.Component, "unknown")</dd>
-                    <dt>Logger</dt>
-                    <dd>@Fallback(_selectedError.LoggerName, "unknown")</dd>
-                    <dt>Machine</dt>
-                    <dd>@Fallback(_selectedError.MachineName, "unknown")</dd>
-                </dl>
-
-                <pre class="log-block">@BuildFullErrorDetail(_selectedError)</pre>
-            </aside>
+                <div class="error-detail-meta">
+                    <div><span class="label">Time</span><strong>@_selectedError.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture)</strong></div>
+                    <div><span class="label">Component</span><strong>@Fallback(_selectedError.Component, "unknown")</strong></div>
+                    <div><span class="label">Logger</span><strong>@Fallback(_selectedError.LoggerName, "unknown")</strong></div>
+                    <div><span class="label">Machine</span><strong>@Fallback(_selectedError.MachineName, "unknown")</strong></div>
+                </div>
+                <pre class="stack-trace">@BuildFullErrorDetail(_selectedError)</pre>
+            </div>
         }
 
         @if (!string.IsNullOrWhiteSpace(_bugFixPrompt))
         {
-            <aside class="detail-panel">
-                <div class="section-heading">
+            <div class="bug-fix-prompt-card">
+                <div class="bug-fix-prompt-header">
                     <div>
-                        <p class="eyebrow">Generated AI Agent Prompt</p>
+                        <div class="eyebrow">Generated AI Agent Prompt</div>
                         <h3>Investigate System-Wide Errors and Create a PR</h3>
                         <p>
                             Generated @(_bugFixPromptGeneratedAtUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture) ?? "unknown").
                             Credential values are intentionally redacted; the agent must obtain them through approved secure channels.
                         </p>
                     </div>
-                    <div class="button-row">
-                        <button class="btn btn-secondary" @onclick="CopyBugFixPromptAsync">Copy Prompt</button>
-                        <button class="btn btn-secondary" @onclick="CloseBugFixPrompt">Close</button>
+                    <div class="actions">
+                        <button class="btn secondary" @onclick="CopyBugFixPromptAsync">Copy Prompt</button>
+                        <button class="btn secondary" @onclick="CloseBugFixPrompt">Close</button>
                     </div>
                 </div>
-                <pre class="log-block">@_bugFixPrompt</pre>
-            </aside>
+                <textarea class="bug-fix-prompt-textarea" readonly>@_bugFixPrompt</textarea>
+            </div>
         }
 
         @if (_errorsLoading)
         {
-            <div class="empty-state">Loading structured errors and Docker logs from every deployment component...</div>
+            <p>Loading structured errors and Docker logs from every deployment component...</p>
         }
         else if (_errors.Count == 0)
         {
-            <div class="empty-state">No errors found in structured diagnostics or recent Docker logs.</div>
+            <p>No errors found in structured diagnostics or recent Docker logs.</p>
         }
         else
         {
-            <div class="table-wrap">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            <th>Component</th>
-                            <th>Level</th>
-                            <th>Summary</th>
-                            <th>Context</th>
+            <table class="dev-grid error-grid">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Component</th>
+                        <th>Level</th>
+                        <th>Summary</th>
+                        <th>Context</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in _errors.OrderByDescending(e => e.Timestamp))
+                    {
+                        <tr @onclick="() => ToggleErrorDetail(e)">
+                            <td>@e.Timestamp.ToLocalTime().ToString("MM/dd HH:mm:ss", CultureInfo.InvariantCulture)</td>
+                            <td><span class="badge-component">@Fallback(e.Component, "unknown")</span></td>
+                            <td>@Fallback(e.LogLevel, "Error")</td>
+                            <td class="error-message-cell">
+                                <strong>@BuildErrorSummary(e)</strong>
+                                <span>@(HasStackTrace(e) ? "Context captured" : "Details")</span>
+                            </td>
+                            <td>@BuildContextLine(e)</td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var e in _errors.OrderByDescending(e => e.Timestamp))
-                        {
-                            <tr class="clickable-row" @onclick="() => ToggleErrorDetail(e)">
-                                <td>@e.Timestamp.ToLocalTime().ToString("MM/dd HH:mm:ss", CultureInfo.InvariantCulture)</td>
-                                <td>@Fallback(e.Component, "unknown")</td>
-                                <td>@Fallback(e.LogLevel, "Error")</td>
-                                <td>@BuildErrorSummary(e)</td>
-                                <td>@BuildContextLine(e) @(HasStackTrace(e) ? " • Context captured" : "")</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
+                    }
+                </tbody>
+            </table>
         }
     </section>
 
-    <section class="surface-card ai-bugfix-card">
+    <section class="error-log-panel">
         <div class="section-heading">
-            <div>
+            <div class="title-group">
                 <h2>AI Bug Fix Automation</h2>
                 <p>
                     Gather all current errors, dispatch an AI coding workflow to generate fixes,
@@ -359,25 +402,23 @@
                 </p>
                 @if (!string.IsNullOrWhiteSpace(_aiBugFixError))
                 {
-                    <p class="status-pill fail" style="margin-top:0.5rem">@_aiBugFixError</p>
+                    <p>@_aiBugFixError</p>
                 }
             </div>
-            <div class="button-row">
+            <div class="actions">
                 @if (_latestAiBugFixRun is not null && _latestAiBugFixRun.Status == AiBugFixRunStatus.Failed)
                 {
-                    <button class="btn btn-secondary" disabled="@_aiBugFixActionBusy" @onclick="RetryAiBugFixRunAsync">Retry Failed Run</button>
+                    <button class="btn secondary" @onclick="RetryAiBugFixRunAsync" disabled="@_aiBugFixActionBusy">Retry Failed Run</button>
                 }
                 @if (_latestAiBugFixRun is not null && AiBugFixRunStatus.IsActive(_latestAiBugFixRun.Status))
                 {
-                    <button class="btn btn-danger" disabled="@_aiBugFixActionBusy" @onclick="CancelAiBugFixRunAsync">Cancel Run</button>
+                    <button class="btn danger" @onclick="CancelAiBugFixRunAsync" disabled="@_aiBugFixActionBusy">Cancel Run</button>
                 }
-                <button class="btn btn-secondary" disabled="@_aiBugFixActionBusy" @onclick="() => RefreshAiBugFixRunAsync()">Refresh Status</button>
-                <button class="btn btn-primary"
-                        disabled="@(_aiBugFixActionBusy || (_latestAiBugFixRun is not null && AiBugFixRunStatus.IsActive(_latestAiBugFixRun.Status)))"
-                        @onclick="StartAiBugFixAsync">
+                <button class="btn secondary" @onclick="RefreshAiBugFixRunAsync" disabled="@_aiBugFixActionBusy">Refresh Status</button>
+                <button class="btn primary glow" @onclick="StartAiBugFixAsync" disabled="@(_aiBugFixStarting || _aiBugFixActionBusy)">
                     @if (_aiBugFixStarting)
                     {
-                        <span>Starting...</span>
+                        <span><span class="spinner"></span>Starting...</span>
                     }
                     else
                     {
@@ -389,84 +430,76 @@
 
         @if (_latestAiBugFixRun is not null)
         {
-            <dl class="bugfix-status-grid">
-                <dt>Status</dt>
-                <dd>
-                    <span class="status-pill @StatusBadgeClass(_latestAiBugFixRun.Status)">
-                        @_latestAiBugFixRun.Status
-                    </span>
-                </dd>
+            <div class="harness-summary-card">
+                <div class="summary-stat">
+                    <span class="label">Status</span>
+                    <span class="value @StatusBadgeClass(_latestAiBugFixRun.Status)">@_latestAiBugFixRun.Status</span>
+                </div>
+                <div class="summary-stat">
+                    <span class="label">Errors captured</span>
+                    <span class="value">@_latestAiBugFixRun.ErrorCount</span>
+                </div>
+                <div class="summary-stat">
+                    <span class="label">Branch</span>
+                    <span class="value">@Fallback(_latestAiBugFixRun.GitHubBranch, "—")</span>
+                </div>
+            </div>
 
-                <dt>Errors captured</dt>
-                <dd>@_latestAiBugFixRun.ErrorCount</dd>
-
-                <dt>Branch</dt>
-                <dd>@Fallback(_latestAiBugFixRun.GitHubBranch, "—")</dd>
-
-                <dt>Pull Request</dt>
-                <dd>
+            <div class="error-detail-card">
+                <p>
+                    <strong>Pull Request:</strong>
                     @if (_latestAiBugFixRun.GitHubPrUrl is not null)
                     {
-                        <a href="@_latestAiBugFixRun.GitHubPrUrl" target="_blank" rel="noopener noreferrer">
-                            #@_latestAiBugFixRun.GitHubPrNumber — View PR
-                        </a>
+                        <a href="@_latestAiBugFixRun.GitHubPrUrl" target="_blank">#@_latestAiBugFixRun.GitHubPrNumber — View PR</a>
                     }
                     else
                     {
                         <span>—</span>
                     }
-                </dd>
-
-                <dt>Workflow</dt>
-                <dd>
+                </p>
+                <p>
+                    <strong>Workflow:</strong>
                     @if (_latestAiBugFixRun.GitHubWorkflowUrl is not null)
                     {
-                        <a href="@_latestAiBugFixRun.GitHubWorkflowUrl" target="_blank" rel="noopener noreferrer">View Actions run</a>
+                        <a href="@_latestAiBugFixRun.GitHubWorkflowUrl" target="_blank">View Actions run</a>
                     }
                     else
                     {
                         <span>—</span>
                     }
-                </dd>
-
-                <dt>Deployment</dt>
-                <dd>
+                </p>
+                <p>
+                    <strong>Deployment:</strong>
                     @if (_latestAiBugFixRun.DeploymentUrl is not null)
                     {
-                        <a href="@_latestAiBugFixRun.DeploymentUrl" target="_blank" rel="noopener noreferrer">View deployment</a>
+                        <a href="@_latestAiBugFixRun.DeploymentUrl" target="_blank">View deployment</a>
                     }
                     else
                     {
                         <span>—</span>
                     }
-                </dd>
-
-                <dt>Last message</dt>
-                <dd>@Fallback(_latestAiBugFixRun.StatusMessage, "—")</dd>
-
+                </p>
+                <p><strong>Last message:</strong> @Fallback(_latestAiBugFixRun.StatusMessage, "—")</p>
                 @if (!string.IsNullOrWhiteSpace(_latestAiBugFixRun.FailureDetail))
                 {
-                    <dt>Failure detail</dt>
-                    <dd class="failure-detail">@_latestAiBugFixRun.FailureDetail</dd>
+                    <pre class="stack-trace">@_latestAiBugFixRun.FailureDetail</pre>
                 }
-            </dl>
-
-            <p class="muted" style="margin-top:0.5rem">
-                Run started @_latestAiBugFixRun.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture) •
-                Last updated @_latestAiBugFixRun.UpdatedAtUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)
-            </p>
+                <p>
+                    Run started @_latestAiBugFixRun.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture)
+                    • Last updated @_latestAiBugFixRun.UpdatedAtUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)
+                </p>
+            </div>
         }
         else
         {
-            <div class="empty-state">No AI bug-fix runs yet. Click <strong>Fix Bugs with AI</strong> to start the first run.</div>
+            <p>No AI bug-fix runs yet. Click Fix Bugs with AI to start the first run.</p>
         }
     </section>
-
 </div>
-
 
 @code {
     private const int DockerErrorContextLines = 15;
+
     private bool _busy;
     private bool _generatingBugFixPrompt;
     private bool _errorsLoading = true;
@@ -479,7 +512,36 @@
     private DateTimeOffset? _bugFixPromptGeneratedAtUtc;
     private string? _errorCollectionStatus;
     private string? _initError;
+
+    private DockerWorkerStatusSnapshotDto? _dockerWorkerSnapshot;
+    private bool _loadingDockerWorkers;
+    private readonly Dictionary<string, string> _workerScaleStatus = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _workerScaleBusy = new(StringComparer.OrdinalIgnoreCase);
     private readonly CancellationTokenSource _devPollCts = new();
+
+    private readonly string[] _workerServices =
+    [
+        "worker-spider",
+        "worker-enum",
+        "worker-portscan",
+        "worker-highvalue",
+        "worker-techid",
+        "worker-http-requester"
+    ];
+
+    private IReadOnlyList<DockerWorkerServiceDto> WorkerRows =>
+        _dockerWorkerSnapshot?.Services.Count > 0
+            ? _dockerWorkerSnapshot.Services
+            : _workerServices
+                .Select(serviceName => new DockerWorkerServiceDto(
+                    serviceName,
+                    serviceName,
+                    0,
+                    0,
+                    "unknown",
+                    "gray",
+                    Array.Empty<DockerWorkerContainerDto>()))
+                .ToList();
 
     protected override async Task OnInitializedAsync()
     {
@@ -489,6 +551,7 @@
             await Realtime.EnsureStartedAsync(_devPollCts.Token);
             await RefreshErrorsAsync();
             await LoadDockerWorkersAsync();
+            await RefreshAiBugFixRunAsync();
         }
         catch (Exception ex)
         {
@@ -511,6 +574,87 @@
             StateHasChanged();
         });
     }
+
+    private async Task LoadDockerWorkersAsync()
+    {
+        if (_loadingDockerWorkers)
+        {
+            return;
+        }
+
+        _loadingDockerWorkers = true;
+        StateHasChanged();
+
+        try
+        {
+            _dockerWorkerSnapshot = await WorkerControl
+                .GetDockerWorkerStatusAsync(_devPollCts.Token)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not load Docker worker status from Worker Control API.");
+            _dockerWorkerSnapshot = new DockerWorkerStatusSnapshotDto(
+                DateTimeOffset.UtcNow,
+                DockerAvailable: false,
+                Error: ex.Message,
+                Services: Array.Empty<DockerWorkerServiceDto>());
+        }
+        finally
+        {
+            _loadingDockerWorkers = false;
+        }
+    }
+
+    private async Task ScaleUpWorkerAsync(string serviceName)
+    {
+        var current = GetRunningWorkerCount(serviceName);
+        await ScaleWorkerAsync(serviceName, current + 1).ConfigureAwait(false);
+    }
+
+    private async Task ScaleDownWorkerAsync(string serviceName)
+    {
+        var current = GetRunningWorkerCount(serviceName);
+        await ScaleWorkerAsync(serviceName, Math.Max(0, current - 1)).ConfigureAwait(false);
+    }
+
+    private async Task ScaleWorkerAsync(string serviceName, int desiredCount)
+    {
+        if (!_workerScaleBusy.Add(serviceName))
+        {
+            return;
+        }
+
+        StateHasChanged();
+
+        try
+        {
+            var result = await WorkerControl
+                .ScaleDockerWorkerAsync(serviceName, Math.Clamp(desiredCount, 0, 50), _devPollCts.Token)
+                .ConfigureAwait(false);
+
+            _workerScaleStatus[serviceName] = result.Message;
+            await LoadDockerWorkersAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to scale Docker worker service {ServiceName}.", serviceName);
+            _workerScaleStatus[serviceName] = $"Failed: {ex.Message}";
+            await Js.InvokeVoidAsync("alert", $"Failed to scale {serviceName}: {ex.Message}").ConfigureAwait(false);
+        }
+        finally
+        {
+            _workerScaleBusy.Remove(serviceName);
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+    }
+
+    private int GetRunningWorkerCount(string serviceName) =>
+        _dockerWorkerSnapshot?.Services.FirstOrDefault(service =>
+            string.Equals(service.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase))?.RunningCount ?? 0;
+
+    private bool IsWorkerScaleBusy(string serviceName) =>
+        _loadingDockerWorkers || _workerScaleBusy.Contains(serviceName);
 
     private async Task RefreshErrorsAsync()
     {
@@ -540,10 +684,9 @@
                 _selectedError = _errors.FirstOrDefault(error => error.Id == _selectedError.Id);
             }
 
-            _errorCollectionStatus =
-                $"Loaded {structuredErrors.Count.ToString(CultureInfo.InvariantCulture)} structured error(s) and " +
-                $"{dockerErrors.Count.ToString(CultureInfo.InvariantCulture)} Docker log error block(s) across " +
-                $"{_errors.Select(e => e.Component).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString(CultureInfo.InvariantCulture)} component(s).";
+            _errorCollectionStatus = $"Loaded {structuredErrors.Count.ToString(CultureInfo.InvariantCulture)} structured error(s) and " +
+                                     $"{dockerErrors.Count.ToString(CultureInfo.InvariantCulture)} Docker log error block(s) across " +
+                                     $"{_errors.Select(e => e.Component).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString(CultureInfo.InvariantCulture)} component(s).";
         }
         catch (OperationCanceledException)
         {
@@ -561,20 +704,21 @@
         }
     }
 
-    private static List<SystemError> MergeErrors(IEnumerable<SystemError> structuredErrors, IEnumerable<SystemError> dockerErrors)
-    {
-        return structuredErrors
+    private static List<SystemError> MergeErrors(IEnumerable<SystemError> structuredErrors, IEnumerable<SystemError> dockerErrors) =>
+        structuredErrors
             .Concat(dockerErrors)
             .GroupBy(error => error.Id)
             .Select(group => group.First())
             .OrderByDescending(error => error.Timestamp)
             .Take(1000)
             .ToList();
-    }
 
     private async Task ClearErrorsAsync()
     {
-        if (!await Js.InvokeAsync<bool>("confirm", "Are you sure you want to clear structured system errors? Docker log errors will remain until the container logs rotate or the services are recreated.").ConfigureAwait(false))
+        if (!await Js.InvokeAsync<bool>(
+                "confirm",
+                "Are you sure you want to clear structured system errors? Docker log errors will remain until the container logs rotate or the services are recreated.")
+            .ConfigureAwait(false))
         {
             return;
         }
@@ -601,6 +745,7 @@
         try
         {
             await Task.Delay(500, _devPollCts.Token).ConfigureAwait(false);
+
             _result = await MaintenanceApi.Client
                 .GetFromJsonAsync<HarnessResultDto>("/api/diagnostics/harness", _devPollCts.Token)
                 .ConfigureAwait(false);
@@ -622,6 +767,7 @@
         try
         {
             await RefreshErrorsAsync().ConfigureAwait(false);
+
             var generatedAtUtc = DateTimeOffset.UtcNow;
             var contents = BuildConcatenatedErrorFile(_errors, generatedAtUtc);
             var fileName = $"argus-errors-{generatedAtUtc:yyyyMMdd-HHmmss}.txt";
@@ -676,7 +822,7 @@
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Clipboard copy failed for the generated bug-fix prompt.");
-            await Js.InvokeVoidAsync("alert", "The browser blocked clipboard access. Select the prompt text and copy it manually.").ConfigureAwait(false);
+            await Js.InvokeVoidAsync("alert", "The browser blocked clipboard access.\nSelect the prompt text and copy it manually.").ConfigureAwait(false);
         }
     }
 
@@ -693,7 +839,6 @@
             .ToList();
 
         var sb = new StringBuilder();
-
         sb.AppendLine("Argus Engine Concatenated Error Export");
         sb.AppendLine("=====================================");
         sb.AppendLine();
@@ -735,7 +880,6 @@
             .ToList();
 
         var sb = new StringBuilder();
-
         sb.AppendLine("# Argus Engine System-Wide Error Bug Fix Task");
         sb.AppendLine();
         sb.AppendLine("You are an AI software engineering agent working on the Argus Engine repository.");
@@ -851,7 +995,9 @@
             .Where(entry => IsCredentialOrServiceAccessKey(entry.Key))
             .Select(entry =>
             {
-                var status = string.IsNullOrWhiteSpace(entry.Value) ? "not configured or empty" : "configured; value redacted";
+                var status = string.IsNullOrWhiteSpace(entry.Value)
+                    ? "not configured or empty"
+                    : "configured; value redacted";
                 return $"{NormalizeConfigurationKey(entry.Key)}: [{status}]";
             })
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -876,30 +1022,28 @@
 
         var normalized = NormalizeConfigurationKey(key);
 
-        return normalized.StartsWith("ConnectionStrings:", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains(":ConnectionString", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains(":Password", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains(":Pwd", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains(":Secret", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains(":Token", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains(":ApiKey", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains(":ClientSecret", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains(":AccessKey", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains(":PrivateKey", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains(":Credential", StringComparison.OrdinalIgnoreCase)
-            || normalized.StartsWith("AWS:", StringComparison.OrdinalIgnoreCase)
-            || normalized.StartsWith("RabbitMQ:", StringComparison.OrdinalIgnoreCase)
-            || normalized.StartsWith("RabbitMq:", StringComparison.OrdinalIgnoreCase)
-            || normalized.StartsWith("Postgres:", StringComparison.OrdinalIgnoreCase)
-            || normalized.StartsWith("Npgsql:", StringComparison.OrdinalIgnoreCase)
-            || normalized.StartsWith("Database:", StringComparison.OrdinalIgnoreCase)
-            || normalized.StartsWith("OpenTelemetry:", StringComparison.OrdinalIgnoreCase);
+        return normalized.StartsWith("ConnectionStrings:", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains(":ConnectionString", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains(":Password", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains(":Pwd", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains(":Secret", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains(":Token", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains(":ApiKey", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains(":ClientSecret", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains(":AccessKey", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains(":PrivateKey", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains(":Credential", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith("AWS:", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith("RabbitMQ:", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith("RabbitMq:", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith("Postgres:", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith("Npgsql:", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith("Database:", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith("OpenTelemetry:", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string NormalizeConfigurationKey(string key)
-    {
-        return key.Replace("__", ":", StringComparison.Ordinal);
-    }
+    private static string NormalizeConfigurationKey(string key) =>
+        key.Replace("__", ":", StringComparison.Ordinal);
 
     private static string BuildServerIpAddressList()
     {
@@ -907,7 +1051,9 @@
         {
             var hostName = Dns.GetHostName();
             var addresses = Dns.GetHostAddresses(hostName)
-                .Where(address => address.AddressFamily is AddressFamily.InterNetwork or AddressFamily.InterNetworkV6 && !IPAddress.IsLoopback(address))
+                .Where(address =>
+                    (address.AddressFamily is AddressFamily.InterNetwork or AddressFamily.InterNetworkV6) &&
+                    !IPAddress.IsLoopback(address))
                 .Select(address => address.ToString())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(address => address, StringComparer.OrdinalIgnoreCase)
@@ -942,83 +1088,8 @@
         _selectedError = null;
     }
 
-    private Dictionary<string, List<DockerContainerDto>> _dockerWorkers = new();
-    private bool _loadingDockerWorkers;
-
-    private readonly string[] _workerServices =
-    [
-        "worker-spider",
-        "worker-enum",
-        "worker-portscan",
-        "worker-highvalue",
-        "worker-techid",
-        "worker-http-requester"
-    ];
-
-    private async Task LoadDockerWorkersAsync()
-    {
-        _loadingDockerWorkers = true;
-        StateHasChanged();
-
-        try
-        {
-            _dockerWorkers.Clear();
-
-            foreach (var svc in _workerServices)
-            {
-                var containers = await DockerClient.GetContainersAsync(svc, _devPollCts.Token).ConfigureAwait(false);
-                _dockerWorkers[svc] = containers;
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Could not load docker workers. Ensure docker socket is mounted.");
-        }
-        finally
-        {
-            _loadingDockerWorkers = false;
-        }
-    }
-
-    private async Task ScaleDownWorkerAsync(string serviceName)
-    {
-        if (!_dockerWorkers.TryGetValue(serviceName, out var list) || list.Count == 0)
-        {
-            return;
-        }
-
-        var container = list.Last();
-
-        try
-        {
-            await DockerClient.KillContainerAsync(container.Id, _devPollCts.Token).ConfigureAwait(false);
-            await LoadDockerWorkersAsync().ConfigureAwait(false);
-            await RefreshErrorsAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            await Js.InvokeVoidAsync("alert", $"Failed to kill container: {ex.Message}").ConfigureAwait(false);
-        }
-    }
-
-    private async Task ScaleUpWorkerAsync(string serviceName)
-    {
-        try
-        {
-            await DockerClient.ScaleUpAsync(serviceName, _devPollCts.Token).ConfigureAwait(false);
-            await LoadDockerWorkersAsync().ConfigureAwait(false);
-            await RefreshErrorsAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            await Js.InvokeVoidAsync("alert", $"Failed to scale up container: {ex.Message}").ConfigureAwait(false);
-        }
-    }
-
-    private static bool HasStackTrace(SystemError e)
-    {
-        return !string.IsNullOrWhiteSpace(e.Exception);
-    }
+    private static bool HasStackTrace(SystemError e) =>
+        !string.IsNullOrWhiteSpace(e.Exception);
 
     private static string BuildErrorSummary(SystemError e)
     {
@@ -1089,7 +1160,6 @@
     private static string BuildFullErrorDetail(SystemError e)
     {
         var sb = new StringBuilder();
-
         sb.AppendLine($"Time: {e.Timestamp.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}");
         sb.AppendLine($"Component: {Fallback(e.Component, "unknown")}");
         sb.AppendLine($"Level: {Fallback(e.LogLevel, "Error")}");
@@ -1134,11 +1204,11 @@
     {
         var normalized = message.Trim().TrimEnd('.');
 
-        return normalized.Equals("An error has occurred", StringComparison.OrdinalIgnoreCase)
-            || normalized.Equals("An error has occured", StringComparison.OrdinalIgnoreCase)
-            || normalized.Equals("An unhandled exception has occurred while executing the request", StringComparison.OrdinalIgnoreCase)
-            || normalized.Equals("Unhandled exception rendering component", StringComparison.OrdinalIgnoreCase)
-            || normalized.Equals("Circuit host terminated unexpectedly", StringComparison.OrdinalIgnoreCase);
+        return normalized.Equals("An error has occurred", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("An error has occured", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("An unhandled exception has occurred while executing the request", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("Unhandled exception rendering component", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("Circuit host terminated unexpectedly", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FormatMetadata(string metadataJson)
@@ -1177,7 +1247,9 @@
                 .EnumerateObject()
                 .ToDictionary(
                     property => property.Name,
-                    property => property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString() : property.Value.ToString(),
+                    property => property.Value.ValueKind == JsonValueKind.String
+                        ? property.Value.GetString()
+                        : property.Value.ToString(),
                     StringComparer.OrdinalIgnoreCase);
         }
         catch
@@ -1186,29 +1258,26 @@
         }
     }
 
-    private static string Fallback(string? value, string fallback)
-    {
-        return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
-    }
+    private static string Fallback(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
 
     // ── AI Bug Fix ────────────────────────────────────────────────────────────
 
-    private AiBugFixRunDto?  _latestAiBugFixRun;
-    private bool             _aiBugFixStarting;
-    private bool             _aiBugFixActionBusy;
-    private string?          _aiBugFixError;
+    private AiBugFixRunDto? _latestAiBugFixRun;
+    private bool _aiBugFixStarting;
+    private bool _aiBugFixActionBusy;
+    private string? _aiBugFixError;
     private CancellationTokenSource? _aiBugFixPollCts;
 
     private async Task StartAiBugFixAsync()
     {
-        _aiBugFixError   = null;
+        _aiBugFixError = null;
         _aiBugFixStarting = true;
         _aiBugFixActionBusy = true;
         StateHasChanged();
 
         try
         {
-            // Always use fresh errors
             await RefreshErrorsAsync().ConfigureAwait(false);
 
             var request = new CreateAiBugFixRunRequest(
@@ -1230,13 +1299,15 @@
             }
 
             var result = await response.Content
-                .ReadFromJsonAsync<CreateAiBugFixRunResponse>(_devPollCts.Token)
+                .ReadFromJsonAsync<AiBugFixRunDto>(cancellationToken: _devPollCts.Token)
                 .ConfigureAwait(false);
 
             await RefreshAiBugFixRunAsync().ConfigureAwait(false);
 
             if (result is not null && AiBugFixRunStatus.IsActive(result.Status))
+            {
                 StartAiBugFixPoll();
+            }
         }
         catch (Exception ex)
         {
@@ -1245,7 +1316,7 @@
         }
         finally
         {
-            _aiBugFixStarting   = false;
+            _aiBugFixStarting = false;
             _aiBugFixActionBusy = false;
         }
     }
@@ -1261,9 +1332,13 @@
             _latestAiBugFixRun = runs?.FirstOrDefault();
 
             if (_latestAiBugFixRun is not null && AiBugFixRunStatus.IsActive(_latestAiBugFixRun.Status))
+            {
                 StartAiBugFixPoll();
+            }
             else
+            {
                 StopAiBugFixPoll();
+            }
         }
         catch (Exception ex)
         {
@@ -1277,22 +1352,33 @@
 
     private void StartAiBugFixPoll()
     {
-        if (_aiBugFixPollCts is not null) return; // already polling
+        if (_aiBugFixPollCts is not null)
+        {
+            return;
+        }
 
         _aiBugFixPollCts = CancellationTokenSource.CreateLinkedTokenSource(_devPollCts.Token);
-        var pollToken    = _aiBugFixPollCts.Token;
+        var pollToken = _aiBugFixPollCts.Token;
 
         _ = Task.Run(async () =>
         {
             while (!pollToken.IsCancellationRequested)
             {
-                try { await Task.Delay(5_000, pollToken).ConfigureAwait(false); }
-                catch (OperationCanceledException) { break; }
+                try
+                {
+                    await Task.Delay(5_000, pollToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
 
                 await RefreshAiBugFixRunAsync().ConfigureAwait(false);
 
                 if (_latestAiBugFixRun is null || AiBugFixRunStatus.IsTerminal(_latestAiBugFixRun.Status))
+                {
                     break;
+                }
             }
 
             StopAiBugFixPoll();
@@ -1308,14 +1394,20 @@
 
     private async Task CancelAiBugFixRunAsync()
     {
-        if (_latestAiBugFixRun is null) return;
+        if (_latestAiBugFixRun is null)
+        {
+            return;
+        }
+
         _aiBugFixActionBusy = true;
         StateHasChanged();
+
         try
         {
             await MaintenanceApi.Client
                 .PostAsync($"/api/diagnostics/ai-bug-fixes/{_latestAiBugFixRun.Id}/cancel", null, _devPollCts.Token)
                 .ConfigureAwait(false);
+
             await RefreshAiBugFixRunAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -1330,9 +1422,14 @@
 
     private async Task RetryAiBugFixRunAsync()
     {
-        if (_latestAiBugFixRun is null) return;
+        if (_latestAiBugFixRun is null)
+        {
+            return;
+        }
+
         _aiBugFixActionBusy = true;
         StateHasChanged();
+
         try
         {
             var response = await MaintenanceApi.Client
@@ -1359,16 +1456,14 @@
         }
     }
 
-    private static string StatusBadgeClass(string status) => status switch
-    {
-        AiBugFixRunStatus.Deployed            => "ok",
-        AiBugFixRunStatus.MergeReady
-            or AiBugFixRunStatus.WaitingForApproval
-            or AiBugFixRunStatus.PullRequestOpen  => "info",
-        AiBugFixRunStatus.Failed
-            or AiBugFixRunStatus.Canceled         => "fail",
-        _                                         => "loading",
-    };
+    private static string StatusBadgeClass(string status) =>
+        status switch
+        {
+            AiBugFixRunStatus.Deployed => "ok",
+            AiBugFixRunStatus.MergeReady or AiBugFixRunStatus.WaitingForApproval or AiBugFixRunStatus.PullRequestOpen => "info",
+            AiBugFixRunStatus.Failed or AiBugFixRunStatus.Canceled => "fail",
+            _ => "loading",
+        };
 
     public void Dispose()
     {

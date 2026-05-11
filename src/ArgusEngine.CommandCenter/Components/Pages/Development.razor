@@ -1,0 +1,545 @@
+@page "/development"
+@rendermode InteractiveServer
+@using System.Net.Http.Json
+@using System.Text
+@using ArgusEngine.CommandCenter.Models
+@using ArgusEngine.Domain.Entities
+@using ArgusEngine.Harness.Core
+@using ArgusEngine.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ArgusDbContext> DbFactory
+@inject HarnessRunner Harness
+@inject HttpClient Http
+@inject IJSRuntime Js
+@inject ILogger<Development> Logger
+
+<PageTitle>Development</PageTitle>
+
+<section class="development-shell">
+    <header class="development-hero">
+        <div>
+            <p class="eyebrow">Command Center</p>
+            <h1>Development Console</h1>
+            <p class="muted">
+                Run worker checks, inspect system errors, and queue AI-coded bug fixes or enhancements.
+            </p>
+        </div>
+        <div class="status-card">
+            <span class="status-dot @(AutomationReady ? "ready" : "disabled")"></span>
+            <div>
+                <strong>@(AutomationReady ? "AI automation ready" : "AI automation disabled")</strong>
+                <span>@AutomationStatusText</span>
+            </div>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_pageError))
+    {
+        <div class="alert error">@_pageError</div>
+    }
+
+    <div class="dev-grid-layout">
+        <section class="panel">
+            <div class="panel-heading">
+                <div>
+                    <h2>Worker Test Harness</h2>
+                    <p>Execute all registered worker health checks and view their outputs inline.</p>
+                </div>
+                <button class="primary-button" disabled="@_harnessBusy" @onclick="RunHarnessAsync">
+                    @(_harnessBusy ? "Running..." : "Run Harness")
+                </button>
+            </div>
+
+            @if (_result is null)
+            {
+                <div class="empty-state">No harness run yet.</div>
+            }
+            else if (_result.WorkerResults.Count == 0)
+            {
+                <div class="empty-state">Harness completed, but no worker results were returned.</div>
+            }
+            else
+            {
+                <div class="responsive-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Worker</th>
+                                <th>Status</th>
+                                <th>Duration</th>
+                                <th>Output</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _result.WorkerResults.OrderBy(r => r.WorkerKey))
+                            {
+                                <tr>
+                                    <td>@row.WorkerKey</td>
+                                    <td>
+                                        <span class="badge @(row.Success ? "ok" : "bad")">
+                                            @(row.Success ? "Pass" : "Fail")
+                                        </span>
+                                    </td>
+                                    <td>@row.Duration</td>
+                                    <td>
+                                        @if (!string.IsNullOrWhiteSpace(row.Output))
+                                        {
+                                            <button class="link-button" @onclick="() => ShowOutputAsync(row.WorkerKey, row.Output)">
+                                                View output
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span class="muted">No output</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading">
+                <div>
+                    <h2>System-Wide Error Log</h2>
+                    <p>Latest @_errors.Count errors from <code>system_errors</code>.</p>
+                </div>
+                <div class="button-row">
+                    <button class="secondary-button" disabled="@_errorsBusy" @onclick="RefreshErrorsAsync">Refresh</button>
+                    <button class="secondary-button" disabled="@(_errorsBusy || _errors.Count == 0)" @onclick="DownloadErrorsAsync">Export</button>
+                    <button class="danger-button" disabled="@_errorsBusy" @onclick="ClearErrorsAsync">Clear All</button>
+                </div>
+            </div>
+
+            @if (_errorsBusy)
+            {
+                <div class="empty-state">Loading errors...</div>
+            }
+            else if (_errors.Count == 0)
+            {
+                <div class="empty-state">No system errors were found.</div>
+            }
+            else
+            {
+                <div class="responsive-table compact-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Severity</th>
+                                <th>Source</th>
+                                <th>Message</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var error in _errors)
+                            {
+                                <tr>
+                                    <td>@error.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td><span class="badge bad">@error.Severity</span></td>
+                                    <td>@error.Source</td>
+                                    <td class="message-cell">@error.Message</td>
+                                    <td>
+                                        <button class="link-button" @onclick="() => ShowErrorDetailAsync(error)">
+                                            Detail
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    </div>
+
+    <section class="panel automation-panel">
+        <div class="panel-heading">
+            <div>
+                <h2>AI Bug Fix Automation</h2>
+                <p>
+                    Generates a production error prompt and dispatches the GitHub Actions workflow that codes,
+                    builds, tests, commits, and deploys the fix branch.
+                </p>
+            </div>
+            <button class="secondary-button" @onclick="GenerateBugFixPrompt">Generate From Errors</button>
+        </div>
+
+        <label class="form-label" for="bugPrompt">Bug fix prompt</label>
+        <textarea id="bugPrompt" class="textarea tall" @bind="_bugFixPrompt" placeholder="Describe the bug or generate a prompt from system errors."></textarea>
+
+        <div class="automation-controls">
+            <label>
+                Base branch
+                <input class="input" @bind="_baseBranch" />
+            </label>
+            <label>
+                Deploy environment
+                <input class="input" @bind="_deployEnvironment" />
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" @bind="_autoDeploy" />
+                Auto deploy after build/test
+            </label>
+            <button class="primary-button" disabled="@(!AutomationReady || _automationBusy || string.IsNullOrWhiteSpace(_bugFixPrompt))" @onclick="SubmitBugFixAsync">
+                @(_automationBusy ? "Queueing..." : "Queue AI Bug Fix")
+            </button>
+        </div>
+    </section>
+
+    <section class="panel automation-panel">
+        <div class="panel-heading">
+            <div>
+                <h2>Feature / Enhancement Automation</h2>
+                <p>
+                    Describe a product change and queue the same automation pipeline for implementation and deployment.
+                </p>
+            </div>
+        </div>
+
+        <label class="form-label" for="featureTitle">Title</label>
+        <input id="featureTitle" class="input" @bind="_featureTitle" placeholder="Example: Add worker failure trend chart" />
+
+        <label class="form-label" for="featureDescription">Feature / enhancement request</label>
+        <textarea id="featureDescription" class="textarea tall" @bind="_featureDescription" placeholder="Explain what should change, how the user should test it, and any constraints."></textarea>
+
+        <div class="automation-controls">
+            <button class="primary-button" disabled="@(!AutomationReady || _automationBusy || string.IsNullOrWhiteSpace(_featureDescription))" @onclick="SubmitFeatureAsync">
+                @(_automationBusy ? "Queueing..." : "Queue Feature / Enhancement")
+            </button>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(_automationError))
+    {
+        <div class="alert error">@_automationError</div>
+    }
+
+    @if (_lastAutomationRun is not null)
+    {
+        <section class="panel result-panel">
+            <h2>Last Automation Run</h2>
+            <dl>
+                <dt>Status</dt>
+                <dd>@_lastAutomationRun.Message</dd>
+                <dt>Branch</dt>
+                <dd>@_lastAutomationRun.BranchName</dd>
+                <dt>Correlation ID</dt>
+                <dd>@_lastAutomationRun.CorrelationId</dd>
+                <dt>Workflow</dt>
+                <dd>
+                    @if (!string.IsNullOrWhiteSpace(_lastAutomationRun.WorkflowUrl))
+                    {
+                        <a href="@_lastAutomationRun.WorkflowUrl" target="_blank" rel="noreferrer">Open GitHub Actions</a>
+                    }
+                </dd>
+            </dl>
+        </section>
+    }
+</section>
+
+@code {
+    private bool _harnessBusy;
+    private bool _errorsBusy;
+    private bool _automationBusy;
+    private HarnessResultDto? _result;
+    private List<SystemError> _errors = new();
+    private DeveloperAutomationStatusDto? _automationStatus;
+    private DeveloperAutomationResponseDto? _lastAutomationRun;
+    private string? _pageError;
+    private string? _automationError;
+    private string _bugFixPrompt = string.Empty;
+    private string _featureTitle = string.Empty;
+    private string _featureDescription = string.Empty;
+    private string _baseBranch = "main";
+    private string _deployEnvironment = "staging";
+    private bool _autoDeploy = true;
+
+    private bool AutomationReady => _automationStatus?.Enabled == true && _automationStatus.TokenConfigured;
+
+    private string AutomationStatusText
+        => _automationStatus is null
+            ? "Status not loaded"
+            : $"{_automationStatus.Repository} / {_automationStatus.Workflow}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAutomationStatusAsync().ConfigureAwait(false);
+        await RefreshErrorsAsync().ConfigureAwait(false);
+    }
+
+    private async Task LoadAutomationStatusAsync()
+    {
+        try
+        {
+            _automationStatus = await Http.GetFromJsonAsync<DeveloperAutomationStatusDto>(
+                    "/api/developer-automation/status")
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not load developer automation status.");
+            _automationStatus = new DeveloperAutomationStatusDto
+            {
+                Enabled = false,
+                Repository = "unknown",
+                Workflow = "unknown",
+                DefaultBranch = "main",
+                TokenConfigured = false,
+            };
+        }
+
+        if (!string.IsNullOrWhiteSpace(_automationStatus?.DefaultBranch))
+        {
+            _baseBranch = _automationStatus.DefaultBranch;
+        }
+    }
+
+    private async Task RefreshErrorsAsync()
+    {
+        _errorsBusy = true;
+        _pageError = null;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync().ConfigureAwait(false);
+            _errors = await db.SystemErrors
+                .AsNoTracking()
+                .OrderByDescending(e => e.Timestamp)
+                .Take(500)
+                .ToListAsync()
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to refresh system errors.");
+            _pageError = $"Failed to refresh system errors: {ex.Message}";
+        }
+        finally
+        {
+            _errorsBusy = false;
+        }
+    }
+
+    private async Task ClearErrorsAsync()
+    {
+        var confirmed = await Js.InvokeAsync<bool>(
+                "confirm",
+                "Clear all rows from system_errors? This cannot be undone.")
+            .ConfigureAwait(false);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        _errorsBusy = true;
+        _pageError = null;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync().ConfigureAwait(false);
+            await db.Database.ExecuteSqlRawAsync("TRUNCATE TABLE system_errors").ConfigureAwait(false);
+            _errors.Clear();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to clear system errors.");
+            _pageError = $"Failed to clear system errors: {ex.Message}";
+        }
+        finally
+        {
+            _errorsBusy = false;
+        }
+    }
+
+    private async Task RunHarnessAsync()
+    {
+        _harnessBusy = true;
+        _pageError = null;
+
+        try
+        {
+            _result = await Harness.RunAllAsync(default).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Worker harness failed.");
+            _pageError = $"Worker harness failed: {ex.Message}";
+        }
+        finally
+        {
+            _harnessBusy = false;
+        }
+    }
+
+    private void GenerateBugFixPrompt()
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("Fix the highest-priority production bugs shown in the Argus Command Center error log.");
+        builder.AppendLine();
+        builder.AppendLine("Focus areas:");
+        builder.AppendLine("- The Operations page is slow to load.");
+        builder.AppendLine("- Development page controls must reliably display data.");
+        builder.AppendLine("- Worker data must reliably display on the command center.");
+        builder.AppendLine("- Preserve existing APIs and database schema unless a migration is clearly required.");
+        builder.AppendLine("- Build and test before committing.");
+        builder.AppendLine();
+
+        if (_errors.Count == 0)
+        {
+            builder.AppendLine("No system_errors rows are currently available. Inspect the command center pages and API endpoints directly.");
+        }
+        else
+        {
+            builder.AppendLine("Recent system_errors rows:");
+            foreach (var error in _errors.Take(50))
+            {
+                builder.AppendLine($"- [{error.Timestamp:u}] {error.Severity} {error.Source}: {error.Message}");
+                if (!string.IsNullOrWhiteSpace(error.Exception))
+                {
+                    builder.AppendLine($"  Exception: {TrimForPrompt(error.Exception, 1200)}");
+                }
+            }
+        }
+
+        _bugFixPrompt = builder.ToString();
+    }
+
+    private async Task SubmitBugFixAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_bugFixPrompt))
+        {
+            GenerateBugFixPrompt();
+        }
+
+        var request = new DeveloperAutomationRequestDto
+        {
+            Title = "Fix command center production bugs",
+            Description = _bugFixPrompt,
+            Prompt = _bugFixPrompt,
+            BaseBranch = _baseBranch,
+            DeployEnvironment = _deployEnvironment,
+            AutoDeploy = _autoDeploy,
+        };
+
+        await QueueAutomationAsync("/api/developer-automation/bugfix", request).ConfigureAwait(false);
+    }
+
+    private async Task SubmitFeatureAsync()
+    {
+        var description = BuildFeaturePrompt();
+
+        var request = new DeveloperAutomationRequestDto
+        {
+            Title = string.IsNullOrWhiteSpace(_featureTitle) ? "AI Feature / Enhancement" : _featureTitle,
+            Description = description,
+            Prompt = description,
+            BaseBranch = _baseBranch,
+            DeployEnvironment = _deployEnvironment,
+            AutoDeploy = _autoDeploy,
+        };
+
+        await QueueAutomationAsync("/api/developer-automation/feature", request).ConfigureAwait(false);
+    }
+
+    private async Task QueueAutomationAsync(string endpoint, DeveloperAutomationRequestDto request)
+    {
+        _automationBusy = true;
+        _automationError = null;
+        _lastAutomationRun = null;
+
+        try
+        {
+            using var response = await Http.PostAsJsonAsync(endpoint, request).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _automationError = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                return;
+            }
+
+            _lastAutomationRun = await response.Content
+                .ReadFromJsonAsync<DeveloperAutomationResponseDto>()
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to queue developer automation.");
+            _automationError = $"Failed to queue developer automation: {ex.Message}";
+        }
+        finally
+        {
+            _automationBusy = false;
+        }
+    }
+
+    private string BuildFeaturePrompt()
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("Implement the requested Argus Command Center feature/enhancement.");
+        builder.AppendLine();
+        builder.AppendLine("Title:");
+        builder.AppendLine(string.IsNullOrWhiteSpace(_featureTitle) ? "Feature / Enhancement" : _featureTitle.Trim());
+        builder.AppendLine();
+        builder.AppendLine("Description:");
+        builder.AppendLine(_featureDescription.Trim());
+        builder.AppendLine();
+        builder.AppendLine("Acceptance criteria:");
+        builder.AppendLine("- The change is implemented with the smallest safe production-ready code changes.");
+        builder.AppendLine("- Existing behavior remains intact unless explicitly changed.");
+        builder.AppendLine("- The app builds and tests pass before committing.");
+        builder.AppendLine("- The automation commits the resulting branch and deploys it for testing when auto-deploy is enabled.");
+
+        return builder.ToString();
+    }
+
+    private async Task DownloadErrorsAsync()
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("timestamp,severity,source,message,exception");
+
+        foreach (var error in _errors)
+        {
+            builder.AppendLine(
+                $"{Csv(error.Timestamp.ToString("u"))},{Csv(error.Severity)},{Csv(error.Source)},{Csv(error.Message)},{Csv(error.Exception)}");
+        }
+
+        await Js.InvokeVoidAsync(
+                "argusUi.downloadTextFile",
+                $"argus-system-errors-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.csv",
+                builder.ToString())
+            .ConfigureAwait(false);
+    }
+
+    private async Task ShowOutputAsync(string workerKey, string output)
+        => await Js.InvokeVoidAsync("alert", $"{workerKey}\n\n{output}").ConfigureAwait(false);
+
+    private async Task ShowErrorDetailAsync(SystemError error)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine($"{error.Timestamp:u} {error.Severity} {error.Source}");
+        builder.AppendLine();
+        builder.AppendLine(error.Message);
+
+        if (!string.IsNullOrWhiteSpace(error.Exception))
+        {
+            builder.AppendLine();
+            builder.AppendLine(error.Exception);
+        }
+
+        await Js.InvokeVoidAsync("alert", builder.ToString()).ConfigureAwait(false);
+    }
+
+    private static string Csv(string? value)
+    {
+        value ??= string.Empty;
+        return $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+    }
+
+    private static string TrimForPrompt(string value, int maxLength)
+        => value.Length <= maxLength ? value : value[..maxLength] + "...";
+}

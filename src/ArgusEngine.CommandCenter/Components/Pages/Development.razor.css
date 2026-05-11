@@ -1,0 +1,268 @@
+.development-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.development-hero,
+.panel {
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 20px;
+    background: rgba(15, 23, 42, 0.72);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.22);
+}
+
+.development-hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.25rem;
+}
+
+.eyebrow {
+    margin: 0 0 .25rem;
+    color: #38bdf8;
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+h1,
+h2 {
+    margin: 0;
+}
+
+.muted,
+.panel-heading p,
+.status-card span,
+.empty-state {
+    color: #94a3b8;
+}
+
+.status-card {
+    align-items: center;
+    display: flex;
+    gap: .75rem;
+    min-width: 260px;
+    padding: .75rem 1rem;
+    border-radius: 16px;
+    background: rgba(2, 6, 23, 0.44);
+}
+
+.status-card div {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+}
+
+.status-dot {
+    width: .75rem;
+    height: .75rem;
+    border-radius: 999px;
+    background: #64748b;
+}
+
+.status-dot.ready {
+    background: #22c55e;
+}
+
+.status-dot.disabled {
+    background: #ef4444;
+}
+
+.dev-grid-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+}
+
+@media (min-width: 1100px) {
+    .dev-grid-layout {
+        grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+    }
+}
+
+.panel {
+    padding: 1.25rem;
+}
+
+.panel-heading {
+    align-items: flex-start;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.button-row,
+.automation-controls {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+}
+
+.primary-button,
+.secondary-button,
+.danger-button,
+.link-button {
+    border: 0;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.primary-button,
+.secondary-button,
+.danger-button {
+    min-height: 40px;
+    padding: .6rem 1rem;
+}
+
+.primary-button {
+    background: #38bdf8;
+    color: #06121f;
+}
+
+.secondary-button {
+    background: rgba(148, 163, 184, 0.16);
+    color: #e2e8f0;
+}
+
+.danger-button {
+    background: rgba(239, 68, 68, 0.2);
+    color: #fecaca;
+}
+
+.link-button {
+    background: transparent;
+    color: #7dd3fc;
+    padding: 0;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+}
+
+.empty-state,
+.alert {
+    border-radius: 16px;
+    padding: 1rem;
+    background: rgba(2, 6, 23, 0.42);
+}
+
+.alert.error {
+    color: #fecaca;
+    background: rgba(127, 29, 29, 0.38);
+    border: 1px solid rgba(248, 113, 113, 0.35);
+}
+
+.responsive-table {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: .65rem .55rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    color: #cbd5e1;
+    font-size: .75rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.compact-table td {
+    font-size: .9rem;
+}
+
+.message-cell {
+    max-width: 520px;
+}
+
+.badge {
+    border-radius: 999px;
+    display: inline-flex;
+    font-size: .75rem;
+    font-weight: 800;
+    padding: .2rem .5rem;
+}
+
+.badge.ok {
+    background: rgba(34, 197, 94, .18);
+    color: #86efac;
+}
+
+.badge.bad {
+    background: rgba(239, 68, 68, .18);
+    color: #fecaca;
+}
+
+.form-label {
+    display: block;
+    margin: .9rem 0 .35rem;
+    color: #cbd5e1;
+    font-weight: 700;
+}
+
+.input,
+.textarea {
+    width: 100%;
+    border: 1px solid rgba(148, 163, 184, .28);
+    border-radius: 14px;
+    background: rgba(2, 6, 23, .42);
+    color: #e2e8f0;
+    padding: .7rem .85rem;
+}
+
+.textarea {
+    min-height: 130px;
+    resize: vertical;
+}
+
+.textarea.tall {
+    min-height: 220px;
+}
+
+.automation-controls {
+    margin-top: 1rem;
+}
+
+.automation-controls label:not(.checkbox-label) {
+    flex: 1 1 220px;
+    color: #cbd5e1;
+    font-weight: 700;
+}
+
+.checkbox-label {
+    align-items: center;
+    display: flex;
+    gap: .5rem;
+    color: #cbd5e1;
+}
+
+.result-panel dl {
+    display: grid;
+    grid-template-columns: 140px minmax(0, 1fr);
+    gap: .5rem 1rem;
+}
+
+.result-panel dt {
+    color: #94a3b8;
+    font-weight: 700;
+}
+
+.result-panel dd {
+    margin: 0;
+}

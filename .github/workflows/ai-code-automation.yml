@@ -1,0 +1,191 @@
+name: AI Code Automation
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "bugfix or feature"
+        required: true
+        type: choice
+        options:
+          - bugfix
+          - feature
+      title:
+        description: "Automation title"
+        required: true
+        type: string
+      description:
+        description: "User-facing request description"
+        required: true
+        type: string
+      prompt:
+        description: "Full AI coding prompt"
+        required: true
+        type: string
+      branch_name:
+        description: "Branch to create/update"
+        required: true
+        type: string
+      deploy_environment:
+        description: "Environment to deploy for testing"
+        required: false
+        default: "staging"
+        type: string
+      auto_deploy:
+        description: "Deploy after build/test"
+        required: false
+        default: "true"
+        type: boolean
+      correlation_id:
+        description: "Command Center correlation id"
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+  deployments: write
+  pull-requests: write
+
+concurrency:
+  group: ai-code-automation-${{ inputs.branch_name }}
+  cancel-in-progress: false
+
+jobs:
+  code-build-test-commit-deploy:
+    name: Code, build, test, commit, deploy
+    runs-on: ubuntu-latest
+
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+      AIDER_MODEL: ${{ vars.AIDER_MODEL || 'openai/gpt-4.1' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+    steps:
+      - name: Checkout requested ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create automation branch
+        run: |
+          set -euo pipefail
+          git config user.name "argus-ai-automation"
+          git config user.email "argus-ai-automation@users.noreply.github.com"
+          git switch -C "${{ inputs.branch_name }}"
+
+      - name: Write automation request
+        run: |
+          set -euo pipefail
+          cat > automation-request.md <<'REQUEST'
+          # ${{ inputs.title }}
+
+          Mode: ${{ inputs.mode }}
+          Correlation ID: ${{ inputs.correlation_id }}
+
+          ## Request
+          ${{ inputs.description }}
+
+          ## Coding Prompt
+          ${{ inputs.prompt }}
+
+          ## Execution Rules
+          - Modify only the files needed to satisfy the request.
+          - Preserve existing public API contracts unless the request requires a contract change.
+          - Keep changes production-safe and easy to review.
+          - Do not commit generated build outputs, secrets, or local configuration.
+          - After changing code, the workflow will run restore, build, and tests.
+          REQUEST
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Setup Python for AI agent
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run AI coding agent
+        run: |
+          set -euo pipefail
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "::error::OPENAI_API_KEY repository secret is required for AI Code Automation."
+            exit 1
+          fi
+
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade aider-chat
+
+          aider \
+            --yes-always \
+            --auto-commits=false \
+            --model "${AIDER_MODEL}" \
+            --message-file automation-request.md
+
+      - name: Restore
+        run: dotnet restore ArgusEngine.slnx
+
+      - name: Build
+        run: dotnet build ArgusEngine.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test ArgusEngine.slnx --configuration Release --no-build --verbosity normal
+
+      - name: Commit AI changes
+        id: commit
+        run: |
+          set -euo pipefail
+          git status --short
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AI agent did not produce any file changes."
+            exit 0
+          fi
+
+          git add -A
+          git commit -m "${{ inputs.mode }}: ${{ inputs.title }}" -m "Correlation-ID: ${{ inputs.correlation_id }}"
+          git push --set-upstream origin "${{ inputs.branch_name }}"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update pull request
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh pr view "${{ inputs.branch_name }}" >/dev/null 2>&1; then
+            gh pr edit "${{ inputs.branch_name }}" \
+              --title "${{ inputs.mode }}: ${{ inputs.title }}" \
+              --body-file automation-request.md
+          else
+            gh pr create \
+              --title "${{ inputs.mode }}: ${{ inputs.title }}" \
+              --body-file automation-request.md \
+              --head "${{ inputs.branch_name }}" \
+              --base "${{ github.ref_name }}"
+          fi
+
+      - name: Deploy test build
+        if: steps.commit.outputs.changed == 'true' && inputs.auto_deploy == true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh workflow view release-main.yml >/dev/null 2>&1; then
+            gh workflow run release-main.yml \
+              --ref "${{ inputs.branch_name }}" \
+              -f environment="${{ inputs.deploy_environment }}" || \
+            gh workflow run release-main.yml --ref "${{ inputs.branch_name }}"
+            exit 0
+          fi
+
+          if gh workflow view publish-ecr.yml >/dev/null 2>&1; then
+            gh workflow run publish-ecr.yml --ref "${{ inputs.branch_name }}"
+            exit 0
+          fi
+
+          echo "::warning::No recognized deployment workflow found. Branch was pushed and PR was created for testing."

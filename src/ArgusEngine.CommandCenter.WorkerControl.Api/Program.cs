@@ -14,30 +14,23 @@ builder.Services.AddSingleton<WorkerScaleDefinitionProvider>();
 builder.Services.AddSingleton<AwsRegionResolver>();
 builder.Services.AddSingleton<EcsServiceNameResolver>();
 builder.Services.AddSingleton<EcsWorkerServiceManager>();
-builder.Services.AddScoped<RootSpiderSeedService>();
-
-// Register the built-in autoscaler background service
-var autoscalerEnabled = builder.Configuration.GetValue<bool>("Argus:Autoscaler:Enabled", defaultValue: true);
-if (autoscalerEnabled)
-{
-    builder.Services.AddHostedService<WorkerAutoscalerBackgroundService>();
-}
+builder.Services.AddScoped<ToolRestartDispatcher>();
 
 var app = builder.Build();
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" })).AllowAnonymous();
 
 app.MapGet(
-    "/health/ready",
-    async (ArgusDbContext db, CancellationToken ct) =>
-        await db.Database.CanConnectAsync(ct).ConfigureAwait(false)
-            ? Results.Ok(new { status = "ready", postgres = "ok" })
-            : Results.StatusCode(StatusCodes.Status503ServiceUnavailable))
+        "/health/ready",
+        async (ArgusDbContext db, CancellationToken ct) =>
+            await db.Database.CanConnectAsync(ct).ConfigureAwait(false)
+                ? Results.Ok(new { status = "ready", postgres = "ok" })
+                : Results.StatusCode(StatusCodes.Status503ServiceUnavailable))
     .AllowAnonymous();
 
 app.MapEc2WorkerEndpoints();
 app.MapToolRestartEndpoints();
-app.MapWorkerEndpoints();
 app.MapDockerWorkerEndpoints();
+app.MapWorkerEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

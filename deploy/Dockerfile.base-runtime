@@ -1,9 +1,12 @@
 # syntax=docker/dockerfile:1.7
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
-# Common dependencies for Argus Engine runtime
+
+# Common dependencies for Argus Engine runtime.
+# docker-cli-compose is required because the autoscaler executes `docker compose`.
 RUN apk add --no-cache \
     ca-certificates \
     krb5-libs \
     curl \
     docker \
+    docker-cli-compose \
     git

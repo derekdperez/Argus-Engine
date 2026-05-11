@@ -52,11 +52,15 @@ public sealed class WorkerAutoscalerBackgroundService(
             "Worker autoscaler background service stopped.");
 
     private static readonly Action<ILogger, string, int, long, int, Exception?> LogScaleDecision =
-        LoggerMessage.Define<LogLevel>(new EventId(3, "ScaleDecision"),
+        LoggerMessage.Define<string, int, long, int>(
+            LogLevel.Information,
+            new EventId(3, "ScaleDecision"),
             "Scaling {ServiceName} from {CurrentCount} to {DesiredCount} workers (backlog={Backlog}).");
 
     private static readonly Action<ILogger, string, string, Exception?> LogScaleSkip =
-        LoggerMessage.Define<LogLevel>(new EventId(4, "ScaleSkip"),
+        LoggerMessage.Define<string, string>(
+            LogLevel.Debug,
+            new EventId(4, "ScaleSkip"),
             "Skipping scale for {ServiceName}: {Reason}");
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -135,7 +139,8 @@ public sealed class WorkerAutoscalerBackgroundService(
 
             // Get current count
             currentCounts.TryGetValue(worker.ServiceName, out var currentCount);
-            currentCount ??= 0;
+            if (currentCount == null)
+                currentCount = 0;
 
             // Calculate backlog for this worker
             long backlog = worker.QueueSource switch
@@ -306,8 +311,7 @@ public sealed class WorkerAutoscalerBackgroundService(
         if (desiredCount == currentCount)
             return;
 
-        var logLevel = desiredCount > currentCount ? LogLevel.Information : LogLevel.Debug;
-        LogScaleDecision(logger, logLevel, serviceName, currentCount, backlog, desiredCount, null);
+        LogScaleDecision(logger, serviceName, currentCount, backlog, desiredCount, null);
 
         var success = await ScaleDockerServiceAsync(serviceName, desiredCount, ct).ConfigureAwait(false);
 

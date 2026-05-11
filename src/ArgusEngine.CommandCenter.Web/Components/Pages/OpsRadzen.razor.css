@@ -630,6 +630,56 @@
     color: var(--muted);
 }
 
+.ops-page-lite .target-actions {
+    margin-bottom: 0.5rem;
+}
+
+.ops-page-lite .action-btn {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e40af;
+    font-size: 0.78rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 0.5rem;
+    transition: all 0.15s ease;
+}
+
+.ops-page-lite .action-btn:hover:not(:disabled) {
+    background: #dbeafe;
+    border-color: #93c5fd;
+}
+
+.ops-page-lite .action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.ops-page-lite .metric-card.loading {
+    animation: loading-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes loading-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+}
+
+.ops-page-lite .scope-table-wrap:empty::before,
+.ops-page-lite .subdomains-table tbody:empty::before {
+    content: "No subdomains yet";
+    display: block;
+    text-align: center;
+    color: var(--muted);
+    padding: 2rem;
+    font-size: 0.85rem;
+}
+
 @media (max-width: 760px) {
     .ops-page-lite .metric-card.wide {
         grid-column: span 1;
@@ -655,5 +705,9 @@
 
     .ops-page-lite .compact-filter {
         width: 100%;
+    }
+
+    .ops-page-lite .target-actions {
+        flex-wrap: wrap;
     }
 }

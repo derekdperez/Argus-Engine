@@ -482,6 +482,8 @@
     private bool _enumLoading;
     private bool _spiderAllLoading;
     private bool _spiderSubdomainLoading;
+    private DateTimeOffset _lastDataRefreshUtc = DateTimeOffset.MinValue;
+    private readonly TimeSpan _dataRefreshInterval = TimeSpan.FromSeconds(5);
     
     private bool _assetsLoading = true;
     private bool _targetsLoading = true;
@@ -904,11 +906,27 @@
         _lastLiveRefreshUtc = now;
         try
         {
-            await Task.WhenAll(
+            // Fast refresh every second for HTTP queue and workers
+            var fastTask = Task.WhenAll(
                     ReloadOverviewAsync(),
                     ReloadHttpQueueAsync(),
-                    ReloadDockerWorkersAsync())
-                .ConfigureAwait(false);
+                    ReloadDockerWorkersAsync());
+            
+            // Slower refresh every 5 seconds for targets and assets
+            if (now - _lastDataRefreshUtc >= _dataRefreshInterval)
+            {
+                _lastDataRefreshUtc = now;
+                var dataTask = Task.WhenAll(
+                    ReloadTargetsAsync(),
+                    ReloadAssetsAsync());
+                
+                await Task.WhenAll(fastTask, dataTask).ConfigureAwait(false);
+            }
+            else
+            {
+                await fastTask.ConfigureAwait(false);
+            }
+            
             await InvokeAsync(StateHasChanged).ConfigureAwait(false);
         }
         catch

@@ -119,8 +119,9 @@ public static class ToolRestartEndpoints
                     var targetIds = targets.Select(t => t.Id).ToHashSet();
                     var now = DateTimeOffset.UtcNow;
 
+                    // For spider restart: re-queue failed/incomplete items, then seed new work
                     var existingQueueRows = await db.HttpRequestQueue
-                        .Where(q => targetIds.Contains(q.TargetId))
+                        .Where(q => targetIds.Contains(q.TargetId) && q.State != HttpRequestQueueState.Succeeded)
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
                     foreach (var row in existingQueueRows)
@@ -161,6 +162,123 @@ public static class ToolRestartEndpoints
                 })
             .WithName("RestartSpidering");
 
+        // Continuous spider endpoint - designed to be called repeatedly to keep work flowing
+        // This endpoint only queues new seeds without disturbing existing in-flight work
+        app.MapPost(
+                "/api/ops/spider/continuous",
+                async (
+                    RestartToolRequest body,
+                    ArgusDbContext db,
+                    RootSpiderSeedService rootSpiderSeedService,
+                    ILogger<ToolRestartEndpointsLogger> logger,
+                    CancellationToken ct) =>
+                {
+                    if (logger.IsEnabled(LogLevel.Information))
+                    {
+                        logger.LogInformation("Spider continuous requested. AllTargets: {AllTargets}, TargetCount: {TargetIdsCount}", body.AllTargets, body.TargetIds?.Length ?? 0);
+                    }
+
+                    var targetsQuery = db.Targets.AsNoTracking();
+                    if (!body.AllTargets)
+                    {
+                        if (body.TargetIds is null || body.TargetIds.Length == 0)
+                            return Results.BadRequest("targetIds is required unless allTargets is true");
+
+                        var ids = body.TargetIds
+                            .Select(x => Guid.TryParse(x, out var id) ? id : Guid.Empty)
+                            .Where(x => x != Guid.Empty)
+                            .ToHashSet();
+                        if (ids.Count == 0)
+                            return Results.BadRequest("no valid target ids supplied");
+
+                        targetsQuery = targetsQuery.Where(t => ids.Contains(t.Id));
+                    }
+
+                    var targets = await targetsQuery.Take(5000).ToListAsync(ct).ConfigureAwait(false);
+                    var now = DateTimeOffset.UtcNow;
+
+                    // Only seed new work, don't touch existing queue items
+                    // Workers will pick up both existing work and new seeds
+                    var queuedRootSeeds = 0;
+                    foreach (var target in targets)
+                    {
+                        var correlation = NewId.NextGuid();
+                        var queued = await rootSpiderSeedService.QueueRootSpiderSeedsAsync(
+                                target.Id,
+                                target.RootDomain,
+                                target.GlobalMaxDepth,
+                                now,
+                                correlation,
+                                correlation,
+                                ct)
+                            .ConfigureAwait(false);
+                        queuedRootSeeds += queued;
+                    }
+
+                    if (logger.IsEnabled(LogLevel.Information))
+                    {
+                        logger.LogInformation("Spider continuous completed. Queued {RootSeedsCount} new root seeds.", queuedRootSeeds);
+                    }
+
+                    return Results.Ok(new { Targets = targets.Count, RootSeedsQueued = queuedRootSeeds });
+                })
+            .WithName("ContinuousSpider");
+
+        // Subdomain enumeration continuous - queues work for all targets without disturbing
+        app.MapPost(
+                "/api/ops/subdomain-enum/continuous",
+                async (ArgusDbContext db, IEventOutbox outbox, IOptions<SubdomainEnumerationOptions> options, ILogger<ToolRestartEndpointsLogger> logger, CancellationToken ct) =>
+                {
+                    if (logger.IsEnabled(LogLevel.Information))
+                    {
+                        logger.LogInformation("Subdomain enumeration continuous requested.");
+                    }
+                    
+                    var targets = await db.Targets.AsNoTracking().Take(5000).ToListAsync(ct).ConfigureAwait(false);
+                    var providers = options.Value.DefaultProviders
+                        .Where(p => !string.IsNullOrWhiteSpace(p))
+                        .Select(p => p.Trim().ToLowerInvariant())
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+                    if (providers.Length == 0)
+                        providers = ["subfinder", "amass"];
+
+                    var queued = 0;
+                    var eventsToEnqueue = new List<SubdomainEnumerationRequested>();
+                    foreach (var target in targets)
+                    {
+                        var correlation = NewId.NextGuid();
+                        foreach (var provider in providers)
+                        {
+                            var eventId = NewId.NextGuid();
+                            eventsToEnqueue.Add(
+                                new SubdomainEnumerationRequested(
+                                    target.Id,
+                                    target.RootDomain,
+                                    provider,
+                                    "command-center-continuous",
+                                    DateTimeOffset.UtcNow,
+                                    correlation,
+                                    EventId: eventId,
+                                    CausationId: correlation,
+                                    Producer: "command-center"));
+                            queued++;
+                        }
+                    }
+
+                    if (eventsToEnqueue.Count > 0)
+                    {
+                        await outbox.EnqueueBatchAsync(eventsToEnqueue, ct).ConfigureAwait(false);
+                        if (logger.IsEnabled(LogLevel.Information))
+                        {
+                            logger.LogInformation("Enqueued {Count} SubdomainEnumerationRequested events.", eventsToEnqueue.Count);
+                        }
+                    }
+
+                    return Results.Ok(new { Targets = targets.Count, JobsQueued = queued });
+                })
+            .WithName("ContinuousSubdomainEnumeration");
+
         return app;
     }
 
@@ -168,5 +286,4 @@ public static class ToolRestartEndpoints
 
     public static void Map(WebApplication app) => app.MapToolRestartEndpoints();
 }
-
 

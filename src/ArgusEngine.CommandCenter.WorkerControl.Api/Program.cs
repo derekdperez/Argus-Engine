@@ -31,5 +31,6 @@ app.MapGet(
 app.MapEc2WorkerEndpoints();
 app.MapToolRestartEndpoints();
 app.MapWorkerEndpoints();
+app.MapDockerWorkerEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

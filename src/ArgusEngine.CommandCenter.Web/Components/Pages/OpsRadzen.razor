@@ -249,6 +249,87 @@
         </div>
     </section>
 
+    <section class="panel workers-panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Infrastructure</p>
+                <h2>Workers</h2>
+            </div>
+            <span class="live-indicator">● live</span>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_dockerWorkersError))
+        {
+            <div class="ops-alert">Docker unavailable: @_dockerWorkersError</div>
+        }
+
+        <div class="worker-services-grid">
+            @foreach (var svc in _dockerWorkerServices)
+            {
+                var svcName  = Text(svc, "serviceName",  "ServiceName");
+                var dispName = Text(svc, "displayName",  "DisplayName");
+                var running  = (int)Long(svc, "runningCount", "RunningCount");
+                var total    = (int)Long(svc, "totalCount",   "TotalCount");
+                var state    = Text(svc, "overallState", "OverallState");
+                var color    = Text(svc, "color",        "Color");
+                var feedback = _scaleFeedback.GetValueOrDefault(svcName, "");
+                var isScaling = _scalingService == svcName;
+                var containers = ArrayProperty(svc, "containers", "Containers");
+
+                <article class="worker-service-card">
+                    <div class="wsc-header">
+                        <span class="wsc-dot wsc-dot--@color"></span>
+                        <strong class="wsc-name">@dispName</strong>
+                        <span class="wsc-badge wsc-badge--@color">@state</span>
+                    </div>
+
+                    <div class="wsc-counts">
+                        <span class="wsc-count-big">@running</span>
+                        <span class="wsc-count-label">/ @total containers</span>
+                    </div>
+
+                    <div class="wsc-scale-row">
+                        <button class="btn ghost small wsc-btn"
+                                disabled="@(isScaling || total == 0)"
+                                @onclick="@(() => ScaleDockerWorkerAsync(svcName, -1))">−</button>
+                        <span class="wsc-scale-num">@total</span>
+                        <button class="btn ghost small wsc-btn"
+                                disabled="@isScaling"
+                                @onclick="@(() => ScaleDockerWorkerAsync(svcName, 1))">+</button>
+                    </div>
+
+                    @if (isScaling)
+                    {
+                        <div class="wsc-feedback wsc-feedback--working">
+                            <span class="spinner"></span> Scaling…
+                        </div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(feedback))
+                    {
+                        <div class="wsc-feedback">@feedback</div>
+                    }
+
+                    @if (containers.Any())
+                    {
+                        <ul class="wsc-containers">
+                            @foreach (var c in containers)
+                            {
+                                var cState = Text(c, "state", "State");
+                                var cName  = Text(c, "name",  "Name");
+                                var cColor = Text(c, "color", "Color");
+                                <li class="wsc-container" title="@cName">
+                                    <span class="wsc-dot wsc-dot--@cColor"></span>
+                                    <span class="wsc-cname">@cName</span>
+                                    <span class="wsc-cstate">@cState</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </article>
+            }
+        </div>
+    </section>
+
     <section class="panel">
         <div class="section-heading">
             <div>
@@ -366,6 +447,12 @@
     private readonly List<JsonElement> _workerScaleTargets = [];
     private readonly List<JsonElement> _rabbitQueues = [];
     private readonly List<JsonElement> _events = [];
+
+    // ── Docker worker status state ──────────────────────────────────────────
+    private readonly List<JsonElement> _dockerWorkerServices = [];
+    private string _dockerWorkersError = "";
+    private string? _scalingService;
+    private readonly Dictionary<string, string> _scaleFeedback = new(StringComparer.OrdinalIgnoreCase);
 
     private bool _assetsLoading = true;
     private bool _targetsLoading = true;
@@ -1521,5 +1608,4 @@
         _realtimeCts.Dispose();
     }
 }
-
 

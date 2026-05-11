@@ -480,3 +480,36 @@ public sealed record TechnologyUsageLocationDto(
     Guid TargetId,
     string TargetRootDomain,
     string Subdomain);
+
+// ── Docker-based worker status (local / GCP Compose deployment) ──────────────
+
+public sealed record DockerWorkerServiceDto(
+    string ServiceName,
+    string DisplayName,
+    int RunningCount,
+    int TotalCount,
+    string OverallState,
+    string Color,
+    IReadOnlyList<DockerWorkerContainerDto> Containers);
+
+public sealed record DockerWorkerContainerDto(
+    string Id,
+    string Name,
+    string State,
+    string Status,
+    string Color);
+
+public sealed record DockerWorkerStatusSnapshotDto(
+    DateTimeOffset AtUtc,
+    bool DockerAvailable,
+    string? Error,
+    IReadOnlyList<DockerWorkerServiceDto> Services);
+
+public sealed record DockerWorkerScaleRequest(int DesiredCount);
+
+public sealed record DockerWorkerScaleResult(
+    string ServiceName,
+    int PreviousCount,
+    int RequestedCount,
+    int ActualCount,
+    string Message);

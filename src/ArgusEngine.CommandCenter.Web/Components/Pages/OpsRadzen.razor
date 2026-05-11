@@ -102,6 +102,15 @@
                 </label>
             </div>
 
+            <div class="ops-rz-toolbar simple dense-toolbar target-actions">
+                <button type="button" class="btn action-btn" @onclick="EnumerateAllTargetsAsync" disabled="@(_targets.Count == 0 || _enumLoading)">
+                    @(_enumLoading ? "Enqueuing..." : "Enumerate Subdomains")
+                </button>
+                <button type="button" class="btn action-btn" @onclick="SpiderAllTargetsAsync" disabled="@(_targets.Count == 0 || _spiderAllLoading)">
+                    @(_spiderAllLoading ? "Enqueuing..." : "Spider All Subdomains")
+                </button>
+            </div>
+
             <div class="ops-table-wrap scope-table-wrap">
                 <table class="ops-table targets-table">
                     <thead>
@@ -149,8 +158,14 @@
                         <option value="selected">Selected</option>
                     </select>
                 </label>
-                <button type="button" class="btn" @onclick="SpiderSelectedDomainsAsync" disabled="@(!CanSpiderSelectedDomains)">
-                    Spider
+            </div>
+
+            <div class="ops-rz-toolbar simple dense-toolbar target-actions">
+                <button type="button" class="btn action-btn" @onclick="() => SpiderSubdomainAsync(null)" disabled="@(!CanSpiderSelectedDomains || _spiderSubdomainLoading)">
+                    @(_spiderSubdomainLoading ? "Starting..." : "Spider All Subdomains")
+                </button>
+                <button type="button" class="btn action-btn" @onclick="() => SpiderSubdomainAsync(_selectedSubdomain)" disabled="@(string.IsNullOrWhiteSpace(_selectedSubdomain) || _spiderSubdomainLoading)">
+                    @(_spiderSubdomainLoading ? "Starting..." : "Spider Selected")
                 </button>
             </div>
 
@@ -464,6 +479,10 @@
     private string? _scalingService;
     private readonly Dictionary<string, string> _scaleFeedback = new(StringComparer.OrdinalIgnoreCase);
 
+    private bool _enumLoading;
+    private bool _spiderAllLoading;
+    private bool _spiderSubdomainLoading;
+    
     private bool _assetsLoading = true;
     private bool _targetsLoading = true;
     private bool _httpLoading = true;
@@ -982,6 +1001,106 @@
         finally
         {
             _importingTargets = false;
+        }
+    }
+
+    private async Task EnumerateAllTargetsAsync()
+    {
+        if (_targets.Count == 0) return;
+
+        _enumLoading = true;
+        _statusMessage = "";
+        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+
+        try
+        {
+            using var response = await WorkerApi.Client.PostAsJsonAsync(
+                    "/api/ops/subdomain-enum/restart",
+                    new RestartToolRequest([], AllTargets: true),
+                    _realtimeCts.Token)
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync(_realtimeCts.Token).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            var targets = doc.RootElement.TryGetProperty("Targets", out var t) ? t.GetInt64() : 0;
+            var jobs = doc.RootElement.TryGetProperty("JobsQueued", out var j) ? j.GetInt64() : 0;
+            _statusMessage = $"Subdomain enumeration started for {targets} target(s), {jobs} job(s) queued.";
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Enumeration could not be started: {ex.Message}";
+        }
+        finally
+        {
+            _enumLoading = false;
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+    }
+
+    private async Task SpiderAllTargetsAsync()
+    {
+        if (_targets.Count == 0) return;
+
+        _spiderAllLoading = true;
+        _statusMessage = "";
+        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+
+        try
+        {
+            using var response = await WorkerApi.Client.PostAsJsonAsync(
+                    "/api/ops/spider/restart",
+                    new RestartToolRequest([], AllTargets: true),
+                    _realtimeCts.Token)
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync(_realtimeCts.Token).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            var targets = doc.RootElement.TryGetProperty("Targets", out var t) ? t.GetInt64() : 0;
+            var requeued = doc.RootElement.TryGetProperty("RequeuedExistingRequests", out var r) ? r.GetInt64() : 0;
+            var seeds = doc.RootElement.TryGetProperty("RootSeedsQueued", out var s) ? s.GetInt64() : 0;
+            _statusMessage = $"Spider started for {targets} target(s). Requeued {requeued} existing requests, {seeds} root seeds.";
+            await ReloadHttpQueueAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Spider could not be started: {ex.Message}";
+        }
+        finally
+        {
+            _spiderAllLoading = false;
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+    }
+
+    private async Task SpiderSubdomainAsync(string? specificSubdomain)
+    {
+        if (string.IsNullOrWhiteSpace(_selectedTargetId)) return;
+
+        _spiderSubdomainLoading = true;
+        _statusMessage = "";
+        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+
+        try
+        {
+            // For specific subdomain, we use the target with subdomain filter
+            using var response = await WorkerApi.Client.PostAsJsonAsync(
+                    "/api/ops/spider/restart",
+                    new RestartToolRequest([_selectedTargetId], AllTargets: false),
+                    _realtimeCts.Token)
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            var label = string.IsNullOrWhiteSpace(specificSubdomain) ? "all subdomains" : specificSubdomain;
+            _statusMessage = $"Spider started for {SelectedTargetLabel} ({label}).";
+            await ReloadHttpQueueAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Spider could not be started: {ex.Message}";
+        }
+        finally
+        {
+            _spiderSubdomainLoading = false;
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
         }
     }
 

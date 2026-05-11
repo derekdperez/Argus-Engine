@@ -16,8 +16,8 @@ internal static class OpsStorageMetricsQuery
                 db,
                 """
                 SELECT COALESCE(SUM(
-                    octet_length(COALESCE(canonical_key, '')) +
-                    octet_length(COALESCE(raw_value, '')) +
+                    octet_length(COALESCE("CanonicalKey", '')) +
+                    octet_length(COALESCE("RawValue", '')) +
                     octet_length(COALESCE(display_name, '')) +
                     octet_length(COALESCE(discovered_by, '')) +
                     octet_length(COALESCE(discovery_context, '')) +

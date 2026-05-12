@@ -82,9 +82,9 @@ RUN set -eux; \
   mkdir -p /tmp/subfinder; \
   unzip -q /tmp/subfinder.zip -d /tmp/subfinder; \
   install -m 0755 /tmp/subfinder/subfinder /usr/local/bin/subfinder; \
-  curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_linux_${GOARCH}.zip" -o /tmp/amass.zip; \
+  curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_linux_${GOARCH}.tar.gz" -o /tmp/amass.tar.gz; \
   mkdir -p /tmp/amass; \
-  unzip -q /tmp/amass.zip -d /tmp/amass; \
+  tar -xzf /tmp/amass.tar.gz -C /tmp/amass; \
   AMASS_BIN="$(find /tmp/amass -type f -name amass -print -quit)"; \
   test -n "$AMASS_BIN"; \
   install -m 0755 "$AMASS_BIN" /usr/local/bin/amass; \

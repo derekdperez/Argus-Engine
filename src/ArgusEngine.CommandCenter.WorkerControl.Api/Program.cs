@@ -14,7 +14,6 @@ builder.Services.AddSingleton<WorkerScaleDefinitionProvider>();
 builder.Services.AddSingleton<AwsRegionResolver>();
 builder.Services.AddSingleton<EcsServiceNameResolver>();
 builder.Services.AddSingleton<EcsWorkerServiceManager>();
-builder.Services.AddScoped<ToolRestartDispatcher>();
 
 var app = builder.Build();
 

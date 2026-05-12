@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7
-
 # Generic .NET worker image.
 # Build context: repository root.
 # Recon tools are intentionally excluded here; only worker-enum uses
 # deploy/Dockerfile.worker-enum.
+
 ARG PROJECT_DIR=ArgusEngine.Gatekeeper
 ARG APP_DLL=ArgusEngine.Gatekeeper.dll
 
@@ -13,11 +13,6 @@ ARG PROJECT_DIR
 
 WORKDIR /src
 
-# Do not seed /root/.nuget/packages from deploy/artifacts/nuget/packages here.
-# If that repo-local cache is incomplete, Docker builds can restore "successfully"
-# but later fail during publish with missing analyzer/assembly files.
-
-# Copy only project files first so restore remains cacheable across source edits.
 COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
 COPY src/*/*.csproj ./src/
 COPY src/tests/*/*.csproj ./src/tests/
@@ -39,16 +34,12 @@ RUN for f in src/*.csproj; do \
       done; \
     fi
 
-# Restore the target project into the same obj cache publish mounts below.
-RUN --mount=type=cache,id=argus-nuget-clean-v1,target=/root/.nuget/packages,sharing=locked \
-    --mount=type=cache,id=argus-obj-${PROJECT_DIR},target=/src/src/${PROJECT_DIR}/obj,sharing=locked \
+RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 
-# Copy the rest of the source after restore to keep NuGet restore cacheable.
 COPY src/ src/
 
-RUN --mount=type=cache,id=argus-nuget-clean-v1,target=/root/.nuget/packages,sharing=locked \
-    --mount=type=cache,id=argus-obj-${PROJECT_DIR},target=/src/src/${PROJECT_DIR}/obj,sharing=locked \
+RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
       -c Release -o /app/publish /p:UseAppHost=false \
       -p:maxcpucount -p:ParallelizePublish=true \
@@ -63,10 +54,9 @@ ARG BUILD_SOURCE_STAMP=unknown
 ARG COMPONENT_VERSION=2.6.1
 
 WORKDIR /app
+
 COPY --from=build /app/publish .
 
-# Default process is the worker DLL. For dotnet CLI probes:
-# docker run --rm --entrypoint dotnet <image> --info
 ENV APP_DLL=${APP_DLL}
 
 LABEL org.opencontainers.image.title="Argus Engine Worker" \

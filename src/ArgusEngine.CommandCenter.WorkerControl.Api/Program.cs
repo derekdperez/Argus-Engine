@@ -10,26 +10,34 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
 builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });
+
 builder.Services.AddSingleton<WorkerScaleDefinitionProvider>();
 builder.Services.AddSingleton<AwsRegionResolver>();
 builder.Services.AddSingleton<EcsServiceNameResolver>();
 builder.Services.AddSingleton<EcsWorkerServiceManager>();
+builder.Services.AddScoped<RootSpiderSeedService>();
+
+var autoscalerEnabled = builder.Configuration.GetValue("Argus:Autoscaler:Enabled", defaultValue: true);
+if (autoscalerEnabled)
+{
+    builder.Services.AddHostedService<WorkerAutoscalerBackgroundService>();
+}
 
 var app = builder.Build();
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" })).AllowAnonymous();
 
 app.MapGet(
-        "/health/ready",
-        async (ArgusDbContext db, CancellationToken ct) =>
-            await db.Database.CanConnectAsync(ct).ConfigureAwait(false)
-                ? Results.Ok(new { status = "ready", postgres = "ok" })
-                : Results.StatusCode(StatusCodes.Status503ServiceUnavailable))
+    "/health/ready",
+    async (ArgusDbContext db, CancellationToken ct) =>
+        await db.Database.CanConnectAsync(ct).ConfigureAwait(false)
+            ? Results.Ok(new { status = "ready", postgres = "ok" })
+            : Results.StatusCode(StatusCodes.Status503ServiceUnavailable))
     .AllowAnonymous();
 
 app.MapEc2WorkerEndpoints();
 app.MapToolRestartEndpoints();
-app.MapDockerWorkerEndpoints();
 app.MapWorkerEndpoints();
+app.MapDockerWorkerEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

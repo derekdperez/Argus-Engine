@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
-
 # Generic Command Center split host image.
 # Build context: repository root.
+
 ARG PROJECT_DIR=ArgusEngine.CommandCenter.Gateway
 ARG APP_DLL=ArgusEngine.CommandCenter.Gateway.dll
 
@@ -11,10 +11,6 @@ ARG PROJECT_DIR
 ARG APP_DLL
 
 WORKDIR /src
-
-# Do not seed /root/.nuget/packages from deploy/artifacts/nuget/packages here.
-# If that repo-local cache is incomplete, Docker builds can restore "successfully"
-# but later fail during publish with missing analyzer/assembly files.
 
 # Copy only project files first so restore remains cacheable across source edits.
 COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
@@ -28,16 +24,12 @@ RUN for f in src/*.csproj; do \
     mv "$f" "src/$p/"; \
     done
 
-# Restore the target host into the same obj cache publish mounts below.
-RUN --mount=type=cache,id=argus-nuget-clean-v1,target=/root/.nuget/packages,sharing=locked \
-    --mount=type=cache,id=argus-obj-${PROJECT_DIR},target=/src/src/${PROJECT_DIR}/obj,sharing=locked \
+RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 
-# Copy the rest of the source after restore to keep NuGet restore cacheable.
 COPY src/ src/
 
-RUN --mount=type=cache,id=argus-nuget-clean-v1,target=/root/.nuget/packages,sharing=locked \
-    --mount=type=cache,id=argus-obj-${PROJECT_DIR},target=/src/src/${PROJECT_DIR}/obj,sharing=locked \
+RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
       -c Release -o /app/publish /p:UseAppHost=false \
       -p:maxcpucount -p:ParallelizePublish=true \
@@ -53,6 +45,7 @@ ARG BUILD_SOURCE_STAMP=unknown
 ARG COMPONENT_VERSION=2.6.3
 
 WORKDIR /app
+
 ENV ASPNETCORE_URLS=http://+:8080
 ENV APP_DLL=${APP_DLL}
 

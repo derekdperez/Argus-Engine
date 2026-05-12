@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
-
 # Enum worker image. This is separate from the generic worker Dockerfile so
 # subfinder/amass are not rebuilt or copied into every worker image.
+
 ARG PROJECT_DIR=ArgusEngine.Workers.Enumeration
 ARG APP_DLL=ArgusEngine.Workers.Enumeration.dll
 ARG SUBFINDER_VERSION=2.14.0
@@ -13,11 +13,6 @@ ARG PROJECT_DIR
 
 WORKDIR /src
 
-# Do not seed /root/.nuget/packages from deploy/artifacts/nuget/packages here.
-# If that repo-local cache is incomplete, Docker builds can restore "successfully"
-# but later fail during publish with missing analyzer/assembly files.
-
-# Copy only project files first so restore remains cacheable across source edits.
 COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
 COPY src/*/*.csproj ./src/
 COPY src/tests/*/*.csproj ./src/tests/
@@ -39,16 +34,12 @@ RUN for f in src/*.csproj; do \
       done; \
     fi
 
-# Restore the target project into the same obj cache publish mounts below.
-RUN --mount=type=cache,id=argus-nuget-clean-v1,target=/root/.nuget/packages,sharing=locked \
-    --mount=type=cache,id=argus-obj-${PROJECT_DIR},target=/src/src/${PROJECT_DIR}/obj,sharing=locked \
+RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 
-# Copy the rest of the source after restore to keep NuGet restore cacheable.
 COPY src/ src/
 
-RUN --mount=type=cache,id=argus-nuget-clean-v1,target=/root/.nuget/packages,sharing=locked \
-    --mount=type=cache,id=argus-obj-${PROJECT_DIR},target=/src/src/${PROJECT_DIR}/obj,sharing=locked \
+RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
       -c Release -o /app/publish /p:UseAppHost=false \
       -p:maxcpucount -p:ParallelizePublish=true \
@@ -61,21 +52,35 @@ FROM argus-engine-base:local AS final
 ARG APP_DLL
 ARG BUILD_SOURCE_STAMP=unknown
 ARG COMPONENT_VERSION=2.6.1
-
-ENV SubdomainEnumeration__Subfinder__BinaryPath=/usr/local/bin/subfinder
-ENV SubdomainEnumeration__Amass__BinaryPath=/usr/local/bin/amass
-ENV SubdomainEnumeration__Amass__WordlistPath=data/wordlists/subdomains-high-value.txt
+ARG SUBFINDER_VERSION=2.14.0
+ARG AMASS_VERSION=5.1.1
 
 WORKDIR /app
-COPY --chmod=0755 deploy/artifacts/recon-tools/linux-amd64/subfinder /usr/local/bin/subfinder
-COPY --chmod=0755 deploy/artifacts/recon-tools/linux-amd64/amass /usr/local/bin/amass
-COPY deploy/wordlists/subdomains.txt /opt/argus/wordlists/subdomains.txt
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl tar gzip; \
+    ARCH="$(dpkg --print-architecture)"; \
+    case "$ARCH" in \
+      amd64) GOARCH="amd64" ;; \
+      arm64) GOARCH="arm64" ;; \
+      *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION}_linux_${GOARCH}.zip" -o /tmp/subfinder.zip; \
+    apt-get install -y --no-install-recommends unzip; \
+    unzip -q /tmp/subfinder.zip -d /tmp/subfinder; \
+    install -m 0755 /tmp/subfinder/subfinder /usr/local/bin/subfinder; \
+    curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_linux_${GOARCH}.zip" -o /tmp/amass.zip; \
+    unzip -q /tmp/amass.zip -d /tmp/amass; \
+    find /tmp/amass -type f -name amass -exec install -m 0755 {} /usr/local/bin/amass \\; ; \
+    rm -rf /var/lib/apt/lists/* /tmp/subfinder* /tmp/amass*
+
 COPY --from=build /app/publish .
 
 ENV APP_DLL=${APP_DLL}
 
-LABEL org.opencontainers.image.title="Argus Engine Enum Worker" \
-      org.opencontainers.image.description="Subdomain enumeration worker for Argus Engine" \
+LABEL org.opencontainers.image.title="Argus Engine Enumeration Worker" \
+      org.opencontainers.image.description="Enumeration worker with bundled recon tools" \
       org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}" \
       org.opencontainers.image.version="${COMPONENT_VERSION}"
 

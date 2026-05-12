@@ -1,10 +1,3 @@
-@* 
-    Route safety shim.
-
-    The active Operations workspace is implemented in OpsRadzen.razor, which already owns
-    the "/" and "/ops" routes. This component is intentionally non-routed so that a
-    previously deployed Operations.razor file cannot create duplicate Blazor routes and
-    cause server-side 500 responses at the application root.
-*@
-<div hidden data-component="operations-route-safety-shim"></div>
-
+@* This component intentionally has no @page directive.
+   The standalone Operations page has been removed from the web app surface.
+   Use the single Ops page at /ops. *@

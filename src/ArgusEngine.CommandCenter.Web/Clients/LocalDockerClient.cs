@@ -30,25 +30,36 @@ public sealed class LocalDockerClient : IDisposable
         " emergency",
         " unhandled exception",
         " exception was thrown",
-        " system.invalidoperationexception",
-        " system.argumentexception",
-        " system.nullreferenceexception",
+        "exception:",
+        " system.invalidoperationexception:",
+        " system.argumentexception:",
+        " system.nullreferenceexception:",
         " system.npgsql",
         " npgsql.",
-        " rabbitmq.client",
         " microsoft.aspnetcore.server.kestrel[13]",
         " microsoft.aspnetcore.diagnostics.exceptionhandlermiddleware",
         " circuit host terminated",
         " circuit will be terminated",
         " deadlock detected",
-        " relation \"",
-        " does not exist",
+        " broker unreachable",
         " missed heartbeats",
         " connection refused",
         " connection reset",
-        " timeout",
+        " relation \"",
+        " does not exist",
+        " status code 500",
+        " 500 ",
         " failed",
         "fail:"
+    ];
+
+    private static readonly string[] IgnoredErrorNeedles =
+    [
+        "--- end of inner exception stack trace ---",
+        "--- end of stack trace from previous location ---",
+        "background saving terminated with success",
+        "db saved on disk",
+        "warning memory overcommit must be enabled"
     ];
 
     private readonly HttpClient _client;
@@ -451,13 +462,27 @@ public sealed class LocalDockerClient : IDisposable
     {
         var normalized = line.Trim().ToLowerInvariant();
 
-        if (normalized.Contains(" 404 ", StringComparison.Ordinal) ||
-            normalized.Contains("status code 404", StringComparison.Ordinal))
+        if (IgnoredErrorNeedles.Any(needle => normalized.Contains(needle, StringComparison.Ordinal)))
         {
             return false;
         }
 
-        return ErrorNeedles.Any(needle => normalized.Contains(needle, StringComparison.Ordinal));
+        if (normalized.Contains(" 404 ", StringComparison.Ordinal) ||
+            normalized.Contains("status code 404", StringComparison.Ordinal))
+        {
+            return normalized.Contains("/api/", StringComparison.Ordinal);
+        }
+
+        if (normalized.Contains("exception", StringComparison.Ordinal) &&
+            !normalized.Contains("unhandled exception", StringComparison.Ordinal) &&
+            !normalized.Contains("exception was thrown", StringComparison.Ordinal) &&
+            !Regex.IsMatch(normalized, @"[a-z0-9_.]+exception:", RegexOptions.CultureInvariant))
+        {
+            return false;
+        }
+
+        return ErrorNeedles.Any(needle => normalized.Contains(needle, StringComparison.Ordinal)) ||
+            Regex.IsMatch(normalized, @"[a-z0-9_.]+exception:", RegexOptions.CultureInvariant);
     }
 
     private static string DetermineLogLevel(string line)

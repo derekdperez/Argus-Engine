@@ -1,30 +1,28 @@
 @inherits LayoutComponentBase
 
-<header class="app-header">
-    <a class="brand" href="/ops">
-        <span class="brand-mark">AE</span>
-        <span>
-            <strong>Argus Engine</strong>
-            <small>Command Center</small>
-        </span>
-    </a>
-    <NavStatusBar />
-    <nav class="app-nav" aria-label="Primary">
-        <NavLink href="/ops" class="nav-button">Operations</NavLink>
-        <NavLink href="/high-value-findings" class="nav-button">High Value</NavLink>
-        <NavLink href="/technology-identification" class="nav-button">Technology ID</NavLink>
-        <NavLink href="/status" class="nav-button">System Status</NavLink>
-        <NavLink href="/configuration" class="nav-button">Configuration</NavLink>
-        <NavLink href="/admin" class="nav-button">Admin</NavLink>
-        <NavLink href="/worker-management" class="nav-button">Workers</NavLink>
-        <NavLink href="/cloud-deploy" class="nav-button">Cloud Deploy</NavLink>
-        <NavLink href="/development" class="nav-button">Development</NavLink>
-    </nav>
-</header>
+<div class="page">
+    <aside class="sidebar">
+        <a class="brand" href="/">
+            <span class="brand-mark">AE</span>
+            <span>
+                <strong>Argus Engine</strong>
+                <small>Command Center</small>
+            </span>
+        </a>
 
-<main class="app-main">
-    @Body
-</main>
+        <nav class="nav-menu" aria-label="Primary navigation">
+            <NavLink class="nav-link" href="/" Match="NavLinkMatch.All">Operations</NavLink>
+            <NavLink class="nav-link" href="/ops">Operations Console</NavLink>
+            <NavLink class="nav-link" href="/targets">Targets</NavLink>
+            <NavLink class="nav-link" href="/asset-graph">Asset Graph</NavLink>
+            <NavLink class="nav-link" href="/development">Development</NavLink>
+        </nav>
+    </aside>
+
+    <main class="main-content">
+        @Body
+    </main>
+</div>
 
 <div id="blazor-error-ui">
     An unhandled error has occurred.

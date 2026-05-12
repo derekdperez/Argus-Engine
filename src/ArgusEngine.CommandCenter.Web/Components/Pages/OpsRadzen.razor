@@ -1,221 +1,167 @@
 @page "/"
 @page "/ops"
 @rendermode InteractiveServer
-
 @using System.Globalization
 @using System.Net.Http.Json
 @using System.Text.Json
-@using ArgusEngine.CommandCenter.Models
+@using ArgusEngine.CommandCenter.Contracts
 @using ArgusEngine.CommandCenter.Realtime
-@using Microsoft.AspNetCore.Components.Forms
-@using Microsoft.AspNetCore.Components.Web.Virtualization
-@implements IDisposable
 @using ArgusEngine.CommandCenter.Web.Clients
+@implements IDisposable
 @inject WorkerControlApiClient WorkerApi
 @inject DiscoveryRealtimeClient Realtime
 
 <PageTitle>Operations - Argus Engine</PageTitle>
 
-<div class="page-shell ops-page ops-page-lite">
+<section class="ops-shell">
+    <header class="ops-header">
+        <div>
+            <p class="eyebrow">Operations</p>
+            <h1>Argus Engine Command Center</h1>
+            <p class="muted">Targets, assets, HTTP queue, high value assets, and technology detection in one operations view.</p>
+        </div>
+        <button type="button" class="btn primary" disabled="@_loadingAny" @onclick="ReloadAllAsync">
+            @(_loadingAny ? "Refreshing..." : "Refresh")
+        </button>
+    </header>
+
     @if (!string.IsNullOrWhiteSpace(_statusMessage))
     {
-        <div class="ops-alert">@_statusMessage</div>
+        <div class="alert">@_statusMessage</div>
     }
 
-    <section class="metrics-grid ops-summary-grid">
-        @if (_initialLoadStarted && _targetsLoading && TotalTargets == 0 && ConfirmedAssets == 0)
-        {
-            <article class="metric-card loading">
-                <span>Loading...</span>
-                <strong>—</strong>
-            </article>
-        }
-        else
-        {
-            <article class="metric-card">
-                <span>Targets</span>
-                <strong>@FormatNumber(TotalTargets)</strong>
-            </article>
-            <article class="metric-card">
-                <span>Assets</span>
-                <strong>@FormatNumber(ConfirmedAssets)</strong>
-            </article>
-            <article class="metric-card">
-                <span>Subdomains</span>
-                <strong>@FormatNumber(ConfirmedSubdomains)</strong>
-            </article>
-            <article class="metric-card">
-                <span>Unique Technologies</span>
-                <strong>@FormatNumber(UniqueTechnologies)</strong>
-            </article>
-            <article class="metric-card">
-                <span>HTTP Queue</span>
-                <strong>@(_httpLoading && HttpQueueQueuedCount == 0 ? "—" : $"{FormatNumber(HttpQueueQueuedCount)} queued / {FormatNumber(HttpRequestsSentPerMinute)} sent/min")</strong>
-            </article>
-            <article class="metric-card">
-                <span>Asset Storage</span>
-                <strong>@FormatStorageSize(TotalTrackedStorageBytes)</strong>
-                <small>@StorageBreakdownLabel</small>
-            </article>
-        }
-    </section>
-
-    <section class="ops-scope-grid">
-        <section class="panel scope-panel">
-            <div class="section-heading">
-                <div>
-                    <p class="eyebrow">Scope</p>
-                    <h2>Targets</h2>
-                    @if (_targetsLoading)
-                    {
-                        <span class="loading-inline"><span class="spinner"></span> Loading...</span>
-                    }
-                </div>
-                <span class="muted">@FormatNumber(TargetRows.Count)</span>
-            </div>
-
-            <div class="ops-rz-toolbar simple dense-toolbar">
-                <label class="target-create">
-                    <span>New target</span>
-                    <input type="text" class="ops-filter" @bind="_newTargetRootDomain" @bind:event="oninput" placeholder="example.com" />
-                </label>
-                <label class="target-depth">
-                    <span>Depth</span>
-                    <input type="number" min="1" max="64" class="ops-filter compact-filter" @bind="_newTargetDepth" />
-                </label>
-                <button type="button" class="btn" @onclick="CreateTargetAsync" disabled="@(!CanCreateTarget)">Add Target</button>
-                <label class="file-import-button">
-                    <span>Import</span>
-                    <InputFile OnChange="ImportTargetsAsync" disabled="@_importingTargets" />
-                </label>
-                <label class="wide-search">
-                    <span>Search</span>
-                    <input type="search" class="ops-filter" @bind="_targetSearch" @bind:event="oninput" placeholder="Search targets..." />
-                </label>
-                <label>
-                    <span>Filter</span>
-                    <select class="ops-filter compact-filter" @bind="_targetFilter">
-                        <option value="">All</option>
-                        <option value="with-assets">With assets</option>
-                        <option value="with-subdomains">With subdomains</option>
-                    </select>
-                </label>
-            </div>
-
-            <div class="ops-rz-toolbar simple dense-toolbar target-actions">
-                <button type="button" class="btn action-btn" @onclick="EnumerateAllTargetsAsync" disabled="@(_targets.Count == 0 || _enumLoading)">
-                    @(_enumLoading ? "Enqueuing..." : "Enumerate Subdomains")
-                </button>
-                <button type="button" class="btn action-btn" @onclick="SpiderAllTargetsAsync" disabled="@(_targets.Count == 0 || _spiderAllLoading)">
-                    @(_spiderAllLoading ? "Enqueuing..." : "Spider All Subdomains")
-                </button>
-            </div>
-
-            <div class="ops-table-wrap scope-table-wrap">
-                <table class="ops-table targets-table">
-                    <thead>
-                        <tr>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("name"))">Target</button></th>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("depth"))">Depth</button></th>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("subdomains"))">Subs</button></th>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("assets"))">Assets</button></th>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetTargetSort("lastRun"))">Last run</button></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <Virtualize TItem="JsonElement" Items="TargetRows" Context="t" ItemSize="30" OverscanCount="16" SpacerElement="tr">
-                            <tr class="selectable-row @(IsSelectedTarget(t) ? "selected" : "")" @onclick="@(() => SelectTarget(t))">
-                                <td class="clip" title="@Text(t, "rootDomain", "RootDomain")">@Text(t, "rootDomain", "RootDomain")</td>
-                                <td>@DisplayOrDash(Text(t, "globalMaxDepth", "GlobalMaxDepth"))</td>
-                                <td>@FormatNumber(Long(t, "subdomainCount", "SubdomainCount"))</td>
-                                <td>@FormatNumber(Long(t, "confirmedAssetCount", "ConfirmedAssetCount"))</td>
-                                <td>@FormatTime(Text(t, "lastRunAtUtc", "LastRunAtUtc"))</td>
-                            </tr>
-                        </Virtualize>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <section class="panel scope-panel">
-            <div class="section-heading">
-                <div>
-                    <p class="eyebrow">Scope</p>
-                    <h2>Subdomains</h2>
-                </div>
-                <span class="muted">@SelectedTargetLabel - @FormatNumber(SubdomainRows.Count)</span>
-            </div>
-
-            <div class="ops-rz-toolbar simple dense-toolbar">
-                <label class="wide-search">
-                    <span>Search</span>
-                    <input type="search" class="ops-filter" @bind="_subdomainSearch" @bind:event="oninput" placeholder="Search subdomains..." />
-                </label>
-                <label>
-                    <span>Filter</span>
-                    <select class="ops-filter compact-filter" @bind="_subdomainFilter">
-                        <option value="">All</option>
-                        <option value="selected">Selected</option>
-                    </select>
-                </label>
-            </div>
-
-            <div class="ops-rz-toolbar simple dense-toolbar target-actions">
-                <button type="button" class="btn action-btn" @onclick="() => SpiderSubdomainAsync(null)" disabled="@(!CanSpiderSelectedDomains || _spiderSubdomainLoading)">
-                    @(_spiderSubdomainLoading ? "Starting..." : "Spider All Subdomains")
-                </button>
-                <button type="button" class="btn action-btn" @onclick="() => SpiderSubdomainAsync(_selectedSubdomain)" disabled="@(string.IsNullOrWhiteSpace(_selectedSubdomain) || _spiderSubdomainLoading)">
-                    @(_spiderSubdomainLoading ? "Starting..." : "Spider Selected")
-                </button>
-            </div>
-
-            <div class="ops-table-wrap scope-table-wrap">
-                <table class="ops-table subdomains-table">
-                    <thead>
-                        <tr>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetSubdomainSort("name"))">Subdomain</button></th>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetSubdomainSort("discovered"))">Discovered</button></th>
-                            <th><button type="button" class="sort-header" @onclick="@(() => SetSubdomainSort("context"))">How found</button></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <Virtualize TItem="JsonElement" Items="SubdomainRows" Context="subdomain" ItemSize="30" OverscanCount="16" SpacerElement="tr">
-                            @{
-                                var name = SubdomainName(subdomain);
-                            }
-                            <tr class="selectable-row @(IsSelectedSubdomain(name) ? "selected" : "")" @onclick="@(() => SelectSubdomain(name))">
-                                <td class="clip" title="@name">@DisplayOrDash(name)</td>
-                                <td>@FormatTime(Text(subdomain, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
-                                <td class="clip" title="@Text(subdomain, "discoveryContext", "DiscoveryContext")">@DisplayOrDash(Text(subdomain, "discoveryContext", "DiscoveryContext"))</td>
-                            </tr>
-                        </Virtualize>
-                    </tbody>
-                </table>
-            </div>
-        </section>
+    <section class="metric-grid">
+        <article class="metric-card">
+            <span>Targets</span>
+            <strong>@FormatNumber(TotalTargets)</strong>
+        </article>
+        <article class="metric-card">
+            <span>Assets</span>
+            <strong>@FormatNumber(ConfirmedAssets)</strong>
+        </article>
+        <article class="metric-card">
+            <span>Subdomains</span>
+            <strong>@FormatNumber(ConfirmedSubdomains)</strong>
+        </article>
+        <article class="metric-card">
+            <span>Unique Technologies</span>
+            <strong>@FormatNumber(TopTechnologyRows.Count)</strong>
+        </article>
+        <article class="metric-card">
+            <span>HTTP Queue</span>
+            <strong>@FormatNumber(HttpRows.Count)</strong>
+            <small>@FormatNumber(HttpRequestsSentPerMinute) sent/min</small>
+        </article>
+        <article class="metric-card">
+            <span>High Value Assets</span>
+            <strong>@FormatNumber(HighValueRows.Count(r => r.IsHighValue))</strong>
+        </article>
     </section>
 
     <section class="panel">
-        <div class="section-heading">
+        <div class="panel-title">
+            <div>
+                <p class="eyebrow">Scope</p>
+                <h2>Targets</h2>
+            </div>
+            <div class="toolbar">
+                <input placeholder="Search targets" @bind="_targetSearch" @bind:event="oninput" />
+                <input placeholder="New target" @bind="_newTargetRootDomain" @bind:event="oninput" />
+                <input type="number" min="1" max="50" @bind="_newTargetDepth" />
+                <button type="button" class="btn" disabled="@(!CanCreateTarget)" @onclick="CreateTargetAsync">Add Target</button>
+                <button type="button" class="btn" disabled="@(_enumLoading || TargetRows.Count == 0)" @onclick="EnumerateAllTargetsAsync">
+                    @(_enumLoading ? "Enqueuing..." : "Enumerate")
+                </button>
+                <button type="button" class="btn" disabled="@(_spiderAllLoading || TargetRows.Count == 0)" @onclick="SpiderAllTargetsAsync">
+                    @(_spiderAllLoading ? "Enqueuing..." : "Spider All")
+                </button>
+            </div>
+        </div>
+
+        @if (_targetsLoading)
+        {
+            <p class="muted">Loading targets…</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Target</th>
+                            <th>Depth</th>
+                            <th>Subdomains</th>
+                            <th>Assets</th>
+                            <th>Last run</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var target in TargetRows)
+                        {
+                            var id = Text(target, "id", "Id");
+                            <tr class="@(IsSelectedTarget(target) ? "selected" : null)" @onclick="() => SelectTarget(target)">
+                                <td>@DisplayOrDash(Text(target, "rootDomain", "RootDomain"))</td>
+                                <td>@DisplayOrDash(Text(target, "globalMaxDepth", "GlobalMaxDepth"))</td>
+                                <td>@FormatNumber(Long(target, "subdomainCount", "SubdomainCount"))</td>
+                                <td>@FormatNumber(Long(target, "confirmedAssetCount", "ConfirmedAssetCount"))</td>
+                                <td>@FormatTime(Text(target, "lastRunAtUtc", "LastRunAtUtc"))</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="panel">
+        <div class="panel-title">
+            <div>
+                <p class="eyebrow">Scope</p>
+                <h2>Subdomains</h2>
+                <p class="muted">@SelectedTargetLabel · @FormatNumber(SubdomainRows.Count) rows</p>
+            </div>
+            <div class="toolbar">
+                <input placeholder="Search subdomains" @bind="_subdomainSearch" @bind:event="oninput" />
+                <button type="button" class="btn" disabled="@(!CanSpiderSelectedDomains || _spiderSubdomainLoading)" @onclick="() => SpiderSubdomainAsync(null)">
+                    @(_spiderSubdomainLoading ? "Starting..." : "Spider Selected Target")
+                </button>
+            </div>
+        </div>
+
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Subdomain</th>
+                        <th>Discovered</th>
+                        <th>How found</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var subdomain in SubdomainRows)
+                    {
+                        var name = SubdomainName(subdomain);
+                        <tr class="@(IsSelectedSubdomain(name) ? "selected" : null)" @onclick="() => SelectSubdomain(name)">
+                            <td>@DisplayOrDash(name)</td>
+                            <td>@FormatTime(Text(subdomain, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
+                            <td>@DisplayOrDash(Text(subdomain, "discoveryContext", "DiscoveryContext"))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-title">
             <div>
                 <p class="eyebrow">Inventory</p>
                 <h2>Assets</h2>
-                @if (_assetsLoading)
-                {
-                    <span class="loading-inline"><span class="spinner"></span> Loading...</span>
-                }
+                <p class="muted">@FormatNumber(FilteredAssetRows.Count) visible assets</p>
             </div>
-            <span class="muted">@FormatNumber(FilteredAssetRows.Count) visible assets</span>
-        </div>
-
-        <div class="ops-rz-toolbar simple">
-            <label class="wide-search">
-                <span>Search</span>
-                <input type="search" class="ops-filter" @bind="_assetSearch" @bind:event="oninput" placeholder="Search assets..." />
-            </label>
-            <label>
-                <span>Filter</span>
-                <select class="ops-filter compact-filter" @bind="_assetFilter">
+            <div class="toolbar">
+                <input placeholder="Search assets" @bind="_assetSearch" @bind:event="oninput" />
+                <select @bind="_assetFilter">
                     <option value="">All kinds</option>
                     <option value="Domain">Domain</option>
                     <option value="Subdomain">Subdomain</option>
@@ -223,159 +169,66 @@
                     <option value="IpAddress">IP address</option>
                     <option value="OpenPort">Open port</option>
                 </select>
-            </label>
-            <button type="button" class="btn" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">
-                @(_assetsLoading ? "Loading..." : "Reload assets")
-            </button>
-        </div>
-
-        <div class="ops-table-wrap asset-table-wrap">
-            <table class="ops-table asset-table">
-                <thead>
-                    <tr>
-                        <th>Info</th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("discovered"))">Discovered</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("lastSeen"))">Last seen</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("kind"))">Kind</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("category"))">Category</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("url"))">Final URL</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetAssetSort("context"))">How found</button></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <Virtualize TItem="JsonElement" Items="FilteredAssetRows" Context="a" ItemSize="30" OverscanCount="16" SpacerElement="tr">
-                        <tr @key="AssetKey(a)">
-                            @{
-                                var finalUrl = Text(a, "finalUrl", "FinalUrl");
-                                var href = TryHttpHref(finalUrl);
-                            }
-                            <td>
-                                <button type="button" class="btn ghost small" title="Show admission decision" @onclick="() => OpenAssetDecisionAsync(a)">?</button>
-                            </td>
-                            <td>@FormatTime(Text(a, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
-                            <td>@FormatTime(Text(a, "lastSeenAtUtc", "LastSeenAtUtc"))</td>
-                            <td>@Text(a, "kind", "Kind")</td>
-                            <td>@Text(a, "category", "Category")</td>
-                            <td class="clip" title="@finalUrl">
-                                @if (href is null)
-                                {
-                                    <span>@DisplayOrDash(finalUrl)</span>
-                                }
-                                else
-                                {
-                                    <a href="@href" target="_blank" rel="noopener noreferrer">@finalUrl</a>
-                                }
-                            </td>
-                            <td class="clip" title="@Text(a, "discoveryContext", "DiscoveryContext")">@Text(a, "discoveryContext", "DiscoveryContext")</td>
-                        </tr>
-                    </Virtualize>
-                </tbody>
-            </table>
-        </div>
-    </section>
-
-    <section class="panel workers-panel">
-        <div class="section-heading">
-            <div>
-                <p class="eyebrow">Infrastructure</p>
-                <h2>Workers</h2>
             </div>
-            <span class="live-indicator">● live</span>
         </div>
 
-        @if (!string.IsNullOrWhiteSpace(_dockerWorkersError))
+        @if (_assetsLoading)
         {
-            <div class="ops-alert">Docker unavailable: @_dockerWorkersError</div>
+            <p class="muted">Loading assets…</p>
         }
-
-        <div class="worker-services-grid">
-            @foreach (var svc in _dockerWorkerServices)
-            {
-                var svcName  = Text(svc, "serviceName",  "ServiceName");
-                var dispName = Text(svc, "displayName",  "DisplayName");
-                var running  = (int)Long(svc, "runningCount", "RunningCount");
-                var total    = (int)Long(svc, "totalCount",   "TotalCount");
-                var state    = Text(svc, "overallState", "OverallState");
-                var color    = Text(svc, "color",        "Color");
-                var feedback = _scaleFeedback.GetValueOrDefault(svcName, "");
-                var isScaling = _scalingService == svcName;
-                var containers = ArrayProperty(svc, "containers", "Containers");
-
-                <article class="worker-service-card">
-                    <div class="wsc-header">
-                        <span class="wsc-dot wsc-dot--@color"></span>
-                        <strong class="wsc-name">@dispName</strong>
-                        <span class="wsc-badge wsc-badge--@color">@state</span>
-                    </div>
-
-                    <div class="wsc-counts">
-                        <span class="wsc-count-big">@running</span>
-                        <span class="wsc-count-label">/ @total containers</span>
-                    </div>
-
-                    <div class="wsc-scale-row">
-                        <button class="btn ghost small wsc-btn"
-                                disabled="@(isScaling || total == 0)"
-                                @onclick="@(() => ScaleDockerWorkerAsync(svcName, -1))">−</button>
-                        <span class="wsc-scale-num">@total</span>
-                        <button class="btn ghost small wsc-btn"
-                                disabled="@isScaling"
-                                @onclick="@(() => ScaleDockerWorkerAsync(svcName, 1))">+</button>
-                    </div>
-
-                    @if (isScaling)
-                    {
-                        <div class="wsc-feedback wsc-feedback--working">
-                            <span class="spinner"></span> Scaling…
-                        </div>
-                    }
-                    else if (!string.IsNullOrWhiteSpace(feedback))
-                    {
-                        <div class="wsc-feedback">@feedback</div>
-                    }
-
-                    @if (containers.Any())
-                    {
-                        <ul class="wsc-containers">
-                            @foreach (var c in containers)
-                            {
-                                var cState = Text(c, "state", "State");
-                                var cName  = Text(c, "name",  "Name");
-                                var cColor = Text(c, "color", "Color");
-                                <li class="wsc-container" title="@cName">
-                                    <span class="wsc-dot wsc-dot--@cColor"></span>
-                                    <span class="wsc-cname">@cName</span>
-                                    <span class="wsc-cstate">@cState</span>
-                                </li>
-                            }
-                        </ul>
-                    }
-                </article>
-            }
-        </div>
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Discovered</th>
+                            <th>Last seen</th>
+                            <th>Kind</th>
+                            <th>Category</th>
+                            <th>Final URL</th>
+                            <th>How found</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var asset in FilteredAssetRows)
+                        {
+                            var finalUrl = Text(asset, "finalUrl", "FinalUrl");
+                            var href = TryHttpHref(finalUrl);
+                            <tr>
+                                <td>@FormatTime(Text(asset, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
+                                <td>@FormatTime(Text(asset, "lastSeenAtUtc", "LastSeenAtUtc"))</td>
+                                <td>@DisplayOrDash(Text(asset, "kind", "Kind"))</td>
+                                <td>@DisplayOrDash(Text(asset, "category", "Category"))</td>
+                                <td>
+                                    @if (href is null)
+                                    {
+                                        @DisplayOrDash(finalUrl)
+                                    }
+                                    else
+                                    {
+                                        <a href="@href" target="_blank" rel="noopener noreferrer">@finalUrl</a>
+                                    }
+                                </td>
+                                <td>@DisplayOrDash(Text(asset, "discoveryContext", "DiscoveryContext"))</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </section>
 
     <section class="panel">
-        <div class="section-heading">
+        <div class="panel-title">
             <div>
                 <p class="eyebrow">HTTP</p>
-                <h2>HTTP Requests</h2>
-                @if (_httpLoading)
-                {
-                    <span class="loading-inline"><span class="spinner"></span> Loading...</span>
-                }
+                <h2>HTTP Queue</h2>
+                <p class="muted">@FormatNumber(HttpRows.Count) requests</p>
             </div>
-            <span class="muted">@FormatNumber(HttpRows.Count) requests</span>
-        </div>
-
-        <div class="ops-rz-toolbar simple">
-            <label class="wide-search">
-                <span>Search</span>
-                <input type="search" class="ops-filter" @bind="_httpSearch" @bind:event="oninput" placeholder="Search HTTP requests..." />
-            </label>
-            <label>
-                <span>Filter</span>
-                <select class="ops-filter compact-filter" @bind="_httpStateFilter" @bind:after="ReloadHttpQueueAsync">
+            <div class="toolbar">
+                <input placeholder="Search HTTP queue" @bind="_httpSearch" @bind:event="oninput" />
+                <select @bind="_httpStateFilter" @bind:after="ReloadHttpQueueAsync">
                     <option value="">All states</option>
                     <option value="Queued">Queued</option>
                     <option value="InFlight">In flight</option>
@@ -383,81 +236,263 @@
                     <option value="Succeeded">Completed</option>
                     <option value="Failed">Failed</option>
                 </select>
-            </label>
-            <button type="button" class="btn" @onclick="RetrySelectedHttpRowsAsync" disabled="@(!_selectedHttpIds.Any())">Retry Selected</button>
-            <button type="button" class="btn danger" @onclick="ClearSelectedHttpRowsAsync" disabled="@(!_selectedHttpIds.Any())">Clear Selected</button>
-            <button type="button" class="btn" @onclick="ClearCompletedHttpRowsAsync">Clear Completed</button>
-            <button type="button" class="btn" @onclick="ClearFailedHttpRowsAsync">Clear Failed</button>
-            <button type="button" class="btn danger" @onclick="ClearOlderThanSelectedHttpRowAsync" disabled="@(SelectedHttpCutoffUtc is null)">Clear Older Than Selected</button>
+                <button type="button" class="btn" @onclick="RetrySelectedHttpRowsAsync">Retry Selected</button>
+                <button type="button" class="btn" @onclick="ClearSelectedHttpRowsAsync">Clear Selected</button>
+                <button type="button" class="btn" @onclick="ClearCompletedHttpRowsAsync">Clear Completed</button>
+                <button type="button" class="btn" @onclick="ClearFailedHttpRowsAsync">Clear Failed</button>
+            </div>
         </div>
 
-        <div class="ops-table-wrap compact">
-            <table class="ops-table http-table">
-                <thead>
-                    <tr>
-                        <th>Select</th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("created"))">Created</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("state"))">State</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("method"))">Method</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("url"))">URL</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("domain"))">Domain</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("attempts"))">Attempts</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("status"))">Status</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("duration"))">Duration</button></th>
-                        <th><button type="button" class="sort-header" @onclick="@(() => SetHttpSort("error"))">Error</button></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <Virtualize TItem="JsonElement" Items="HttpRows" Context="q" ItemSize="30" OverscanCount="16" SpacerElement="tr">
-                        @{
-                            var requestUrl = Text(q, "requestUrl", "RequestUrl");
-                            var id = Text(q, "id", "Id");
-                        }
+        @if (_httpLoading)
+        {
+            <p class="muted">Loading HTTP queue…</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
                         <tr>
-                            <td>
-                                <input type="checkbox" checked="@IsHttpRowSelected(id)" @onchange="args => ToggleHttpRow(id, args)" />
-                            </td>
-                            <td>@FormatTime(Text(q, "createdAtUtc", "CreatedAtUtc"))</td>
-                            <td><span class="queue-state @CssToken(Text(q, "state", "State"))">@DisplayOrDash(Text(q, "state", "State"))</span></td>
-                            <td>@DisplayOrDash(Text(q, "method", "Method"))</td>
-                            <td class="clip" title="@requestUrl">@DisplayOrDash(requestUrl)</td>
-                            <td class="clip" title="@Text(q, "domainKey", "DomainKey")">@DisplayOrDash(Text(q, "domainKey", "DomainKey"))</td>
-                            <td>@DisplayOrDash(Text(q, "attemptCount", "AttemptCount")) / @DisplayOrDash(Text(q, "maxAttempts", "MaxAttempts"))</td>
-                            <td>@DisplayOrDash(Text(q, "lastHttpStatus", "LastHttpStatus"))</td>
-                            <td>@DurationLabel(q)</td>
-                            <td class="clip" title="@Text(q, "lastError", "LastError")">@DisplayOrDash(Text(q, "lastError", "LastError"))</td>
+                            <th>Select</th>
+                            <th>Created</th>
+                            <th>State</th>
+                            <th>Method</th>
+                            <th>URL</th>
+                            <th>Domain</th>
+                            <th>Attempts</th>
+                            <th>Status</th>
+                            <th>Duration</th>
+                            <th>Error</th>
                         </tr>
-                    </Virtualize>
-                </tbody>
-            </table>
-        </div>
+                    </thead>
+                    <tbody>
+                        @foreach (var q in HttpRows)
+                        {
+                            var id = Text(q, "id", "Id");
+                            <tr>
+                                <td><input type="checkbox" checked="@IsHttpRowSelected(id)" @onchange="args => ToggleHttpRow(id, args)" /></td>
+                                <td>@FormatTime(Text(q, "createdAtUtc", "CreatedAtUtc"))</td>
+                                <td>@DisplayOrDash(Text(q, "state", "State"))</td>
+                                <td>@DisplayOrDash(Text(q, "method", "Method"))</td>
+                                <td class="wrap">@DisplayOrDash(Text(q, "requestUrl", "RequestUrl"))</td>
+                                <td>@DisplayOrDash(Text(q, "domainKey", "DomainKey"))</td>
+                                <td>@DisplayOrDash(Text(q, "attemptCount", "AttemptCount")) / @DisplayOrDash(Text(q, "maxAttempts", "MaxAttempts"))</td>
+                                <td>@DisplayOrDash(Text(q, "lastHttpStatus", "LastHttpStatus"))</td>
+                                <td>@DurationLabel(q)</td>
+                                <td class="wrap">@DisplayOrDash(Text(q, "lastError", "LastError"))</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </section>
 
-</div>
-
-@if (_assetDecisionModal is not null)
-{
-    <div class="modal-backdrop" @onclick="CloseAssetDecisionModal">
-        <section class="modal-card decision-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Asset admission decision">
-            <div class="section-heading">
-                <div>
-                    <p class="eyebrow">Asset Admission</p>
-                    <h2>Decision reason</h2>
-                </div>
-                <button type="button" class="btn ghost small" @onclick="CloseAssetDecisionModal">Close</button>
+    <section class="panel">
+        <div class="panel-title">
+            <div>
+                <p class="eyebrow">High Value</p>
+                <h2>High Value Assets</h2>
+                <p class="muted">Moved from the removed High Value page.</p>
             </div>
-            <dl class="decision-details">
-                <dt>Decision</dt>
-                <dd>@DisplayOrDash(Text(_assetDecisionModal.Value, "decision", "Decision"))</dd>
-                <dt>Reason</dt>
-                <dd>@DisplayOrDash(Text(_assetDecisionModal.Value, "reasonCode", "ReasonCode"))</dd>
-                <dt>Detail</dt>
-                <dd>@DisplayOrDash(Text(_assetDecisionModal.Value, "reasonDetail", "ReasonDetail"))</dd>
-                <dt>Discovered by</dt>
-                <dd>@DisplayOrDash(Text(_assetDecisionModal.Value, "discoveredBy", "DiscoveredBy"))</dd>
-                <dt>Discovery context</dt>
-                <dd>@DisplayOrDash(Text(_assetDecisionModal.Value, "discoveryContext", "DiscoveryContext"))</dd>
-            </dl>
+            <div class="toolbar">
+                <input placeholder="Search high value assets" @bind="_highValueSearch" @bind:event="oninput" />
+                <select @bind="_highValueStatusFilter">
+                    <option value="Active">Active</option>
+                    <option value="">All statuses</option>
+                    <option value="Pending">Pending</option>
+                    <option value="In Process">In Process</option>
+                    <option value="False Positive">False Positive</option>
+                    <option value="Valid Finding">Valid Finding</option>
+                </select>
+                <button type="button" class="btn" disabled="@_highValueLoading" @onclick="ReloadHighValueAssetsAsync">
+                    @(_highValueLoading ? "Refreshing..." : "Refresh")
+                </button>
+            </div>
+        </div>
+
+        <div class="mini-metrics">
+            <span>@FormatNumber(HighValueRows.Count(r => r.IsHighValue)) high value</span>
+            <span>@FormatNumber(ValidFindingCount) valid findings</span>
+            <span>@FormatNumber(FalsePositiveCount) false positives</span>
+            <span>@ActualFindingRate actual finding rate</span>
+        </div>
+
+        @if (_highValueLoading)
+        {
+            <p class="muted">Loading high value assets…</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Last seen</th>
+                            <th>Status</th>
+                            <th>Target</th>
+                            <th>Kind</th>
+                            <th>Category</th>
+                            <th>URL / Asset</th>
+                            <th>Finding</th>
+                            <th>Severity</th>
+                            <th>Pattern</th>
+                            <th>Matched text</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in FilteredHighValueRows)
+                        {
+                            <tr>
+                                <td>@FormatTime(row.LastSeenAtUtc)</td>
+                                <td>
+                                    <select value="@row.InvestigationStatus" @onchange="args => UpdateInvestigationStatusAsync(row, args.Value?.ToString())">
+                                        @foreach (var status in InvestigationStatuses)
+                                        {
+                                            <option value="@status">@status</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td>@DisplayOrDash(row.TargetRootDomain)</td>
+                                <td>@DisplayOrDash(row.Kind)</td>
+                                <td>@DisplayOrDash(row.Category)</td>
+                                <td class="wrap">
+                                    @{
+                                        var finalUrl = BestAssetUrl(row);
+                                        var href = TryHttpHref(finalUrl);
+                                    }
+                                    @if (href is null)
+                                    {
+                                        @DisplayOrDash(finalUrl)
+                                    }
+                                    else
+                                    {
+                                        <a href="@href" target="_blank" rel="noopener noreferrer">@finalUrl</a>
+                                    }
+                                </td>
+                                <td>@DisplayOrDash(row.FindingType)</td>
+                                <td>@DisplayOrDash(row.Severity)</td>
+                                <td><code>@DisplayOrDash(row.PatternName)</code></td>
+                                <td class="wrap">@DisplayOrDash(row.MatchedText)</td>
+                                <td><button type="button" class="btn small" @onclick="() => MarkFalsePositiveAsync(row)">False Positive</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="panel">
+        <div class="panel-title">
+            <div>
+                <p class="eyebrow">Technology ID</p>
+                <h2>Top 10 Technologies</h2>
+                <p class="muted">Grouped by technology name regardless of version. Click a name for version usage.</p>
+            </div>
+            <div class="toolbar">
+                <input placeholder="Search technologies" @bind="_technologySearch" @bind:event="oninput" />
+                <button type="button" class="btn" disabled="@_technologiesLoading" @onclick="ReloadTechnologyDataAsync">
+                    @(_technologiesLoading ? "Refreshing..." : "Refresh")
+                </button>
+            </div>
+        </div>
+
+        @if (_usageLoading)
+        {
+            <p class="muted">Loading technology usage…</p>
+        }
+        else
+        {
+            <ol class="top-tech-list">
+                @foreach (var row in TopTechnologyRows.Take(10))
+                {
+                    <li>
+                        <button type="button" class="link-button" @onclick="() => OpenTechnologyModal(row.Name)">
+                            @row.Name
+                        </button>
+                        <span>(@FormatNumber(row.TargetCount) targets, @FormatNumber(row.SubdomainCount) subdomains)</span>
+                    </li>
+                }
+            </ol>
+        }
+
+        <h3>Technologies</h3>
+        @if (_technologiesLoading)
+        {
+            <p class="muted">Loading technologies…</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Last seen</th>
+                            <th>Target</th>
+                            <th>Subdomain</th>
+                            <th>Technology</th>
+                            <th>Version</th>
+                            <th>Source</th>
+                            <th>Mode</th>
+                            <th>Evidence</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in FilteredTechnologyRows)
+                        {
+                            <tr>
+                                <td>@FormatTime(row.LastSeenUtc)</td>
+                                <td>@DisplayOrDash(row.TargetRootDomain)</td>
+                                <td>@DisplayOrDash(row.Subdomain)</td>
+                                <td>@DisplayOrDash(row.TechnologyName)</td>
+                                <td>@DisplayOrDash(row.Version)</td>
+                                <td>@DisplayOrDash(row.SourceType)</td>
+                                <td>@DisplayOrDash(row.DetectionMode)</td>
+                                <td class="wrap">@DisplayOrDash(row.EvidenceSummary)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</section>
+
+@if (_selectedTechnologyName is not null)
+{
+    <div class="modal-backdrop" @onclick="CloseTechnologyModal">
+        <section class="modal" @onclick:stopPropagation="true">
+            <header class="modal-header">
+                <div>
+                    <p class="eyebrow">Version breakdown</p>
+                    <h2>@_selectedTechnologyName</h2>
+                </div>
+                <button type="button" class="btn" @onclick="CloseTechnologyModal">Close</button>
+            </header>
+
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Version</th>
+                            <th>Targets</th>
+                            <th>Subdomains</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in SelectedTechnologyVersionRows)
+                        {
+                            <tr>
+                                <td>@DisplayOrDash(row.Version)</td>
+                                <td>@FormatNumber(row.TargetCount)</td>
+                                <td>@FormatNumber(row.SubdomainCount)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
         </section>
     </div>
 }
@@ -467,374 +502,144 @@
     private readonly List<JsonElement> _targets = [];
     private readonly List<JsonElement> _assets = [];
     private readonly List<JsonElement> _queue = [];
-    private readonly List<JsonElement> _workerSummaries = [];
-    private readonly List<JsonElement> _workerInstances = [];
-    private readonly List<JsonElement> _workerScaleTargets = [];
-    private readonly List<JsonElement> _rabbitQueues = [];
-    private readonly List<JsonElement> _events = [];
+    private readonly List<HighValueAssetRowDto> _highValueRows = [];
+    private readonly List<TechnologyIdentificationRowDto> _technologyRows = [];
+    private readonly List<TechnologyUsageDto> _technologyUsage = [];
+    private readonly CancellationTokenSource _cts = new();
 
-    // ── Docker worker status state ──────────────────────────────────────────
-    private readonly List<JsonElement> _dockerWorkerServices = [];
-    private string _dockerWorkersError = "";
-    private string? _scalingService;
-    private readonly Dictionary<string, string> _scaleFeedback = new(StringComparer.OrdinalIgnoreCase);
-
+    private bool _initialLoadStarted;
+    private bool _overviewLoading = true;
+    private bool _targetsLoading = true;
+    private bool _assetsLoading = true;
+    private bool _httpLoading = true;
+    private bool _highValueLoading = true;
+    private bool _technologiesLoading = true;
+    private bool _usageLoading = true;
     private bool _enumLoading;
     private bool _spiderAllLoading;
     private bool _spiderSubdomainLoading;
-    private DateTimeOffset _lastDataRefreshUtc = DateTimeOffset.MinValue;
-    private readonly TimeSpan _dataRefreshInterval = TimeSpan.FromSeconds(5);
-    
-    private bool _assetsLoading = true;
-    private bool _targetsLoading = true;
-    private bool _httpLoading = true;
-    private bool _busLoading;
-    private bool _eventsLoading;
-    private bool _workersLoading;
-    private bool _scaleLoading;
+    private string? _statusMessage;
+
     private string _targetSearch = "";
-    private string _targetFilter = "";
-    private string _targetSort = "name";
-    private bool _targetSortDescending;
     private string _subdomainSearch = "";
-    private string _subdomainFilter = "";
-    private string _subdomainSort = "name";
-    private bool _subdomainSortDescending;
     private string _assetSearch = "";
     private string _assetFilter = "";
-    private string _assetSort = "discovered";
-    private bool _assetSortDescending = true;
     private string _httpSearch = "";
-    private string _httpSort = "created";
-    private bool _httpSortDescending = true;
     private string _httpStateFilter = "";
-    private string _rabbitSearch = "";
-    private string _rabbitFilter = "";
-    private string _rabbitSort = "queue";
-    private bool _rabbitSortDescending;
-    private string _eventSearch = "";
-    private string _eventFilter = "";
-    private string _eventSort = "published";
-    private bool _eventSortDescending = true;
-    private string _workerSearch = "";
-    private string _workerFilter = "";
-    private string _workerSort = "worker";
-    private bool _workerSortDescending;
-    private string _statusMessage = "";
-    private string? _selectedTargetId;
-    private string? _selectedSubdomain;
+    private string _highValueSearch = "";
+    private string _highValueStatusFilter = "Active";
+    private string _technologySearch = "";
     private string _newTargetRootDomain = "";
     private int _newTargetDepth = 12;
-    private bool _importingTargets;
-    private bool _initialLoadStarted;
-    private bool _liveRefreshRunning;
-    private DateTimeOffset _lastLiveRefreshUtc = DateTimeOffset.MinValue;
-    private readonly CancellationTokenSource _realtimeCts = new();
+    private string? _selectedTargetId;
+    private string? _selectedSubdomain;
+    private string? _selectedTechnologyName;
     private readonly HashSet<string> _selectedHttpIds = new(StringComparer.OrdinalIgnoreCase);
-    private JsonElement? _assetDecisionModal;
 
-    private bool UsingEcsWorkers => _workerScaleTargets.Count > 0;
+    private static readonly IReadOnlyList<string> InvestigationStatuses = ["Pending", "In Process", "False Positive", "Valid Finding"];
+
+    private bool _loadingAny => _overviewLoading || _targetsLoading || _assetsLoading || _httpLoading || _highValueLoading || _technologiesLoading || _usageLoading;
     private long TotalTargets => _targets.Count;
     private long ConfirmedAssets => _targets.Sum(t => Long(t, "confirmedAssetCount", "ConfirmedAssetCount"));
     private long ConfirmedSubdomains => _targets.Sum(t => Long(t, "subdomainCount", "SubdomainCount"));
-    private long UniqueTechnologies => OverviewLong("uniqueTechnologyCount", "UniqueTechnologyCount");
-    private long TotalTrackedStorageBytes => OverviewLong("totalTrackedStorageBytes", "TotalTrackedStorageBytes");
-    private long AssetMetadataStorageBytes => OverviewLong("assetMetadataStorageBytes", "AssetMetadataStorageBytes");
-    private long HttpArtifactStorageBytes => OverviewLong("httpArtifactStorageBytes", "HttpArtifactStorageBytes");
-    private long InlineHttpStorageBytes => OverviewLong("inlineHttpStorageBytes", "InlineHttpStorageBytes");
-    private long EventJournalStorageBytes => OverviewLong("eventJournalStorageBytes", "EventJournalStorageBytes");
     private long HttpRequestsSentPerMinute => OverviewLong("httpRequestsSentLastMinuteCount", "HttpRequestsSentLastMinuteCount");
-    private long HttpQueueQueuedCount => OverviewLong("httpQueueQueuedAssetCount", "HttpQueueQueuedAssetCount");
-    private long RunningWorkerCount => UsingEcsWorkers
-        ? _workerScaleTargets.Sum(w => Long(w, "runningCount", "RunningCount"))
-        : _workerInstances.Count;
-    private long FailedWorkerCount => _workerInstances.LongCount(IsFailedWorker);
-    private long HttpQueueCount => _queue.Count;
-    private bool CanSpiderSelectedDomains => !string.IsNullOrWhiteSpace(_selectedTargetId);
-
-    private string WorkerHealthTitle => UsingEcsWorkers ? "ECS worker health" : "Local / EC2 worker health";
-    private string WorkerHealthSubtitle => UsingEcsWorkers
-        ? "ECS service scale targets and live worker activity"
-        : "Workers running with the local or EC2 deployment";
-
-    private bool CanCreateTarget =>
-        !string.IsNullOrWhiteSpace(_newTargetRootDomain) && _newTargetDepth > 0;
-
-    private string StorageBreakdownLabel =>
-        $"Assets {FormatStorageSize(AssetMetadataStorageBytes)} / HTTP {FormatStorageSize(HttpArtifactStorageBytes + InlineHttpStorageBytes)} / Events {FormatStorageSize(EventJournalStorageBytes)}";
-
-    private string TopDomainLabel
+    private IReadOnlyList<HighValueAssetRowDto> HighValueRows => _highValueRows;
+    private long ValidFindingCount => _highValueRows.LongCount(r => r.InvestigationStatus == "Valid Finding");
+    private long FalsePositiveCount => _highValueRows.LongCount(r => r.InvestigationStatus == "False Positive" || !r.IsHighValue);
+    private string ActualFindingRate
     {
         get
         {
-            var top = _targets
-                .Select(t => new
-                {
-                    RootDomain = Text(t, "rootDomain", "RootDomain"),
-                    Count = Long(t, "confirmedAssetCount", "ConfirmedAssetCount")
-                })
-                .Where(t => !string.IsNullOrWhiteSpace(t.RootDomain))
-                .OrderByDescending(t => t.Count)
-                .ThenBy(t => t.RootDomain, StringComparer.OrdinalIgnoreCase)
-                .FirstOrDefault();
-
-            return top is null ? "-" : $"{top.RootDomain} ({FormatNumber(top.Count)} confirmed assets)";
+            var totalClassified = ValidFindingCount + FalsePositiveCount;
+            return totalClassified == 0 ? "-" : (ValidFindingCount / (decimal)totalClassified).ToString("P0", CultureInfo.InvariantCulture);
         }
     }
 
-    private ICollection<JsonElement> TargetRows => MaterializeSorted(
-        _targets.Where(TargetMatchesFilter),
-        TargetSortKey,
-        _targetSortDescending);
+    private bool CanCreateTarget => !string.IsNullOrWhiteSpace(_newTargetRootDomain) && _newTargetDepth > 0;
+    private bool CanSpiderSelectedDomains => !string.IsNullOrWhiteSpace(_selectedTargetId);
 
-    private ICollection<JsonElement> FilteredAssetRows => MaterializeSorted(
-        _assets
-            .Where(MatchesSelectedTarget)
-            .Where(MatchesSelectedSubdomain)
-            .Where(AssetMatchesFilter),
-        AssetSortKey,
-        _assetSortDescending);
+    private IReadOnlyList<JsonElement> TargetRows => _targets
+        .Where(t => string.IsNullOrWhiteSpace(_targetSearch) || Text(t, "rootDomain", "RootDomain").Contains(_targetSearch, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(t => Text(t, "rootDomain", "RootDomain"), StringComparer.OrdinalIgnoreCase)
+        .ToArray();
 
-    private ICollection<JsonElement> SubdomainRows => MaterializeSorted(
-        _assets
-            .Where(MatchesSelectedTarget)
-            .Where(a => Text(a, "kind", "Kind").Equals("Subdomain", StringComparison.OrdinalIgnoreCase))
-            .GroupBy(SubdomainName, StringComparer.OrdinalIgnoreCase)
-            .Where(g => !string.IsNullOrWhiteSpace(g.Key))
-            .Select(g => g.OrderByDescending(a => Text(a, "discoveredAtUtc", "DiscoveredAtUtc"), StringComparer.Ordinal).First())
-            .Where(SubdomainMatchesFilter),
-        SubdomainSortKey,
-        _subdomainSortDescending);
+    private IReadOnlyList<JsonElement> SubdomainRows => _assets
+        .Where(MatchesSelectedTarget)
+        .Where(a => Text(a, "kind", "Kind").Equals("Subdomain", StringComparison.OrdinalIgnoreCase))
+        .GroupBy(SubdomainName, StringComparer.OrdinalIgnoreCase)
+        .Where(g => !string.IsNullOrWhiteSpace(g.Key))
+        .Select(g => g.OrderByDescending(a => Text(a, "discoveredAtUtc", "DiscoveredAtUtc"), StringComparer.Ordinal).First())
+        .Where(s => string.IsNullOrWhiteSpace(_subdomainSearch) || SubdomainName(s).Contains(_subdomainSearch, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(SubdomainName, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
 
-    private ICollection<JsonElement> HttpRows => MaterializeSorted(
-        _queue.Where(HttpMatchesFilter),
-        HttpSortKey,
-        _httpSortDescending);
+    private IReadOnlyList<JsonElement> FilteredAssetRows => _assets
+        .Where(MatchesSelectedTarget)
+        .Where(MatchesSelectedSubdomain)
+        .Where(AssetMatchesFilter)
+        .OrderByDescending(a => Text(a, "discoveredAtUtc", "DiscoveredAtUtc"), StringComparer.Ordinal)
+        .Take(500)
+        .ToArray();
 
-    private ICollection<JsonElement> RabbitQueueRows => MaterializeSorted(
-        _rabbitQueues.Where(RabbitMatchesFilter),
-        RabbitSortKey,
-        _rabbitSortDescending);
+    private IReadOnlyList<JsonElement> HttpRows => _queue
+        .Where(q => string.IsNullOrWhiteSpace(_httpSearch) || MatchesAny(q, _httpSearch, "createdAtUtc", "CreatedAtUtc", "state", "State", "method", "Method", "requestUrl", "RequestUrl", "domainKey", "DomainKey", "lastHttpStatus", "LastHttpStatus", "lastError", "LastError"))
+        .OrderByDescending(q => Text(q, "createdAtUtc", "CreatedAtUtc"), StringComparer.Ordinal)
+        .Take(500)
+        .ToArray();
 
-    private ICollection<JsonElement> EventRows => MaterializeSorted(
-        _events.Where(EventMatchesFilter),
-        EventSortKey,
-        _eventSortDescending);
+    private IReadOnlyList<HighValueAssetRowDto> FilteredHighValueRows => _highValueRows
+        .Where(StatusMatches)
+        .Where(row => HighValueAssetMatches(row, _highValueSearch))
+        .OrderByDescending(row => row.LastSeenAtUtc ?? row.FindingDiscoveredAtUtc)
+        .Take(500)
+        .ToArray();
 
-    private ICollection<JsonElement> WorkerInstanceRows => MaterializeSorted(
-        _workerInstances.Where(WorkerMatchesFilter),
-        WorkerSortKey,
-        _workerSortDescending);
+    private IReadOnlyList<TechnologyIdentificationRowDto> FilteredTechnologyRows => _technologyRows
+        .Where(row => TechnologyMatches(row, _technologySearch))
+        .OrderByDescending(row => row.LastSeenUtc)
+        .Take(500)
+        .ToArray();
+
+    private IReadOnlyList<TopTechnologyRow> TopTechnologyRows => _technologyUsage
+        .GroupBy(u => u.TechnologyName, StringComparer.OrdinalIgnoreCase)
+        .Select(g =>
+        {
+            var locations = g.SelectMany(x => x.Locations).ToArray();
+            return new TopTechnologyRow(
+                g.Key,
+                locations.Select(l => l.TargetId).Distinct().LongCount(),
+                locations.Select(l => l.Subdomain).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).LongCount());
+        })
+        .OrderByDescending(x => x.SubdomainCount)
+        .ThenByDescending(x => x.TargetCount)
+        .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    private IReadOnlyList<TechnologyVersionRow> SelectedTechnologyVersionRows => _selectedTechnologyName is null
+        ? []
+        : _technologyUsage
+            .Where(u => string.Equals(u.TechnologyName, _selectedTechnologyName, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(u => string.IsNullOrWhiteSpace(u.Version) ? "" : u.Version, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var locations = g.SelectMany(x => x.Locations).ToArray();
+                return new TechnologyVersionRow(
+                    string.IsNullOrWhiteSpace(g.Key) ? "Unknown / unversioned" : g.Key,
+                    locations.Select(l => l.TargetId).Distinct().LongCount(),
+                    locations.Select(l => l.Subdomain).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).LongCount());
+            })
+            .OrderByDescending(x => x.SubdomainCount)
+            .ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private string SelectedTargetLabel
     {
         get
         {
-            var target = _targets.FirstOrDefault(t => IsSelectedTarget(t));
-            var label = target.ValueKind == JsonValueKind.Object
-                ? Text(target, "rootDomain", "RootDomain")
-                : "";
-
+            var target = _targets.FirstOrDefault(IsSelectedTarget);
+            var label = target.ValueKind == JsonValueKind.Object ? Text(target, "rootDomain", "RootDomain") : "";
             return string.IsNullOrWhiteSpace(label) ? "Select a target" : label;
         }
-    }
-
-    private DateTimeOffset? SelectedHttpCutoffUtc => _queue
-        .Where(q => _selectedHttpIds.Contains(Text(q, "id", "Id")))
-        .Select(q => DateTimeOffset.TryParse(
-            Text(q, "createdAtUtc", "CreatedAtUtc"),
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.AssumeUniversal,
-            out var parsed)
-                ? parsed
-                : (DateTimeOffset?)null)
-        .Where(d => d is not null)
-        .Min();
-
-    private bool TargetMatchesFilter(JsonElement target)
-    {
-        if (!string.IsNullOrWhiteSpace(_targetSearch) && !MatchesAny(target, _targetSearch, "rootDomain", "RootDomain"))
-        {
-            return false;
-        }
-
-        return _targetFilter switch
-        {
-            "with-assets" => Long(target, "confirmedAssetCount", "ConfirmedAssetCount") > 0,
-            "with-subdomains" => Long(target, "subdomainCount", "SubdomainCount") > 0,
-            _ => true,
-        };
-    }
-
-    private bool SubdomainMatchesFilter(JsonElement subdomain)
-    {
-        var name = SubdomainName(subdomain);
-        if (!string.IsNullOrWhiteSpace(_subdomainSearch) && !MatchesAny(subdomain, _subdomainSearch, "discoveryContext", "DiscoveryContext") && !name.Contains(_subdomainSearch, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return _subdomainFilter != "selected" || IsSelectedSubdomain(name);
-    }
-
-    private bool AssetMatchesFilter(JsonElement asset)
-    {
-        if (!string.IsNullOrWhiteSpace(_assetSearch) && !MatchesAsset(asset, _assetSearch))
-        {
-            return false;
-        }
-
-        return string.IsNullOrWhiteSpace(_assetFilter)
-            || Text(asset, "kind", "Kind").Equals(_assetFilter, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private bool HttpMatchesFilter(JsonElement request) =>
-        string.IsNullOrWhiteSpace(_httpSearch)
-        || MatchesAny(request, _httpSearch, "createdAtUtc", "CreatedAtUtc", "state", "State", "method", "Method", "requestUrl", "RequestUrl", "domainKey", "DomainKey", "lastHttpStatus", "LastHttpStatus", "lastError", "LastError");
-
-    private bool RabbitMatchesFilter(JsonElement queue)
-    {
-        if (!string.IsNullOrWhiteSpace(_rabbitSearch) && !MatchesAny(queue, _rabbitSearch, "name", "Name", "likelyWorkerKey", "LikelyWorkerKey"))
-        {
-            return false;
-        }
-
-        var ready = Long(queue, "messagesReady", "MessagesReady");
-        var unacked = Long(queue, "messagesUnacknowledged", "MessagesUnacknowledged");
-        var consumers = Long(queue, "consumers", "Consumers");
-        return _rabbitFilter switch
-        {
-            "with-messages" => ready + unacked > 0,
-            "with-consumers" => consumers > 0,
-            "no-consumers" => consumers == 0,
-            _ => true,
-        };
-    }
-
-    private bool EventMatchesFilter(JsonElement evt)
-    {
-        if (!string.IsNullOrWhiteSpace(_eventSearch) && !MatchesAny(evt, _eventSearch, "publishedAtUtc", "PublishedAtUtc", "eventName", "EventName", "producer", "Producer", "hostName", "HostName", "payloadPreview", "PayloadPreview"))
-        {
-            return false;
-        }
-
-        var consumers = Long(evt, "consumerCount", "ConsumerCount");
-        return _eventFilter switch
-        {
-            "consumed" => consumers > 0,
-            "unconsumed" => consumers == 0,
-            _ => true,
-        };
-    }
-
-    private bool WorkerMatchesFilter(JsonElement worker)
-    {
-        if (!string.IsNullOrWhiteSpace(_workerSearch) && !MatchesAny(worker, _workerSearch, "hostName", "HostName", "workerKind", "WorkerKind", "consumerShortName", "ConsumerShortName", "status", "Status", "activityLabel", "ActivityLabel", "messageType", "MessageType"))
-        {
-            return false;
-        }
-
-        var status = Text(worker, "status", "Status", "activityLabel", "ActivityLabel");
-        return _workerFilter switch
-        {
-            "healthy" => status.Contains("healthy", StringComparison.OrdinalIgnoreCase),
-            "unhealthy" => status.Contains("unhealthy", StringComparison.OrdinalIgnoreCase),
-            "idle" => status.Contains("idle", StringComparison.OrdinalIgnoreCase),
-            _ => true,
-        };
-    }
-
-    private static bool IsFailedWorker(JsonElement worker)
-    {
-        var status = Text(worker, "status", "Status", "activityLabel", "ActivityLabel");
-        var error = Text(worker, "error", "Error");
-        return !string.IsNullOrWhiteSpace(error)
-            || status.Contains("error", StringComparison.OrdinalIgnoreCase)
-            || status.Contains("failed", StringComparison.OrdinalIgnoreCase)
-            || status.Contains("unhealthy", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private string TargetSortKey(JsonElement target) =>
-        _targetSort switch
-        {
-            "depth" => NumberSortKey(Long(target, "globalMaxDepth", "GlobalMaxDepth")),
-            "subdomains" => NumberSortKey(Long(target, "subdomainCount", "SubdomainCount")),
-            "assets" => NumberSortKey(Long(target, "confirmedAssetCount", "ConfirmedAssetCount")),
-            "lastRun" => Text(target, "lastRunAtUtc", "LastRunAtUtc"),
-            _ => Text(target, "rootDomain", "RootDomain"),
-        };
-
-    private string SubdomainSortKey(JsonElement subdomain) =>
-        _subdomainSort switch
-        {
-            "discovered" => Text(subdomain, "discoveredAtUtc", "DiscoveredAtUtc"),
-            "context" => Text(subdomain, "discoveryContext", "DiscoveryContext"),
-            _ => SubdomainName(subdomain),
-        };
-
-    private string AssetSortKey(JsonElement asset) =>
-        _assetSort switch
-        {
-            "lastSeen" => Text(asset, "lastSeenAtUtc", "LastSeenAtUtc"),
-            "kind" => Text(asset, "kind", "Kind"),
-            "category" => Text(asset, "category", "Category"),
-            "url" => Text(asset, "finalUrl", "FinalUrl"),
-            "context" => Text(asset, "discoveryContext", "DiscoveryContext"),
-            _ => Text(asset, "discoveredAtUtc", "DiscoveredAtUtc"),
-        };
-
-    private string HttpSortKey(JsonElement request) =>
-        _httpSort switch
-        {
-            "state" => Text(request, "state", "State"),
-            "method" => Text(request, "method", "Method"),
-            "url" => Text(request, "requestUrl", "RequestUrl"),
-            "domain" => Text(request, "domainKey", "DomainKey"),
-            "attempts" => NumberSortKey(Long(request, "attemptCount", "AttemptCount")),
-            "status" => NumberSortKey(Long(request, "lastHttpStatus", "LastHttpStatus")),
-            "duration" => NumberSortKey(Long(request, "durationMs", "DurationMs")),
-            "error" => Text(request, "lastError", "LastError"),
-            _ => Text(request, "createdAtUtc", "CreatedAtUtc"),
-        };
-
-    private string RabbitSortKey(JsonElement queue) =>
-        _rabbitSort switch
-        {
-            "ready" => NumberSortKey(Long(queue, "messagesReady", "MessagesReady")),
-            "unacked" => NumberSortKey(Long(queue, "messagesUnacknowledged", "MessagesUnacknowledged")),
-            "consumers" => NumberSortKey(Long(queue, "consumers", "Consumers")),
-            "worker" => Text(queue, "likelyWorkerKey", "LikelyWorkerKey"),
-            _ => Text(queue, "name", "Name"),
-        };
-
-    private string EventSortKey(JsonElement evt) =>
-        _eventSort switch
-        {
-            "event" => Text(evt, "eventName", "EventName"),
-            "producer" => Text(evt, "producer", "Producer"),
-            "host" => Text(evt, "hostName", "HostName"),
-            "consumers" => NumberSortKey(Long(evt, "consumerCount", "ConsumerCount")),
-            "payload" => Text(evt, "payloadPreview", "PayloadPreview"),
-            _ => Text(evt, "publishedAtUtc", "PublishedAtUtc"),
-        };
-
-    private string WorkerSortKey(JsonElement worker) =>
-        _workerSort switch
-        {
-            "host" => Text(worker, "hostName", "HostName"),
-            "consumer" => Text(worker, "consumerShortName", "ConsumerShortName"),
-            "health" => Text(worker, "status", "Status", "activityLabel", "ActivityLabel"),
-            "lastActive" => Text(worker, "lastCompletedAtUtc", "LastCompletedAtUtc"),
-            "message" => Text(worker, "messageType", "MessageType"),
-            "duration" => NumberSortKey(Long(worker, "durationMs", "DurationMs")),
-            _ => Text(worker, "workerKind", "WorkerKind"),
-        };
-
-    protected override Task OnInitializedAsync()
-    {
-        Realtime.DomainEventReceived += OnRealtimeEvent;
-        Realtime.ConnectionStateChanged += OnRealtimeConnectionChanged;
-        return Task.CompletedTask;
     }
 
     protected override Task OnAfterRenderAsync(bool firstRender)
@@ -842,123 +647,184 @@
         if (firstRender && !_initialLoadStarted)
         {
             _initialLoadStarted = true;
-            _ = InvokeAsync(InitializeAfterFirstRenderAsync);
+            _ = InvokeAsync(InitializeAsync);
         }
 
         return Task.CompletedTask;
     }
 
-    private async Task InitializeAfterFirstRenderAsync()
+    private async Task InitializeAsync()
     {
         await ReloadAllAsync().ConfigureAwait(false);
-        await StartRealtimeAsync().ConfigureAwait(false);
-        _ = PollLiveAsync();
-        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-    }
 
-    private async Task StartRealtimeAsync()
-    {
         try
         {
-            await Realtime.EnsureStartedAsync(_realtimeCts.Token).ConfigureAwait(false);
+            await Realtime.EnsureStartedAsync(_cts.Token).ConfigureAwait(false);
+            Realtime.DomainEventReceived += OnRealtimeEvent;
         }
         catch
         {
-            // One-second live polling remains active if the hub cannot connect.
+            // Manual refresh remains available if realtime is unavailable.
         }
+
+        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
     }
 
     private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
     {
-        _ = evt;
-        _ = InvokeAsync(ReloadLiveAsync);
-    }
-
-    private void OnRealtimeConnectionChanged(object? sender, EventArgs args)
-    {
-        _ = InvokeAsync(StateHasChanged);
-    }
-
-    private async Task PollLiveAsync()
-    {
-        try
+        if (evt.Scope is "targets" or "assets" or "http" or "findings" or "technology" or "ops")
         {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
-            while (await timer.WaitForNextTickAsync(_realtimeCts.Token).ConfigureAwait(false))
+            _ = InvokeAsync(async () =>
             {
-                await ReloadLiveAsync().ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
-
-    private async Task ReloadLiveAsync()
-    {
-        var now = DateTimeOffset.UtcNow;
-        if (_liveRefreshRunning || now - _lastLiveRefreshUtc < TimeSpan.FromSeconds(1))
-        {
-            return;
-        }
-
-        _liveRefreshRunning = true;
-        _lastLiveRefreshUtc = now;
-        try
-        {
-            // Fast refresh every second for HTTP queue and workers
-            var fastTask = Task.WhenAll(
-                    ReloadOverviewAsync(),
-                    ReloadHttpQueueAsync(),
-                    ReloadDockerWorkersAsync());
-            
-            // Slower refresh every 5 seconds for targets and assets
-            if (now - _lastDataRefreshUtc >= _dataRefreshInterval)
-            {
-                _lastDataRefreshUtc = now;
-                var dataTask = Task.WhenAll(
-                    ReloadTargetsAsync(),
-                    ReloadAssetsAsync());
-                
-                await Task.WhenAll(fastTask, dataTask).ConfigureAwait(false);
-            }
-            else
-            {
-                await fastTask.ConfigureAwait(false);
-            }
-            
-            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-        }
-        catch
-        {
-            // Keep the current snapshot visible; the next tick/event will retry.
-        }
-        finally
-        {
-            _liveRefreshRunning = false;
+                await ReloadAllAsync().ConfigureAwait(false);
+                StateHasChanged();
+            });
         }
     }
 
     private async Task ReloadAllAsync()
     {
-        _statusMessage = "";
+        _statusMessage = null;
+        await Task.WhenAll(
+            ReloadOverviewAsync(),
+            ReloadTargetsAsync(),
+            ReloadAssetsAsync(),
+            ReloadHttpQueueAsync(),
+            ReloadHighValueAssetsAsync(),
+            ReloadTechnologyDataAsync()).ConfigureAwait(false);
 
+        EnsureSelection();
+    }
+
+    private async Task ReloadOverviewAsync()
+    {
+        _overviewLoading = true;
         try
         {
-            await Task.WhenAll(
-                ReloadOverviewAsync(),
-                ReloadTargetsAsync(),
-                ReloadAssetsAsync(),
-                ReloadHttpQueueAsync(),
-                ReloadDockerWorkersAsync());
+            _overview = await GetObjectAsync("/api/ops/overview").ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _statusMessage = $"Operations refresh failed: {ex.Message}";
+            _statusMessage = $"Operations overview could not be loaded: {ex.Message}";
+            _overview = null;
+        }
+        finally
+        {
+            _overviewLoading = false;
+        }
+    }
+
+    private async Task ReloadTargetsAsync()
+    {
+        _targetsLoading = true;
+        try
+        {
+            Replace(_targets, await GetArrayAsync("/api/targets").ConfigureAwait(false));
+            EnsureSelection();
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Targets could not be loaded: {ex.Message}";
+        }
+        finally
+        {
+            _targetsLoading = false;
+        }
+    }
+
+    private async Task ReloadAssetsAsync()
+    {
+        _assetsLoading = true;
+        try
+        {
+            Replace(_assets, await GetArrayAsync("/api/assets").ConfigureAwait(false));
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Assets could not be loaded: {ex.Message}";
         }
         finally
         {
             EnsureSelection();
+            _assetsLoading = false;
+        }
+    }
+
+    private async Task ReloadHttpQueueAsync()
+    {
+        _httpLoading = true;
+        try
+        {
+            var uri = string.IsNullOrWhiteSpace(_httpStateFilter)
+                ? "/api/http-request-queue"
+                : $"/api/http-request-queue?state={Uri.EscapeDataString(_httpStateFilter)}";
+            Replace(_queue, await GetArrayAsync(uri).ConfigureAwait(false));
+            _selectedHttpIds.RemoveWhere(id => !_queue.Any(q => Text(q, "id", "Id").Equals(id, StringComparison.OrdinalIgnoreCase)));
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"HTTP queue could not be loaded: {ex.Message}";
+        }
+        finally
+        {
+            _httpLoading = false;
+        }
+    }
+
+    private async Task ReloadHighValueAssetsAsync()
+    {
+        _highValueLoading = true;
+        try
+        {
+            var rows = await WorkerApi.Client.GetFromJsonAsync<List<HighValueAssetRowDto>>("/api/high-value-assets?includeResolved=true", _cts.Token).ConfigureAwait(false);
+            _highValueRows.Clear();
+            if (rows is not null)
+            {
+                _highValueRows.AddRange(rows);
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"High value assets could not be loaded: {ex.Message}";
+        }
+        finally
+        {
+            _highValueLoading = false;
+        }
+    }
+
+    private async Task ReloadTechnologyDataAsync()
+    {
+        _technologiesLoading = true;
+        _usageLoading = true;
+        try
+        {
+            var technologiesTask = WorkerApi.Client.GetFromJsonAsync<List<TechnologyIdentificationRowDto>>("/api/technology-identification/technologies", _cts.Token);
+            var usageTask = WorkerApi.Client.GetFromJsonAsync<List<TechnologyUsageDto>>("/api/technology-identification/usage", _cts.Token);
+
+            var technologies = await technologiesTask.ConfigureAwait(false);
+            var usage = await usageTask.ConfigureAwait(false);
+
+            _technologyRows.Clear();
+            if (technologies is not null)
+            {
+                _technologyRows.AddRange(technologies);
+            }
+
+            _technologyUsage.Clear();
+            if (usage is not null)
+            {
+                _technologyUsage.AddRange(usage);
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Technology data could not be loaded: {ex.Message}";
+        }
+        finally
+        {
+            _technologiesLoading = false;
+            _usageLoading = false;
         }
     }
 
@@ -972,15 +838,13 @@
         try
         {
             using var response = await WorkerApi.Client.PostAsJsonAsync(
-                    "/api/targets",
-                    new { rootDomain = _newTargetRootDomain.Trim(), globalMaxDepth = _newTargetDepth },
-                    _realtimeCts.Token)
-                .ConfigureAwait(false);
+                "/api/targets",
+                new { rootDomain = _newTargetRootDomain.Trim(), globalMaxDepth = _newTargetDepth },
+                _cts.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             _newTargetRootDomain = "";
             await ReloadTargetsAsync().ConfigureAwait(false);
             await ReloadOverviewAsync().ConfigureAwait(false);
-            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -988,61 +852,22 @@
         }
     }
 
-    private async Task ImportTargetsAsync(InputFileChangeEventArgs args)
+    private async Task EnumerateAllTargetsAsync()
     {
-        if (args.FileCount == 0)
+        if (_targets.Count == 0)
         {
             return;
         }
 
-        _importingTargets = true;
-        try
-        {
-            await using var stream = args.File.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024, _realtimeCts.Token);
-            using var reader = new StreamReader(stream);
-            var text = await reader.ReadToEndAsync(_realtimeCts.Token).ConfigureAwait(false);
-            var domains = text.Split(['\r', '\n', ',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            using var response = await WorkerApi.Client.PostAsJsonAsync(
-                    "/api/targets/bulk",
-                    new { domains, globalMaxDepth = _newTargetDepth },
-                    _realtimeCts.Token)
-                .ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            await ReloadTargetsAsync().ConfigureAwait(false);
-            await ReloadOverviewAsync().ConfigureAwait(false);
-            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _statusMessage = $"Targets could not be imported: {ex.Message}";
-        }
-        finally
-        {
-            _importingTargets = false;
-        }
-    }
-
-    private async Task EnumerateAllTargetsAsync()
-    {
-        if (_targets.Count == 0) return;
-
         _enumLoading = true;
-        _statusMessage = "";
-        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-
         try
         {
             using var response = await WorkerApi.Client.PostAsJsonAsync(
-                    "/api/ops/subdomain-enum/restart",
-                    new RestartToolRequest([], AllTargets: true),
-                    _realtimeCts.Token)
-                .ConfigureAwait(false);
+                "/api/ops/subdomain-enum/restart",
+                new RestartToolRequest([], AllTargets: true),
+                _cts.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            var json = await response.Content.ReadAsStringAsync(_realtimeCts.Token).ConfigureAwait(false);
-            using var doc = JsonDocument.Parse(json);
-            var targets = doc.RootElement.TryGetProperty("Targets", out var t) ? t.GetInt64() : 0;
-            var jobs = doc.RootElement.TryGetProperty("JobsQueued", out var j) ? j.GetInt64() : 0;
-            _statusMessage = $"Subdomain enumeration started for {targets} target(s), {jobs} job(s) queued.";
+            _statusMessage = "Subdomain enumeration started.";
         }
         catch (Exception ex)
         {
@@ -1051,32 +876,25 @@
         finally
         {
             _enumLoading = false;
-            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
         }
     }
 
     private async Task SpiderAllTargetsAsync()
     {
-        if (_targets.Count == 0) return;
+        if (_targets.Count == 0)
+        {
+            return;
+        }
 
         _spiderAllLoading = true;
-        _statusMessage = "";
-        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-
         try
         {
             using var response = await WorkerApi.Client.PostAsJsonAsync(
-                    "/api/ops/spider/restart",
-                    new RestartToolRequest([], AllTargets: true),
-                    _realtimeCts.Token)
-                .ConfigureAwait(false);
+                "/api/ops/spider/restart",
+                new RestartToolRequest([], AllTargets: true),
+                _cts.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            var json = await response.Content.ReadAsStringAsync(_realtimeCts.Token).ConfigureAwait(false);
-            using var doc = JsonDocument.Parse(json);
-            var targets = doc.RootElement.TryGetProperty("Targets", out var t) ? t.GetInt64() : 0;
-            var requeued = doc.RootElement.TryGetProperty("RequeuedExistingRequests", out var r) ? r.GetInt64() : 0;
-            var seeds = doc.RootElement.TryGetProperty("RootSeedsQueued", out var s) ? s.GetInt64() : 0;
-            _statusMessage = $"Spider started for {targets} target(s). Requeued {requeued} existing requests, {seeds} root seeds.";
+            _statusMessage = "Spider started for all targets.";
             await ReloadHttpQueueAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -1086,29 +904,26 @@
         finally
         {
             _spiderAllLoading = false;
-            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
         }
     }
 
     private async Task SpiderSubdomainAsync(string? specificSubdomain)
     {
-        if (string.IsNullOrWhiteSpace(_selectedTargetId)) return;
+        _ = specificSubdomain;
+        if (string.IsNullOrWhiteSpace(_selectedTargetId))
+        {
+            return;
+        }
 
         _spiderSubdomainLoading = true;
-        _statusMessage = "";
-        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-
         try
         {
-            // For specific subdomain, we use the target with subdomain filter
             using var response = await WorkerApi.Client.PostAsJsonAsync(
-                    "/api/ops/spider/restart",
-                    new RestartToolRequest([_selectedTargetId], AllTargets: false),
-                    _realtimeCts.Token)
-                .ConfigureAwait(false);
+                "/api/ops/spider/restart",
+                new RestartToolRequest([_selectedTargetId!], AllTargets: false),
+                _cts.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            var label = string.IsNullOrWhiteSpace(specificSubdomain) ? "all subdomains" : specificSubdomain;
-            _statusMessage = $"Spider started for {SelectedTargetLabel} ({label}).";
+            _statusMessage = $"Spider started for {SelectedTargetLabel}.";
             await ReloadHttpQueueAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -1118,115 +933,143 @@
         finally
         {
             _spiderSubdomainLoading = false;
-            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
         }
     }
 
-    private async Task SpiderSelectedDomainsAsync()
+    private bool IsHttpRowSelected(string id) => !string.IsNullOrWhiteSpace(id) && _selectedHttpIds.Contains(id);
+
+    private void ToggleHttpRow(string id, ChangeEventArgs args)
     {
-        if (string.IsNullOrWhiteSpace(_selectedTargetId))
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return;
+        }
+
+        if (args.Value is bool selected && selected)
+        {
+            _selectedHttpIds.Add(id);
+        }
+        else
+        {
+            _selectedHttpIds.Remove(id);
+        }
+    }
+
+    private async Task RetrySelectedHttpRowsAsync() => await MutateSelectedHttpRowsAsync("/api/http-request-queue/retry").ConfigureAwait(false);
+    private async Task ClearSelectedHttpRowsAsync() => await MutateSelectedHttpRowsAsync("/api/http-request-queue/clear-selected").ConfigureAwait(false);
+    private async Task ClearCompletedHttpRowsAsync() => await MutateHttpRowsAsync("/api/http-request-queue/clear-completed").ConfigureAwait(false);
+    private async Task ClearFailedHttpRowsAsync() => await MutateHttpRowsAsync("/api/http-request-queue/clear-failed").ConfigureAwait(false);
+
+    private async Task MutateSelectedHttpRowsAsync(string uri)
+    {
+        var ids = _selectedHttpIds
+            .Select(id => Guid.TryParse(id, out var parsed) ? parsed : Guid.Empty)
+            .Where(id => id != Guid.Empty)
+            .ToArray();
+
+        if (ids.Length == 0)
+        {
+            return;
+        }
+
+        using var response = await WorkerApi.Client.PostAsJsonAsync(uri, new { ids }, _cts.Token).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        _selectedHttpIds.Clear();
+        await ReloadHttpQueueAsync().ConfigureAwait(false);
+    }
+
+    private async Task MutateHttpRowsAsync(string uri)
+    {
+        using var response = await WorkerApi.Client.PostAsync(uri, content: null, cancellationToken: _cts.Token).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        _selectedHttpIds.Clear();
+        await ReloadHttpQueueAsync().ConfigureAwait(false);
+    }
+
+    private async Task MarkFalsePositiveAsync(HighValueAssetRowDto row)
+    {
+        try
+        {
+            using var response = await WorkerApi.Client.PostAsync($"/api/high-value-assets/{row.AssetId}/false-positive", null, _cts.Token).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            await ReloadHighValueAssetsAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Could not mark asset as false positive: {ex.Message}";
+        }
+    }
+
+    private async Task UpdateInvestigationStatusAsync(HighValueAssetRowDto row, string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status) || status == row.InvestigationStatus)
         {
             return;
         }
 
         try
         {
-            using var response = await WorkerApi.Client.PostAsJsonAsync(
-                    "/api/ops/spider/restart",
-                    new RestartToolRequest([_selectedTargetId], AllTargets: false),
-                    _realtimeCts.Token)
-                .ConfigureAwait(false);
+            using var response = await WorkerApi.Client.PatchAsJsonAsync(
+                $"/api/high-value-findings/{row.FindingId}/status",
+                new HighValueFindingStatusPatch(status),
+                _cts.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            _statusMessage = $"Spider queued for {SelectedTargetLabel}.";
-            await ReloadHttpQueueAsync().ConfigureAwait(false);
+            await ReloadHighValueAssetsAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _statusMessage = $"Spider could not be queued: {ex.Message}";
+            _statusMessage = $"Could not update investigation status: {ex.Message}";
         }
     }
 
-    private async Task OpenAssetDecisionAsync(JsonElement asset)
+    private bool StatusMatches(HighValueAssetRowDto row) => _highValueStatusFilter switch
     {
-        try
-        {
-            var targetId = Text(asset, "targetId", "TargetId");
-            var canonicalKey = Text(asset, "canonicalKey", "CanonicalKey");
-            var rawValue = Text(asset, "rawValue", "RawValue");
-            var query = new List<string> { "take=1" };
-            if (!string.IsNullOrWhiteSpace(targetId))
-                query.Add($"targetId={Uri.EscapeDataString(targetId)}");
-            if (!string.IsNullOrWhiteSpace(canonicalKey))
-                query.Add($"canonicalKey={Uri.EscapeDataString(canonicalKey)}");
-            else if (!string.IsNullOrWhiteSpace(rawValue))
-                query.Add($"rawContains={Uri.EscapeDataString(rawValue)}");
+        "Active" => row.IsHighValue && row.InvestigationStatus is not ("False Positive" or "Valid Finding"),
+        "" => true,
+        _ => string.Equals(row.InvestigationStatus, _highValueStatusFilter, StringComparison.OrdinalIgnoreCase),
+    };
 
-            var rows = await GetArrayAsync($"/api/asset-admission-decisions?{string.Join("&", query)}")
-                .ConfigureAwait(false);
-            _assetDecisionModal = rows.FirstOrDefault();
-
-            if (_assetDecisionModal.Value.ValueKind != JsonValueKind.Object)
-            {
-                _assetDecisionModal = JsonSerializer.SerializeToElement(new
-                {
-                    decision = DisplayOrDash(Text(asset, "lifecycleStatus", "LifecycleStatus")),
-                    reasonCode = "No admission decision row found",
-                    reasonDetail = "The asset row has discovery details, but no persisted admission decision matched it.",
-                    discoveredBy = Text(asset, "discoveredBy", "DiscoveredBy"),
-                    discoveryContext = Text(asset, "discoveryContext", "DiscoveryContext")
-                });
-            }
-
-            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _statusMessage = $"Asset decision could not be loaded: {ex.Message}";
-        }
-    }
-
-    private void CloseAssetDecisionModal() => _assetDecisionModal = null;
-
-    private async Task ReloadOverviewAsync()
+    private static bool HighValueAssetMatches(HighValueAssetRowDto row, string search)
     {
-        try
+        if (string.IsNullOrWhiteSpace(search))
         {
-            _overview = await GetObjectAsync("/api/ops/overview");
+            return true;
         }
-        catch
-        {
-            _overview = null;
-        }
+
+        return Matches(row.TargetRootDomain, search)
+            || Matches(row.Kind, search)
+            || Matches(row.Category, search)
+            || Matches(row.FinalUrl, search)
+            || Matches(row.RawValue, search)
+            || Matches(row.DisplayName, search)
+            || Matches(row.DiscoveredBy, search)
+            || Matches(row.DiscoveryContext, search)
+            || Matches(row.WorkerName, search)
+            || Matches(row.FindingType, search)
+            || Matches(row.Severity, search)
+            || Matches(row.PatternName, search)
+            || Matches(row.MatchedText, search)
+            || Matches(row.InvestigationStatus, search);
     }
 
-    private async Task ReloadTargetsAsync()
+    private static bool TechnologyMatches(TechnologyIdentificationRowDto row, string search)
     {
-        _targetsLoading = true;
-        try
-        {
-            Replace(_targets, await GetArrayAsync("/api/targets"));
-            EnsureSelection();
-        }
-        finally
-        {
-            _targetsLoading = false;
-        }
+        return string.IsNullOrWhiteSpace(search)
+            || Matches(row.TargetRootDomain, search)
+            || Matches(row.Subdomain, search)
+            || Matches(row.AssetCanonicalKey, search)
+            || Matches(row.TechnologyName, search)
+            || Matches(row.Vendor, search)
+            || Matches(row.Product, search)
+            || Matches(row.Version, search)
+            || Matches(row.SourceType, search)
+            || Matches(row.DetectionMode, search)
+            || Matches(row.FingerprintId, search)
+            || Matches(row.EvidenceSummary, search);
     }
 
-    private async Task ReloadAssetsAsync()
-    {
-        _assetsLoading = true;
-
-        try
-        {
-            Replace(_assets, await GetArrayAsync("/api/assets"));
-        }
-        finally
-        {
-            EnsureSelection();
-            _assetsLoading = false;
-        }
-    }
+    private void OpenTechnologyModal(string technologyName) => _selectedTechnologyName = technologyName;
+    private void CloseTechnologyModal() => _selectedTechnologyName = null;
 
     private void EnsureSelection()
     {
@@ -1237,15 +1080,15 @@
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(_selectedTargetId) || !_targets.Any(t => IsSelectedTarget(t)))
+        if (string.IsNullOrWhiteSpace(_selectedTargetId) || !_targets.Any(IsSelectedTarget))
         {
             SelectTarget(_targets[0]);
         }
     }
 
     private bool IsSelectedTarget(JsonElement target) =>
-        !string.IsNullOrWhiteSpace(_selectedTargetId)
-        && Text(target, "id", "Id").Equals(_selectedTargetId, StringComparison.OrdinalIgnoreCase);
+        !string.IsNullOrWhiteSpace(_selectedTargetId) &&
+        Text(target, "id", "Id").Equals(_selectedTargetId, StringComparison.OrdinalIgnoreCase);
 
     private void SelectTarget(JsonElement target)
     {
@@ -1264,17 +1107,15 @@
     }
 
     private bool IsSelectedSubdomain(string subdomain) =>
-        !string.IsNullOrWhiteSpace(_selectedSubdomain)
-        && subdomain.Equals(_selectedSubdomain, StringComparison.OrdinalIgnoreCase);
+        !string.IsNullOrWhiteSpace(_selectedSubdomain) &&
+        subdomain.Equals(_selectedSubdomain, StringComparison.OrdinalIgnoreCase);
 
-    private void SelectSubdomain(string subdomain)
-    {
+    private void SelectSubdomain(string subdomain) =>
         _selectedSubdomain = string.IsNullOrWhiteSpace(subdomain) ? null : subdomain;
-    }
 
     private bool MatchesSelectedTarget(JsonElement asset) =>
-        string.IsNullOrWhiteSpace(_selectedTargetId)
-        || Text(asset, "targetId", "TargetId").Equals(_selectedTargetId, StringComparison.OrdinalIgnoreCase);
+        string.IsNullOrWhiteSpace(_selectedTargetId) ||
+        Text(asset, "targetId", "TargetId").Equals(_selectedTargetId, StringComparison.OrdinalIgnoreCase);
 
     private bool MatchesSelectedSubdomain(JsonElement asset)
     {
@@ -1301,211 +1142,15 @@
         return candidates.Any(value => ValueBelongsToSubdomain(value, subdomain));
     }
 
-    private static bool ValueBelongsToSubdomain(string value, string subdomain)
+    private bool AssetMatchesFilter(JsonElement asset)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        if (!string.IsNullOrWhiteSpace(_assetSearch) && !MatchesAsset(asset, _assetSearch))
         {
             return false;
         }
 
-        if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
-        {
-            return HostMatches(uri.Host, subdomain);
-        }
-
-        return value.Contains(subdomain, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool HostMatches(string host, string subdomain) =>
-        host.Equals(subdomain, StringComparison.OrdinalIgnoreCase)
-        || host.EndsWith("." + subdomain, StringComparison.OrdinalIgnoreCase);
-
-    private static string SubdomainName(JsonElement asset)
-    {
-        foreach (var name in new[] { "displayName", "DisplayName", "rawValue", "RawValue", "canonicalKey", "CanonicalKey", "finalUrl", "FinalUrl" })
-        {
-            var value = Text(asset, name);
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
-                {
-                    return uri.Host;
-                }
-
-                return value.Trim();
-            }
-        }
-
-        return "";
-    }
-
-    private async Task ReloadHttpQueueAsync()
-    {
-        _httpLoading = true;
-        try
-        {
-            var state = string.IsNullOrWhiteSpace(_httpStateFilter) ? "" : $"state={Uri.EscapeDataString(_httpStateFilter)}";
-            var uri = string.IsNullOrWhiteSpace(state) ? "/api/http-request-queue" : $"/api/http-request-queue?{state}";
-
-            Replace(_queue, await GetArrayAsync(uri));
-            _selectedHttpIds.RemoveWhere(id => !_queue.Any(q => Text(q, "id", "Id").Equals(id, StringComparison.OrdinalIgnoreCase)));
-        }
-        finally
-        {
-            _httpLoading = false;
-        }
-    }
-
-    private bool IsHttpRowSelected(string id) =>
-        !string.IsNullOrWhiteSpace(id) && _selectedHttpIds.Contains(id);
-
-    private void ToggleHttpRow(string id, ChangeEventArgs args)
-    {
-        if (string.IsNullOrWhiteSpace(id))
-        {
-            return;
-        }
-
-        if (args.Value is bool selected && selected)
-        {
-            _selectedHttpIds.Add(id);
-        }
-        else
-        {
-            _selectedHttpIds.Remove(id);
-        }
-    }
-
-    private async Task RetrySelectedHttpRowsAsync()
-    {
-        await MutateSelectedHttpRowsAsync("/api/http-request-queue/retry");
-    }
-
-    private async Task ClearSelectedHttpRowsAsync()
-    {
-        await MutateSelectedHttpRowsAsync("/api/http-request-queue/clear-selected");
-    }
-
-    private async Task MutateSelectedHttpRowsAsync(string uri)
-    {
-        var ids = SelectedHttpGuids();
-        if (ids.Length == 0)
-        {
-            return;
-        }
-
-        using var response = await WorkerApi.Client.PostAsJsonAsync(uri, new { ids });
-        response.EnsureSuccessStatusCode();
-        _selectedHttpIds.Clear();
-        await ReloadHttpQueueAsync();
-    }
-
-    private async Task ClearCompletedHttpRowsAsync()
-    {
-        await MutateHttpRowsAsync("/api/http-request-queue/clear-completed");
-    }
-
-    private async Task ClearFailedHttpRowsAsync()
-    {
-        await MutateHttpRowsAsync("/api/http-request-queue/clear-failed");
-    }
-
-    private async Task ClearOlderThanSelectedHttpRowAsync()
-    {
-        if (SelectedHttpCutoffUtc is not { } cutoff)
-        {
-            return;
-        }
-
-        using var response = await WorkerApi.Client.PostAsJsonAsync("/api/http-request-queue/clear-older-than", new { cutoffUtc = cutoff });
-        response.EnsureSuccessStatusCode();
-        _selectedHttpIds.Clear();
-        await ReloadHttpQueueAsync();
-    }
-
-    private async Task MutateHttpRowsAsync(string uri)
-    {
-        using var response = await WorkerApi.Client.PostAsync(uri, content: null);
-        response.EnsureSuccessStatusCode();
-        _selectedHttpIds.Clear();
-        await ReloadHttpQueueAsync();
-    }
-
-    private Guid[] SelectedHttpGuids() =>
-        _selectedHttpIds
-            .Select(id => Guid.TryParse(id, out var parsed) ? parsed : Guid.Empty)
-            .Where(id => id != Guid.Empty)
-            .ToArray();
-
-    private async Task ReloadMessageBusAsync()
-    {
-        _busLoading = true;
-        try
-        {
-            Replace(_rabbitQueues, await GetArrayAsync("/api/ops/rabbit-queues"));
-        }
-        finally
-        {
-            _busLoading = false;
-        }
-    }
-
-    private async Task ReloadEventsAsync()
-    {
-        _eventsLoading = true;
-        try
-        {
-            Replace(_events, await GetArrayAsync("/api/events/live?all=true&includePayload=false"));
-        }
-        finally
-        {
-            _eventsLoading = false;
-        }
-    }
-
-    private async Task ReloadWorkersAsync()
-    {
-        _workersLoading = true;
-        try
-        {
-            var activity = await GetObjectAsync("/api/workers/activity");
-            if (activity is JsonElement root)
-            {
-                Replace(_workerSummaries, ArrayProperty(root, "workerSummaries", "WorkerSummaries"));
-                Replace(_workerInstances, ArrayProperty(root, "instances", "Instances"));
-                return;
-            }
-        }
-        catch
-        {
-            // Fall back to worker switches below.
-        }
-
-        try
-        {
-            Replace(_workerSummaries, await GetArrayAsync("/api/workers"));
-        }
-        catch
-        {
-            _workerSummaries.Clear();
-        }
-        finally
-        {
-            _workersLoading = false;
-        }
-    }
-
-    private async Task ReloadWorkerScaleAsync()
-    {
-        _scaleLoading = true;
-        try
-        {
-            Replace(_workerScaleTargets, await GetArrayAsync("/api/workers/scale"));
-        }
-        finally
-        {
-            _scaleLoading = false;
-        }
+        return string.IsNullOrWhiteSpace(_assetFilter) ||
+            Text(asset, "kind", "Kind").Equals(_assetFilter, StringComparison.OrdinalIgnoreCase);
     }
 
     private long OverviewLong(params string[] names)
@@ -1518,92 +1163,38 @@
         return Long(_overview.Value, names);
     }
 
-    private void SetTargetSort(string key) => ToggleSort(key, ref _targetSort, ref _targetSortDescending);
-
-    private void SetSubdomainSort(string key) => ToggleSort(key, ref _subdomainSort, ref _subdomainSortDescending);
-
-    private void SetAssetSort(string key) => ToggleSort(key, ref _assetSort, ref _assetSortDescending);
-
-    private void SetHttpSort(string key) => ToggleSort(key, ref _httpSort, ref _httpSortDescending);
-
-    private void SetRabbitSort(string key) => ToggleSort(key, ref _rabbitSort, ref _rabbitSortDescending);
-
-    private void SetEventSort(string key) => ToggleSort(key, ref _eventSort, ref _eventSortDescending);
-
-    private void SetWorkerSort(string key) => ToggleSort(key, ref _workerSort, ref _workerSortDescending);
-
-    private static void ToggleSort(string key, ref string sort, ref bool descending)
-    {
-        if (sort.Equals(key, StringComparison.OrdinalIgnoreCase))
-        {
-            descending = !descending;
-            return;
-        }
-
-        sort = key;
-        descending = false;
-    }
-
-    private static ICollection<JsonElement> MaterializeSorted(
-        IEnumerable<JsonElement> rows,
-        Func<JsonElement, string> sortKey,
-        bool descending)
-    {
-        var ordered = descending
-            ? rows.OrderByDescending(sortKey, StringComparer.OrdinalIgnoreCase)
-            : rows.OrderBy(sortKey, StringComparer.OrdinalIgnoreCase);
-
-        return ordered.ToArray();
-    }
-
-    private static string NumberSortKey(long value) =>
-        value.ToString("D20", CultureInfo.InvariantCulture);
-
-    private static void Replace(List<JsonElement> target, IEnumerable<JsonElement> values)
-    {
-        target.Clear();
-        target.AddRange(values.Select(v => v.Clone()));
-    }
-
     private async Task<JsonElement?> GetObjectAsync(string uri)
     {
-        using var response = await WorkerApi.Client.GetAsync(uri);
+        using var response = await WorkerApi.Client.GetAsync(uri, _cts.Token).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             return null;
         }
 
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync(_cts.Token).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
-
-        return doc.RootElement.ValueKind == JsonValueKind.Object
-            ? doc.RootElement.Clone()
-            : null;
+        return doc.RootElement.ValueKind == JsonValueKind.Object ? doc.RootElement.Clone() : null;
     }
 
     private async Task<List<JsonElement>> GetArrayAsync(string uri)
     {
-        using var response = await WorkerApi.Client.GetAsync(uri);
+        using var response = await WorkerApi.Client.GetAsync(uri, _cts.Token).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             return [];
         }
 
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync(_cts.Token).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
-
         return doc.RootElement.ValueKind == JsonValueKind.Array
             ? doc.RootElement.EnumerateArray().Select(x => x.Clone()).ToList()
             : [];
     }
 
-    private static IEnumerable<JsonElement> ArrayProperty(JsonElement element, params string[] names)
+    private static void Replace(List<JsonElement> target, IEnumerable<JsonElement> values)
     {
-        var property = Property(element, names);
-
-        return property is { ValueKind: JsonValueKind.Array }
-            ? property.Value.EnumerateArray().Select(x => x.Clone()).ToArray()
-            : [];
+        target.Clear();
+        target.AddRange(values.Select(v => v.Clone()));
     }
 
     private static JsonElement? Property(JsonElement element, params string[] names)
@@ -1639,7 +1230,6 @@
     private static string Text(JsonElement element, params string[] names)
     {
         var value = Property(element, names);
-
         if (value is null)
         {
             return "";
@@ -1669,10 +1259,46 @@
             return number;
         }
 
-        return long.TryParse(Text(element, names), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : 0;
+        return long.TryParse(Text(element, names), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
     }
+
+    private static string SubdomainName(JsonElement asset)
+    {
+        foreach (var name in new[] { "displayName", "DisplayName", "rawValue", "RawValue", "canonicalKey", "CanonicalKey", "finalUrl", "FinalUrl" })
+        {
+            var value = Text(asset, name);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+                {
+                    return uri.Host;
+                }
+
+                return value.Trim();
+            }
+        }
+
+        return "";
+    }
+
+    private static bool ValueBelongsToSubdomain(string value, string subdomain)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return HostMatches(uri.Host, subdomain);
+        }
+
+        return value.Contains(subdomain, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HostMatches(string host, string subdomain) =>
+        host.Equals(subdomain, StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith("." + subdomain, StringComparison.OrdinalIgnoreCase);
 
     private static bool MatchesAsset(JsonElement element, string search)
     {
@@ -1681,6 +1307,8 @@
             Text(element, "kind", "Kind"),
             Text(element, "category", "Category"),
             Text(element, "finalUrl", "FinalUrl"),
+            Text(element, "rawValue", "RawValue"),
+            Text(element, "displayName", "DisplayName"),
             Text(element, "discoveryContext", "DiscoveryContext")
         };
 
@@ -1690,23 +1318,15 @@
     private static bool MatchesAny(JsonElement element, string search, params string[] names) =>
         names.Any(name => Text(element, name).Contains(search, StringComparison.OrdinalIgnoreCase));
 
+    private static bool Matches(string? value, string search) =>
+        string.IsNullOrWhiteSpace(search) ||
+        (!string.IsNullOrWhiteSpace(value) && value.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private static string BestAssetUrl(HighValueAssetRowDto row) =>
+        row.FinalUrl ?? row.DisplayName ?? row.RawValue;
+
     private static string FormatNumber(long value) =>
         value.ToString("N0", CultureInfo.InvariantCulture);
-
-    private static string FormatStorageSize(long bytes)
-    {
-        var clamped = Math.Max(0, bytes);
-        var value = clamped / 1024d / 1024d;
-        var unit = "MB";
-
-        if (value >= 1024d)
-        {
-            value /= 1024d;
-            unit = "GB";
-        }
-
-        return $"{value:N1} {unit}";
-    }
 
     private static string DisplayOrDash(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "-" : value;
@@ -1722,6 +1342,9 @@
             ? parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
             : value;
     }
+
+    private static string FormatTime(DateTimeOffset? value) =>
+        value is null ? "-" : value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
     private static string? TryHttpHref(string? value)
     {
@@ -1741,91 +1364,13 @@
         return string.IsNullOrWhiteSpace(value) ? "-" : $"{value}ms";
     }
 
-    private static string CssToken(string value) =>
-        string.IsNullOrWhiteSpace(value)
-            ? "unknown"
-            : new string(value.Trim().Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-').ToArray());
-
-    private static string AssetKey(JsonElement element) =>
-        DisplayOrDash(Text(element, "id", "Id", "canonicalKey", "CanonicalKey", "finalUrl", "FinalUrl"));
-
-    // ── Docker worker status + scaling ─────────────────────────────────────
-
-    private async Task ReloadDockerWorkersAsync()
-    {
-        try
-        {
-            var snapshot = await GetObjectAsync("/api/workers/docker-status").ConfigureAwait(false);
-            if (snapshot is JsonElement root)
-            {
-                _dockerWorkersError = Text(root, "error", "Error");
-                Replace(_dockerWorkerServices, ArrayProperty(root, "services", "Services"));
-            }
-        }
-        catch
-        {
-            // Keep current snapshot on transient errors.
-        }
-    }
-
-    private async Task ScaleDockerWorkerAsync(string serviceName, int delta)
-    {
-        if (_scalingService == serviceName) return;
-
-        var svc = _dockerWorkerServices.FirstOrDefault(s =>
-            Text(s, "serviceName", "ServiceName").Equals(serviceName, StringComparison.OrdinalIgnoreCase));
-
-        if (svc.ValueKind != JsonValueKind.Object) return;
-
-        var current = (int)Long(svc, "totalCount", "TotalCount");
-        var desired = Math.Max(0, current + delta);
-
-        _scalingService = serviceName;
-        _scaleFeedback.Remove(serviceName);
-        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-
-        try
-        {
-            using var response = await WorkerApi.Client.PutAsJsonAsync(
-                $"/api/workers/{Uri.EscapeDataString(serviceName)}/docker-scale",
-                new { desiredCount = desired },
-                _realtimeCts.Token).ConfigureAwait(false);
-
-            if (response.IsSuccessStatusCode)
-            {
-                var json = await response.Content.ReadAsStringAsync(_realtimeCts.Token).ConfigureAwait(false);
-                using var doc = JsonDocument.Parse(json);
-                var msg = Text(doc.RootElement, "message", "Message");
-                _scaleFeedback[serviceName] = string.IsNullOrWhiteSpace(msg) ? "Done." : msg;
-            }
-            else
-            {
-                _scaleFeedback[serviceName] = $"Scale failed ({(int)response.StatusCode}).";
-            }
-        }
-        catch (Exception ex)
-        {
-            _scaleFeedback[serviceName] = $"Error: {ex.Message}";
-        }
-        finally
-        {
-            _scalingService = null;
-            await ReloadDockerWorkersAsync().ConfigureAwait(false);
-            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-
-            // Auto-clear feedback after 5 seconds
-            _ = Task.Delay(5000).ContinueWith(
-                _ => InvokeAsync(() => { _scaleFeedback.Remove(serviceName); StateHasChanged(); }),
-                TaskContinuationOptions.OnlyOnRanToCompletion);
-        }
-    }
-
     public void Dispose()
     {
         Realtime.DomainEventReceived -= OnRealtimeEvent;
-        Realtime.ConnectionStateChanged -= OnRealtimeConnectionChanged;
-        _realtimeCts.Cancel();
-        _realtimeCts.Dispose();
+        _cts.Cancel();
+        _cts.Dispose();
     }
-}
 
+    private sealed record TopTechnologyRow(string Name, long TargetCount, long SubdomainCount);
+    private sealed record TechnologyVersionRow(string Version, long TargetCount, long SubdomainCount);
+}

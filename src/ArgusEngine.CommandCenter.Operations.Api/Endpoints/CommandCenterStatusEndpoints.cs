@@ -1,4 +1,6 @@
-using ArgusEngine.CommandCenter.Operations.Api.Services;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 
 namespace ArgusEngine.CommandCenter.Operations.Api.Endpoints;
 
@@ -8,12 +10,8 @@ public static class CommandCenterStatusEndpoints
     {
         app.MapGet(
                 "/api/status/summary",
-                async (ICommandCenterStatusSnapshotService statusService, CancellationToken cancellationToken) =>
-                {
-                    var snapshot = await statusService.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
-                    return Results.Ok(snapshot);
-                })
-            .WithName("GetCommandCenterStatusSummary")
+                () => Results.StatusCode(StatusCodes.Status410Gone))
+            .WithName("GetCommandCenterStatusSummaryDisabled")
             .WithTags("Status");
 
         return app;
@@ -24,6 +22,3 @@ public static class CommandCenterStatusEndpoints
         app.MapCommandCenterStatusEndpoints();
     }
 }
-
-
-

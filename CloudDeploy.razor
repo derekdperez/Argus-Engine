@@ -1,0 +1,381 @@
+@page "/cloud-deploy"
+@using ArgusEngine.CloudDeploy
+@inject IGcpHybridDeployService DeployService
+@inject ILogger<CloudDeploy> Logger
+
+<PageTitle>Cloud Deploy — Argus Engine</PageTitle>
+
+<div class="cloud-deploy-page">
+    <RadzenStack Orientation="Orientation.Vertical" Gap="1.5rem">
+
+        <!-- ── Header ──────────────────────────────────────────────────────── -->
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+            <RadzenIcon Icon="cloud_upload" Style="font-size: 2rem; color: var(--rz-primary)" />
+            <RadzenStack Gap="0">
+                <RadzenText TextStyle="TextStyle.H4" Style="margin: 0">GCP Hybrid Deployment</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color)">
+                    Core services run locally · Workers scale on Google Cloud Run
+                </RadzenText>
+            </RadzenStack>
+            <RadzenSpacer />
+            <RadzenButton Text="Run Preflight" Icon="checklist" Variant="Variant.Outlined"
+                          Click="RunPreflightAsync" Disabled="_busy" />
+        </RadzenStack>
+
+        <!-- ── Preflight banner ─────────────────────────────────────────────── -->
+        @if (_preflightIssues is not null)
+        {
+            @if (_preflightIssues.Count == 0)
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Success" ShowIcon="true" AllowClose="true">
+                    All preflight checks passed. Ready to deploy.
+                </RadzenAlert>
+            }
+            else
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Danger" ShowIcon="true" AllowClose="false">
+                    <strong>Preflight issues detected:</strong>
+                    <ul style="margin: 0.5rem 0 0 1rem; padding: 0">
+                        @foreach (var issue in _preflightIssues)
+                        {
+                            <li>@issue</li>
+                        }
+                    </ul>
+                </RadzenAlert>
+            }
+        }
+
+        <!-- ── Worker status grid ───────────────────────────────────────────── -->
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
+                         Gap="1rem" Style="margin-bottom: 1rem">
+                <RadzenText TextStyle="TextStyle.H6" Style="margin: 0">Worker Services</RadzenText>
+                <RadzenSpacer />
+                <RadzenButton Text="Refresh" Icon="refresh" Size="ButtonSize.Small"
+                              Variant="Variant.Text" Click="RefreshStatusAsync" Disabled="_busy" />
+                <RadzenButton Text="Deploy All" Icon="rocket_launch" ButtonStyle="ButtonStyle.Primary"
+                              Click="() => DeployWorkersAsync(null)" Disabled="_busy" />
+                <RadzenButton Text="Scale to Zero" Icon="pause_circle" ButtonStyle="ButtonStyle.Light"
+                              Click="() => ScaleAllAsync(0, 0)" Disabled="_busy" />
+                <RadzenButton Text="Teardown All" Icon="delete_forever" ButtonStyle="ButtonStyle.Danger"
+                              Variant="Variant.Outlined"
+                              Click="TeardownAllAsync" Disabled="_busy" />
+            </RadzenStack>
+
+            <RadzenDataGrid Data="_workerStatuses" TItem="WorkerStatus"
+                            GridLines="DataGridGridLines.Horizontal"
+                            AllowSorting="false" AllowFiltering="false">
+                <Columns>
+                    <RadzenDataGridColumn TItem="WorkerStatus" Title="Worker" Width="180px">
+                        <Template Context="ws">
+                            <RadzenText>@ws.Worker.ToSlug()</RadzenText>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="WorkerStatus" Title="Status" Width="140px">
+                        <Template Context="ws">
+                            <RadzenBadge BadgeStyle="@StatusBadgeStyle(ws.Status)"
+                                         Text="@ws.Status.ToString()" />
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="WorkerStatus" Title="Instances" Width="140px">
+                        <Template Context="ws">
+                            @if (ws.Status == CloudDeployStatus.NotDeployed)
+                            {
+                                <RadzenText Style="color: var(--rz-text-disabled-color)">—</RadzenText>
+                            }
+                            else
+                            {
+                                <RadzenText>@ws.MinInstances – @ws.MaxInstances</RadzenText>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="WorkerStatus" Title="Image" >
+                        <Template Context="ws">
+                            <RadzenText Style="font-size: 0.8rem; font-family: monospace; overflow: hidden; text-overflow: ellipsis">
+                                @(ws.ImageUri ?? "—")
+                            </RadzenText>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="WorkerStatus" Title="Actions" Width="220px">
+                        <Template Context="ws">
+                            <RadzenStack Orientation="Orientation.Horizontal" Gap="0.25rem">
+                                <RadzenButton Icon="rocket_launch" Size="ButtonSize.ExtraSmall"
+                                              ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text"
+                                              Click="() => DeployWorkersAsync([ws.Worker])"
+                                              Disabled="_busy" />
+                                <RadzenButton Icon="pause" Size="ButtonSize.ExtraSmall"
+                                              ButtonStyle="ButtonStyle.Warning" Variant="Variant.Text"
+                                              Click="() => ScaleWorkerAsync(ws.Worker, 0, ws.MaxInstances)"
+                                              Disabled="_busy || ws.Status == CloudDeployStatus.NotDeployed"
+                                              title="Scale to zero" />
+                                <RadzenButton Icon="play_arrow" Size="ButtonSize.ExtraSmall"
+                                              ButtonStyle="ButtonStyle.Success" Variant="Variant.Text"
+                                              Click="() => ScaleWorkerAsync(ws.Worker, 1, ws.MaxInstances)"
+                                              Disabled="_busy || ws.Status == CloudDeployStatus.NotDeployed"
+                                              title="Set min instances to 1" />
+                                <RadzenButton Icon="delete" Size="ButtonSize.ExtraSmall"
+                                              ButtonStyle="ButtonStyle.Danger" Variant="Variant.Text"
+                                              Click="() => TeardownWorkerAsync(ws.Worker)"
+                                              Disabled="_busy || ws.Status == CloudDeployStatus.NotDeployed" />
+                            </RadzenStack>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </RadzenCard>
+
+        <!-- ── Build & Push ─────────────────────────────────────────────────── -->
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
+                         Gap="1rem" Style="margin-bottom: 0.75rem">
+                <RadzenText TextStyle="TextStyle.H6" Style="margin: 0">Build & Push Images</RadzenText>
+                <RadzenSpacer />
+                <RadzenButton Text="Build All Workers" Icon="build" ButtonStyle="ButtonStyle.Secondary"
+                              Click="BuildAllAsync" Disabled="_busy" />
+            </RadzenStack>
+            <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color)">
+                Builds Docker images for all workers and pushes them to Google Artifact Registry.
+                This must be done before the first deploy or after code changes.
+            </RadzenText>
+        </RadzenCard>
+
+        <!-- ── Local core services ──────────────────────────────────────────── -->
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
+                         Gap="1rem" Style="margin-bottom: 0.75rem">
+                <RadzenText TextStyle="TextStyle.H6" Style="margin: 0">Local Core Services</RadzenText>
+                <RadzenSpacer />
+                <RadzenButton Text="Start Core" Icon="play_circle" ButtonStyle="ButtonStyle.Success"
+                              Click="StartCoreAsync" Disabled="_busy" />
+                <RadzenButton Text="Stop Core" Icon="stop_circle" ButtonStyle="ButtonStyle.Light"
+                              Variant="Variant.Outlined" Click="StopCoreAsync" Disabled="_busy" />
+            </RadzenStack>
+            <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color)">
+                Manages the docker-compose stack for Postgres, Redis, RabbitMQ and the
+                CommandCenter services on this machine.
+            </RadzenText>
+        </RadzenCard>
+
+        <!-- ── Activity log ─────────────────────────────────────────────────── -->
+        @if (_log.Count > 0)
+        {
+            <RadzenCard>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
+                             Gap="1rem" Style="margin-bottom: 0.75rem">
+                    <RadzenText TextStyle="TextStyle.H6" Style="margin: 0">Activity Log</RadzenText>
+                    <RadzenSpacer />
+                    <RadzenButton Text="Clear" Icon="clear_all" Size="ButtonSize.Small"
+                                  Variant="Variant.Text" Click="() => _log.Clear()" />
+                </RadzenStack>
+                <div style="max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.8rem;
+                            background: var(--rz-base-background-color); padding: 0.75rem; border-radius: 4px">
+                    @foreach (var entry in _log)
+                    {
+                        <div style="color: @(entry.IsError ? "var(--rz-danger)" : "inherit")">
+                            <span style="color: var(--rz-text-disabled-color)">[@entry.Timestamp.ToString("HH:mm:ss")]</span>
+                            @if (entry.Worker.HasValue)
+                            {
+                                <span style="color: var(--rz-primary); margin: 0 0.4rem"
+                                      >[@entry.Worker.Value.ToSlug()]</span>
+                            }
+                            @entry.Message
+                        </div>
+                    }
+                </div>
+            </RadzenCard>
+        }
+
+        <!-- ── Busy overlay ─────────────────────────────────────────────────── -->
+        @if (_busy)
+        {
+            <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate"
+                                       Style="position: fixed; bottom: 2rem; right: 2rem" />
+        }
+
+    </RadzenStack>
+</div>
+
+@code {
+    private bool _busy;
+    private IReadOnlyList<WorkerStatus>? _workerStatuses;
+    private IReadOnlyList<string>? _preflightIssues;
+    private readonly List<LogEntry> _log = [];
+
+    protected override async Task OnInitializedAsync() =>
+        await RefreshStatusAsync();
+
+    // ── Status ────────────────────────────────────────────────────────────────
+
+    private async Task RefreshStatusAsync()
+    {
+        await RunAsync(async ct =>
+        {
+            _workerStatuses = await DeployService.GetWorkerStatusesAsync(null, ct);
+        });
+    }
+
+    // ── Preflight ─────────────────────────────────────────────────────────────
+
+    private async Task RunPreflightAsync()
+    {
+        await RunAsync(async ct =>
+        {
+            _preflightIssues = await DeployService.RunPreflightAsync(ct);
+        });
+    }
+
+    // ── Build ─────────────────────────────────────────────────────────────────
+
+    private async Task BuildAllAsync()
+    {
+        await RunAsync(async ct =>
+        {
+            var result = await DeployService.BuildAndPushImagesAsync(
+                null, MakeProgress(), ct);
+            LogResult(result);
+        });
+        await RefreshStatusAsync();
+    }
+
+    // ── Deploy ────────────────────────────────────────────────────────────────
+
+    private async Task DeployWorkersAsync(IEnumerable<WorkerType>? workers)
+    {
+        await RunAsync(async ct =>
+        {
+            var result = await DeployService.DeployWorkersAsync(
+                workers, MakeProgress(), ct);
+            LogResult(result);
+        });
+        await RefreshStatusAsync();
+    }
+
+    // ── Scale ─────────────────────────────────────────────────────────────────
+
+    private async Task ScaleAllAsync(int min, int max)
+    {
+        await RunAsync(async ct =>
+        {
+            var result = await DeployService.ScaleWorkersAsync(min, max, null, ct);
+            LogResult(result);
+        });
+        await RefreshStatusAsync();
+    }
+
+    private async Task ScaleWorkerAsync(WorkerType worker, int min, int max)
+    {
+        await RunAsync(async ct =>
+        {
+            var result = await DeployService.ScaleWorkersAsync(min, max, [worker], ct);
+            LogResult(result);
+        });
+        await RefreshStatusAsync();
+    }
+
+    // ── Teardown ──────────────────────────────────────────────────────────────
+
+    private async Task TeardownAllAsync()
+    {
+        await RunAsync(async ct =>
+        {
+            var result = await DeployService.TeardownWorkersAsync(
+                null, MakeProgress(), ct);
+            LogResult(result);
+        });
+        await RefreshStatusAsync();
+    }
+
+    private async Task TeardownWorkerAsync(WorkerType worker)
+    {
+        await RunAsync(async ct =>
+        {
+            var result = await DeployService.TeardownWorkersAsync(
+                [worker], MakeProgress(), ct);
+            LogResult(result);
+        });
+        await RefreshStatusAsync();
+    }
+
+    // ── Local core ────────────────────────────────────────────────────────────
+
+    private async Task StartCoreAsync()
+    {
+        await RunAsync(async ct =>
+        {
+            var result = await DeployService.StartLocalCoreAsync(MakeProgress(), ct);
+            AddLog(null, result.Message, !result.Success);
+        });
+    }
+
+    private async Task StopCoreAsync()
+    {
+        await RunAsync(async ct =>
+        {
+            var result = await DeployService.StopLocalCoreAsync(MakeProgress(), ct);
+            AddLog(null, result.Message, !result.Success);
+        });
+    }
+
+    // ── Plumbing ──────────────────────────────────────────────────────────────
+
+    private async Task RunAsync(Func<CancellationToken, Task> action)
+    {
+        _busy = true;
+        StateHasChanged();
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+            await action(cts.Token);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Cloud deploy action failed");
+            AddLog(null, $"Error: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private IProgress<DeployProgressEvent> MakeProgress() =>
+        new Progress<DeployProgressEvent>(ev =>
+        {
+            AddLog(ev.Worker, ev.Message, ev.IsError);
+            InvokeAsync(StateHasChanged);
+        });
+
+    private void AddLog(WorkerType? worker, string message, bool isError = false)
+    {
+        _log.Add(new(worker, message, isError, DateTimeOffset.Now));
+        // Cap log at 500 entries
+        if (_log.Count > 500) _log.RemoveAt(0);
+    }
+
+    private void LogResult(BulkDeployResult result)
+    {
+        foreach (var (worker, r) in result.Results)
+            AddLog(worker, r.Message, !r.Success);
+    }
+
+    private static BadgeStyle StatusBadgeStyle(CloudDeployStatus status) => status switch
+    {
+        CloudDeployStatus.Running     => BadgeStyle.Success,
+        CloudDeployStatus.Deploying   => BadgeStyle.Warning,
+        CloudDeployStatus.Scaling     => BadgeStyle.Warning,
+        CloudDeployStatus.Failed      => BadgeStyle.Danger,
+        CloudDeployStatus.NotDeployed => BadgeStyle.Light,
+        _                             => BadgeStyle.Light,
+    };
+
+    private sealed record LogEntry(
+        WorkerType?    Worker,
+        string         Message,
+        bool           IsError,
+        DateTimeOffset Timestamp);
+}

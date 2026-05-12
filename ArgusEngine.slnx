@@ -1,8 +1,9 @@
 <Solution>
-
   <Folder Name="/src/">
     <Project Path="src/ArgusEngine.Application/ArgusEngine.Application.csproj" />
+    <Project Path="src/ArgusEngine.CloudDeploy/ArgusEngine.CloudDeploy.csproj" />
     <Project Path="src/ArgusEngine.CommandCenter.Bootstrapper/ArgusEngine.CommandCenter.Bootstrapper.csproj" />
+    <Project Path="src/ArgusEngine.CommandCenter.CloudDeploy.Api/ArgusEngine.CommandCenter.CloudDeploy.Api.csproj" />
     <Project Path="src/ArgusEngine.CommandCenter.Contracts/ArgusEngine.CommandCenter.Contracts.csproj" />
     <Project Path="src/ArgusEngine.CommandCenter.Discovery.Api/ArgusEngine.CommandCenter.Discovery.Api.csproj" />
     <Project Path="src/ArgusEngine.CommandCenter.Gateway/ArgusEngine.CommandCenter.Gateway.csproj" />
@@ -25,11 +26,9 @@
     <Project Path="src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj" />
     <Project Path="src/ArgusEngine.Harness/ArgusEngine.Harness.csproj" />
   </Folder>
-
   <Folder Name="/deploy/">
     <Project Path="deploy/ArgusEngine.DeployUi/ArgusEngine.DeployUi.csproj" />
   </Folder>
-
   <Folder Name="/tests/">
     <Project Path="src/tests/ArgusEngine.ArchitectureTests/ArgusEngine.ArchitectureTests.csproj" />
     <Project Path="src/tests/ArgusEngine.Infrastructure.Tests/ArgusEngine.Infrastructure.Tests.csproj" />
@@ -37,5 +36,4 @@
     <Project Path="src/tests/ArgusEngine.IntegrationTests/ArgusEngine.IntegrationTests.csproj" />
     <Project Path="src/tests/ArgusEngine.RouteCompatibilityTests/ArgusEngine.RouteCompatibilityTests.csproj" />
   </Folder>
-
 </Solution>

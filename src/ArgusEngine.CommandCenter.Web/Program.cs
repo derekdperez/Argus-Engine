@@ -11,7 +11,6 @@ builder.Services
     .AddInteractiveServerComponents();
 
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddGcpHybridDeploy(builder.Configuration);
 
 // Register the Radzen services used by the Web UI without relying on the
 // AddRadzenComponents extension method being visible to this project at compile time.
@@ -20,6 +19,7 @@ builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<TooltipService>();
 builder.Services.AddScoped<ContextMenuService>();
 builder.Services.AddScoped<ThemeService>();
+
 builder.Services.AddScoped<LocalDockerClient>();
 builder.Services.AddScoped<DiscoveryRealtimeClient>();
 
@@ -47,6 +47,22 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 // Prevent browsers from caching the HTML shell — it embeds fingerprinted asset URLs
 // (blazor.web.js, app.css, etc.) that change on every deploy. A stale cached shell
 // causes 404s for those assets until the user hard-refreshes.
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        if (context.Response.ContentType?.StartsWith("text/html", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+            context.Response.Headers.Pragma = "no-cache";
+        }
+
+        return Task.CompletedTask;
+    });
+
+    await next();
+});
+
 app.MapStaticAssets();
 app.UseStaticFiles();
 
@@ -92,7 +108,6 @@ static Uri ResolveGatewayBaseAddress(IServiceProvider services)
     }
 
     var request = services.GetService<IHttpContextAccessor>()?.HttpContext?.Request;
-
     if (request is not null)
     {
         var pathBase = request.PathBase.HasValue ? request.PathBase.Value : "";
@@ -100,7 +115,6 @@ static Uri ResolveGatewayBaseAddress(IServiceProvider services)
     }
 
     var navigation = services.GetService<NavigationManager>();
-
     if (navigation is not null)
     {
         return new Uri(navigation.BaseUri);

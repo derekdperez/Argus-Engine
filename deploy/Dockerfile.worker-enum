@@ -24,36 +24,36 @@ COPY src/*/*.csproj ./src/
 COPY src/tests/*/*.csproj ./src/tests/
 
 RUN for f in src/*.csproj; do \
-      [ -e "$f" ] || continue; \
-      p="${f#src/}"; \
-      p="${p%.csproj}"; \
-      mkdir -p "src/$p"; \
-      mv "$f" "src/$p/"; \
-    done; \
-    if [ -d "src/tests" ]; then \
-      for f in src/tests/*.csproj; do \
-        [ -e "$f" ] || continue; \
-        p="${f#src/tests/}"; \
-        p="${p%.csproj}"; \
-        mkdir -p "src/tests/$p"; \
-        mv "$f" "src/tests/$p/"; \
-      done; \
-    fi
+  [ -e "$f" ] || continue; \
+  p="${f#src/}"; \
+  p="${p%.csproj}"; \
+  mkdir -p "src/$p"; \
+  mv "$f" "src/$p/"; \
+  done; \
+  if [ -d "src/tests" ]; then \
+  for f in src/tests/*.csproj; do \
+  [ -e "$f" ] || continue; \
+  p="${f#src/tests/}"; \
+  p="${p%.csproj}"; \
+  mkdir -p "src/tests/$p"; \
+  mv "$f" "src/tests/$p/"; \
+  done; \
+  fi
 
 RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
-    dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
+  dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
 
 COPY src/ src/
 
 RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
-    dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
-      -c Release -o /app/publish /p:UseAppHost=false \
-      -p:maxcpucount -p:ParallelizePublish=true \
-      /p:Version="${COMPONENT_VERSION}" \
-      /p:AssemblyVersion="2.6.3.0" \
-      /p:FileVersion="2.6.3.0" \
-      /p:InformationalVersion="${COMPONENT_VERSION}" \
-    && test -s "/app/publish/${APP_DLL}"
+  dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
+  -c Release -o /app/publish /p:UseAppHost=false \
+  -p:maxcpucount -p:ParallelizePublish=true \
+  /p:Version="${COMPONENT_VERSION}" \
+  /p:AssemblyVersion="2.6.3.0" \
+  /p:FileVersion="2.6.3.0" \
+  /p:InformationalVersion="${COMPONENT_VERSION}" \
+  && test -s "/app/publish/${APP_DLL}"
 
 FROM argus-engine-base:local AS final
 
@@ -71,26 +71,25 @@ ENV Enumeration__AmassPath=/usr/local/bin/amass
 ENV Enumeration__SubdomainWordlistPath=/opt/argus/wordlists/subdomains.txt
 
 RUN set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl unzip; \
-    ARCH="$(dpkg --print-architecture)"; \
-    case "$ARCH" in \
-      amd64) GOARCH="amd64" ;; \
-      arm64) GOARCH="arm64" ;; \
-      *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION}_linux_${GOARCH}.zip" -o /tmp/subfinder.zip; \
-    mkdir -p /tmp/subfinder; \
-    unzip -q /tmp/subfinder.zip -d /tmp/subfinder; \
-    install -m 0755 /tmp/subfinder/subfinder /usr/local/bin/subfinder; \
-    curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_linux_${GOARCH}.zip" -o /tmp/amass.zip; \
-    mkdir -p /tmp/amass; \
-    unzip -q /tmp/amass.zip -d /tmp/amass; \
-    AMASS_BIN="$(find /tmp/amass -type f -name amass -print -quit)"; \
-    test -n "$AMASS_BIN"; \
-    install -m 0755 "$AMASS_BIN" /usr/local/bin/amass; \
-    mkdir -p /opt/argus/wordlists; \
-    rm -rf /var/lib/apt/lists/* /tmp/subfinder* /tmp/amass*
+  apk add --no-cache unzip; \
+  ARCH="$(apk --print-arch)"; \
+  case "$ARCH" in \
+  x86_64) GOARCH="amd64" ;; \
+  aarch64) GOARCH="arm64" ;; \
+  *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSL "https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION}_linux_${GOARCH}.zip" -o /tmp/subfinder.zip; \
+  mkdir -p /tmp/subfinder; \
+  unzip -q /tmp/subfinder.zip -d /tmp/subfinder; \
+  install -m 0755 /tmp/subfinder/subfinder /usr/local/bin/subfinder; \
+  curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_linux_${GOARCH}.zip" -o /tmp/amass.zip; \
+  mkdir -p /tmp/amass; \
+  unzip -q /tmp/amass.zip -d /tmp/amass; \
+  AMASS_BIN="$(find /tmp/amass -type f -name amass -print -quit)"; \
+  test -n "$AMASS_BIN"; \
+  install -m 0755 "$AMASS_BIN" /usr/local/bin/amass; \
+  mkdir -p /opt/argus/wordlists; \
+  rm -rf /tmp/subfinder* /tmp/amass*
 
 WORKDIR /app
 

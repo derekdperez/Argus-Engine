@@ -1,28 +1,33 @@
 @inherits LayoutComponentBase
 
-<PageTitle>Argus Engine Command Center</PageTitle>
+<header class="app-header">
+    <a class="brand" href="/ops">
+        <span class="brand-mark">AE</span>
+        <span>
+            <strong>Argus Engine</strong>
+            <small>Command Center</small>
+        </span>
+    </a>
+    <NavStatusBar />
+    <nav class="app-nav" aria-label="Primary">
+        <NavLink href="/ops" class="nav-button">Operations</NavLink>
+        <NavLink href="/high-value-findings" class="nav-button">High Value</NavLink>
+        <NavLink href="/technology-identification" class="nav-button">Technology ID</NavLink>
+        <NavLink href="/status" class="nav-button">System Status</NavLink>
+        <NavLink href="/configuration" class="nav-button">Configuration</NavLink>
+        <NavLink href="/admin" class="nav-button">Admin</NavLink>
+        <NavLink href="/worker-management" class="nav-button">Workers</NavLink>
+        <NavLink href="/cloud-deploy" class="nav-button">Cloud Deploy</NavLink>
+        <NavLink href="/development" class="nav-button">Development</NavLink>
+    </nav>
+</header>
 
-<div class="page-shell">
-    <header class="app-header">
-        <a class="brand" href="/ops" aria-label="Argus Engine Command Center">
-            <span class="brand-mark">AE</span>
-            <span class="brand-title">Argus Engine Command Center</span>
-        </a>
-
-        <nav class="app-nav" aria-label="Primary">
-            <NavLink href="/ops" Match="NavLinkMatch.Prefix">Ops</NavLink>
-            <NavLink href="/admin" Match="NavLinkMatch.Prefix">Admin</NavLink>
-            <NavLink href="/development" Match="NavLinkMatch.Prefix">Development</NavLink>
-        </nav>
-    </header>
-
-    <main class="app-main">
-        @Body
-    </main>
-</div>
+<main class="app-main">
+    @Body
+</main>
 
 <div id="blazor-error-ui">
     An unhandled error has occurred.
     <a href="" class="reload">Reload</a>
-    <a class="dismiss">×</a>
+    <a class="dismiss">x</a>
 </div>

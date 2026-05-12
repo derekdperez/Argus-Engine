@@ -2,6 +2,10 @@ using ArgusEngine.CommandCenter.Realtime;
 using ArgusEngine.CommandCenter.Web.Clients;
 using ArgusEngine.CommandCenter.Web.Components;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Radzen;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,25 +18,23 @@ builder.Services.AddHttpContextAccessor();
 
 // Register the Radzen services used by the Web UI without relying on the
 // AddRadzenComponents extension method being visible to this project at compile time.
+builder.Services.AddScoped<ThemeService>();
 builder.Services.AddScoped<DialogService>();
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<TooltipService>();
 builder.Services.AddScoped<ContextMenuService>();
-builder.Services.AddScoped<ThemeService>();
-
-builder.Services.AddScoped<LocalDockerClient>();
-builder.Services.AddScoped<DiscoveryRealtimeClient>();
 
 // Blazor server components execute on the server. Relative HttpClient calls
 // must therefore target the Command Center gateway, not command-center-web
 // itself. The gateway owns split-service routing for /api and /hubs paths.
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveGatewayBaseAddress(sp) });
-builder.Services.AddHttpClient<DiscoveryApiClient>((sp, client) => client.BaseAddress = ResolveGatewayBaseAddress(sp));
-builder.Services.AddHttpClient<OperationsApiClient>((sp, client) => client.BaseAddress = ResolveGatewayBaseAddress(sp));
-builder.Services.AddHttpClient<WorkerControlApiClient>((sp, client) => client.BaseAddress = ResolveGatewayBaseAddress(sp));
-builder.Services.AddHttpClient<MaintenanceApiClient>((sp, client) => client.BaseAddress = ResolveGatewayBaseAddress(sp));
-builder.Services.AddHttpClient<UpdatesApiClient>((sp, client) => client.BaseAddress = ResolveGatewayBaseAddress(sp));
-builder.Services.AddHttpClient<RealtimeApiClient>((sp, client) => client.BaseAddress = ResolveGatewayBaseAddress(sp));
+
+// Client wrappers used by the consolidated Ops page.
+builder.Services.AddScoped<WorkerControlApiClient>();
+
+// OpsRadzen injects this realtime client directly. Register it explicitly so
+// prerender/smoke-test can construct the page before the interactive circuit starts.
+builder.Services.AddScoped<DiscoveryRealtimeClient>();
 
 var app = builder.Build();
 
@@ -86,15 +88,14 @@ await app.RunAsync().ConfigureAwait(false);
 static Uri ResolveGatewayBaseAddress(IServiceProvider services)
 {
     var configuration = services.GetRequiredService<IConfiguration>();
-
     var configured =
-        configuration["CommandCenter:GatewayBaseUrl"] ??
-        configuration["Argus:CommandCenter:GatewayBaseUrl"] ??
-        configuration["CommandCenter:Services:Gateway"] ??
-        configuration["Argus:CommandCenter:Services:Gateway"];
+        configuration["CommandCenter:GatewayBaseUrl"]
+        ?? configuration["Argus:CommandCenter:GatewayBaseUrl"]
+        ?? configuration["CommandCenter:Services:Gateway"]
+        ?? configuration["Argus:CommandCenter:Services:Gateway"];
 
-    if (!string.IsNullOrWhiteSpace(configured) &&
-        Uri.TryCreate(EnsureTrailingSlash(configured), UriKind.Absolute, out var configuredUri))
+    if (!string.IsNullOrWhiteSpace(configured)
+        && Uri.TryCreate(EnsureTrailingSlash(configured), UriKind.Absolute, out var configuredUri))
     {
         return configuredUri;
     }
@@ -125,7 +126,7 @@ static Uri ResolveGatewayBaseAddress(IServiceProvider services)
 
 static bool IsDevelopment(IServiceProvider services)
 {
-    var environment = services.GetService<IWebHostEnvironment>();
+    var environment = services.GetService<IHostEnvironment>();
     return environment?.IsDevelopment() == true;
 }
 

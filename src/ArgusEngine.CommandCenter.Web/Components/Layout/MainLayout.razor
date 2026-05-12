@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@inject NavigationManager Navigation
 
 <div class="page">
     <aside class="sidebar">
@@ -21,6 +22,11 @@
 
     <main class="main-content">
         @Body
+
+        @if (IsOperationsRoute)
+        {
+            <OpsBottomPanels />
+        }
     </main>
 </div>
 
@@ -29,3 +35,14 @@
     <a href="" class="reload">Reload</a>
     <a class="dismiss">x</a>
 </div>
+
+@code {
+    private bool IsOperationsRoute
+    {
+        get
+        {
+            var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/');
+            return string.IsNullOrWhiteSpace(path) || path.Equals("ops", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+}

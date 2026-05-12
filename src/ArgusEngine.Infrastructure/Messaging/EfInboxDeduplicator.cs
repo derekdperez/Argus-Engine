@@ -6,7 +6,9 @@ using Microsoft.Extensions.Logging;
 
 namespace ArgusEngine.Infrastructure.Messaging;
 
-public sealed class EfInboxDeduplicator(ArgusDbContext db, ILogger logger) : IInboxDeduplicator
+public sealed class EfInboxDeduplicator(
+    ArgusDbContext db,
+    ILogger<EfInboxDeduplicator> logger) : IInboxDeduplicator
 {
     private static readonly Action<ILogger, Guid, string, Exception?> LogDuplicateInboxEvent =
         LoggerMessage.Define<Guid, string>(

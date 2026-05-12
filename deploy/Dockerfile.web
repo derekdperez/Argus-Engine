@@ -5,24 +5,23 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 WORKDIR /src
 
-# Optional repo-vendored NuGet global packages. Populate with
-# deploy/vendor-nuget-packages.sh when cold deployment hosts should not
-# redownload packages from nuget.org.
-COPY deploy/artifacts/nuget/packages/ /opt/argus-nuget/packages/
+# Do not seed /root/.nuget/packages from deploy/artifacts/nuget/packages here.
+# If that repo-local cache is incomplete, Docker builds can restore "successfully"
+# but later fail during publish with missing analyzer/assembly files.
 
 # Copy all project files to perform a global restore. This is much faster and more cache-friendly
 # than restoring projects individually in each service Dockerfile.
 COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
 COPY src/*/*.csproj ./src/
+
 RUN for f in src/*.csproj; do \
-      p="${f#src/}"; \
-      p="${p%.csproj}"; \
-      mkdir -p "src/$p"; \
-      mv "$f" "src/$p/"; \
+    p="${f#src/}"; \
+    p="${p%.csproj}"; \
+    mkdir -p "src/$p"; \
+    mv "$f" "src/$p/"; \
     done
 
-RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
-    cp -an /opt/argus-nuget/packages/. /root/.nuget/packages/ 2>/dev/null || true; \
+RUN --mount=type=cache,id=argus-nuget-clean-v1,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj"
 
 # Copy the rest of the source
@@ -30,27 +29,27 @@ COPY src/ src/
 COPY src/Resources/ src/Resources/
 
 ARG COMPONENT_VERSION=2.6.2
-RUN --mount=type=cache,id=argus-nuget,target=/root/.nuget/packages,sharing=locked \
-  dotnet publish "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj" \
-    -c Release -o /app/publish /p:UseAppHost=false \
-    -p:maxcpucount -p:ParallelizePublish=true \
-    /p:Version="${COMPONENT_VERSION}" \
-    /p:AssemblyVersion="2.6.2.0" \
-    /p:FileVersion="2.6.2.0" \
-    /p:InformationalVersion="${COMPONENT_VERSION}" \
-  && test -s /app/publish/ArgusEngine.CommandCenter.dll
+
+RUN --mount=type=cache,id=argus-nuget-clean-v1,target=/root/.nuget/packages,sharing=locked \
+    dotnet publish "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj" \
+      -c Release -o /app/publish /p:UseAppHost=false \
+      -p:maxcpucount -p:ParallelizePublish=true \
+      /p:Version="${COMPONENT_VERSION}" \
+      /p:AssemblyVersion="2.6.2.0" \
+      /p:FileVersion="2.6.2.0" \
+      /p:InformationalVersion="${COMPONENT_VERSION}" \
+    && test -s /app/publish/ArgusEngine.CommandCenter.dll
 
 FROM argus-engine-base:local AS final
+
 ARG BUILD_SOURCE_STAMP=unknown
 ARG COMPONENT_VERSION=2.6.2
 
 WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080
 # Blazor Server components call this app's own JSON endpoints from inside the container.
-
 ENV Argus__CommandCenterInternalBaseUrl=http://127.0.0.1:8080/
 # Avoid HTTPS redirect/HSTS when only HTTP is bound.
-
 ENV Argus__ListenPlainHttp=true
 
 EXPOSE 8080
@@ -58,19 +57,17 @@ EXPOSE 8080
 COPY --from=build /app/publish .
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
- CMD curl -fsS http://127.0.0.1:8080/health/ready >/dev/null || exit 1
+    CMD curl -fsS http://127.0.0.1:8080/health/ready >/dev/null || exit 1
 
 ARG BUILD_SOURCE_STAMP=unknown
-
 ARG COMPONENT_VERSION=2.6.2
 
 LABEL org.opencontainers.image.title="Argus Engine Command Center"
-
 LABEL org.opencontainers.image.description="Command Center for Argus Engine"
 LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
-
 LABEL org.opencontainers.image.version="${COMPONENT_VERSION}"
 
 ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
 ENV ARGUS_COMPONENT_VERSION=${COMPONENT_VERSION}
+
 ENTRYPOINT ["dotnet", "ArgusEngine.CommandCenter.dll"]

@@ -21,9 +21,9 @@ internal static class OpsStorageMetricsQuery
                     octet_length(COALESCE(display_name, '')) +
                     octet_length(COALESCE(discovered_by, '')) +
                     octet_length(COALESCE(discovery_context, '')) +
-                    octet_length(COALESCE(type_details_json, '')) +
+                    octet_length(COALESCE(type_details_json::text, '')) +
                     octet_length(COALESCE(final_url, '')) +
-                    octet_length(COALESCE(redirect_chain_json, ''))
+                    octet_length(COALESCE(redirect_chain_json::text, ''))
                 ), 0)
                 FROM stored_assets;
                 """,
@@ -34,12 +34,12 @@ internal static class OpsStorageMetricsQuery
                 db,
                 """
                 SELECT COALESCE(SUM(
-                    octet_length(COALESCE(request_headers_json, '')) +
+                    octet_length(COALESCE(request_headers_json::text, '')) +
                     octet_length(COALESCE(request_body, '')) +
-                    octet_length(COALESCE(response_headers_json, '')) +
+                    octet_length(COALESCE(response_headers_json::text, '')) +
                     octet_length(COALESCE(response_body, '')) +
                     octet_length(COALESCE(response_body_preview, '')) +
-                    octet_length(COALESCE(redirect_chain_json, ''))
+                    octet_length(COALESCE(redirect_chain_json::text, ''))
                 ), 0)
                 FROM http_request_queue;
                 """,
@@ -50,7 +50,7 @@ internal static class OpsStorageMetricsQuery
                 db,
                 """
                 SELECT COALESCE(SUM(
-                    octet_length(COALESCE(payload_json, '')) +
+                    octet_length(COALESCE(payload_json::text, '')) +
                     octet_length(COALESCE(message_type, '')) +
                     octet_length(COALESCE(consumer_type, '')) +
                     octet_length(COALESCE(host_name, ''))
@@ -64,7 +64,7 @@ internal static class OpsStorageMetricsQuery
                 db,
                 """
                 SELECT COALESCE(SUM(
-                    octet_length(COALESCE(payload_json, '')) +
+                    octet_length(COALESCE(payload_json::text, '')) +
                     octet_length(COALESCE(message_type, '')) +
                     octet_length(COALESCE(producer, '')) +
                     octet_length(COALESCE(state, '')) +
@@ -92,9 +92,11 @@ internal static class OpsStorageMetricsQuery
         try
         {
             await using var fileStore = await fileStoreFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+
             return await fileStore.Blobs.AsNoTracking()
-                .SumAsync(b => (long?)b.ContentLength, ct)
-                .ConfigureAwait(false) ?? 0;
+                    .SumAsync(b => (long?)b.ContentLength, ct)
+                    .ConfigureAwait(false)
+                ?? 0;
         }
         catch
         {
@@ -111,11 +113,15 @@ internal static class OpsStorageMetricsQuery
         {
             var connection = db.Database.GetDbConnection();
             if (connection.State != ConnectionState.Open)
+            {
                 await connection.OpenAsync(ct).ConfigureAwait(false);
+            }
 
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
+
             var value = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
+
             return value switch
             {
                 long l => l,

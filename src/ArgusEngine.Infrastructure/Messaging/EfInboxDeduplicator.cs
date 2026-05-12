@@ -1,14 +1,12 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Contracts.Events;
-using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
-using Npgsql;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace ArgusEngine.Infrastructure.Messaging;
 
-public sealed class EfInboxDeduplicator(ArgusDbContext db, ILogger<EfInboxDeduplicator> logger) : IInboxDeduplicator
+public sealed class EfInboxDeduplicator(ArgusDbContext db, ILogger logger) : IInboxDeduplicator
 {
     private static readonly Action<ILogger, Guid, string, Exception?> LogDuplicateInboxEvent =
         LoggerMessage.Define<Guid, string>(
@@ -22,27 +20,25 @@ public sealed class EfInboxDeduplicator(ArgusDbContext db, ILogger<EfInboxDedupl
         CancellationToken cancellationToken = default)
     {
         if (envelope.EventId == Guid.Empty)
-            return true;
-
-        db.InboxMessages.Add(
-            new InboxMessage
-            {
-                Id = Guid.NewGuid(),
-                EventId = envelope.EventId,
-                Consumer = consumer,
-                ProcessedAtUtc = DateTimeOffset.UtcNow,
-            });
-
-        try
         {
-            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg
-            && pg.SqlState == PostgresErrorCodes.UniqueViolation)
+
+        var inboxMessageId = Guid.NewGuid();
+        var processedAtUtc = DateTimeOffset.UtcNow;
+
+        var inserted = await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO inbox_messages (id, event_id, consumer, processed_at_utc)
+            VALUES ({inboxMessageId}, {envelope.EventId}, {consumer}, {processedAtUtc})
+            ON CONFLICT (event_id, consumer) DO NOTHING;
+            """, cancellationToken).ConfigureAwait(false);
+
+        if (inserted > 0)
         {
-            LogDuplicateInboxEvent(logger, envelope.EventId, consumer, null);
-            return false;
+            return true;
         }
+
+        LogDuplicateInboxEvent(logger, envelope.EventId, consumer, null);
+        return false;
     }
 }

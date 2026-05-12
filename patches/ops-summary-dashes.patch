@@ -1,0 +1,11 @@
+diff --git a/src/ArgusEngine.CommandCenter.Web/Components/Pages/OpsRadzen.razor b/src/ArgusEngine.CommandCenter.Web/Components/Pages/OpsRadzen.razor
+--- a/src/ArgusEngine.CommandCenter.Web/Components/Pages/OpsRadzen.razor
++++ b/src/ArgusEngine.CommandCenter.Web/Components/Pages/OpsRadzen.razor
+@@ -4,8 +4,8 @@
+ @_statusMessage
+-}  @if (_initialLoadStarted && _targetsLoading && TotalTargets == 0 && ConfirmedAssets == 0) {  Loading...
+-— } else {  Targets @FormatNumber(TotalTargets) Assets @FormatNumber(ConfirmedAssets) Subdomains @FormatNumber(ConfirmedSubdomains) Unique Technologies @FormatNumber(UniqueTechnologies) HTTP Queue @(_httpLoading && HttpQueueQueuedCount == 0 ? "—" : $"{FormatNumber(HttpQueueQueuedCount)} queued / {FormatNumber(HttpRequestsSentPerMinute)} sent/min") Asset Storage @FormatStorageSize(TotalTrackedStorageBytes) @StorageBreakdownLabel }
++}  @if (_initialLoadStarted && _targetsLoading && TotalTargets == 0 && ConfirmedAssets == 0) {  Targets — Assets — Subdomains — Unique Technologies — HTTP Queue — Asset Storage —
++} else {  Targets @FormatNumber(TotalTargets) Assets @FormatNumber(ConfirmedAssets) Subdomains @FormatNumber(ConfirmedSubdomains) Unique Technologies @FormatNumber(UniqueTechnologies) HTTP Queue @(_httpLoading && HttpQueueQueuedCount == 0 ? "—" : $"{FormatNumber(HttpQueueQueuedCount)} queued / {FormatNumber(HttpRequestsSentPerMinute)} sent/min") Asset Storage @FormatStorageSize(TotalTrackedStorageBytes) @StorageBreakdownLabel }
+ Scope
+ ## Targets

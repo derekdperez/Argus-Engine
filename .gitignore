@@ -10,6 +10,9 @@
 # Last successful deploy fingerprint (incremental deploy skips docker build when unchanged)
 deploy/.last-deploy-stamp
 
+# Blazor framework assets are provided by the ASP.NET Core SDK at build time
+**/wwwroot/_framework/
+
 # Live AWS/ECS service environment values can contain database and broker credentials.
 deploy/aws/.env
 deploy/aws/.env.generated

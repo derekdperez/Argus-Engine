@@ -248,7 +248,11 @@
                         var service = Text(worker, "serviceName", "ServiceName");
                         <tr>
                             <td><input type="checkbox" checked="@_selectedWorkerServices.Contains(service)" @onchange="args => ToggleWorker(service, args)" /></td>
-                            <td>@DisplayOrDash(Text(worker, "displayName", "DisplayName", "serviceName", "ServiceName"))</td>
+                            <td>
+                                <button class="link-btn detail-link" type="button" @onclick="() => OpenWorkerDetailsAsync(service)">
+                                    @DisplayOrDash(Text(worker, "displayName", "DisplayName", "serviceName", "ServiceName"))
+                                </button>
+                            </td>
                             <td>@DisplayOrDash(Text(worker, "overallState", "OverallState"))</td>
                             <td>@FormatNumber(Long(worker, "runningCount", "RunningCount"))</td>
                             <td>@FormatNumber(Long(worker, "totalCount", "TotalCount"))</td>
@@ -313,6 +317,263 @@
             </table>
         </div>
     </section>
+
+    @if (_workerDetailLoading || _workerDetailModal is not null || !string.IsNullOrWhiteSpace(_workerDetailError))
+    {
+        <div class="modal-backdrop" @onclick="CloseWorkerDetails">
+            <section class="modal-card worker-detail-modal" @onclick:stopPropagation="true">
+                <header class="modal-header">
+                    <div>
+                        <p class="eyebrow">Worker details</p>
+                        <h2>@(_workerDetailLoading ? "Loading worker..." : DisplayOrDash(Text(_workerDetailModal ?? default, "displayName", "DisplayName", "serviceName", "ServiceName")))</h2>
+                    </div>
+                    <button class="btn" type="button" @onclick="CloseWorkerDetails">Close</button>
+                </header>
+
+                @if (_workerDetailLoading)
+                {
+                    <div class="status-banner">Loading worker activity…</div>
+                }
+                else if (!string.IsNullOrWhiteSpace(_workerDetailError))
+                {
+                    <div class="status-banner warning">@_workerDetailError</div>
+                }
+                else if (_workerDetailModal is JsonElement details)
+                {
+                    var containers = ArrayProperty(details, "containers", "Containers");
+                    var heartbeats = ArrayProperty(details, "heartbeats", "Heartbeats");
+                    var activeWork = ArrayProperty(details, "activeHttpRequests", "ActiveHttpRequests");
+                    var recentHttp = ArrayProperty(details, "recentHttpWork", "RecentHttpWork");
+                    var recentEvents = ArrayProperty(details, "recentEvents", "RecentEvents");
+                    var recentOutbox = ArrayProperty(details, "recentOutbox", "RecentOutbox");
+                    var summaries = ArrayProperty(details, "summaries", "Summaries");
+
+                    <div class="detail-grid">
+                        <article>
+                            <span>Service</span>
+                            <strong>@DisplayOrDash(Text(details, "serviceName", "ServiceName"))</strong>
+                        </article>
+                        <article>
+                            <span>State</span>
+                            <strong>@DisplayOrDash(Text(details, "overallState", "OverallState"))</strong>
+                        </article>
+                        <article>
+                            <span>Running</span>
+                            <strong>@FormatNumber(Long(details, "runningCount", "RunningCount"))</strong>
+                        </article>
+                        <article>
+                            <span>Observed</span>
+                            <strong>@FormatTime(Text(details, "generatedAtUtc", "GeneratedAtUtc"))</strong>
+                        </article>
+                    </div>
+
+                    @if (summaries.Count > 0)
+                    {
+                        <div class="detail-section">
+                            <h3>What it has done so far</h3>
+                            <ul class="detail-list">
+                                @foreach (var item in summaries)
+                                {
+                                    <li>@DisplayOrDash(Text(item, "label", "Label")): <strong>@DisplayOrDash(Text(item, "value", "Value"))</strong></li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    <div class="detail-section">
+                        <h3>Processes and containers</h3>
+                        <div class="table-wrap compact">
+                            <table class="ops-table">
+                                <thead>
+                                    <tr>
+                                        <th>Worker key</th>
+                                        <th>Host / container</th>
+                                        <th>Process</th>
+                                        <th>Active consumers</th>
+                                        <th>Health</th>
+                                        <th>Last heartbeat</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var hb in heartbeats)
+                                    {
+                                        <tr>
+                                            <td>@DisplayOrDash(Text(hb, "workerKey", "WorkerKey"))</td>
+                                            <td>@DisplayOrDash(Text(hb, "hostName", "HostName"))</td>
+                                            <td>@DisplayOrDash(Text(hb, "processId", "ProcessId"))</td>
+                                            <td>@DisplayOrDash(Text(hb, "activeConsumerCount", "ActiveConsumerCount"))</td>
+                                            <td>@DisplayOrDash(Text(hb, "health", "Health"))</td>
+                                            <td>@FormatTime(Text(hb, "lastHeartbeatUtc", "LastHeartbeatUtc"))</td>
+                                        </tr>
+                                    }
+                                    @foreach (var c in containers)
+                                    {
+                                        <tr>
+                                            <td>Docker</td>
+                                            <td>@DisplayOrDash(Text(c, "name", "Name"))</td>
+                                            <td>@DisplayOrDash(Text(c, "id", "Id"))</td>
+                                            <td>—</td>
+                                            <td>@DisplayOrDash(Text(c, "state", "State"))</td>
+                                            <td>@DisplayOrDash(Text(c, "status", "Status"))</td>
+                                        </tr>
+                                    }
+                                    @if (heartbeats.Count == 0 && containers.Count == 0)
+                                    {
+                                        <tr><td colspan="6">No active process or container data is currently available.</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="detail-section">
+                        <h3>Current target / active HTTP work</h3>
+                        <div class="table-wrap compact">
+                            <table class="ops-table">
+                                <thead>
+                                    <tr>
+                                        <th>Target</th>
+                                        <th>State</th>
+                                        <th>Method</th>
+                                        <th>URL</th>
+                                        <th>Locked by</th>
+                                        <th>Started</th>
+                                        <th>Error</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in activeWork)
+                                    {
+                                        <tr>
+                                            <td>@DisplayOrDash(Text(item, "targetRootDomain", "TargetRootDomain", "targetId", "TargetId"))</td>
+                                            <td>@DisplayOrDash(Text(item, "state", "State"))</td>
+                                            <td>@DisplayOrDash(Text(item, "method", "Method"))</td>
+                                            <td>@DisplayOrDash(Text(item, "requestUrl", "RequestUrl"))</td>
+                                            <td>@DisplayOrDash(Text(item, "lockedBy", "LockedBy"))</td>
+                                            <td>@FormatTime(Text(item, "startedAtUtc", "StartedAtUtc"))</td>
+                                            <td>@DisplayOrDash(Text(item, "lastError", "LastError"))</td>
+                                        </tr>
+                                    }
+                                    @if (activeWork.Count == 0)
+                                    {
+                                        <tr><td colspan="7">No currently locked HTTP request rows were found for this worker.</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="detail-section">
+                        <h3>Recent events it reacted to</h3>
+                        <div class="table-wrap compact">
+                            <table class="ops-table">
+                                <thead>
+                                    <tr>
+                                        <th>Occurred</th>
+                                        <th>Direction</th>
+                                        <th>Message</th>
+                                        <th>Consumer / host</th>
+                                        <th>Target</th>
+                                        <th>Status</th>
+                                        <th>Error</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var evt in recentEvents)
+                                    {
+                                        <tr>
+                                            <td>@FormatTime(Text(evt, "occurredAtUtc", "OccurredAtUtc"))</td>
+                                            <td>@DisplayOrDash(Text(evt, "direction", "Direction"))</td>
+                                            <td>@DisplayOrDash(Text(evt, "messageType", "MessageType"))</td>
+                                            <td>@DisplayOrDash(Text(evt, "consumerType", "ConsumerType", "hostName", "HostName"))</td>
+                                            <td>@DisplayOrDash(Text(evt, "targetRootDomain", "TargetRootDomain", "targetId", "TargetId"))</td>
+                                            <td>@DisplayOrDash(Text(evt, "status", "Status"))</td>
+                                            <td>@DisplayOrDash(Text(evt, "error", "Error"))</td>
+                                        </tr>
+                                    }
+                                    @if (recentEvents.Count == 0)
+                                    {
+                                        <tr><td colspan="7">No recent matching bus events were found for this worker.</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="detail-section">
+                        <h3>Recent HTTP work</h3>
+                        <div class="table-wrap compact">
+                            <table class="ops-table">
+                                <thead>
+                                    <tr>
+                                        <th>Updated</th>
+                                        <th>Target</th>
+                                        <th>State</th>
+                                        <th>URL</th>
+                                        <th>Status</th>
+                                        <th>Attempts</th>
+                                        <th>Error</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in recentHttp)
+                                    {
+                                        <tr>
+                                            <td>@FormatTime(Text(row, "updatedAtUtc", "UpdatedAtUtc"))</td>
+                                            <td>@DisplayOrDash(Text(row, "targetRootDomain", "TargetRootDomain", "targetId", "TargetId"))</td>
+                                            <td>@DisplayOrDash(Text(row, "state", "State"))</td>
+                                            <td>@DisplayOrDash(Text(row, "requestUrl", "RequestUrl"))</td>
+                                            <td>@DisplayOrDash(Text(row, "lastHttpStatus", "LastHttpStatus"))</td>
+                                            <td>@DisplayOrDash(Text(row, "attemptCount", "AttemptCount")) / @DisplayOrDash(Text(row, "maxAttempts", "MaxAttempts"))</td>
+                                            <td>@DisplayOrDash(Text(row, "lastError", "LastError"))</td>
+                                        </tr>
+                                    }
+                                    @if (recentHttp.Count == 0)
+                                    {
+                                        <tr><td colspan="7">No recent HTTP queue rows matched this worker.</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    @if (recentOutbox.Count > 0)
+                    {
+                        <div class="detail-section">
+                            <h3>Recent queued or dispatched events</h3>
+                            <div class="table-wrap compact">
+                                <table class="ops-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Updated</th>
+                                            <th>Message</th>
+                                            <th>State</th>
+                                            <th>Producer</th>
+                                            <th>Attempts</th>
+                                            <th>Error</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var evt in recentOutbox)
+                                        {
+                                            <tr>
+                                                <td>@FormatTime(Text(evt, "updatedAtUtc", "UpdatedAtUtc"))</td>
+                                                <td>@DisplayOrDash(Text(evt, "messageType", "MessageType"))</td>
+                                                <td>@DisplayOrDash(Text(evt, "state", "State"))</td>
+                                                <td>@DisplayOrDash(Text(evt, "producer", "Producer"))</td>
+                                                <td>@DisplayOrDash(Text(evt, "attemptCount", "AttemptCount"))</td>
+                                                <td>@DisplayOrDash(Text(evt, "lastError", "LastError"))</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                }
+            </section>
+        </div>
+    }
 </section>
 
 @code {
@@ -323,6 +584,10 @@
     private readonly List<JsonElement> _assets = [];
     private readonly List<JsonElement> _queue = [];
     private readonly List<JsonElement> _dockerWorkerServices = [];
+
+    private JsonElement? _workerDetailModal;
+    private bool _workerDetailLoading;
+    private string _workerDetailError = "";
 
     private readonly HashSet<string> _selectedTargetIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _selectedSubdomainKeys = new(StringComparer.OrdinalIgnoreCase);
@@ -557,6 +822,40 @@
         {
             _workersLoading = false;
         }
+    }
+
+    private async Task OpenWorkerDetailsAsync(string serviceName)
+    {
+        if (string.IsNullOrWhiteSpace(serviceName))
+        {
+            return;
+        }
+
+        _workerDetailModal = null;
+        _workerDetailError = "";
+        _workerDetailLoading = true;
+        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+
+        try
+        {
+            _workerDetailModal = await GetObjectAsync($"/api/workers/{Uri.EscapeDataString(serviceName)}/details").ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _workerDetailError = $"Worker details could not be loaded: {ex.Message}";
+        }
+        finally
+        {
+            _workerDetailLoading = false;
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+    }
+
+    private void CloseWorkerDetails()
+    {
+        _workerDetailModal = null;
+        _workerDetailError = "";
+        _workerDetailLoading = false;
     }
 
     private async Task CreateTargetAsync()

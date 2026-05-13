@@ -7,6 +7,16 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+var logBootstrapSkipped = LoggerMessage.Define(
+    LogLevel.Information,
+    new EventId(1, "BootstrapSkipped"),
+    "Command Center bootstrapper skipped because the Argus database already contains the core schema. Set ARGUS_FORCE_BOOTSTRAP=1 to force a full bootstrap.");
+
+var logBootstrapProbeFailed = LoggerMessage.Define(
+    LogLevel.Warning,
+    new EventId(2, "BootstrapProbeFailed"),
+    "Could not determine whether the Argus database is already bootstrapped; running full bootstrap.");
+
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
@@ -24,10 +34,9 @@ var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Co
 // install, or when an explicit schema backfill is desired, set
 // ARGUS_FORCE_BOOTSTRAP=1.
 if (!ForceBootstrap(configuration) &&
-    await LooksAlreadyBootstrappedAsync(host.Services, logger, CancellationToken.None).ConfigureAwait(false))
+    await LooksAlreadyBootstrappedAsync(host.Services, logger, CancellationToken.None, logBootstrapProbeFailed).ConfigureAwait(false))
 {
-    logger.LogInformation(
-        "Command Center bootstrapper skipped because the Argus database already contains the core schema. Set ARGUS_FORCE_BOOTSTRAP=1 to force a full bootstrap.");
+    logBootstrapSkipped(logger, null);
     return;
 }
 
@@ -54,7 +63,8 @@ static bool ForceBootstrap(IConfiguration configuration)
 static async Task<bool> LooksAlreadyBootstrappedAsync(
     IServiceProvider services,
     ILogger logger,
-    CancellationToken cancellationToken)
+    CancellationToken cancellationToken,
+    Action<ILogger, Exception?>? logBootstrapProbeFailed = null)
 {
     try
     {
@@ -92,7 +102,10 @@ static async Task<bool> LooksAlreadyBootstrappedAsync(
     }
     catch (Exception ex)
     {
-        logger.LogWarning(ex, "Could not determine whether the Argus database is already bootstrapped; running full bootstrap.");
+        if (logBootstrapProbeFailed is not null)
+        {
+            logBootstrapProbeFailed(logger, ex);
+        }
         return false;
     }
 }

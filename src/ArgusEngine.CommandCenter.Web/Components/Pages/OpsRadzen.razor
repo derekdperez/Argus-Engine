@@ -439,7 +439,7 @@
                             <td>@FormatTime(Text(row, "lastSeenUtc", "LastSeenUtc"))</td>
                             <td>@DisplayOrDash(Text(row, "targetRootDomain", "TargetRootDomain"))</td>
                             <td>@DisplayOrDash(Text(row, "subdomain", "Subdomain"))</td>
-                            <td><button type="button" class="link-button" @onclick="() => OpenTechnologyModal(Text(row, "technologyName", "TechnologyName"))" @onclick:stopPropagation="true">@DisplayOrDash(Text(row, "technologyName", "TechnologyName"))</button></td>
+                            <td><button type="button" class="link-button" @onclick='() => OpenTechnologyModal(Text(row, "technologyName", "TechnologyName"))' @onclick:stopPropagation="true">@DisplayOrDash(Text(row, "technologyName", "TechnologyName"))</button></td>
                             <td>@DisplayOrDash(Text(row, "version", "Version"))</td>
                             <td>@DisplayOrDash(Text(row, "sourceType", "SourceType"))</td>
                         </tr>

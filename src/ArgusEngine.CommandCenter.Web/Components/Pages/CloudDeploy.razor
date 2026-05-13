@@ -17,7 +17,7 @@
                     Core services run locally · Workers scale on Google Cloud Run
                 </RadzenText>
             </RadzenStack>
-            <RadzenSpacer />
+            <span style="flex: 1 1 auto"></span>
             <RadzenButton Text="Run Preflight" Icon="checklist" Variant="Variant.Outlined"
                           Click="RunPreflightAsync" Disabled="_busy" />
         </RadzenStack>
@@ -50,7 +50,7 @@
             <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
                          Gap="1rem" Style="margin-bottom: 1rem">
                 <RadzenText TextStyle="TextStyle.H6" Style="margin: 0">Worker Services</RadzenText>
-                <RadzenSpacer />
+                <span style="flex: 1 1 auto"></span>
                 <RadzenButton Text="Refresh" Icon="refresh" Size="ButtonSize.Small"
                               Variant="Variant.Text" Click="RefreshStatusAsync" Disabled="_busy" />
                 <RadzenButton Text="Deploy All" Icon="rocket_launch" ButtonStyle="ButtonStyle.Primary"
@@ -133,7 +133,7 @@
             <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
                          Gap="1rem" Style="margin-bottom: 0.75rem">
                 <RadzenText TextStyle="TextStyle.H6" Style="margin: 0">Build & Push Images</RadzenText>
-                <RadzenSpacer />
+                <span style="flex: 1 1 auto"></span>
                 <RadzenButton Text="Build All Workers" Icon="build" ButtonStyle="ButtonStyle.Secondary"
                               Click="BuildAllAsync" Disabled="_busy" />
             </RadzenStack>
@@ -148,7 +148,7 @@
             <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
                          Gap="1rem" Style="margin-bottom: 0.75rem">
                 <RadzenText TextStyle="TextStyle.H6" Style="margin: 0">Local Core Services</RadzenText>
-                <RadzenSpacer />
+                <span style="flex: 1 1 auto"></span>
                 <RadzenButton Text="Start Core" Icon="play_circle" ButtonStyle="ButtonStyle.Success"
                               Click="StartCoreAsync" Disabled="_busy" />
                 <RadzenButton Text="Stop Core" Icon="stop_circle" ButtonStyle="ButtonStyle.Light"
@@ -167,7 +167,7 @@
                 <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
                              Gap="1rem" Style="margin-bottom: 0.75rem">
                     <RadzenText TextStyle="TextStyle.H6" Style="margin: 0">Activity Log</RadzenText>
-                    <RadzenSpacer />
+                    <span style="flex: 1 1 auto"></span>
                     <RadzenButton Text="Clear" Icon="clear_all" Size="ButtonSize.Small"
                                   Variant="Variant.Text" Click="() => _log.Clear()" />
                 </RadzenStack>

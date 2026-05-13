@@ -10,7 +10,13 @@ public sealed record UpdateTargetMaxDepthResult(int Updated, int GlobalMaxDepth)
 
 public sealed record BulkImportRequest(IReadOnlyList<string>? Domains, int GlobalMaxDepth = 12);
 
-public sealed record BulkImportResult(int Created, int SkippedAlreadyExist, int SkippedEmptyOrInvalid, int SkippedDuplicateInBatch);
+public sealed record BulkImportTargetsRequest(IReadOnlyList<string>? Domains, int GlobalMaxDepth = 12);
+
+public sealed record BulkImportResult(
+    int Created,
+    int SkippedAlreadyExist,
+    int SkippedEmptyOrInvalid,
+    int SkippedDuplicateInBatch);
 
 public sealed record TargetSummary(
     Guid Id,
@@ -22,4 +28,3 @@ public sealed record TargetSummary(
     long ConfirmedUrlCount = 0,
     long QueuedAssetCount = 0,
     DateTimeOffset? LastRunAtUtc = null);
-

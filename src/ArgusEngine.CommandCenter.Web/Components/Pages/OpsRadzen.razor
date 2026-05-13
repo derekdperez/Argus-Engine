@@ -1200,7 +1200,7 @@
         _ => Text(row, "createdAtUtc", "CreatedAtUtc")
     };
 
-    private bool HighValueMatchesFilter(JsonElement row)
+    private bool StatusMatchesHighValue(JsonElement row)
     {
         var status = Text(row, "investigationStatus", "InvestigationStatus");
         var isHighValue = Bool(row, "isHighValue", "IsHighValue");
@@ -1217,13 +1217,23 @@
             return false;
         }
 
-        return string.IsNullOrWhiteSpace(_highValueSearch) ||
-               MatchesAny(row, _highValueSearch, "targetRootDomain", "TargetRootDomain", "kind", "Kind", "category", "Category", "finalUrl", "FinalUrl", "rawValue", "RawValue", "displayName", "DisplayName", "findingType", "FindingType", "severity", "Severity", "patternName", "PatternName", "matchedText", "MatchedText", "investigationStatus", "InvestigationStatus");
+        return true;
     }
 
+    private bool HighValueMatchesFilter(JsonElement row) =>
+        StatusMatchesHighValue(row) &&
+        HighValueGridMatches(row, _highValueSearch);
+
+    private bool HighValueGridMatches(JsonElement row, string search) =>
+        string.IsNullOrWhiteSpace(search) ||
+        MatchesAny(row, search, "targetRootDomain", "TargetRootDomain", "kind", "Kind", "category", "Category", "finalUrl", "FinalUrl", "rawValue", "RawValue", "displayName", "DisplayName", "findingType", "FindingType", "severity", "Severity", "patternName", "PatternName", "matchedText", "MatchedText", "investigationStatus", "InvestigationStatus");
+
     private bool TechnologyMatchesFilter(JsonElement row) =>
-        string.IsNullOrWhiteSpace(_technologySearch) ||
-        MatchesAny(row, _technologySearch, "targetRootDomain", "TargetRootDomain", "subdomain", "Subdomain", "technologyName", "TechnologyName", "version", "Version", "sourceType", "SourceType", "detectionMode", "DetectionMode", "evidenceSummary", "EvidenceSummary");
+        TechnologyGridMatches(row, _technologySearch);
+
+    private bool TechnologyGridMatches(JsonElement row, string search) =>
+        string.IsNullOrWhiteSpace(search) ||
+        MatchesAny(row, search, "targetRootDomain", "TargetRootDomain", "subdomain", "Subdomain", "technologyName", "TechnologyName", "version", "Version", "sourceType", "SourceType", "detectionMode", "DetectionMode", "evidenceSummary", "EvidenceSummary");
 
     private static IReadOnlyList<JsonElement> MaterializeSorted(IEnumerable<JsonElement> rows, Func<JsonElement, string> sortKey, bool desc)
     {

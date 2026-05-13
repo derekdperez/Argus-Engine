@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 
+using ArgusEngine.CommandCenter.Maintenance.Api;
+
 namespace ArgusEngine.CommandCenter.Maintenance.Api.Endpoints;
 
 public static class HttpArtifactBackfillEndpoints

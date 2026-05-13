@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -13,7 +14,6 @@ namespace ArgusEngine.CommandCenter.WorkerControl.Api.Services;
 internal static class DockerComposeWorkerScaler
 {
     private const string DefaultComposePath = "/home/derekdperez_dev/argus-engine/deploy/docker-compose.yml";
-    private const string ContainerRepoRootFallback = "/workspace";
     private const string DefaultProjectName = "argus-engine";
 
     public static async Task<IReadOnlyList<DockerComposeContainerInfo>> GetComposeContainersAsync(
@@ -25,9 +25,7 @@ internal static class DockerComposeWorkerScaler
         var filter = $"label=com.docker.compose.project={projectName}";
         var command = $"docker ps -a --no-trunc --format '{{{{json .}}}}' --filter {ShQuote(filter)}";
 
-        var result = await RunShellCommandAsync(command, TimeSpan.FromSeconds(15), logger, ct)
-            .ConfigureAwait(false);
-
+        var result = await RunShellCommandAsync(command, TimeSpan.FromSeconds(15), logger, ct).ConfigureAwait(false);
         if (!result.Success)
         {
             throw new InvalidOperationException(
@@ -35,13 +33,13 @@ internal static class DockerComposeWorkerScaler
         }
 
         var list = new List<DockerComposeContainerInfo>();
-
         foreach (var line in result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             try
             {
                 using var doc = JsonDocument.Parse(line);
                 var root = doc.RootElement;
+
                 var id = GetString(root, "ID");
                 var name = GetString(root, "Names");
                 var state = GetString(root, "State", "unknown");
@@ -73,8 +71,8 @@ internal static class DockerComposeWorkerScaler
 
         foreach (var container in containers)
         {
-            if (string.IsNullOrWhiteSpace(container.ServiceName) ||
-                !container.State.Equals("running", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(container.ServiceName)
+                || !container.State.Equals("running", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -96,17 +94,8 @@ internal static class DockerComposeWorkerScaler
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
         ArgumentOutOfRangeException.ThrowIfNegative(desiredCount);
 
-        var composePath = ResolveExistingPath(
-            GetComposeFilePath(configuration),
-            Path.Combine(ContainerRepoRootFallback, "deploy", "docker-compose.yml"));
-
-        var repoRoot = ResolveExistingPath(
-            GetRepoRoot(configuration),
-            ContainerRepoRootFallback,
-            Path.GetDirectoryName(composePath) is { } composeDirectory
-                ? Directory.GetParent(composeDirectory)?.FullName ?? composeDirectory
-                : ContainerRepoRootFallback);
-
+        var repoRoot = GetRepoRoot(configuration);
+        var composePath = GetComposeFilePath(configuration, repoRoot);
         var projectName = GetComposeProjectName(configuration);
         var scaleArg = $"{serviceName}={desiredCount.ToString(CultureInfo.InvariantCulture)}";
 
@@ -127,9 +116,7 @@ internal static class DockerComposeWorkerScaler
             serviceName,
             command);
 
-        var result = await RunShellCommandAsync(command, TimeSpan.FromSeconds(120), logger, ct)
-            .ConfigureAwait(false);
-
+        var result = await RunShellCommandAsync(command, TimeSpan.FromSeconds(120), logger, ct).ConfigureAwait(false);
         if (!result.Success)
         {
             throw new InvalidOperationException(
@@ -141,29 +128,66 @@ internal static class DockerComposeWorkerScaler
         configuration["Argus:Autoscaler:DockerComposeProject"] ?? DefaultProjectName;
 
     public static string GetComposeFilePath(IConfiguration configuration) =>
-        configuration["Argus:Autoscaler:DockerComposePath"] ?? DefaultComposePath;
+        GetComposeFilePath(configuration, GetRepoRoot(configuration));
+
+    private static string GetComposeFilePath(IConfiguration configuration, string repoRoot)
+    {
+        var configured = configuration["Argus:Autoscaler:DockerComposePath"] ?? DefaultComposePath;
+        if (File.Exists(configured))
+        {
+            return configured;
+        }
+
+        var fallback = Path.Combine(repoRoot, "deploy", "docker-compose.yml");
+        if (File.Exists(fallback))
+        {
+            return fallback;
+        }
+
+        if (Directory.Exists("/workspace"))
+        {
+            var workspaceCompose = "/workspace/deploy/docker-compose.yml";
+            if (File.Exists(workspaceCompose))
+            {
+                return workspaceCompose;
+            }
+        }
+
+        return configured;
+    }
 
     public static string GetRepoRoot(IConfiguration configuration)
     {
         var configuredRoot = configuration["Argus:Autoscaler:RepoRoot"];
-        if (!string.IsNullOrWhiteSpace(configuredRoot))
+        if (!string.IsNullOrWhiteSpace(configuredRoot) && Directory.Exists(configuredRoot))
         {
             return configuredRoot;
         }
 
-        var composePath = Path.GetFullPath(GetComposeFilePath(configuration));
-        var composeDirectory = Path.GetDirectoryName(composePath);
-
-        if (string.IsNullOrWhiteSpace(composeDirectory))
+        var composePath = configuration["Argus:Autoscaler:DockerComposePath"] ?? DefaultComposePath;
+        if (File.Exists(composePath))
         {
-            return "/home/derekdperez_dev/argus-engine";
+            var composeDirectory = Path.GetDirectoryName(Path.GetFullPath(composePath));
+            if (!string.IsNullOrWhiteSpace(composeDirectory))
+            {
+                return Directory.GetParent(composeDirectory)?.FullName ?? composeDirectory;
+            }
         }
 
-        return Directory.GetParent(composeDirectory)?.FullName ?? composeDirectory;
+        if (Directory.Exists("/workspace"))
+        {
+            return "/workspace";
+        }
+
+        return Directory.GetCurrentDirectory();
     }
 
     public static string ShortId(string id) =>
-        string.IsNullOrWhiteSpace(id) ? string.Empty : id.Length <= 12 ? id : id[..12];
+        string.IsNullOrWhiteSpace(id)
+            ? string.Empty
+            : id.Length <= 12
+                ? id
+                : id[..12];
 
     public static string FirstNonEmpty(params string?[] values)
     {
@@ -176,20 +200,6 @@ internal static class DockerComposeWorkerScaler
         }
 
         return string.Empty;
-    }
-
-    private static string ResolveExistingPath(params string?[] candidates)
-    {
-        foreach (var candidate in candidates)
-        {
-            if (!string.IsNullOrWhiteSpace(candidate) &&
-                (Directory.Exists(candidate) || File.Exists(candidate)))
-            {
-                return candidate;
-            }
-        }
-
-        return candidates.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c)) ?? ".";
     }
 
     private static string BuildComposeCommand(
@@ -289,7 +299,9 @@ internal static class DockerComposeWorkerScaler
     }
 
     private static string GetString(JsonElement root, string propertyName, string defaultValue = "") =>
-        root.TryGetProperty(propertyName, out var property) ? property.GetString() ?? defaultValue : defaultValue;
+        root.TryGetProperty(propertyName, out var property)
+            ? property.GetString() ?? defaultValue
+            : defaultValue;
 
     private static string ExtractLabel(string labelsString, string key)
     {
@@ -318,8 +330,7 @@ internal static class DockerComposeWorkerScaler
         return string.Empty;
     }
 
-    private static string ShQuote(string value) =>
-        "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
+    private static string ShQuote(string value) => "'" + value.Replace("'", "'"'"'", StringComparison.Ordinal) + "'";
 
     private static void TryKill(Process process)
     {

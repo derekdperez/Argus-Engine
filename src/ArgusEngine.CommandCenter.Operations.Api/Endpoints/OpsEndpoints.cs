@@ -4,6 +4,7 @@ using ArgusEngine.CommandCenter.Contracts;
 using ArgusEngine.CommandCenter.Operations.Api;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
+
 using AssetKind = ArgusEngine.Contracts.AssetKind;
 
 namespace ArgusEngine.CommandCenter.Operations.Api.Endpoints;
@@ -34,9 +35,19 @@ public static class OpsEndpoints
             "/api/ops/overview",
             async (ArgusDbContext db, IDbContextFactory<FileStoreDbContext> fileStoreFactory, CancellationToken ct) =>
             {
-                var totalTargets = await db.Targets.AsNoTracking()
+                var explicitTargetCount = await db.Targets.AsNoTracking()
                     .LongCountAsync(ct)
                     .ConfigureAwait(false);
+
+                var assetTargetCount = await db.Assets.AsNoTracking()
+                    .Select(a => a.TargetId)
+                    .Distinct()
+                    .LongCountAsync(ct)
+                    .ConfigureAwait(false);
+
+                // If target rows were lost during an earlier bad restore/merge, keep the Ops dashboard
+                // truthful by falling back to distinct TargetId values already attached to stored assets.
+                var totalTargets = Math.Max(explicitTargetCount, assetTargetCount);
 
                 var totalAssetsConfirmed = await db.Assets.AsNoTracking()
                     .LongCountAsync(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed, ct)
@@ -49,32 +60,31 @@ public static class OpsEndpoints
                 var urlsFromFetchedPages = await db.Assets.AsNoTracking()
                     .LongCountAsync(
                         a => a.Kind == AssetKind.Url
-                             && a.DiscoveredBy == "spider-worker"
-                             && EF.Functions.Like(a.DiscoveryContext, "Spider: link extracted from fetched page %"),
+                            && a.DiscoveredBy == "spider-worker"
+                            && EF.Functions.Like(a.DiscoveryContext, "Spider: link extracted from fetched page %"),
                         ct)
                     .ConfigureAwait(false);
 
                 var urlsFromScripts = await db.Assets.AsNoTracking()
                     .LongCountAsync(
                         a => a.Kind == AssetKind.Url
-                             && a.DiscoveredBy == "spider-worker"
-                             && (EF.Functions.ILike(a.DiscoveryContext, "%.js%")
-                                 || EF.Functions.ILike(a.DiscoveryContext, "%javascript%")),
+                            && a.DiscoveredBy == "spider-worker"
+                            && (EF.Functions.ILike(a.DiscoveryContext, "%.js%")
+                                || EF.Functions.ILike(a.DiscoveryContext, "%javascript%")),
                         ct)
                     .ConfigureAwait(false);
 
                 var urlsGuessedWithWordlist = await db.Assets.AsNoTracking()
                     .LongCountAsync(
                         a => a.Kind == AssetKind.Url
-                             && EF.Functions.ILike(a.DiscoveredBy, "hvpath:%"),
+                            && EF.Functions.ILike(a.DiscoveredBy, "hvpath:%"),
                         ct)
                     .ConfigureAwait(false);
 
-                // The Operations page should report confirmed subdomains, not every discovered/queued subdomain.
                 var subdomainsConfirmed = await db.Assets.AsNoTracking()
                     .LongCountAsync(
                         a => a.Kind == AssetKind.Subdomain
-                             && a.LifecycleStatus == AssetLifecycleStatus.Confirmed,
+                            && a.LifecycleStatus == AssetLifecycleStatus.Confirmed,
                         ct)
                     .ConfigureAwait(false);
 
@@ -126,22 +136,35 @@ public static class OpsEndpoints
                     .LongCountAsync(e => e.Direction == "Publish", ct)
                     .ConfigureAwait(false);
 
-                // Top domain should count confirmed assets only.
                 var domainCounts = await db.Assets.AsNoTracking()
                     .Where(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed)
-                    .Join(db.Targets.AsNoTracking(), a => a.TargetId, t => t.Id, (_, t) => t.RootDomain)
-                    .GroupBy(d => d)
-                    .Select(g => new { RootDomain = g.Key, Count = g.LongCount() })
+                    .GroupBy(a => a.TargetId)
+                    .Select(g => new
+                    {
+                        TargetId = g.Key,
+                        Count = g.LongCount(),
+                    })
                     .ToListAsync(ct)
                     .ConfigureAwait(false);
 
+                var targetNames = await db.Targets.AsNoTracking()
+                    .Select(t => new { t.Id, t.RootDomain })
+                    .ToDictionaryAsync(t => t.Id, t => t.RootDomain, ct)
+                    .ConfigureAwait(false);
+
                 var top = domainCounts
+                    .Select(x => new
+                    {
+                        RootDomain = targetNames.TryGetValue(x.TargetId, out var root) ? root : x.TargetId.ToString(),
+                        x.Count,
+                    })
                     .OrderByDescending(x => x.Count)
                     .ThenBy(x => x.RootDomain, StringComparer.OrdinalIgnoreCase)
                     .FirstOrDefault();
 
                 var domains10OrMore = domainCounts.LongCount(x => x.Count >= 10);
                 var domains10OrFewer = domainCounts.LongCount(x => x.Count < 10);
+
                 var storage = await OpsStorageMetricsQuery.LoadAsync(db, fileStoreFactory, ct).ConfigureAwait(false);
 
                 return Results.Ok(
@@ -173,79 +196,8 @@ public static class OpsEndpoints
             })
             .WithName("OpsOverview");
 
-        app.MapGet(
-            "/api/ops/reliability-slo",
-            async (ArgusDbContext db, CancellationToken ct) =>
-            {
-                var now = DateTimeOffset.UtcNow;
-                var since = now.AddHours(-1);
-
-                var publishes = await db.BusJournal.AsNoTracking()
-                    .LongCountAsync(e => e.Direction == "Publish" && e.OccurredAtUtc >= since, ct)
-                    .ConfigureAwait(false);
-
-                var consumes = await db.BusJournal.AsNoTracking()
-                    .LongCountAsync(e => e.Direction == "Consume" && e.OccurredAtUtc >= since, ct)
-                    .ConfigureAwait(false);
-
-                var successRate = publishes <= 0 ? 1m : Math.Min(1m, consumes / (decimal)publishes);
-
-                var queued = await db.HttpRequestQueue.AsNoTracking()
-                    .LongCountAsync(q => q.State == HttpRequestQueueState.Queued, ct)
-                    .ConfigureAwait(false);
-
-                var readyRetry = await db.HttpRequestQueue.AsNoTracking()
-                    .LongCountAsync(q => q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now, ct)
-                    .ConfigureAwait(false);
-
-                var backlog = queued + readyRetry;
-
-                var completed = await db.HttpRequestQueue.AsNoTracking()
-                    .LongCountAsync(q => q.State == HttpRequestQueueState.Succeeded && q.CompletedAtUtc >= since, ct)
-                    .ConfigureAwait(false);
-
-                var failedLastHour = await db.HttpRequestQueue.AsNoTracking()
-                    .LongCountAsync(q => q.State == HttpRequestQueueState.Failed && q.UpdatedAtUtc >= since, ct)
-                    .ConfigureAwait(false);
-
-                var oldestQueuedAt = await db.HttpRequestQueue.AsNoTracking()
-                    .Where(q => q.State == HttpRequestQueueState.Queued
-                                || (q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now))
-                    .OrderBy(q => q.CreatedAtUtc)
-                    .Select(q => (DateTimeOffset?)q.CreatedAtUtc)
-                    .FirstOrDefaultAsync(ct)
-                    .ConfigureAwait(false);
-
-                var apiReady = await db.Database.CanConnectAsync(ct).ConfigureAwait(false);
-
-                return Results.Ok(
-                    new ReliabilitySloSnapshotDto(
-                        now,
-                        publishes,
-                        consumes,
-                        successRate,
-                        backlog,
-                        oldestQueuedAt is null ? null : (long)(now - oldestQueuedAt.Value).TotalSeconds,
-                        completed,
-                        failedLastHour,
-                        apiReady));
-            })
-            .WithName("ReliabilitySloSnapshot");
-
-        app.MapGet(
-            "/api/ops/docker-status",
-            async (CancellationToken ct) =>
-            {
-                var snapshot = await DockerRuntimeStatusBuilder.BuildAsync(ct).ConfigureAwait(false);
-                return Results.Ok(snapshot);
-            })
-            .WithName("DockerRuntimeStatus");
-
         return app;
     }
 
     public static void Map(WebApplication app) => app.MapOpsEndpoints();
 }
-
-
-

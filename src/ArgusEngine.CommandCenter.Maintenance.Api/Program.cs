@@ -3,18 +3,17 @@ using ArgusEngine.CommandCenter.Maintenance.Api.Endpoints;
 using ArgusEngine.Infrastructure;
 using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
+
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
-builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });
-builder.Services.AddScoped<HttpQueueArtifactBackfillService>();
 
-// WorkerCancellationStore is not present in this split-service source tree.
-// Worker cancellation support is registered by AddArgusInfrastructure and the
-// worker/control services that actually own those endpoints. Keeping a direct
-// registration here breaks hot publish of command-center-maintenance-api.
+builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });
+
+builder.Services.AddScoped<WorkerCancellationStore>();
+builder.Services.AddScoped<HttpQueueArtifactBackfillService>();
 
 var app = builder.Build();
 

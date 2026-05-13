@@ -12,6 +12,7 @@ namespace ArgusEngine.CommandCenter.WorkerControl.Api.Services;
 
 /// <summary>
 /// Background service that automatically scales worker services based on queue backlog.
+/// This provides built-in autoscaling without requiring external cron jobs or scripts.
 /// </summary>
 public sealed class WorkerAutoscalerBackgroundService(
     IServiceScopeFactory scopeFactory,
@@ -35,9 +36,31 @@ public sealed class WorkerAutoscalerBackgroundService(
     private readonly Dictionary<string, DateTimeOffset> _lastScaleUp = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTimeOffset> _lastScaleDown = new(StringComparer.OrdinalIgnoreCase);
 
+    private static readonly Action<ILogger, Exception?> LogAutoscalerStarted = LoggerMessage.Define(
+        LogLevel.Information,
+        new EventId(1, nameof(StartAsync)),
+        "Worker autoscaler background service started.");
+
+    private static readonly Action<ILogger, Exception?> LogAutoscalerStopped = LoggerMessage.Define(
+        LogLevel.Information,
+        new EventId(2, nameof(StopAsync)),
+        "Worker autoscaler background service stopped.");
+
+    private static readonly Action<ILogger, string, int, int, long, Exception?> LogScaleDecision =
+        LoggerMessage.Define<string, int, int, long>(
+            LogLevel.Information,
+            new EventId(3, "ScaleDecision"),
+            "Scaling {ServiceName} from {CurrentCount} to {DesiredCount} workers (backlog={Backlog}).");
+
+    private static readonly Action<ILogger, string, string, Exception?> LogScaleSkip =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Debug,
+            new EventId(4, "ScaleSkip"),
+            "Skipping scale for {ServiceName}: {Reason}");
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("Worker autoscaler background service started.");
+        LogAutoscalerStarted(logger, null);
 
         try
         {
@@ -67,7 +90,7 @@ public sealed class WorkerAutoscalerBackgroundService(
         }
         finally
         {
-            logger.LogInformation("Worker autoscaler background service stopped.");
+            LogAutoscalerStopped(logger, null);
         }
     }
 
@@ -93,13 +116,14 @@ public sealed class WorkerAutoscalerBackgroundService(
             var scaleKey = ToScaleKey(worker.ServiceName);
             if (overrides.ContainsKey(scaleKey))
             {
-                logger.LogDebug("Skipping autoscale for {ServiceName}; manual scale target is active.", worker.ServiceName);
                 continue;
             }
 
             var minTasks = settings.TryGetValue(scaleKey, out var setting) ? setting.MinTasks : 1;
             var maxTasks = settings.TryGetValue(scaleKey, out setting) ? setting.MaxTasks : 50;
-            var targetBacklog = settings.TryGetValue(scaleKey, out setting) ? setting.TargetBacklogPerTask : worker.DefaultTargetBacklog;
+            var targetBacklog = settings.TryGetValue(scaleKey, out setting)
+                ? setting.TargetBacklogPerTask
+                : worker.DefaultTargetBacklog;
 
             minTasks = Math.Max(0, minTasks);
             maxTasks = Math.Max(minTasks, maxTasks);
@@ -110,7 +134,7 @@ public sealed class WorkerAutoscalerBackgroundService(
                 currentCount = 0;
             }
 
-            var backlog = worker.QueueSource switch
+            long backlog = worker.QueueSource switch
             {
                 "http-queue" => httpBacklog,
                 "rabbitmq" => rabbitQueues.TryGetValue(worker.WorkerKey, out var rmqDepth) ? rmqDepth : 0,
@@ -129,14 +153,14 @@ public sealed class WorkerAutoscalerBackgroundService(
         }
     }
 
-    private static string ToScaleKey(string serviceName) => serviceName.Replace("worker-", "worker-", StringComparison.Ordinal);
+    private static string ToScaleKey(string serviceName) =>
+        serviceName.Replace("worker-", "worker-", StringComparison.Ordinal);
 
     private static async Task<long> GetHttpQueueBacklogAsync(ArgusDbContext db, CancellationToken ct)
     {
         try
         {
             var pendingStates = new[] { HttpRequestQueueState.Queued, HttpRequestQueueState.Retry };
-
             return await db.HttpRequestQueue.AsNoTracking()
                 .LongCountAsync(q => pendingStates.Contains(q.State), ct)
                 .ConfigureAwait(false);
@@ -147,15 +171,13 @@ public sealed class WorkerAutoscalerBackgroundService(
         }
     }
 
-    private static async Task<Dictionary<string, long>> GetRabbitQueueDepthsAsync(
-        ArgusDbContext db,
-        CancellationToken ct)
+    private static async Task<Dictionary<string, long>> GetRabbitQueueDepthsAsync(ArgusDbContext db, CancellationToken ct)
     {
         var result = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
         try
         {
-            // TODO: Replace this placeholder with RabbitMQ management API queue-depth integration.
+            // Placeholder for RabbitMQ management API integration.
             await Task.CompletedTask.ConfigureAwait(false);
         }
         catch
@@ -166,25 +188,22 @@ public sealed class WorkerAutoscalerBackgroundService(
         return result;
     }
 
-    private async Task<Dictionary<string, int>> GetCurrentWorkerCountsAsync(CancellationToken ct)
+    private async Task<IReadOnlyDictionary<string, int>> GetCurrentWorkerCountsAsync(CancellationToken ct)
     {
         try
         {
-            return await DockerComposeWorkerScaler.GetRunningServiceCountsAsync(configuration, logger, ct)
+            return await DockerComposeWorkerScaler
+                .GetRunningServiceCountsAsync(configuration, logger, ct)
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to query Docker for worker counts.");
+            logger.LogWarning(ex, "Failed to query Docker Compose for worker counts");
             return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         }
     }
 
-    private static int CalculateDesiredCount(
-        long backlog,
-        int targetBacklogPerTask,
-        int minTasks,
-        int maxTasks)
+    private static int CalculateDesiredCount(long backlog, int targetBacklogPerTask, int minTasks, int maxTasks)
     {
         if (backlog <= 0)
         {
@@ -193,7 +212,6 @@ public sealed class WorkerAutoscalerBackgroundService(
 
         var safeTargetBacklog = Math.Max(1, targetBacklogPerTask);
         var required = (int)Math.Ceiling((double)backlog / safeTargetBacklog);
-
         return Math.Clamp(required, minTasks, maxTasks);
     }
 
@@ -210,7 +228,7 @@ public sealed class WorkerAutoscalerBackgroundService(
         {
             if (_lastScaleUp.TryGetValue(serviceName, out var lastUp) && now - lastUp < ScaleUpCooldown)
             {
-                logger.LogDebug("Skipping scale for {ServiceName}: scale-up cooldown active.", serviceName);
+                LogScaleSkip(logger, serviceName, "scale-up cooldown active", null);
                 return;
             }
         }
@@ -218,7 +236,7 @@ public sealed class WorkerAutoscalerBackgroundService(
         {
             if (_lastScaleDown.TryGetValue(serviceName, out var lastDown) && now - lastDown < ScaleDownCooldown)
             {
-                logger.LogDebug("Skipping scale for {ServiceName}: scale-down cooldown active.", serviceName);
+                LogScaleSkip(logger, serviceName, "scale-down cooldown active", null);
                 return;
             }
         }
@@ -228,12 +246,7 @@ public sealed class WorkerAutoscalerBackgroundService(
             return;
         }
 
-        logger.LogInformation(
-            "Scaling {ServiceName} from {CurrentCount} to {DesiredCount} workers (backlog={Backlog}).",
-            serviceName,
-            currentCount,
-            desiredCount,
-            backlog);
+        LogScaleDecision(logger, serviceName, currentCount, desiredCount, backlog, null);
 
         var success = await ScaleDockerServiceAsync(serviceName, desiredCount, ct).ConfigureAwait(false);
         if (!success)
@@ -255,15 +268,16 @@ public sealed class WorkerAutoscalerBackgroundService(
     {
         try
         {
-            await DockerComposeWorkerScaler.ScaleWorkerAsync(serviceName, desiredCount, configuration, logger, ct)
+            await DockerComposeWorkerScaler
+                .ScaleWorkerAsync(serviceName, desiredCount, configuration, logger, ct)
                 .ConfigureAwait(false);
 
-            logger.LogInformation("Scaled {ServiceName} to {DesiredCount} containers.", serviceName, desiredCount);
+            logger.LogInformation("Scaled {ServiceName} to {DesiredCount} containers", serviceName, desiredCount);
             return true;
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to scale {ServiceName}.", serviceName);
+            logger.LogWarning(ex, "Failed to scale {ServiceName}", serviceName);
             return false;
         }
     }

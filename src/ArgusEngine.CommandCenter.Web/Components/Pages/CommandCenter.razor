@@ -12,13 +12,13 @@
 @implements IDisposable
 @inject WorkerControlApiClient WorkerApi
 
-<PageTitle>Operations - Argus Engine</PageTitle>
+<PageTitle>Argus Command Center - Argus Engine</PageTitle>
 
-<div class="ops-page">
+<div class="ops-page" @onclick="CloseContextMenu">
     <header class="ops-header">
         <div>
             <p class="eyebrow">Operations</p>
-            <h1>Argus Engine Command Center</h1>
+            <h1>Argus Command Center</h1>
             <p class="muted">Targets, assets, workers, HTTP queue, high value assets, and technology detection in one operations view.</p>
         </div>
         <button class="primary" type="button" @onclick="ReloadAllAsync">Refresh</button>
@@ -92,7 +92,10 @@
                     @foreach (var target in TargetRows)
                     {
                         var id = Text(target, "id", "Id");
-                        <tr class="@RowClass(IsTargetSelected(id))" @onclick="() => ToggleTargetSelection(id)">
+                        <tr class="@RowClass(IsTargetSelected(id))"
+                            @onclick="() => ToggleTargetSelection(id)"
+                            @oncontextmenu="args => OpenTargetContextMenu(args, target)"
+                            @oncontextmenu:preventDefault="true">
                             <td class="select-col">
                                 <input type="checkbox" checked="@IsTargetSelected(id)" @onchange="args => SetTargetSelected(id, args)" @onclick:stopPropagation="true" />
                             </td>
@@ -140,7 +143,10 @@
                     @foreach (var row in SubdomainRows)
                     {
                         var key = SubdomainKey(row);
-                        <tr class="@RowClass(IsSubdomainSelected(key))" @onclick="() => ToggleSubdomainSelection(key)">
+                        <tr class="@RowClass(IsSubdomainSelected(key))"
+                            @onclick="() => ToggleSubdomainSelection(key)"
+                            @oncontextmenu="args => OpenSubdomainContextMenu(args, row)"
+                            @oncontextmenu:preventDefault="true">
                             <td class="select-col">
                                 <input type="checkbox" checked="@IsSubdomainSelected(key)" @onchange="args => SetSubdomainSelected(key, args)" @onclick:stopPropagation="true" />
                             </td>
@@ -450,6 +456,18 @@
     </section>
 
 </div>
+
+@if (_contextMenuVisible)
+{
+    <div class="ops-context-menu"
+         style="@($"left:{_contextMenuX}px;top:{_contextMenuY}px")"
+         @onclick:stopPropagation="true">
+        @foreach (var item in _contextMenuItems)
+        {
+            <button type="button" class="ops-context-menu-item" @onclick="() => OnContextMenuItemAsync(item)">@item.Label</button>
+        }
+    </div>
+}
 
 @if (_workerDetailLoading || _workerDetailModal is not null || !string.IsNullOrWhiteSpace(_workerDetailError))
 {

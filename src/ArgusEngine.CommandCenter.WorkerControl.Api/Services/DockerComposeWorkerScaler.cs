@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
-
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -14,6 +13,7 @@ namespace ArgusEngine.CommandCenter.WorkerControl.Api.Services;
 internal static class DockerComposeWorkerScaler
 {
     private const string DefaultComposePath = "/home/derekdperez_dev/argus-engine/deploy/docker-compose.yml";
+    private const string ContainerRepoRootFallback = "/workspace";
     private const string DefaultProjectName = "argus-engine";
 
     public static async Task<IReadOnlyList<DockerComposeContainerInfo>> GetComposeContainersAsync(
@@ -25,7 +25,9 @@ internal static class DockerComposeWorkerScaler
         var filter = $"label=com.docker.compose.project={projectName}";
         var command = $"docker ps -a --no-trunc --format '{{{{json .}}}}' --filter {ShQuote(filter)}";
 
-        var result = await RunShellCommandAsync(command, TimeSpan.FromSeconds(15), logger, ct).ConfigureAwait(false);
+        var result = await RunShellCommandAsync(command, TimeSpan.FromSeconds(15), logger, ct)
+            .ConfigureAwait(false);
+
         if (!result.Success)
         {
             throw new InvalidOperationException(
@@ -71,8 +73,8 @@ internal static class DockerComposeWorkerScaler
 
         foreach (var container in containers)
         {
-            if (string.IsNullOrWhiteSpace(container.ServiceName)
-                || !container.State.Equals("running", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(container.ServiceName) ||
+                !container.State.Equals("running", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -94,11 +96,21 @@ internal static class DockerComposeWorkerScaler
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
         ArgumentOutOfRangeException.ThrowIfNegative(desiredCount);
 
-        var repoRoot = GetRepoRoot(configuration);
-        var composePath = GetComposeFilePath(configuration, repoRoot);
+        var configuredComposePath = GetComposeFilePath(configuration);
+        var composePath = ResolveExistingPath(
+            configuredComposePath,
+            Path.Combine(ContainerRepoRootFallback, "deploy", "docker-compose.yml"),
+            DefaultComposePath);
+
+        var repoRoot = ResolveExistingPath(
+            GetRepoRoot(configuration),
+            ContainerRepoRootFallback,
+            Path.GetDirectoryName(composePath) is { } composeDirectory
+                ? Directory.GetParent(composeDirectory)?.FullName ?? composeDirectory
+                : ContainerRepoRootFallback);
+
         var projectName = GetComposeProjectName(configuration);
         var scaleArg = $"{serviceName}={desiredCount.ToString(CultureInfo.InvariantCulture)}";
-
         var composeArgs = string.Join(
             " ",
             "up",
@@ -116,7 +128,9 @@ internal static class DockerComposeWorkerScaler
             serviceName,
             command);
 
-        var result = await RunShellCommandAsync(command, TimeSpan.FromSeconds(120), logger, ct).ConfigureAwait(false);
+        var result = await RunShellCommandAsync(command, TimeSpan.FromSeconds(120), logger, ct)
+            .ConfigureAwait(false);
+
         if (!result.Success)
         {
             throw new InvalidOperationException(
@@ -128,66 +142,33 @@ internal static class DockerComposeWorkerScaler
         configuration["Argus:Autoscaler:DockerComposeProject"] ?? DefaultProjectName;
 
     public static string GetComposeFilePath(IConfiguration configuration) =>
-        GetComposeFilePath(configuration, GetRepoRoot(configuration));
-
-    private static string GetComposeFilePath(IConfiguration configuration, string repoRoot)
-    {
-        var configured = configuration["Argus:Autoscaler:DockerComposePath"] ?? DefaultComposePath;
-        if (File.Exists(configured))
-        {
-            return configured;
-        }
-
-        var fallback = Path.Combine(repoRoot, "deploy", "docker-compose.yml");
-        if (File.Exists(fallback))
-        {
-            return fallback;
-        }
-
-        if (Directory.Exists("/workspace"))
-        {
-            var workspaceCompose = "/workspace/deploy/docker-compose.yml";
-            if (File.Exists(workspaceCompose))
-            {
-                return workspaceCompose;
-            }
-        }
-
-        return configured;
-    }
+        configuration["Argus:Autoscaler:DockerComposePath"] ?? DefaultComposePath;
 
     public static string GetRepoRoot(IConfiguration configuration)
     {
         var configuredRoot = configuration["Argus:Autoscaler:RepoRoot"];
-        if (!string.IsNullOrWhiteSpace(configuredRoot) && Directory.Exists(configuredRoot))
+        if (!string.IsNullOrWhiteSpace(configuredRoot))
         {
             return configuredRoot;
         }
 
-        var composePath = configuration["Argus:Autoscaler:DockerComposePath"] ?? DefaultComposePath;
-        if (File.Exists(composePath))
+        if (Directory.Exists(ContainerRepoRootFallback))
         {
-            var composeDirectory = Path.GetDirectoryName(Path.GetFullPath(composePath));
-            if (!string.IsNullOrWhiteSpace(composeDirectory))
-            {
-                return Directory.GetParent(composeDirectory)?.FullName ?? composeDirectory;
-            }
+            return ContainerRepoRootFallback;
         }
 
-        if (Directory.Exists("/workspace"))
+        var composePath = Path.GetFullPath(GetComposeFilePath(configuration));
+        var composeDirectory = Path.GetDirectoryName(composePath);
+        if (string.IsNullOrWhiteSpace(composeDirectory))
         {
-            return "/workspace";
+            return "/home/derekdperez_dev/argus-engine";
         }
 
-        return Directory.GetCurrentDirectory();
+        return Directory.GetParent(composeDirectory)?.FullName ?? composeDirectory;
     }
 
     public static string ShortId(string id) =>
-        string.IsNullOrWhiteSpace(id)
-            ? string.Empty
-            : id.Length <= 12
-                ? id
-                : id[..12];
+        string.IsNullOrWhiteSpace(id) ? string.Empty : id.Length <= 12 ? id : id[..12];
 
     public static string FirstNonEmpty(params string?[] values)
     {
@@ -200,6 +181,20 @@ internal static class DockerComposeWorkerScaler
         }
 
         return string.Empty;
+    }
+
+    private static string ResolveExistingPath(params string?[] candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (!string.IsNullOrWhiteSpace(candidate) &&
+                (Directory.Exists(candidate) || File.Exists(candidate)))
+            {
+                return candidate;
+            }
+        }
+
+        return candidates.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c)) ?? ".";
     }
 
     private static string BuildComposeCommand(
@@ -219,14 +214,16 @@ internal static class DockerComposeWorkerScaler
             ShQuote(projectName),
             "-f",
             ShQuote(composePath),
-            composeArgs + ";",
+            composeArgs,
+            ";",
             "elif command -v docker-compose >/dev/null 2>&1; then",
             "docker-compose",
             "-p",
             ShQuote(projectName),
             "-f",
             ShQuote(composePath),
-            composeArgs + ";",
+            composeArgs,
+            ";",
             "else",
             "echo 'Docker Compose is not available inside command-center-worker-control-api; install docker-cli-compose or docker-compose.' >&2;",
             "exit 127;",
@@ -299,9 +296,7 @@ internal static class DockerComposeWorkerScaler
     }
 
     private static string GetString(JsonElement root, string propertyName, string defaultValue = "") =>
-        root.TryGetProperty(propertyName, out var property)
-            ? property.GetString() ?? defaultValue
-            : defaultValue;
+        root.TryGetProperty(propertyName, out var property) ? property.GetString() ?? defaultValue : defaultValue;
 
     private static string ExtractLabel(string labelsString, string key)
     {
@@ -320,7 +315,6 @@ internal static class DockerComposeWorkerScaler
 
             var k = part[..eq].Trim();
             var v = part[(eq + 1)..].Trim();
-
             if (k.Equals(key, StringComparison.OrdinalIgnoreCase))
             {
                 return v;
@@ -330,7 +324,8 @@ internal static class DockerComposeWorkerScaler
         return string.Empty;
     }
 
-    private static string ShQuote(string value) => "'" + value.Replace("'", "'"'"'", StringComparison.Ordinal) + "'";
+    private static string ShQuote(string value) =>
+        "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
 
     private static void TryKill(Process process)
     {

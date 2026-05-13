@@ -1,5 +1,16 @@
 # Run from the repository root:
 # docker compose -f deploy/docker-compose.yml up -d --build
+#
+# Project-specific deployment version rule:
+# Bump ARGUS_ENGINE_VERSION before every deploy. The Command Center System Status
+# screen reads container image labels/tags and will show stale versions if this
+# stays unchanged.
+#
+# Database connection pool tuning:
+# Each service can override Argus__Postgres__MaxPoolSize and
+# Argus__FileStore__MaxPoolSize below. Keep worker pools small because worker
+# replicas multiply total PostgreSQL connections quickly.
+
 name: argus-engine
 
 x-component-version: &component-version ${ARGUS_ENGINE_VERSION:-2.6.3}
@@ -15,8 +26,8 @@ x-enum-build-args: &enum-build-args
 
 x-common-env: &common-env
   ASPNETCORE_ENVIRONMENT: Development
-  ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=argus_engine;Username=argus;Password=argus
-  ConnectionStrings__FileStore: Host=postgres;Port=5432;Database=argus_engine_files;Username=argus;Password=argus
+  ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=argus_engine;Username=argus;Password=argus"
+  ConnectionStrings__FileStore: "Host=postgres;Port=5432;Database=argus_engine_files;Username=argus;Password=argus"
   Argus__Postgres__MaxPoolSize: ${ARGUS_POSTGRES_MAX_POOL_SIZE:-4}
   Argus__FileStore__MaxPoolSize: ${ARGUS_FILESTORE_MAX_POOL_SIZE:-1}
   ConnectionStrings__Redis: redis:6379
@@ -34,6 +45,7 @@ configs:
       #!/bin/sh
       set -e
       echo "Connecting to postgres as user 'argus' to check/create 'argus_engine_files'..."
+      # Use argus_engine as the maintenance DB since it's what we defined in POSTGRES_DB
       if psql -h postgres -U argus -d argus_engine -tAc "SELECT 1 FROM pg_database WHERE datname = 'argus_engine_files'" 2>/dev/null | grep -q '1'; then
         echo "argus_engine_files already exists; nothing to do."
         exit 0
@@ -392,8 +404,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
 
   gatekeeper:
     image: argus-engine/gatekeeper:${ARGUS_ENGINE_VERSION:-2.6.3}
@@ -595,6 +605,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    deploy:
+      replicas: ${ARGUS_WORKER_TECHID_REPLICAS:-2}
 
 volumes:
   pgdata:

@@ -8,6 +8,9 @@ public sealed class DataRetentionRunResult
     public int InboxDeleted { get; set; }
     public int BusJournalDeleted { get; set; }
 
+    public int ArchivedOutboxDeleted { get; set; }
+    public int ArchivedBusJournalDeleted { get; set; }
+
     public int CompletedHttpQueueDeleted { get; set; }
     public int FailedHttpQueueDeleted { get; set; }
     public int StaleQueuedHttpQueueDeleted { get; set; }

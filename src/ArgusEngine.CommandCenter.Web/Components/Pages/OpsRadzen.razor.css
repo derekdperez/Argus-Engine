@@ -283,3 +283,26 @@
         grid-template-columns: 1fr;
     }
 }
+
+.ops-table tbody tr {
+    cursor: pointer;
+}
+
+.ops-table .select-column {
+    width: 3rem;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.ops-table .select-column input[type="checkbox"] {
+    cursor: pointer;
+}
+
+.ops-table td.select-column {
+    vertical-align: middle;
+}
+
+.ops-table .detail-link {
+    cursor: pointer;
+}
+

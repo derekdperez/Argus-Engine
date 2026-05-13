@@ -19,7 +19,7 @@
             <p class="muted">Targets, assets, workers, and HTTP request flow.</p>
         </div>
         <button class="btn primary" type="button" @onclick="ReloadAllAsync" disabled="@_loadingAny">
-            @(_loadingAny ? "Refreshing..." : "Refresh")
+            Refresh
         </button>
     </header>
 
@@ -31,19 +31,19 @@
     <section class="summary-grid">
         <article class="summary-card">
             <span>Targets</span>
-            <strong>@(_targetsLoading && TotalTargets == 0 ? "—" : FormatNumber(TotalTargets))</strong>
+            <strong>@FormatNumber(TotalTargets)</strong>
         </article>
         <article class="summary-card">
             <span>Assets</span>
-            <strong>@(_assetsLoading && ConfirmedAssets == 0 ? "—" : FormatNumber(ConfirmedAssets))</strong>
+            <strong>@FormatNumber(ConfirmedAssets)</strong>
         </article>
         <article class="summary-card">
             <span>Subdomains</span>
-            <strong>@(_assetsLoading && ConfirmedSubdomains == 0 ? "—" : FormatNumber(ConfirmedSubdomains))</strong>
+            <strong>@FormatNumber(ConfirmedSubdomains)</strong>
         </article>
         <article class="summary-card">
             <span>HTTP Queue</span>
-            <strong>@(_httpLoading && HttpQueueQueuedCount == 0 ? "—" : $"{FormatNumber(HttpQueueQueuedCount)} queued")</strong>
+            <strong>@($"{FormatNumber(HttpQueueQueuedCount)} queued")</strong>
             <small>@FormatNumber(HttpRequestsSentPerMinute) sent/min</small>
         </article>
         <article class="summary-card wide">
@@ -76,13 +76,13 @@
 
         <div class="toolbar">
             <button class="btn primary" type="button" @onclick="() => StartEnumerationAsync(selectedOnly: true)" disabled="@(_enumLoading || _selectedTargetIds.Count == 0)">
-                @(_enumLoading ? "Starting..." : $"Enumerate selected ({_selectedTargetIds.Count})")
+                @($"Enumerate selected ({_selectedTargetIds.Count})")
             </button>
             <button class="btn" type="button" @onclick="() => StartEnumerationAsync(selectedOnly: false)" disabled="@_enumLoading">
                 Enumerate all visible
             </button>
             <button class="btn primary" type="button" @onclick="() => StartSpiderAsync(selectedOnly: true)" disabled="@(_spiderLoading || _selectedTargetIds.Count == 0)">
-                @(_spiderLoading ? "Starting..." : $"Spider selected ({_selectedTargetIds.Count})")
+                @($"Spider selected ({_selectedTargetIds.Count})")
             </button>
             <button class="btn" type="button" @onclick="() => StartSpiderAsync(selectedOnly: false)" disabled="@_spiderLoading">
                 Spider all visible
@@ -93,7 +93,7 @@
             <table class="ops-table">
                 <thead>
                     <tr>
-                        <th><input type="checkbox" checked="@AllVisibleTargetsSelected" @onchange="ToggleAllVisibleTargets" /></th>
+                        <th class="select-column"><input type="checkbox" aria-label="Select all visible targets" checked="@AllVisibleTargetsSelected" @onchange="ToggleAllVisibleTargets" /></th>
                         <th><button class="link-btn" @onclick='() => SortTargets("name")'>Target</button></th>
                         <th><button class="link-btn" @onclick='() => SortTargets("depth")'>Depth</button></th>
                         <th><button class="link-btn" @onclick='() => SortTargets("subdomains")'>Subs</button></th>
@@ -105,8 +105,8 @@
                     @foreach (var target in TargetRows)
                     {
                         var id = Text(target, "id", "Id");
-                        <tr class="@RowClass(id == _activeTargetId)" @onclick="() => ActivateTarget(id)">
-                            <td @onclick:stopPropagation="true"><input type="checkbox" checked="@_selectedTargetIds.Contains(id)" @onchange="args => ToggleTarget(id, args)" /></td>
+                        <tr class="@RowClass(_selectedTargetIds.Contains(id) || id == _activeTargetId)" @onclick="() => ToggleTargetRow(id)">
+                            <td class="select-column" @onclick:stopPropagation="true"><input type="checkbox" aria-label="Select target row" checked="@_selectedTargetIds.Contains(id)" @onchange="args => ToggleTarget(id, args)" /></td>
                             <td>@DisplayOrDash(Text(target, "rootDomain", "RootDomain"))</td>
                             <td>@DisplayOrDash(Text(target, "globalMaxDepth", "GlobalMaxDepth"))</td>
                             <td>@FormatNumber(Long(target, "subdomainCount", "SubdomainCount"))</td>
@@ -134,7 +134,10 @@
             <button class="btn primary" type="button" @onclick="StartSpiderForSelectedSubdomainsAsync" disabled="@(_spiderLoading || _selectedSubdomainKeys.Count == 0)">
                 Spider selected subdomains (@_selectedSubdomainKeys.Count)
             </button>
-            <button class="btn" type="button" @onclick="() => StartSpiderAsync(selectedOnly: true)" disabled="@(_spiderLoading || string.IsNullOrWhiteSpace(_activeTargetId))">
+            <button class="btn" type="button" @onclick="StartSpiderForVisibleSubdomainsAsync" disabled="@(_spiderLoading || SubdomainRows.Count == 0)">
+                Spider all visible subdomains
+            </button>
+            <button class="btn" type="button" @onclick="StartSpiderForActiveTargetAsync" disabled="@(_spiderLoading || string.IsNullOrWhiteSpace(_activeTargetId))">
                 Spider active target
             </button>
         </div>
@@ -143,7 +146,7 @@
             <table class="ops-table">
                 <thead>
                     <tr>
-                        <th><input type="checkbox" checked="@AllVisibleSubdomainsSelected" @onchange="ToggleAllVisibleSubdomains" /></th>
+                        <th class="select-column"><input type="checkbox" aria-label="Select all visible subdomains" checked="@AllVisibleSubdomainsSelected" @onchange="ToggleAllVisibleSubdomains" /></th>
                         <th><button class="link-btn" @onclick='() => SortSubdomains("name")'>Subdomain</button></th>
                         <th><button class="link-btn" @onclick='() => SortSubdomains("discovered")'>Discovered</button></th>
                         <th>How found</th>
@@ -153,8 +156,8 @@
                     @foreach (var row in SubdomainRows)
                     {
                         var key = SubdomainKey(row);
-                        <tr class="@RowClass(_selectedSubdomainKeys.Contains(key))">
-                            <td><input type="checkbox" checked="@_selectedSubdomainKeys.Contains(key)" @onchange="args => ToggleSubdomain(key, args)" /></td>
+                        <tr class="@RowClass(_selectedSubdomainKeys.Contains(key))" @onclick="() => ToggleSubdomainRow(key)">
+                            <td class="select-column" @onclick:stopPropagation="true"><input type="checkbox" aria-label="Select subdomain row" checked="@_selectedSubdomainKeys.Contains(key)" @onchange="args => ToggleSubdomain(key, args)" /></td>
                             <td>@DisplayOrDash(SubdomainName(row))</td>
                             <td>@FormatTime(Text(row, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
                             <td>@DisplayOrDash(Text(row, "discoveryContext", "DiscoveryContext"))</td>
@@ -191,7 +194,7 @@
             <table class="ops-table">
                 <thead>
                     <tr>
-                        <th><input type="checkbox" checked="@AllVisibleAssetsSelected" @onchange="ToggleAllVisibleAssets" /></th>
+                        <th class="select-column"><input type="checkbox" aria-label="Select all visible assets" checked="@AllVisibleAssetsSelected" @onchange="ToggleAllVisibleAssets" /></th>
                         <th><button class="link-btn" @onclick='() => SortAssets("kind")'>Kind</button></th>
                         <th><button class="link-btn" @onclick='() => SortAssets("value")'>Value</button></th>
                         <th><button class="link-btn" @onclick='() => SortAssets("discovered")'>Discovered</button></th>
@@ -203,8 +206,8 @@
                     @foreach (var asset in AssetRows)
                     {
                         var id = Text(asset, "id", "Id");
-                        <tr>
-                            <td><input type="checkbox" checked="@_selectedAssetIds.Contains(id)" @onchange="args => ToggleAsset(id, args)" /></td>
+                        <tr class="@RowClass(_selectedAssetIds.Contains(id))" @onclick="() => ToggleAssetRow(id)">
+                            <td class="select-column" @onclick:stopPropagation="true"><input type="checkbox" aria-label="Select asset row" checked="@_selectedAssetIds.Contains(id)" @onchange="args => ToggleAsset(id, args)" /></td>
                             <td>@DisplayOrDash(Text(asset, "kind", "Kind"))</td>
                             <td>@DisplayOrDash(AssetValue(asset))</td>
                             <td>@FormatTime(Text(asset, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
@@ -235,7 +238,7 @@
             <table class="ops-table">
                 <thead>
                     <tr>
-                        <th><input type="checkbox" checked="@AllVisibleWorkersSelected" @onchange="ToggleAllVisibleWorkers" /></th>
+                        <th class="select-column"><input type="checkbox" aria-label="Select all visible workers" checked="@AllVisibleWorkersSelected" @onchange="ToggleAllVisibleWorkers" /></th>
                         <th>Worker</th>
                         <th>State</th>
                         <th>Running</th>
@@ -246,10 +249,10 @@
                     @foreach (var worker in WorkerRows)
                     {
                         var service = Text(worker, "serviceName", "ServiceName");
-                        <tr>
-                            <td><input type="checkbox" checked="@_selectedWorkerServices.Contains(service)" @onchange="args => ToggleWorker(service, args)" /></td>
+                        <tr class="@RowClass(_selectedWorkerServices.Contains(service))" @onclick="() => ToggleWorkerRow(service)">
+                            <td class="select-column" @onclick:stopPropagation="true"><input type="checkbox" aria-label="Select worker row" checked="@_selectedWorkerServices.Contains(service)" @onchange="args => ToggleWorker(service, args)" /></td>
                             <td>
-                                <button class="link-btn detail-link" type="button" @onclick="() => OpenWorkerDetailsAsync(service)">
+                                <button class="link-btn detail-link" type="button" @onclick:stopPropagation="true" @onclick="() => OpenWorkerDetailsAsync(service)">
                                     @DisplayOrDash(Text(worker, "displayName", "DisplayName", "serviceName", "ServiceName"))
                                 </button>
                             </td>
@@ -288,7 +291,7 @@
             <table class="ops-table">
                 <thead>
                     <tr>
-                        <th><input type="checkbox" checked="@AllVisibleHttpSelected" @onchange="ToggleAllVisibleHttp" /></th>
+                        <th class="select-column"><input type="checkbox" aria-label="Select all visible HTTP rows" checked="@AllVisibleHttpSelected" @onchange="ToggleAllVisibleHttp" /></th>
                         <th><button class="link-btn" @onclick='() => SortHttp("created")'>Created</button></th>
                         <th><button class="link-btn" @onclick='() => SortHttp("state")'>State</button></th>
                         <th>Method</th>
@@ -302,8 +305,8 @@
                     @foreach (var q in HttpRows)
                     {
                         var id = Text(q, "id", "Id");
-                        <tr>
-                            <td><input type="checkbox" checked="@_selectedHttpIds.Contains(id)" @onchange="args => ToggleHttp(id, args)" /></td>
+                        <tr class="@RowClass(_selectedHttpIds.Contains(id))" @onclick="() => ToggleHttpRow(id)">
+                            <td class="select-column" @onclick:stopPropagation="true"><input type="checkbox" aria-label="Select HTTP row" checked="@_selectedHttpIds.Contains(id)" @onchange="args => ToggleHttp(id, args)" /></td>
                             <td>@FormatTime(Text(q, "createdAtUtc", "CreatedAtUtc"))</td>
                             <td>@DisplayOrDash(Text(q, "state", "State"))</td>
                             <td>@DisplayOrDash(Text(q, "method", "Method"))</td>
@@ -930,24 +933,69 @@
         }
     }
 
-    private async Task StartSpiderAsync(bool selectedOnly)
+    private Task StartSpiderAsync(bool selectedOnly)
+    {
+        var ids = selectedOnly
+            ? _selectedTargetIds.ToArray()
+            : TargetRows.Select(t => Text(t, "id", "Id")).ToArray();
+
+        var allTargets = !selectedOnly && !ids.Any(id => !string.IsNullOrWhiteSpace(id));
+
+        return StartSpiderForTargetIdsAsync(
+            ids,
+            allTargets,
+            selectedOnly
+                ? "Select one or more target rows before starting spidering."
+                : "No visible target rows are available to spider.");
+    }
+
+    private Task StartSpiderForSelectedSubdomainsAsync()
+    {
+        var selectedRows = SubdomainRows
+            .Where(row => _selectedSubdomainKeys.Contains(SubdomainKey(row)))
+            .ToList();
+
+        return StartSpiderForTargetIdsAsync(
+            TargetIdsForSubdomainRows(selectedRows),
+            allTargets: false,
+            emptySelectionMessage: "Select one or more subdomain rows before starting spidering.");
+    }
+
+    private Task StartSpiderForVisibleSubdomainsAsync()
+    {
+        var visibleRows = SubdomainRows.ToList();
+
+        return StartSpiderForTargetIdsAsync(
+            TargetIdsForSubdomainRows(visibleRows),
+            allTargets: false,
+            emptySelectionMessage: "No visible subdomain rows are available to spider.");
+    }
+
+    private Task StartSpiderForActiveTargetAsync()
+    {
+        return StartSpiderForTargetIdsAsync(
+            new[] { _activeTargetId },
+            allTargets: false,
+            emptySelectionMessage: "Select a target before starting spidering.");
+    }
+
+    private async Task StartSpiderForTargetIdsAsync(IEnumerable<string> targetIds, bool allTargets, string emptySelectionMessage)
     {
         _spiderLoading = true;
         _statusMessage = "";
 
         try
         {
-            var ids = selectedOnly
-                ? SelectedTargetIdsForSpider()
-                : TargetRows.Select(t => Text(t, "id", "Id")).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            var ids = targetIds
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
 
-            if (selectedOnly && ids.Length == 0)
+            if (!allTargets && ids.Length == 0)
             {
-                _statusMessage = "Select one or more target rows before starting spidering.";
+                _statusMessage = emptySelectionMessage;
                 return;
             }
-
-            var allTargets = !selectedOnly && ids.Length == 0;
 
             using var response = await WorkerApi.Client.PostAsJsonAsync(
                     "/api/ops/spider/restart",
@@ -978,25 +1026,12 @@
         }
     }
 
-    private Task StartSpiderForSelectedSubdomainsAsync()
+    private IEnumerable<string> TargetIdsForSubdomainRows(IEnumerable<JsonElement> rows)
     {
-        return StartSpiderAsync(selectedOnly: true);
-    }
-
-    private string[] SelectedTargetIdsForSpider()
-    {
-        var ids = new HashSet<string>(_selectedTargetIds, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var key in _selectedSubdomainKeys)
-        {
-            var pipe = key.IndexOf('|', StringComparison.Ordinal);
-            if (pipe > 0)
-            {
-                ids.Add(key[..pipe]);
-            }
-        }
-
-        return ids.Where(id => !string.IsNullOrWhiteSpace(id)).ToArray();
+        return rows
+            .Select(row => Text(row, "targetId", "TargetId"))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
     }
 
     private bool TargetMatchesFilter(JsonElement target)
@@ -1113,6 +1148,22 @@
     private void ToggleAsset(string id, ChangeEventArgs args) => ToggleOne(_selectedAssetIds, id, IsChecked(args));
     private void ToggleWorker(string service, ChangeEventArgs args) => ToggleOne(_selectedWorkerServices, service, IsChecked(args));
     private void ToggleHttp(string id, ChangeEventArgs args) => ToggleOne(_selectedHttpIds, id, IsChecked(args));
+
+    private void ToggleTargetRow(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return;
+        }
+
+        ActivateTarget(id);
+        ToggleOne(_selectedTargetIds, id, !_selectedTargetIds.Contains(id));
+    }
+
+    private void ToggleSubdomainRow(string key) => ToggleOne(_selectedSubdomainKeys, key, !_selectedSubdomainKeys.Contains(key));
+    private void ToggleAssetRow(string id) => ToggleOne(_selectedAssetIds, id, !_selectedAssetIds.Contains(id));
+    private void ToggleWorkerRow(string service) => ToggleOne(_selectedWorkerServices, service, !_selectedWorkerServices.Contains(service));
+    private void ToggleHttpRow(string id) => ToggleOne(_selectedHttpIds, id, !_selectedHttpIds.Contains(id));
 
     private void ActivateTarget(string id)
     {

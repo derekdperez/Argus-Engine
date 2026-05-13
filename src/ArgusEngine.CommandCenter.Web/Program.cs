@@ -29,11 +29,13 @@ builder.Services.AddScoped<ContextMenuService>();
 // itself. The gateway owns split-service routing for /api and /hubs paths.
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveGatewayBaseAddress(sp) });
 
-// Client wrappers used by the consolidated Ops page.
+// Client wrappers used by Ops and restored standalone pages.
 builder.Services.AddScoped<WorkerControlApiClient>();
+builder.Services.AddScoped<DiscoveryApiClient>();
 
-// OpsRadzen injects this realtime client directly. Register it explicitly so
-// prerender/smoke-test can construct the page before the interactive circuit starts.
+// OpsRadzen and HighValueFindings inject this realtime client directly. Register
+// it explicitly so prerender/smoke-test can construct pages before the
+// interactive circuit starts.
 builder.Services.AddScoped<DiscoveryRealtimeClient>();
 
 var app = builder.Build();

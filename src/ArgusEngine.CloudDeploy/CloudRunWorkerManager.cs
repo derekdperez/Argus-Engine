@@ -55,11 +55,10 @@ internal sealed class CloudRunWorkerManager(
 
             var updateOp = await client.UpdateServiceAsync(new UpdateServiceRequest
             {
-                Service    = desiredService,
-                UpdateMask = FieldMask.FromString("template"),
-            }, ct);
+                Service = desiredService
+            });
 
-            var updated = await updateOp.PollUntilCompletedAsync(cancellationToken: ct);
+            var updated = await updateOp.PollUntilCompletedAsync();
             var url = updated.Result.Uri;
 
             progress?.Report(new(worker, $"Service updated. URL: {url}"));
@@ -76,7 +75,7 @@ internal sealed class CloudRunWorkerManager(
                 Service   = desiredService,
             }, ct);
 
-            var created = await createOp.PollUntilCompletedAsync(cancellationToken: ct);
+            var created = await createOp.PollUntilCompletedAsync();
             var url = created.Result.Uri;
 
             progress?.Report(new(worker, $"Service created. URL: {url}"));
@@ -111,11 +110,10 @@ internal sealed class CloudRunWorkerManager(
 
             var op = await client.UpdateServiceAsync(new UpdateServiceRequest
             {
-                Service    = existing,
-                UpdateMask = FieldMask.FromString("template.scaling"),
-            }, ct);
+                Service = existing
+            });
 
-            await op.PollUntilCompletedAsync(cancellationToken: ct);
+            await op.PollUntilCompletedAsync();
 
             logger.LogInformation(
                 "Scaled {Worker} to min={Min} max={Max}",
@@ -190,7 +188,7 @@ internal sealed class CloudRunWorkerManager(
         try
         {
             var op = await client.DeleteServiceAsync(ServiceResourceName(worker), ct);
-            await op.PollUntilCompletedAsync(cancellationToken: ct);
+            await op.PollUntilCompletedAsync();
 
             logger.LogInformation("Deleted Cloud Run service {Service}", ServiceName(worker));
             return CloudDeployResult.Ok($"Deleted {ServiceName(worker)}");
@@ -207,41 +205,46 @@ internal sealed class CloudRunWorkerManager(
 
     // ── Spec builder ─────────────────────────────────────────────────────────
 
-    private Service BuildServiceSpec(WorkerType worker, string imageUri) => new()
+    private Service BuildServiceSpec(WorkerType worker, string imageUri)
     {
-        Template = new RevisionTemplate
+        var service = new Service
         {
-            Containers =
+            Template = new RevisionTemplate
             {
-                new Container
+                Containers =
                 {
-                    Image = imageUri,
-                    Resources = new ResourceRequirements
+                    new Container
                     {
-                        Limits =
+                        Image = imageUri,
+                        Resources = new ResourceRequirements
                         {
-                            ["cpu"]    = _opts.WorkerCpu,
-                            ["memory"] = _opts.WorkerMemory,
+                            Limits =
+                            {
+                                ["cpu"]    = _opts.WorkerCpu,
+                                ["memory"] = _opts.WorkerMemory,
+                            },
+                            CpuIdle = true,  // don't bill CPU while idle (scale-to-zero friendly)
                         },
-                        CpuIdle = true,  // don't bill CPU while idle (scale-to-zero friendly)
+                        // Workers listen on 8080 for Cloud Run health probes
+                        Ports = { new ContainerPort { ContainerPort_ = 8080 } },
                     },
-                    Env = BuildEnvVars(),
-                    // Workers listen on 8080 for Cloud Run health probes
-                    Ports = { new ContainerPort { ContainerPortValue = 8080 } },
                 },
+                Scaling = new RevisionScaling
+                {
+                    MinInstanceCount = _opts.WorkerMinInstances,
+                    MaxInstanceCount = _opts.WorkerMaxInstances,
+                },
+                MaxInstanceRequestConcurrency = _opts.WorkerConcurrency,
             },
-            Scaling = new RevisionScaling
-            {
-                MinInstanceCount = _opts.WorkerMinInstances,
-                MaxInstanceCount = _opts.WorkerMaxInstances,
-            },
-            MaxInstanceRequestConcurrency = _opts.WorkerConcurrency,
-        },
-        // Allow unauthenticated invocations (workers are triggered by RabbitMQ,
-        // not by HTTP callers — but Cloud Run still needs this for health probes
-        // unless you use IAM-authenticated health checks).
-        Ingress = IngressTraffic.InternalLoadBalancer,
-    };
+            // Allow unauthenticated invocations (workers are triggered by RabbitMQ,
+            // not by HTTP callers — but Cloud Run still needs this for health probes
+            // unless you use IAM-authenticated health checks).
+            Ingress = IngressTraffic.InternalLoadBalancer,
+        };
+
+        service.Template.Containers[0].Env.AddRange(BuildEnvVars());
+        return service;
+    }
 
     private IEnumerable<EnvVar> BuildEnvVars()
     {

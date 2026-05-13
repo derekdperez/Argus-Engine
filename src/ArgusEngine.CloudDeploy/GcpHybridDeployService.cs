@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 namespace ArgusEngine.CloudDeploy;
 
 /// <inheritdoc cref="IGcpHybridDeployService"/>
-public sealed class GcpHybridDeployService(
+internal sealed class GcpHybridDeployService(
     IOptions<GcpDeployOptions>      options,
     GcpImageBuilder                 imageBuilder,
     CloudRunWorkerManager           cloudRunManager,
@@ -188,7 +188,9 @@ public sealed class GcpHybridDeployService(
         try
         {
             using var tcp = new System.Net.Sockets.TcpClient();
-            await tcp.ConnectAsync(host, port, ct).WaitAsync(TimeSpan.FromSeconds(2), ct);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(2));
+            await tcp.ConnectAsync(host, port, cts.Token);
             return true;
         }
         catch

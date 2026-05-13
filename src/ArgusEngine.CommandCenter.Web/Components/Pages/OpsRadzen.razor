@@ -1,6 +1,7 @@
 @page "/"
 @page "/ops"
 @rendermode InteractiveServer
+
 @using System.Globalization
 @using System.Net.Http.Json
 @using System.Text.Json
@@ -11,24 +12,22 @@
 
 <PageTitle>Operations - Argus Engine</PageTitle>
 
-<section class="ops-shell">
+<div class="ops-page">
     <header class="ops-header">
         <div>
             <p class="eyebrow">Operations</p>
             <h1>Argus Engine Command Center</h1>
-            <p class="muted">Targets, assets, workers, and HTTP request flow.</p>
+            <p class="muted">Targets, assets, workers, HTTP queue, high value assets, and technology detection in one operations view.</p>
         </div>
-        <button class="btn primary" type="button" @onclick="ReloadAllAsync" disabled="@_loadingAny">
-            Refresh
-        </button>
+        <button class="primary" type="button" @onclick="ReloadAllAsync">Refresh</button>
     </header>
 
     @if (!string.IsNullOrWhiteSpace(_statusMessage))
     {
-        <div class="status-banner">@_statusMessage</div>
+        <div class="status">@_statusMessage</div>
     }
 
-    <section class="summary-grid">
+    <section class="summary-grid" aria-label="Operations summary">
         <article class="summary-card">
             <span>Targets</span>
             <strong>@FormatNumber(TotalTargets)</strong>
@@ -43,10 +42,10 @@
         </article>
         <article class="summary-card">
             <span>HTTP Queue</span>
-            <strong>@($"{FormatNumber(HttpQueueQueuedCount)} queued")</strong>
+            <strong>@FormatNumber(HttpQueueQueuedCount)</strong>
             <small>@FormatNumber(HttpRequestsSentPerMinute) sent/min</small>
         </article>
-        <article class="summary-card wide">
+        <article class="summary-card summary-card-wide">
             <span>Asset Storage</span>
             <strong>@FormatStorageSize(TotalTrackedStorageBytes)</strong>
             <small>@StorageBreakdownLabel</small>
@@ -59,55 +58,43 @@
                 <p class="eyebrow">Scope</p>
                 <h2>Targets</h2>
             </div>
-            <span class="badge">@FormatNumber(TargetRows.Count) visible</span>
+            <span class="muted">@FormatNumber(TargetRows.Count) visible</span>
         </div>
 
         <div class="toolbar">
-            <input placeholder="New target" @bind="_newTargetRootDomain" />
-            <input type="number" min="1" max="50" @bind="_newTargetDepth" />
-            <button class="btn" type="button" @onclick="CreateTargetAsync" disabled="@(!CanCreateTarget)">Add Target</button>
             <input placeholder="Search targets" @bind="_targetSearch" @bind:event="oninput" />
-            <select @bind="_targetFilter">
-                <option value="">All</option>
-                <option value="with-assets">With assets</option>
-                <option value="with-subdomains">With subdomains</option>
-            </select>
-        </div>
-
-        <div class="toolbar">
-            <button class="btn primary" type="button" @onclick="() => StartEnumerationAsync(selectedOnly: true)" disabled="@(_enumLoading || _selectedTargetIds.Count == 0)">
-                @($"Enumerate selected ({_selectedTargetIds.Count})")
-            </button>
-            <button class="btn" type="button" @onclick="() => StartEnumerationAsync(selectedOnly: false)" disabled="@_enumLoading">
-                Enumerate all visible
-            </button>
-            <button class="btn primary" type="button" @onclick="() => StartSpiderAsync(selectedOnly: true)" disabled="@(_spiderLoading || _selectedTargetIds.Count == 0)">
-                @($"Spider selected ({_selectedTargetIds.Count})")
-            </button>
-            <button class="btn" type="button" @onclick="() => StartSpiderAsync(selectedOnly: false)" disabled="@_spiderLoading">
-                Spider all visible
-            </button>
+            <input placeholder="New target root domain" @bind="_newTargetRootDomain" @bind:event="oninput" />
+            <input class="depth-input" type="number" min="1" max="50" @bind="_newTargetDepth" />
+            <button type="button" @onclick="CreateTargetAsync" disabled="@(!CanCreateTarget)">Add Target</button>
+            <button type="button" @onclick="() => StartEnumerationAsync(selectedOnly: true)" disabled="@(_selectedTargetIds.Count == 0)">Enumerate selected (@_selectedTargetIds.Count)</button>
+            <button type="button" @onclick="() => StartEnumerationAsync(selectedOnly: false)" disabled="@(TargetRows.Count == 0)">Enumerate all visible</button>
+            <button type="button" @onclick="() => StartSpiderTargetsAsync(selectedOnly: true)" disabled="@(_selectedTargetIds.Count == 0)">Spider selected (@_selectedTargetIds.Count)</button>
+            <button type="button" @onclick="() => StartSpiderTargetsAsync(selectedOnly: false)" disabled="@(TargetRows.Count == 0)">Spider all visible</button>
         </div>
 
         <div class="table-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
-                        <th class="select-column"><input type="checkbox" aria-label="Select all visible targets" checked="@AllVisibleTargetsSelected" @onchange="ToggleAllVisibleTargets" /></th>
-                        <th><button class="link-btn" @onclick='() => SortTargets("name")'>Target</button></th>
-                        <th><button class="link-btn" @onclick='() => SortTargets("depth")'>Depth</button></th>
-                        <th><button class="link-btn" @onclick='() => SortTargets("subdomains")'>Subs</button></th>
-                        <th><button class="link-btn" @onclick='() => SortTargets("assets")'>Assets</button></th>
-                        <th><button class="link-btn" @onclick='() => SortTargets("lastRun")'>Last run</button></th>
+                        <th class="select-col">
+                            <input type="checkbox" checked="@AllVisibleTargetsSelected" @onchange="ToggleAllVisibleTargets" />
+                        </th>
+                        <th><button type="button" class="sort" @onclick='() => SetTargetSort("name")'>Target @SortGlyph(_targetSort, "name", _targetSortDescending)</button></th>
+                        <th><button type="button" class="sort" @onclick='() => SetTargetSort("depth")'>Depth @SortGlyph(_targetSort, "depth", _targetSortDescending)</button></th>
+                        <th><button type="button" class="sort" @onclick='() => SetTargetSort("subdomains")'>Subs @SortGlyph(_targetSort, "subdomains", _targetSortDescending)</button></th>
+                        <th><button type="button" class="sort" @onclick='() => SetTargetSort("assets")'>Assets @SortGlyph(_targetSort, "assets", _targetSortDescending)</button></th>
+                        <th><button type="button" class="sort" @onclick='() => SetTargetSort("lastRun")'>Last run @SortGlyph(_targetSort, "lastRun", _targetSortDescending)</button></th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var target in TargetRows)
                     {
                         var id = Text(target, "id", "Id");
-                        <tr class="@RowClass(_selectedTargetIds.Contains(id) || id == _activeTargetId)" @onclick="() => ToggleTargetRow(id)">
-                            <td class="select-column" @onclick:stopPropagation="true"><input type="checkbox" aria-label="Select target row" checked="@_selectedTargetIds.Contains(id)" @onchange="args => ToggleTarget(id, args)" /></td>
-                            <td>@DisplayOrDash(Text(target, "rootDomain", "RootDomain"))</td>
+                        <tr class="@RowClass(IsTargetSelected(id))" @onclick="() => ToggleTargetSelection(id)">
+                            <td class="select-col">
+                                <input type="checkbox" checked="@IsTargetSelected(id)" @onchange="args => SetTargetSelected(id, args)" @onclick:stopPropagation="true" />
+                            </td>
+                            <td><button type="button" class="link-button" @onclick="() => SelectActiveTarget(id)" @onclick:stopPropagation="true">@DisplayOrDash(Text(target, "rootDomain", "RootDomain"))</button></td>
                             <td>@DisplayOrDash(Text(target, "globalMaxDepth", "GlobalMaxDepth"))</td>
                             <td>@FormatNumber(Long(target, "subdomainCount", "SubdomainCount"))</td>
                             <td>@FormatNumber(Long(target, "confirmedAssetCount", "ConfirmedAssetCount"))</td>
@@ -124,31 +111,26 @@
             <div>
                 <p class="eyebrow">Scope</p>
                 <h2>Subdomains</h2>
-                <p class="muted">@ActiveTargetLabel</p>
             </div>
-            <span class="badge">@FormatNumber(SubdomainRows.Count) visible</span>
+            <span class="muted">@ActiveTargetLabel · @FormatNumber(SubdomainRows.Count) visible</span>
         </div>
 
         <div class="toolbar">
             <input placeholder="Search subdomains" @bind="_subdomainSearch" @bind:event="oninput" />
-            <button class="btn primary" type="button" @onclick="StartSpiderForSelectedSubdomainsAsync" disabled="@(_spiderLoading || _selectedSubdomainKeys.Count == 0)">
-                Spider selected subdomains (@_selectedSubdomainKeys.Count)
-            </button>
-            <button class="btn" type="button" @onclick="StartSpiderForVisibleSubdomainsAsync" disabled="@(_spiderLoading || SubdomainRows.Count == 0)">
-                Spider all visible subdomains
-            </button>
-            <button class="btn" type="button" @onclick="StartSpiderForActiveTargetAsync" disabled="@(_spiderLoading || string.IsNullOrWhiteSpace(_activeTargetId))">
-                Spider active target
-            </button>
+            <button type="button" @onclick="() => StartSpiderSubdomainsAsync(selectedOnly: true)" disabled="@(_selectedSubdomainKeys.Count == 0)">Spider selected subdomains (@_selectedSubdomainKeys.Count)</button>
+            <button type="button" @onclick="() => StartSpiderSubdomainsAsync(selectedOnly: false)" disabled="@(SubdomainRows.Count == 0)">Spider all visible subdomains</button>
+            <button type="button" @onclick="SpiderActiveTargetAsync" disabled="@(string.IsNullOrWhiteSpace(_activeTargetId))">Spider active target</button>
         </div>
 
         <div class="table-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
-                        <th class="select-column"><input type="checkbox" aria-label="Select all visible subdomains" checked="@AllVisibleSubdomainsSelected" @onchange="ToggleAllVisibleSubdomains" /></th>
-                        <th><button class="link-btn" @onclick='() => SortSubdomains("name")'>Subdomain</button></th>
-                        <th><button class="link-btn" @onclick='() => SortSubdomains("discovered")'>Discovered</button></th>
+                        <th class="select-col">
+                            <input type="checkbox" checked="@AllVisibleSubdomainsSelected" @onchange="ToggleAllVisibleSubdomains" />
+                        </th>
+                        <th><button type="button" class="sort" @onclick='() => SetSubdomainSort("name")'>Subdomain @SortGlyph(_subdomainSort, "name", _subdomainSortDescending)</button></th>
+                        <th><button type="button" class="sort" @onclick='() => SetSubdomainSort("discovered")'>Discovered @SortGlyph(_subdomainSort, "discovered", _subdomainSortDescending)</button></th>
                         <th>How found</th>
                     </tr>
                 </thead>
@@ -156,8 +138,10 @@
                     @foreach (var row in SubdomainRows)
                     {
                         var key = SubdomainKey(row);
-                        <tr class="@RowClass(_selectedSubdomainKeys.Contains(key))" @onclick="() => ToggleSubdomainRow(key)">
-                            <td class="select-column" @onclick:stopPropagation="true"><input type="checkbox" aria-label="Select subdomain row" checked="@_selectedSubdomainKeys.Contains(key)" @onchange="args => ToggleSubdomain(key, args)" /></td>
+                        <tr class="@RowClass(IsSubdomainSelected(key))" @onclick="() => ToggleSubdomainSelection(key)">
+                            <td class="select-col">
+                                <input type="checkbox" checked="@IsSubdomainSelected(key)" @onchange="args => SetSubdomainSelected(key, args)" @onclick:stopPropagation="true" />
+                            </td>
                             <td>@DisplayOrDash(SubdomainName(row))</td>
                             <td>@FormatTime(Text(row, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
                             <td>@DisplayOrDash(Text(row, "discoveryContext", "DiscoveryContext"))</td>
@@ -174,7 +158,7 @@
                 <p class="eyebrow">Inventory</p>
                 <h2>Assets</h2>
             </div>
-            <span class="badge">@FormatNumber(AssetRows.Count) visible</span>
+            <span class="muted">@FormatNumber(AssetRows.Count) visible</span>
         </div>
 
         <div class="toolbar">
@@ -187,18 +171,20 @@
                 <option value="IpAddress">IP address</option>
                 <option value="OpenPort">Open port</option>
             </select>
-            <button class="btn" type="button" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">Reload assets</button>
+            <button type="button" @onclick="ReloadAssetsAsync">Reload assets</button>
         </div>
 
         <div class="table-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
-                        <th class="select-column"><input type="checkbox" aria-label="Select all visible assets" checked="@AllVisibleAssetsSelected" @onchange="ToggleAllVisibleAssets" /></th>
-                        <th><button class="link-btn" @onclick='() => SortAssets("kind")'>Kind</button></th>
-                        <th><button class="link-btn" @onclick='() => SortAssets("value")'>Value</button></th>
-                        <th><button class="link-btn" @onclick='() => SortAssets("discovered")'>Discovered</button></th>
-                        <th><button class="link-btn" @onclick='() => SortAssets("lastSeen")'>Last seen</button></th>
+                        <th class="select-col">
+                            <input type="checkbox" checked="@AllVisibleAssetsSelected" @onchange="ToggleAllVisibleAssets" />
+                        </th>
+                        <th><button type="button" class="sort" @onclick='() => SetAssetSort("kind")'>Kind @SortGlyph(_assetSort, "kind", _assetSortDescending)</button></th>
+                        <th>Value</th>
+                        <th><button type="button" class="sort" @onclick='() => SetAssetSort("discovered")'>Discovered @SortGlyph(_assetSort, "discovered", _assetSortDescending)</button></th>
+                        <th>Last seen</th>
                         <th>How found</th>
                     </tr>
                 </thead>
@@ -206,10 +192,23 @@
                     @foreach (var asset in AssetRows)
                     {
                         var id = Text(asset, "id", "Id");
-                        <tr class="@RowClass(_selectedAssetIds.Contains(id))" @onclick="() => ToggleAssetRow(id)">
-                            <td class="select-column" @onclick:stopPropagation="true"><input type="checkbox" aria-label="Select asset row" checked="@_selectedAssetIds.Contains(id)" @onchange="args => ToggleAsset(id, args)" /></td>
+                        var finalUrl = Text(asset, "finalUrl", "FinalUrl");
+                        var href = TryHttpHref(finalUrl);
+                        <tr class="@RowClass(IsAssetSelected(id))" @onclick="() => ToggleAssetSelection(id)">
+                            <td class="select-col">
+                                <input type="checkbox" checked="@IsAssetSelected(id)" @onchange="args => SetAssetSelected(id, args)" @onclick:stopPropagation="true" />
+                            </td>
                             <td>@DisplayOrDash(Text(asset, "kind", "Kind"))</td>
-                            <td>@DisplayOrDash(AssetValue(asset))</td>
+                            <td>
+                                @if (href is null)
+                                {
+                                    @DisplayOrDash(AssetValue(asset))
+                                }
+                                else
+                                {
+                                    <a href="@href" target="_blank" rel="noopener noreferrer">@DisplayOrDash(finalUrl)</a>
+                                }
+                            </td>
                             <td>@FormatTime(Text(asset, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
                             <td>@FormatTime(Text(asset, "lastSeenAtUtc", "LastSeenAtUtc"))</td>
                             <td>@DisplayOrDash(Text(asset, "discoveryContext", "DiscoveryContext"))</td>
@@ -226,19 +225,21 @@
                 <p class="eyebrow">Infrastructure</p>
                 <h2>Workers</h2>
             </div>
-            <span class="badge">@FormatNumber(WorkerRows.Count) services</span>
+            <span class="muted">@FormatNumber(WorkerRows.Count) services</span>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(_dockerWorkersError))
         {
-            <div class="status-banner warning">@_dockerWorkersError</div>
+            <div class="warning">@_dockerWorkersError</div>
         }
 
         <div class="table-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
-                        <th class="select-column"><input type="checkbox" aria-label="Select all visible workers" checked="@AllVisibleWorkersSelected" @onchange="ToggleAllVisibleWorkers" /></th>
+                        <th class="select-col">
+                            <input type="checkbox" checked="@AllVisibleWorkersSelected" @onchange="ToggleAllVisibleWorkers" />
+                        </th>
                         <th>Worker</th>
                         <th>State</th>
                         <th>Running</th>
@@ -249,13 +250,11 @@
                     @foreach (var worker in WorkerRows)
                     {
                         var service = Text(worker, "serviceName", "ServiceName");
-                        <tr class="@RowClass(_selectedWorkerServices.Contains(service))" @onclick="() => ToggleWorkerRow(service)">
-                            <td class="select-column" @onclick:stopPropagation="true"><input type="checkbox" aria-label="Select worker row" checked="@_selectedWorkerServices.Contains(service)" @onchange="args => ToggleWorker(service, args)" /></td>
-                            <td>
-                                <button class="link-btn detail-link" type="button" @onclick:stopPropagation="true" @onclick="() => OpenWorkerDetailsAsync(service)">
-                                    @DisplayOrDash(Text(worker, "displayName", "DisplayName", "serviceName", "ServiceName"))
-                                </button>
+                        <tr class="@RowClass(IsWorkerSelected(service))" @onclick="() => ToggleWorkerSelection(service)">
+                            <td class="select-col">
+                                <input type="checkbox" checked="@IsWorkerSelected(service)" @onchange="args => SetWorkerSelected(service, args)" @onclick:stopPropagation="true" />
                             </td>
+                            <td><button type="button" class="link-button" @onclick="() => OpenWorkerDetailsAsync(service)" @onclick:stopPropagation="true">@DisplayOrDash(Text(worker, "displayName", "DisplayName", "serviceName", "ServiceName"))</button></td>
                             <td>@DisplayOrDash(Text(worker, "overallState", "OverallState"))</td>
                             <td>@FormatNumber(Long(worker, "runningCount", "RunningCount"))</td>
                             <td>@FormatNumber(Long(worker, "totalCount", "TotalCount"))</td>
@@ -270,14 +269,14 @@
         <div class="panel-title">
             <div>
                 <p class="eyebrow">HTTP</p>
-                <h2>HTTP Requests</h2>
+                <h2>HTTP Queue</h2>
             </div>
-            <span class="badge">@FormatNumber(HttpRows.Count) requests</span>
+            <span class="muted">@FormatNumber(HttpRows.Count) requests</span>
         </div>
 
         <div class="toolbar">
             <input placeholder="Search HTTP queue" @bind="_httpSearch" @bind:event="oninput" />
-            <select @bind="_httpStateFilter" @onchange="ReloadHttpQueueAsync">
+            <select value="@_httpStateFilter" @onchange="OnHttpStateFilterChanged">
                 <option value="">All states</option>
                 <option value="Queued">Queued</option>
                 <option value="InFlight">In flight</option>
@@ -285,17 +284,23 @@
                 <option value="Succeeded">Completed</option>
                 <option value="Failed">Failed</option>
             </select>
+            <button type="button" @onclick="RetrySelectedHttpRowsAsync" disabled="@(_selectedHttpIds.Count == 0)">Retry selected</button>
+            <button type="button" @onclick="ClearSelectedHttpRowsAsync" disabled="@(_selectedHttpIds.Count == 0)">Clear selected</button>
+            <button type="button" @onclick="ClearCompletedHttpRowsAsync">Clear completed</button>
+            <button type="button" @onclick="ClearFailedHttpRowsAsync">Clear failed</button>
         </div>
 
         <div class="table-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
-                        <th class="select-column"><input type="checkbox" aria-label="Select all visible HTTP rows" checked="@AllVisibleHttpSelected" @onchange="ToggleAllVisibleHttp" /></th>
-                        <th><button class="link-btn" @onclick='() => SortHttp("created")'>Created</button></th>
-                        <th><button class="link-btn" @onclick='() => SortHttp("state")'>State</button></th>
+                        <th class="select-col">
+                            <input type="checkbox" checked="@AllVisibleHttpSelected" @onchange="ToggleAllVisibleHttp" />
+                        </th>
+                        <th><button type="button" class="sort" @onclick='() => SetHttpSort("created")'>Created @SortGlyph(_httpSort, "created", _httpSortDescending)</button></th>
+                        <th>State</th>
                         <th>Method</th>
-                        <th><button class="link-btn" @onclick='() => SortHttp("url")'>URL</button></th>
+                        <th>URL</th>
                         <th>Domain</th>
                         <th>Status</th>
                         <th>Error</th>
@@ -305,8 +310,10 @@
                     @foreach (var q in HttpRows)
                     {
                         var id = Text(q, "id", "Id");
-                        <tr class="@RowClass(_selectedHttpIds.Contains(id))" @onclick="() => ToggleHttpRow(id)">
-                            <td class="select-column" @onclick:stopPropagation="true"><input type="checkbox" aria-label="Select HTTP row" checked="@_selectedHttpIds.Contains(id)" @onchange="args => ToggleHttp(id, args)" /></td>
+                        <tr class="@RowClass(IsHttpSelected(id))" @onclick="() => ToggleHttpSelection(id)">
+                            <td class="select-col">
+                                <input type="checkbox" checked="@IsHttpSelected(id)" @onchange="args => SetHttpSelected(id, args)" @onclick:stopPropagation="true" />
+                            </td>
                             <td>@FormatTime(Text(q, "createdAtUtc", "CreatedAtUtc"))</td>
                             <td>@DisplayOrDash(Text(q, "state", "State"))</td>
                             <td>@DisplayOrDash(Text(q, "method", "Method"))</td>
@@ -321,263 +328,282 @@
         </div>
     </section>
 
-    @if (_workerDetailLoading || _workerDetailModal is not null || !string.IsNullOrWhiteSpace(_workerDetailError))
-    {
-        <div class="modal-backdrop" @onclick="CloseWorkerDetails">
-            <section class="modal-card worker-detail-modal" @onclick:stopPropagation="true">
-                <header class="modal-header">
-                    <div>
-                        <p class="eyebrow">Worker details</p>
-                        <h2>@(_workerDetailLoading ? "Loading worker..." : DisplayOrDash(Text(_workerDetailModal ?? default, "displayName", "DisplayName", "serviceName", "ServiceName")))</h2>
-                    </div>
-                    <button class="btn" type="button" @onclick="CloseWorkerDetails">Close</button>
-                </header>
-
-                @if (_workerDetailLoading)
-                {
-                    <div class="status-banner">Loading worker activity…</div>
-                }
-                else if (!string.IsNullOrWhiteSpace(_workerDetailError))
-                {
-                    <div class="status-banner warning">@_workerDetailError</div>
-                }
-                else if (_workerDetailModal is JsonElement details)
-                {
-                    var containers = ArrayProperty(details, "containers", "Containers");
-                    var heartbeats = ArrayProperty(details, "heartbeats", "Heartbeats");
-                    var activeWork = ArrayProperty(details, "activeHttpRequests", "ActiveHttpRequests");
-                    var recentHttp = ArrayProperty(details, "recentHttpWork", "RecentHttpWork");
-                    var recentEvents = ArrayProperty(details, "recentEvents", "RecentEvents");
-                    var recentOutbox = ArrayProperty(details, "recentOutbox", "RecentOutbox");
-                    var summaries = ArrayProperty(details, "summaries", "Summaries");
-
-                    <div class="detail-grid">
-                        <article>
-                            <span>Service</span>
-                            <strong>@DisplayOrDash(Text(details, "serviceName", "ServiceName"))</strong>
-                        </article>
-                        <article>
-                            <span>State</span>
-                            <strong>@DisplayOrDash(Text(details, "overallState", "OverallState"))</strong>
-                        </article>
-                        <article>
-                            <span>Running</span>
-                            <strong>@FormatNumber(Long(details, "runningCount", "RunningCount"))</strong>
-                        </article>
-                        <article>
-                            <span>Observed</span>
-                            <strong>@FormatTime(Text(details, "generatedAtUtc", "GeneratedAtUtc"))</strong>
-                        </article>
-                    </div>
-
-                    @if (summaries.Count > 0)
-                    {
-                        <div class="detail-section">
-                            <h3>What it has done so far</h3>
-                            <ul class="detail-list">
-                                @foreach (var item in summaries)
-                                {
-                                    <li>@DisplayOrDash(Text(item, "label", "Label")): <strong>@DisplayOrDash(Text(item, "value", "Value"))</strong></li>
-                                }
-                            </ul>
-                        </div>
-                    }
-
-                    <div class="detail-section">
-                        <h3>Processes and containers</h3>
-                        <div class="table-wrap compact">
-                            <table class="ops-table">
-                                <thead>
-                                    <tr>
-                                        <th>Worker key</th>
-                                        <th>Host / container</th>
-                                        <th>Process</th>
-                                        <th>Active consumers</th>
-                                        <th>Health</th>
-                                        <th>Last heartbeat</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var hb in heartbeats)
-                                    {
-                                        <tr>
-                                            <td>@DisplayOrDash(Text(hb, "workerKey", "WorkerKey"))</td>
-                                            <td>@DisplayOrDash(Text(hb, "hostName", "HostName"))</td>
-                                            <td>@DisplayOrDash(Text(hb, "processId", "ProcessId"))</td>
-                                            <td>@DisplayOrDash(Text(hb, "activeConsumerCount", "ActiveConsumerCount"))</td>
-                                            <td>@DisplayOrDash(Text(hb, "health", "Health"))</td>
-                                            <td>@FormatTime(Text(hb, "lastHeartbeatUtc", "LastHeartbeatUtc"))</td>
-                                        </tr>
-                                    }
-                                    @foreach (var c in containers)
-                                    {
-                                        <tr>
-                                            <td>Docker</td>
-                                            <td>@DisplayOrDash(Text(c, "name", "Name"))</td>
-                                            <td>@DisplayOrDash(Text(c, "id", "Id"))</td>
-                                            <td>—</td>
-                                            <td>@DisplayOrDash(Text(c, "state", "State"))</td>
-                                            <td>@DisplayOrDash(Text(c, "status", "Status"))</td>
-                                        </tr>
-                                    }
-                                    @if (heartbeats.Count == 0 && containers.Count == 0)
-                                    {
-                                        <tr><td colspan="6">No active process or container data is currently available.</td></tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="detail-section">
-                        <h3>Current target / active HTTP work</h3>
-                        <div class="table-wrap compact">
-                            <table class="ops-table">
-                                <thead>
-                                    <tr>
-                                        <th>Target</th>
-                                        <th>State</th>
-                                        <th>Method</th>
-                                        <th>URL</th>
-                                        <th>Locked by</th>
-                                        <th>Started</th>
-                                        <th>Error</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var item in activeWork)
-                                    {
-                                        <tr>
-                                            <td>@DisplayOrDash(Text(item, "targetRootDomain", "TargetRootDomain", "targetId", "TargetId"))</td>
-                                            <td>@DisplayOrDash(Text(item, "state", "State"))</td>
-                                            <td>@DisplayOrDash(Text(item, "method", "Method"))</td>
-                                            <td>@DisplayOrDash(Text(item, "requestUrl", "RequestUrl"))</td>
-                                            <td>@DisplayOrDash(Text(item, "lockedBy", "LockedBy"))</td>
-                                            <td>@FormatTime(Text(item, "startedAtUtc", "StartedAtUtc"))</td>
-                                            <td>@DisplayOrDash(Text(item, "lastError", "LastError"))</td>
-                                        </tr>
-                                    }
-                                    @if (activeWork.Count == 0)
-                                    {
-                                        <tr><td colspan="7">No currently locked HTTP request rows were found for this worker.</td></tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="detail-section">
-                        <h3>Recent events it reacted to</h3>
-                        <div class="table-wrap compact">
-                            <table class="ops-table">
-                                <thead>
-                                    <tr>
-                                        <th>Occurred</th>
-                                        <th>Direction</th>
-                                        <th>Message</th>
-                                        <th>Consumer / host</th>
-                                        <th>Target</th>
-                                        <th>Status</th>
-                                        <th>Error</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var evt in recentEvents)
-                                    {
-                                        <tr>
-                                            <td>@FormatTime(Text(evt, "occurredAtUtc", "OccurredAtUtc"))</td>
-                                            <td>@DisplayOrDash(Text(evt, "direction", "Direction"))</td>
-                                            <td>@DisplayOrDash(Text(evt, "messageType", "MessageType"))</td>
-                                            <td>@DisplayOrDash(Text(evt, "consumerType", "ConsumerType", "hostName", "HostName"))</td>
-                                            <td>@DisplayOrDash(Text(evt, "targetRootDomain", "TargetRootDomain", "targetId", "TargetId"))</td>
-                                            <td>@DisplayOrDash(Text(evt, "status", "Status"))</td>
-                                            <td>@DisplayOrDash(Text(evt, "error", "Error"))</td>
-                                        </tr>
-                                    }
-                                    @if (recentEvents.Count == 0)
-                                    {
-                                        <tr><td colspan="7">No recent matching bus events were found for this worker.</td></tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="detail-section">
-                        <h3>Recent HTTP work</h3>
-                        <div class="table-wrap compact">
-                            <table class="ops-table">
-                                <thead>
-                                    <tr>
-                                        <th>Updated</th>
-                                        <th>Target</th>
-                                        <th>State</th>
-                                        <th>URL</th>
-                                        <th>Status</th>
-                                        <th>Attempts</th>
-                                        <th>Error</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var row in recentHttp)
-                                    {
-                                        <tr>
-                                            <td>@FormatTime(Text(row, "updatedAtUtc", "UpdatedAtUtc"))</td>
-                                            <td>@DisplayOrDash(Text(row, "targetRootDomain", "TargetRootDomain", "targetId", "TargetId"))</td>
-                                            <td>@DisplayOrDash(Text(row, "state", "State"))</td>
-                                            <td>@DisplayOrDash(Text(row, "requestUrl", "RequestUrl"))</td>
-                                            <td>@DisplayOrDash(Text(row, "lastHttpStatus", "LastHttpStatus"))</td>
-                                            <td>@DisplayOrDash(Text(row, "attemptCount", "AttemptCount")) / @DisplayOrDash(Text(row, "maxAttempts", "MaxAttempts"))</td>
-                                            <td>@DisplayOrDash(Text(row, "lastError", "LastError"))</td>
-                                        </tr>
-                                    }
-                                    @if (recentHttp.Count == 0)
-                                    {
-                                        <tr><td colspan="7">No recent HTTP queue rows matched this worker.</td></tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    @if (recentOutbox.Count > 0)
-                    {
-                        <div class="detail-section">
-                            <h3>Recent queued or dispatched events</h3>
-                            <div class="table-wrap compact">
-                                <table class="ops-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Updated</th>
-                                            <th>Message</th>
-                                            <th>State</th>
-                                            <th>Producer</th>
-                                            <th>Attempts</th>
-                                            <th>Error</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var evt in recentOutbox)
-                                        {
-                                            <tr>
-                                                <td>@FormatTime(Text(evt, "updatedAtUtc", "UpdatedAtUtc"))</td>
-                                                <td>@DisplayOrDash(Text(evt, "messageType", "MessageType"))</td>
-                                                <td>@DisplayOrDash(Text(evt, "state", "State"))</td>
-                                                <td>@DisplayOrDash(Text(evt, "producer", "Producer"))</td>
-                                                <td>@DisplayOrDash(Text(evt, "attemptCount", "AttemptCount"))</td>
-                                                <td>@DisplayOrDash(Text(evt, "lastError", "LastError"))</td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    }
-                }
-            </section>
+    <section class="ops-panel">
+        <div class="panel-title">
+            <div>
+                <p class="eyebrow">High Value</p>
+                <h2>High Value Assets</h2>
+            </div>
+            <span class="muted">@FormatNumber(HighValueRows.Count) rows</span>
         </div>
-    }
-</section>
+
+        <div class="toolbar">
+            <input placeholder="Search high value assets" @bind="_highValueSearch" @bind:event="oninput" />
+            <select @bind="_highValueStatusFilter">
+                <option value="Active">Active</option>
+                <option value="">All statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="In Process">In Process</option>
+                <option value="False Positive">False Positive</option>
+                <option value="Valid Finding">Valid Finding</option>
+            </select>
+            <button type="button" @onclick="ReloadHighValueAssetsAsync">Refresh</button>
+        </div>
+
+        <div class="table-wrap">
+            <table class="ops-table">
+                <thead>
+                    <tr>
+                        <th class="select-col">
+                            <input type="checkbox" checked="@AllVisibleHighValueSelected" @onchange="ToggleAllVisibleHighValue" />
+                        </th>
+                        <th>Last seen</th>
+                        <th>Status</th>
+                        <th>Target</th>
+                        <th>Kind</th>
+                        <th>URL / Asset</th>
+                        <th>Finding</th>
+                        <th>Severity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in FilteredHighValueRows)
+                    {
+                        var key = HighValueKey(row);
+                        <tr class="@RowClass(IsHighValueSelected(key))" @onclick="() => ToggleHighValueSelection(key)">
+                            <td class="select-col">
+                                <input type="checkbox" checked="@IsHighValueSelected(key)" @onchange="args => SetHighValueSelected(key, args)" @onclick:stopPropagation="true" />
+                            </td>
+                            <td>@FormatTime(Text(row, "lastSeenAtUtc", "LastSeenAtUtc", "findingDiscoveredAtUtc", "FindingDiscoveredAtUtc"))</td>
+                            <td>@DisplayOrDash(Text(row, "investigationStatus", "InvestigationStatus"))</td>
+                            <td>@DisplayOrDash(Text(row, "targetRootDomain", "TargetRootDomain"))</td>
+                            <td>@DisplayOrDash(Text(row, "kind", "Kind"))</td>
+                            <td>@DisplayOrDash(BestAssetUrl(row))</td>
+                            <td>@DisplayOrDash(Text(row, "findingType", "FindingType"))</td>
+                            <td>@DisplayOrDash(Text(row, "severity", "Severity"))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="ops-panel">
+        <div class="panel-title">
+            <div>
+                <p class="eyebrow">Technology ID</p>
+                <h2>Top 10 Technologies</h2>
+            </div>
+            <span class="muted">Grouped by name regardless of version</span>
+        </div>
+
+        <ol class="top-tech-list">
+            @foreach (var row in TopTechnologyRows.Take(10))
+            {
+                <li>
+                    <button type="button" class="link-button" @onclick="() => OpenTechnologyModal(row.Name)">
+                        @row.Name (@FormatNumber(row.TargetCount) targets, @FormatNumber(row.SubdomainCount) subdomains)
+                    </button>
+                </li>
+            }
+        </ol>
+
+        <div class="toolbar">
+            <input placeholder="Search technologies" @bind="_technologySearch" @bind:event="oninput" />
+            <button type="button" @onclick="ReloadTechnologyDataAsync">Refresh</button>
+        </div>
+
+        <div class="table-wrap">
+            <table class="ops-table">
+                <thead>
+                    <tr>
+                        <th class="select-col">
+                            <input type="checkbox" checked="@AllVisibleTechnologySelected" @onchange="ToggleAllVisibleTechnologies" />
+                        </th>
+                        <th>Last seen</th>
+                        <th>Target</th>
+                        <th>Subdomain</th>
+                        <th>Technology</th>
+                        <th>Version</th>
+                        <th>Source</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in FilteredTechnologyRows)
+                    {
+                        var key = TechnologyKey(row);
+                        <tr class="@RowClass(IsTechnologySelected(key))" @onclick="() => ToggleTechnologySelection(key)">
+                            <td class="select-col">
+                                <input type="checkbox" checked="@IsTechnologySelected(key)" @onchange="args => SetTechnologySelected(key, args)" @onclick:stopPropagation="true" />
+                            </td>
+                            <td>@FormatTime(Text(row, "lastSeenUtc", "LastSeenUtc"))</td>
+                            <td>@DisplayOrDash(Text(row, "targetRootDomain", "TargetRootDomain"))</td>
+                            <td>@DisplayOrDash(Text(row, "subdomain", "Subdomain"))</td>
+                            <td><button type="button" class="link-button" @onclick="() => OpenTechnologyModal(Text(row, "technologyName", "TechnologyName"))" @onclick:stopPropagation="true">@DisplayOrDash(Text(row, "technologyName", "TechnologyName"))</button></td>
+                            <td>@DisplayOrDash(Text(row, "version", "Version"))</td>
+                            <td>@DisplayOrDash(Text(row, "sourceType", "SourceType"))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+@if (_workerDetailLoading || _workerDetailModal is not null || !string.IsNullOrWhiteSpace(_workerDetailError))
+{
+    <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
+            <div class="modal-header">
+                <h2>@(_workerDetailLoading ? "Loading worker..." : DisplayOrDash(Text(_workerDetailModal ?? default, "displayName", "DisplayName", "serviceName", "ServiceName")))</h2>
+                <button type="button" @onclick="CloseWorkerDetails">Close</button>
+            </div>
+
+            @if (_workerDetailLoading)
+            {
+                <p class="muted">Fetching worker details.</p>
+            }
+            else if (!string.IsNullOrWhiteSpace(_workerDetailError))
+            {
+                <div class="warning">@_workerDetailError</div>
+            }
+            else if (_workerDetailModal is JsonElement details)
+            {
+                var heartbeats = ArrayProperty(details, "heartbeats", "Heartbeats");
+                var activeWork = ArrayProperty(details, "activeHttpRequests", "ActiveHttpRequests");
+                var recentEvents = ArrayProperty(details, "recentEvents", "RecentEvents");
+                var recentHttp = ArrayProperty(details, "recentHttpWork", "RecentHttpWork");
+                var summaries = ArrayProperty(details, "summaries", "Summaries");
+
+                <dl class="detail-grid">
+                    <div><dt>Service</dt><dd>@DisplayOrDash(Text(details, "serviceName", "ServiceName"))</dd></div>
+                    <div><dt>State</dt><dd>@DisplayOrDash(Text(details, "overallState", "OverallState"))</dd></div>
+                    <div><dt>Running</dt><dd>@FormatNumber(Long(details, "runningCount", "RunningCount"))</dd></div>
+                    <div><dt>Observed</dt><dd>@FormatTime(Text(details, "generatedAtUtc", "GeneratedAtUtc"))</dd></div>
+                </dl>
+
+                @if (summaries.Count > 0)
+                {
+                    <h3>What it has done so far</h3>
+                    <ul>
+                        @foreach (var item in summaries)
+                        {
+                            <li>@DisplayOrDash(Text(item, "label", "Label")): @DisplayOrDash(Text(item, "value", "Value"))</li>
+                        }
+                    </ul>
+                }
+
+                <h3>Processes</h3>
+                <div class="table-wrap compact">
+                    <table class="ops-table">
+                        <thead><tr><th>Worker key</th><th>Host</th><th>Process</th><th>Consumers</th><th>Health</th><th>Last heartbeat</th></tr></thead>
+                        <tbody>
+                            @foreach (var hb in heartbeats)
+                            {
+                                <tr>
+                                    <td>@DisplayOrDash(Text(hb, "workerKey", "WorkerKey"))</td>
+                                    <td>@DisplayOrDash(Text(hb, "hostName", "HostName"))</td>
+                                    <td>@DisplayOrDash(Text(hb, "processId", "ProcessId"))</td>
+                                    <td>@DisplayOrDash(Text(hb, "activeConsumerCount", "ActiveConsumerCount"))</td>
+                                    <td>@DisplayOrDash(Text(hb, "health", "Health", "healthMessage", "HealthMessage"))</td>
+                                    <td>@FormatTime(Text(hb, "lastHeartbeatUtc", "LastHeartbeatUtc"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3>Current target / active HTTP work</h3>
+                <div class="table-wrap compact">
+                    <table class="ops-table">
+                        <thead><tr><th>Target</th><th>State</th><th>Method</th><th>URL</th><th>Locked by</th><th>Started</th><th>Error</th></tr></thead>
+                        <tbody>
+                            @foreach (var item in activeWork)
+                            {
+                                <tr>
+                                    <td>@DisplayOrDash(Text(item, "targetRootDomain", "TargetRootDomain", "targetId", "TargetId"))</td>
+                                    <td>@DisplayOrDash(Text(item, "state", "State"))</td>
+                                    <td>@DisplayOrDash(Text(item, "method", "Method"))</td>
+                                    <td>@DisplayOrDash(Text(item, "requestUrl", "RequestUrl"))</td>
+                                    <td>@DisplayOrDash(Text(item, "lockedBy", "LockedBy"))</td>
+                                    <td>@FormatTime(Text(item, "startedAtUtc", "StartedAtUtc"))</td>
+                                    <td>@DisplayOrDash(Text(item, "lastError", "LastError"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3>Recent events</h3>
+                <div class="table-wrap compact">
+                    <table class="ops-table">
+                        <thead><tr><th>Occurred</th><th>Direction</th><th>Message</th><th>Status</th><th>Error</th></tr></thead>
+                        <tbody>
+                            @foreach (var evt in recentEvents)
+                            {
+                                <tr>
+                                    <td>@FormatTime(Text(evt, "occurredAtUtc", "OccurredAtUtc"))</td>
+                                    <td>@DisplayOrDash(Text(evt, "direction", "Direction"))</td>
+                                    <td>@DisplayOrDash(Text(evt, "messageType", "MessageType"))</td>
+                                    <td>@DisplayOrDash(Text(evt, "status", "Status"))</td>
+                                    <td>@DisplayOrDash(Text(evt, "error", "Error"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3>Recent HTTP work</h3>
+                <div class="table-wrap compact">
+                    <table class="ops-table">
+                        <thead><tr><th>Updated</th><th>Target</th><th>State</th><th>URL</th><th>Status</th><th>Error</th></tr></thead>
+                        <tbody>
+                            @foreach (var row in recentHttp)
+                            {
+                                <tr>
+                                    <td>@FormatTime(Text(row, "updatedAtUtc", "UpdatedAtUtc"))</td>
+                                    <td>@DisplayOrDash(Text(row, "targetRootDomain", "TargetRootDomain", "targetId", "TargetId"))</td>
+                                    <td>@DisplayOrDash(Text(row, "state", "State"))</td>
+                                    <td>@DisplayOrDash(Text(row, "requestUrl", "RequestUrl"))</td>
+                                    <td>@DisplayOrDash(Text(row, "lastHttpStatus", "LastHttpStatus"))</td>
+                                    <td>@DisplayOrDash(Text(row, "lastError", "LastError"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@if (_selectedTechnologyName is not null)
+{
+    <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
+            <div class="modal-header">
+                <h2>@_selectedTechnologyName version breakdown</h2>
+                <button type="button" @onclick="CloseTechnologyModal">Close</button>
+            </div>
+
+            <div class="table-wrap compact">
+                <table class="ops-table">
+                    <thead><tr><th>Version</th><th>Targets</th><th>Subdomains</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in SelectedTechnologyVersionRows)
+                        {
+                            <tr>
+                                <td>@DisplayOrDash(row.Version)</td>
+                                <td>@FormatNumber(row.TargetCount)</td>
+                                <td>@FormatNumber(row.SubdomainCount)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
     private readonly CancellationTokenSource _cts = new();
@@ -586,7 +612,10 @@
     private readonly List<JsonElement> _targets = [];
     private readonly List<JsonElement> _assets = [];
     private readonly List<JsonElement> _queue = [];
-    private readonly List<JsonElement> _dockerWorkerServices = [];
+    private readonly List<JsonElement> _workers = [];
+    private readonly List<JsonElement> _highValueRows = [];
+    private readonly List<JsonElement> _technologyRows = [];
+    private readonly List<JsonElement> _technologyUsage = [];
 
     private JsonElement? _workerDetailModal;
     private bool _workerDetailLoading;
@@ -597,40 +626,43 @@
     private readonly HashSet<string> _selectedAssetIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _selectedWorkerServices = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _selectedHttpIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _selectedHighValueKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _selectedTechnologyKeys = new(StringComparer.OrdinalIgnoreCase);
 
     private string _statusMessage = "";
     private string _dockerWorkersError = "";
     private string _activeTargetId = "";
-
     private string _newTargetRootDomain = "";
     private int _newTargetDepth = 12;
 
     private string _targetSearch = "";
-    private string _targetFilter = "";
     private string _targetSort = "name";
     private bool _targetSortDescending;
-
     private string _subdomainSearch = "";
     private string _subdomainSort = "name";
     private bool _subdomainSortDescending;
-
     private string _assetSearch = "";
     private string _assetFilter = "";
     private string _assetSort = "discovered";
     private bool _assetSortDescending = true;
-
     private string _httpSearch = "";
     private string _httpStateFilter = "";
     private string _httpSort = "created";
     private bool _httpSortDescending = true;
+    private string _highValueSearch = "";
+    private string _highValueStatusFilter = "Active";
+    private string _technologySearch = "";
+    private string? _selectedTechnologyName;
 
     private bool _targetsLoading;
     private bool _assetsLoading;
     private bool _httpLoading;
     private bool _workersLoading;
+    private bool _highValueLoading;
+    private bool _technologiesLoading;
     private bool _enumLoading;
     private bool _spiderLoading;
-    private bool _loadingAny => _targetsLoading || _assetsLoading || _httpLoading || _workersLoading || _enumLoading || _spiderLoading;
+    private bool _loadingAny => _targetsLoading || _assetsLoading || _httpLoading || _workersLoading || _highValueLoading || _technologiesLoading || _enumLoading || _spiderLoading;
 
     private long TotalTargets => Math.Max(OverviewLong("totalTargets", "TotalTargets"), _targets.Count);
     private long ConfirmedAssets => Math.Max(OverviewLong("totalAssetsConfirmed", "TotalAssetsConfirmed"), _targets.Sum(t => Long(t, "confirmedAssetCount", "ConfirmedAssetCount")));
@@ -645,32 +677,55 @@
     private string StorageBreakdownLabel => $"Assets {FormatStorageSize(AssetMetadataStorageBytes)} / HTTP {FormatStorageSize(HttpArtifactStorageBytes + InlineHttpStorageBytes)} / Events {FormatStorageSize(EventJournalStorageBytes)}";
     private bool CanCreateTarget => !string.IsNullOrWhiteSpace(_newTargetRootDomain) && _newTargetDepth > 0;
 
-    private IReadOnlyList<JsonElement> TargetRows => MaterializeSorted(
-        _targets.Where(TargetMatchesFilter),
-        TargetSortKey,
-        _targetSortDescending);
-
+    private IReadOnlyList<JsonElement> TargetRows => MaterializeSorted(_targets.Where(TargetMatchesFilter), TargetSortKey, _targetSortDescending);
     private IReadOnlyList<JsonElement> SubdomainRows => MaterializeSorted(
         _assets
             .Where(MatchesActiveTarget)
             .Where(a => Text(a, "kind", "Kind").Equals("Subdomain", StringComparison.OrdinalIgnoreCase))
-            .Where(SubdomainMatchesFilter),
+            .Where(SubdomainMatchesFilter)
+            .GroupBy(SubdomainKey, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.OrderByDescending(a => Text(a, "discoveredAtUtc", "DiscoveredAtUtc"), StringComparer.Ordinal).First()),
         SubdomainSortKey,
         _subdomainSortDescending);
+    private IReadOnlyList<JsonElement> AssetRows => MaterializeSorted(_assets.Where(MatchesActiveTarget).Where(AssetMatchesFilter), AssetSortKey, _assetSortDescending);
+    private IReadOnlyList<JsonElement> WorkerRows => _workers;
+    private IReadOnlyList<JsonElement> HttpRows => MaterializeSorted(_queue.Where(HttpMatchesFilter), HttpSortKey, _httpSortDescending);
+    private IReadOnlyList<JsonElement> HighValueRows => _highValueRows;
+    private IReadOnlyList<JsonElement> FilteredHighValueRows => _highValueRows.Where(HighValueMatchesFilter).Take(500).ToArray();
+    private IReadOnlyList<JsonElement> FilteredTechnologyRows => _technologyRows.Where(TechnologyMatchesFilter).Take(500).ToArray();
 
-    private IReadOnlyList<JsonElement> AssetRows => MaterializeSorted(
-        _assets
-            .Where(MatchesActiveTarget)
-            .Where(AssetMatchesFilter),
-        AssetSortKey,
-        _assetSortDescending);
+    private IReadOnlyList<TopTechnologyRow> TopTechnologyRows => _technologyUsage
+        .GroupBy(u => Text(u, "technologyName", "TechnologyName"), StringComparer.OrdinalIgnoreCase)
+        .Where(g => !string.IsNullOrWhiteSpace(g.Key))
+        .Select(g =>
+        {
+            var locations = g.SelectMany(u => ArrayProperty(u, "locations", "Locations")).ToArray();
+            return new TopTechnologyRow(
+                g.Key,
+                locations.Select(l => Text(l, "targetId", "TargetId")).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).LongCount(),
+                locations.Select(l => Text(l, "subdomain", "Subdomain")).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).LongCount());
+        })
+        .OrderByDescending(x => x.SubdomainCount)
+        .ThenByDescending(x => x.TargetCount)
+        .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
 
-    private IReadOnlyList<JsonElement> WorkerRows => _dockerWorkerServices;
-
-    private IReadOnlyList<JsonElement> HttpRows => MaterializeSorted(
-        _queue.Where(HttpMatchesFilter),
-        HttpSortKey,
-        _httpSortDescending);
+    private IReadOnlyList<TechnologyVersionRow> SelectedTechnologyVersionRows => _selectedTechnologyName is null
+        ? []
+        : _technologyUsage
+            .Where(u => Text(u, "technologyName", "TechnologyName").Equals(_selectedTechnologyName, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(u => DisplayOrDash(Text(u, "version", "Version")), StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var locations = g.SelectMany(u => ArrayProperty(u, "locations", "Locations")).ToArray();
+                return new TechnologyVersionRow(
+                    g.Key == "-" ? "Unknown / unversioned" : g.Key,
+                    locations.Select(l => Text(l, "targetId", "TargetId")).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).LongCount(),
+                    locations.Select(l => Text(l, "subdomain", "Subdomain")).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).LongCount());
+            })
+            .OrderByDescending(x => x.SubdomainCount)
+            .ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private string ActiveTargetLabel
     {
@@ -687,6 +742,8 @@
     private bool AllVisibleAssetsSelected => AssetRows.Count > 0 && AssetRows.All(a => _selectedAssetIds.Contains(Text(a, "id", "Id")));
     private bool AllVisibleWorkersSelected => WorkerRows.Count > 0 && WorkerRows.All(w => _selectedWorkerServices.Contains(Text(w, "serviceName", "ServiceName")));
     private bool AllVisibleHttpSelected => HttpRows.Count > 0 && HttpRows.All(q => _selectedHttpIds.Contains(Text(q, "id", "Id")));
+    private bool AllVisibleHighValueSelected => FilteredHighValueRows.Count > 0 && FilteredHighValueRows.All(x => _selectedHighValueKeys.Contains(HighValueKey(x)));
+    private bool AllVisibleTechnologySelected => FilteredTechnologyRows.Count > 0 && FilteredTechnologyRows.All(x => _selectedTechnologyKeys.Contains(TechnologyKey(x)));
 
     protected override async Task OnInitializedAsync()
     {
@@ -698,8 +755,7 @@
     {
         try
         {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(8));
             while (await timer.WaitForNextTickAsync(_cts.Token).ConfigureAwait(false))
             {
                 await ReloadLiveAsync().ConfigureAwait(false);
@@ -725,16 +781,16 @@
     private async Task ReloadAllAsync()
     {
         _statusMessage = "";
-
         try
         {
             await Task.WhenAll(
-                    ReloadOverviewAsync(),
-                    ReloadTargetsAsync(),
-                    ReloadAssetsAsync(),
-                    ReloadHttpQueueAsync(),
-                    ReloadDockerWorkersAsync())
-                .ConfigureAwait(false);
+                ReloadOverviewAsync(),
+                ReloadTargetsAsync(),
+                ReloadAssetsAsync(),
+                ReloadHttpQueueAsync(),
+                ReloadDockerWorkersAsync(),
+                ReloadHighValueAssetsAsync(),
+                ReloadTechnologyDataAsync()).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -753,7 +809,6 @@
     private async Task ReloadTargetsAsync()
     {
         _targetsLoading = true;
-
         try
         {
             Replace(_targets, await GetArrayAsync("/api/targets").ConfigureAwait(false));
@@ -769,7 +824,6 @@
     private async Task ReloadAssetsAsync()
     {
         _assetsLoading = true;
-
         try
         {
             Replace(_assets, await GetArrayAsync("/api/assets").ConfigureAwait(false));
@@ -785,13 +839,11 @@
     private async Task ReloadHttpQueueAsync()
     {
         _httpLoading = true;
-
         try
         {
             var uri = string.IsNullOrWhiteSpace(_httpStateFilter)
                 ? "/api/http-request-queue"
                 : $"/api/http-request-queue?state={Uri.EscapeDataString(_httpStateFilter)}";
-
             Replace(_queue, await GetArrayAsync(uri).ConfigureAwait(false));
             _selectedHttpIds.RemoveWhere(id => !_queue.Any(q => Text(q, "id", "Id").Equals(id, StringComparison.OrdinalIgnoreCase)));
         }
@@ -801,21 +853,25 @@
         }
     }
 
+    private async Task OnHttpStateFilterChanged(ChangeEventArgs args)
+    {
+        _httpStateFilter = Convert.ToString(args.Value, CultureInfo.InvariantCulture) ?? "";
+        await ReloadHttpQueueAsync().ConfigureAwait(false);
+    }
+
     private async Task ReloadDockerWorkersAsync()
     {
         _workersLoading = true;
-
         try
         {
             var root = await GetObjectAsync("/api/workers/docker-status").ConfigureAwait(false);
-
             if (root is JsonElement obj)
             {
                 _dockerWorkersError = obj.TryGetProperty("error", out var error) ? error.GetString() ?? "" : "";
-                Replace(_dockerWorkerServices, ArrayProperty(obj, "services", "Services"));
+                Replace(_workers, ArrayProperty(obj, "services", "Services"));
             }
 
-            _selectedWorkerServices.RemoveWhere(id => !_dockerWorkerServices.Any(w => Text(w, "serviceName", "ServiceName").Equals(id, StringComparison.OrdinalIgnoreCase)));
+            _selectedWorkerServices.RemoveWhere(id => !_workers.Any(w => Text(w, "serviceName", "ServiceName").Equals(id, StringComparison.OrdinalIgnoreCase)));
         }
         catch (Exception ex)
         {
@@ -825,6 +881,227 @@
         {
             _workersLoading = false;
         }
+    }
+
+    private async Task ReloadHighValueAssetsAsync()
+    {
+        _highValueLoading = true;
+        try
+        {
+            Replace(_highValueRows, await GetArrayAsync("/api/high-value-assets?includeResolved=true").ConfigureAwait(false));
+            _selectedHighValueKeys.RemoveWhere(key => !_highValueRows.Any(row => HighValueKey(row).Equals(key, StringComparison.OrdinalIgnoreCase)));
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"High value assets could not be loaded: {ex.Message}";
+        }
+        finally
+        {
+            _highValueLoading = false;
+        }
+    }
+
+    private async Task ReloadTechnologyDataAsync()
+    {
+        _technologiesLoading = true;
+        try
+        {
+            var technologiesTask = GetArrayAsync("/api/technology-identification/technologies");
+            var usageTask = GetArrayAsync("/api/technology-identification/usage");
+            Replace(_technologyRows, await technologiesTask.ConfigureAwait(false));
+            Replace(_technologyUsage, await usageTask.ConfigureAwait(false));
+            _selectedTechnologyKeys.RemoveWhere(key => !_technologyRows.Any(row => TechnologyKey(row).Equals(key, StringComparison.OrdinalIgnoreCase)));
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Technology data could not be loaded: {ex.Message}";
+        }
+        finally
+        {
+            _technologiesLoading = false;
+        }
+    }
+
+    private async Task CreateTargetAsync()
+    {
+        if (!CanCreateTarget)
+        {
+            return;
+        }
+
+        try
+        {
+            using var response = await WorkerApi.Client.PostAsJsonAsync(
+                "/api/targets",
+                new { rootDomain = _newTargetRootDomain.Trim(), globalMaxDepth = _newTargetDepth },
+                _cts.Token).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            _newTargetRootDomain = "";
+            await ReloadTargetsAsync().ConfigureAwait(false);
+            await ReloadOverviewAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Target could not be added: {ex.Message}";
+        }
+    }
+
+    private async Task StartEnumerationAsync(bool selectedOnly)
+    {
+        _enumLoading = true;
+        _statusMessage = "";
+        try
+        {
+            var ids = selectedOnly
+                ? _selectedTargetIds.ToArray()
+                : TargetRows.Select(t => Text(t, "id", "Id")).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+            if (selectedOnly && ids.Length == 0)
+            {
+                _statusMessage = "Select one or more target rows before starting subdomain enumeration.";
+                return;
+            }
+
+            using var response = await WorkerApi.Client.PostAsJsonAsync(
+                "/api/ops/subdomain-enum/restart",
+                new RestartToolRequest(ids, AllTargets: false),
+                _cts.Token).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(_cts.Token).ConfigureAwait(false));
+            var targets = Long(doc.RootElement, "targets", "Targets");
+            var jobs = Long(doc.RootElement, "jobsQueued", "JobsQueued");
+            var workerScale = Text(doc.RootElement, "workerScale", "WorkerScale");
+
+            _statusMessage = $"Subdomain enumeration started for {targets} target(s), {jobs} job(s) queued. {workerScale}";
+            await ReloadLiveAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Enumeration could not be started: {ex.Message}";
+        }
+        finally
+        {
+            _enumLoading = false;
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+    }
+
+    private async Task StartSpiderTargetsAsync(bool selectedOnly)
+    {
+        var ids = selectedOnly
+            ? _selectedTargetIds.ToArray()
+            : TargetRows.Select(t => Text(t, "id", "Id")).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+        if (selectedOnly && ids.Length == 0)
+        {
+            _statusMessage = "Select one or more target rows before starting spidering.";
+            return;
+        }
+
+        await StartSpiderForTargetIdsAsync(ids, "Spider").ConfigureAwait(false);
+    }
+
+    private async Task SpiderActiveTargetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_activeTargetId))
+        {
+            _statusMessage = "Select an active target before starting spidering.";
+            return;
+        }
+
+        await StartSpiderForTargetIdsAsync([_activeTargetId], "Spider active target").ConfigureAwait(false);
+    }
+
+    private async Task StartSpiderSubdomainsAsync(bool selectedOnly)
+    {
+        var rows = selectedOnly
+            ? SubdomainRows.Where(row => _selectedSubdomainKeys.Contains(SubdomainKey(row))).ToArray()
+            : SubdomainRows.ToArray();
+
+        if (selectedOnly && rows.Length == 0)
+        {
+            _statusMessage = "Select one or more subdomain rows before starting spidering.";
+            return;
+        }
+
+        var targetIds = rows
+            .Select(row => Text(row, "targetId", "TargetId"))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (targetIds.Length == 0)
+        {
+            _statusMessage = "No target IDs were found for the selected subdomain rows.";
+            return;
+        }
+
+        await StartSpiderForTargetIdsAsync(targetIds, selectedOnly ? "Spider selected subdomains" : "Spider all visible subdomains").ConfigureAwait(false);
+    }
+
+    private async Task StartSpiderForTargetIdsAsync(string[] targetIds, string label)
+    {
+        _spiderLoading = true;
+        _statusMessage = "";
+        try
+        {
+            using var response = await WorkerApi.Client.PostAsJsonAsync(
+                "/api/ops/spider/restart",
+                new RestartToolRequest(targetIds, AllTargets: false),
+                _cts.Token).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(_cts.Token).ConfigureAwait(false));
+            var targets = Long(doc.RootElement, "targets", "Targets");
+            var requeued = Long(doc.RootElement, "requeuedExistingRequests", "RequeuedExistingRequests");
+            var seeds = Long(doc.RootElement, "rootSeedsQueued", "RootSeedsQueued");
+            var workerScale = Text(doc.RootElement, "workerScale", "WorkerScale");
+
+            _statusMessage = $"{label} started for {targets} target(s). Requeued {requeued} existing requests, queued {seeds} root seeds. {workerScale}";
+            await ReloadHttpQueueAsync().ConfigureAwait(false);
+            await ReloadDockerWorkersAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Spider could not be started: {ex.Message}";
+        }
+        finally
+        {
+            _spiderLoading = false;
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RetrySelectedHttpRowsAsync() => await MutateSelectedHttpRowsAsync("/api/http-request-queue/retry").ConfigureAwait(false);
+    private async Task ClearSelectedHttpRowsAsync() => await MutateSelectedHttpRowsAsync("/api/http-request-queue/clear-selected").ConfigureAwait(false);
+    private async Task ClearCompletedHttpRowsAsync() => await MutateHttpRowsAsync("/api/http-request-queue/clear-completed").ConfigureAwait(false);
+    private async Task ClearFailedHttpRowsAsync() => await MutateHttpRowsAsync("/api/http-request-queue/clear-failed").ConfigureAwait(false);
+
+    private async Task MutateSelectedHttpRowsAsync(string uri)
+    {
+        var ids = _selectedHttpIds
+            .Select(id => Guid.TryParse(id, out var parsed) ? parsed : Guid.Empty)
+            .Where(id => id != Guid.Empty)
+            .ToArray();
+
+        if (ids.Length == 0)
+        {
+            return;
+        }
+
+        using var response = await WorkerApi.Client.PostAsJsonAsync(uri, new { ids }, _cts.Token).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        _selectedHttpIds.Clear();
+        await ReloadHttpQueueAsync().ConfigureAwait(false);
+    }
+
+    private async Task MutateHttpRowsAsync(string uri)
+    {
+        using var response = await WorkerApi.Client.PostAsync(uri, content: null, cancellationToken: _cts.Token).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        _selectedHttpIds.Clear();
+        await ReloadHttpQueueAsync().ConfigureAwait(false);
     }
 
     private async Task OpenWorkerDetailsAsync(string serviceName)
@@ -861,316 +1138,96 @@
         _workerDetailLoading = false;
     }
 
-    private async Task CreateTargetAsync()
+    private void OpenTechnologyModal(string technologyName)
     {
-        if (!CanCreateTarget)
+        if (!string.IsNullOrWhiteSpace(technologyName))
         {
-            return;
-        }
-
-        try
-        {
-            using var response = await WorkerApi.Client.PostAsJsonAsync(
-                    "/api/targets",
-                    new { rootDomain = _newTargetRootDomain.Trim(), globalMaxDepth = _newTargetDepth },
-                    _cts.Token)
-                .ConfigureAwait(false);
-
-            response.EnsureSuccessStatusCode();
-            _newTargetRootDomain = "";
-            await ReloadTargetsAsync().ConfigureAwait(false);
-            await ReloadOverviewAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _statusMessage = $"Target could not be added: {ex.Message}";
+            _selectedTechnologyName = technologyName;
         }
     }
 
-    private async Task StartEnumerationAsync(bool selectedOnly)
-    {
-        _enumLoading = true;
-        _statusMessage = "";
+    private void CloseTechnologyModal() => _selectedTechnologyName = null;
 
-        try
-        {
-            var ids = selectedOnly
-                ? _selectedTargetIds.ToArray()
-                : TargetRows.Select(t => Text(t, "id", "Id")).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-
-            if (selectedOnly && ids.Length == 0)
-            {
-                _statusMessage = "Select one or more target rows before starting subdomain enumeration.";
-                return;
-            }
-
-            var allTargets = !selectedOnly && ids.Length == 0;
-
-            using var response = await WorkerApi.Client.PostAsJsonAsync(
-                    "/api/ops/subdomain-enum/restart",
-                    new RestartToolRequest(allTargets ? [] : ids, allTargets),
-                    _cts.Token)
-                .ConfigureAwait(false);
-
-            response.EnsureSuccessStatusCode();
-
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(_cts.Token).ConfigureAwait(false));
-            var targets = Long(doc.RootElement, "targets", "Targets");
-            var jobs = Long(doc.RootElement, "jobsQueued", "JobsQueued");
-            var workerScale = Text(doc.RootElement, "workerScale", "WorkerScale");
-
-            _statusMessage = $"Subdomain enumeration started for {targets} target(s), {jobs} job(s) queued. {workerScale}";
-            await ReloadLiveAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _statusMessage = $"Enumeration could not be started: {ex.Message}";
-        }
-        finally
-        {
-            _enumLoading = false;
-            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-        }
-    }
-
-    private Task StartSpiderAsync(bool selectedOnly)
-    {
-        var ids = selectedOnly
-            ? _selectedTargetIds.ToArray()
-            : TargetRows.Select(t => Text(t, "id", "Id")).ToArray();
-
-        var allTargets = !selectedOnly && !ids.Any(id => !string.IsNullOrWhiteSpace(id));
-
-        return StartSpiderForTargetIdsAsync(
-            ids,
-            allTargets,
-            selectedOnly
-                ? "Select one or more target rows before starting spidering."
-                : "No visible target rows are available to spider.");
-    }
-
-    private Task StartSpiderForSelectedSubdomainsAsync()
-    {
-        var selectedRows = SubdomainRows
-            .Where(row => _selectedSubdomainKeys.Contains(SubdomainKey(row)))
-            .ToList();
-
-        return StartSpiderForTargetIdsAsync(
-            TargetIdsForSubdomainRows(selectedRows),
-            allTargets: false,
-            emptySelectionMessage: "Select one or more subdomain rows before starting spidering.");
-    }
-
-    private Task StartSpiderForVisibleSubdomainsAsync()
-    {
-        var visibleRows = SubdomainRows.ToList();
-
-        return StartSpiderForTargetIdsAsync(
-            TargetIdsForSubdomainRows(visibleRows),
-            allTargets: false,
-            emptySelectionMessage: "No visible subdomain rows are available to spider.");
-    }
-
-    private Task StartSpiderForActiveTargetAsync()
-    {
-        return StartSpiderForTargetIdsAsync(
-            new[] { _activeTargetId },
-            allTargets: false,
-            emptySelectionMessage: "Select a target before starting spidering.");
-    }
-
-    private async Task StartSpiderForTargetIdsAsync(IEnumerable<string> targetIds, bool allTargets, string emptySelectionMessage)
-    {
-        _spiderLoading = true;
-        _statusMessage = "";
-
-        try
-        {
-            var ids = targetIds
-                .Where(id => !string.IsNullOrWhiteSpace(id))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            if (!allTargets && ids.Length == 0)
-            {
-                _statusMessage = emptySelectionMessage;
-                return;
-            }
-
-            using var response = await WorkerApi.Client.PostAsJsonAsync(
-                    "/api/ops/spider/restart",
-                    new RestartToolRequest(allTargets ? [] : ids, allTargets),
-                    _cts.Token)
-                .ConfigureAwait(false);
-
-            response.EnsureSuccessStatusCode();
-
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(_cts.Token).ConfigureAwait(false));
-            var targets = Long(doc.RootElement, "targets", "Targets");
-            var requeued = Long(doc.RootElement, "requeuedExistingRequests", "RequeuedExistingRequests");
-            var seeds = Long(doc.RootElement, "rootSeedsQueued", "RootSeedsQueued");
-            var workerScale = Text(doc.RootElement, "workerScale", "WorkerScale");
-
-            _statusMessage = $"Spider started for {targets} target(s). Requeued {requeued} existing requests, queued {seeds} root seeds. {workerScale}";
-            await ReloadHttpQueueAsync().ConfigureAwait(false);
-            await ReloadDockerWorkersAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _statusMessage = $"Spider could not be started: {ex.Message}";
-        }
-        finally
-        {
-            _spiderLoading = false;
-            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-        }
-    }
-
-    private IEnumerable<string> TargetIdsForSubdomainRows(IEnumerable<JsonElement> rows)
-    {
-        return rows
-            .Select(row => Text(row, "targetId", "TargetId"))
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .Distinct(StringComparer.OrdinalIgnoreCase);
-    }
-
-    private bool TargetMatchesFilter(JsonElement target)
-    {
-        if (!string.IsNullOrWhiteSpace(_targetSearch) &&
-            !MatchesAny(target, _targetSearch, "rootDomain", "RootDomain"))
-        {
-            return false;
-        }
-
-        return _targetFilter switch
-        {
-            "with-assets" => Long(target, "confirmedAssetCount", "ConfirmedAssetCount") > 0,
-            "with-subdomains" => Long(target, "subdomainCount", "SubdomainCount") > 0,
-            _ => true
-        };
-    }
-
-    private bool SubdomainMatchesFilter(JsonElement asset)
-    {
-        return string.IsNullOrWhiteSpace(_subdomainSearch) ||
-               SubdomainName(asset).Contains(_subdomainSearch, StringComparison.OrdinalIgnoreCase) ||
-               MatchesAny(asset, _subdomainSearch, "discoveryContext", "DiscoveryContext");
-    }
-
-    private bool AssetMatchesFilter(JsonElement asset)
-    {
-        if (!string.IsNullOrWhiteSpace(_assetSearch) && !MatchesAny(asset, _assetSearch, "kind", "Kind", "rawValue", "RawValue", "canonicalKey", "CanonicalKey", "finalUrl", "FinalUrl", "displayName", "DisplayName", "discoveryContext", "DiscoveryContext"))
-        {
-            return false;
-        }
-
-        return string.IsNullOrWhiteSpace(_assetFilter) ||
-               Text(asset, "kind", "Kind").Equals(_assetFilter, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private bool HttpMatchesFilter(JsonElement request)
-    {
-        return string.IsNullOrWhiteSpace(_httpSearch) ||
-               MatchesAny(request, _httpSearch, "createdAtUtc", "CreatedAtUtc", "state", "State", "method", "Method", "requestUrl", "RequestUrl", "domainKey", "DomainKey", "lastHttpStatus", "LastHttpStatus", "lastError", "LastError");
-    }
-
-    private bool MatchesActiveTarget(JsonElement asset)
-    {
-        return string.IsNullOrWhiteSpace(_activeTargetId) ||
-               Text(asset, "targetId", "TargetId").Equals(_activeTargetId, StringComparison.OrdinalIgnoreCase);
-    }
+    private bool TargetMatchesFilter(JsonElement target) =>
+        string.IsNullOrWhiteSpace(_targetSearch) || MatchesAny(target, _targetSearch, "rootDomain", "RootDomain", "id", "Id");
 
     private string TargetSortKey(JsonElement target) => _targetSort switch
     {
-        "depth" => NumberSortKey(Long(target, "globalMaxDepth", "GlobalMaxDepth")),
-        "subdomains" => NumberSortKey(Long(target, "subdomainCount", "SubdomainCount")),
-        "assets" => NumberSortKey(Long(target, "confirmedAssetCount", "ConfirmedAssetCount")),
+        "depth" => Long(target, "globalMaxDepth", "GlobalMaxDepth").ToString("D10", CultureInfo.InvariantCulture),
+        "subdomains" => Long(target, "subdomainCount", "SubdomainCount").ToString("D20", CultureInfo.InvariantCulture),
+        "assets" => Long(target, "confirmedAssetCount", "ConfirmedAssetCount").ToString("D20", CultureInfo.InvariantCulture),
         "lastRun" => Text(target, "lastRunAtUtc", "LastRunAtUtc"),
         _ => Text(target, "rootDomain", "RootDomain")
     };
 
-    private string SubdomainSortKey(JsonElement asset) => _subdomainSort switch
+    private bool MatchesActiveTarget(JsonElement asset) =>
+        string.IsNullOrWhiteSpace(_activeTargetId) || Text(asset, "targetId", "TargetId").Equals(_activeTargetId, StringComparison.OrdinalIgnoreCase);
+
+    private bool SubdomainMatchesFilter(JsonElement subdomain) =>
+        string.IsNullOrWhiteSpace(_subdomainSearch) || SubdomainName(subdomain).Contains(_subdomainSearch, StringComparison.OrdinalIgnoreCase);
+
+    private string SubdomainSortKey(JsonElement subdomain) => _subdomainSort switch
     {
-        "discovered" => Text(asset, "discoveredAtUtc", "DiscoveredAtUtc"),
-        _ => SubdomainName(asset)
+        "discovered" => Text(subdomain, "discoveredAtUtc", "DiscoveredAtUtc"),
+        _ => SubdomainName(subdomain)
     };
+
+    private bool AssetMatchesFilter(JsonElement asset)
+    {
+        if (!string.IsNullOrWhiteSpace(_assetFilter) && !Text(asset, "kind", "Kind").Equals(_assetFilter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return string.IsNullOrWhiteSpace(_assetSearch) ||
+               MatchesAny(asset, _assetSearch, "kind", "Kind", "category", "Category", "finalUrl", "FinalUrl", "rawValue", "RawValue", "displayName", "DisplayName", "canonicalKey", "CanonicalKey", "discoveryContext", "DiscoveryContext");
+    }
 
     private string AssetSortKey(JsonElement asset) => _assetSort switch
     {
         "kind" => Text(asset, "kind", "Kind"),
-        "value" => AssetValue(asset),
-        "lastSeen" => Text(asset, "lastSeenAtUtc", "LastSeenAtUtc"),
         _ => Text(asset, "discoveredAtUtc", "DiscoveredAtUtc")
     };
 
-    private string HttpSortKey(JsonElement request) => _httpSort switch
+    private bool HttpMatchesFilter(JsonElement row) =>
+        string.IsNullOrWhiteSpace(_httpSearch) ||
+        MatchesAny(row, _httpSearch, "createdAtUtc", "CreatedAtUtc", "state", "State", "method", "Method", "requestUrl", "RequestUrl", "domainKey", "DomainKey", "lastHttpStatus", "LastHttpStatus", "lastError", "LastError");
+
+    private string HttpSortKey(JsonElement row) => _httpSort switch
     {
-        "state" => Text(request, "state", "State"),
-        "url" => Text(request, "requestUrl", "RequestUrl"),
-        _ => Text(request, "createdAtUtc", "CreatedAtUtc")
+        _ => Text(row, "createdAtUtc", "CreatedAtUtc")
     };
 
-    private void SortTargets(string key) => ToggleSort(ref _targetSort, ref _targetSortDescending, key);
-    private void SortSubdomains(string key) => ToggleSort(ref _subdomainSort, ref _subdomainSortDescending, key);
-    private void SortAssets(string key) => ToggleSort(ref _assetSort, ref _assetSortDescending, key);
-    private void SortHttp(string key) => ToggleSort(ref _httpSort, ref _httpSortDescending, key);
-
-    private static void ToggleSort(ref string sort, ref bool descending, string key)
+    private bool HighValueMatchesFilter(JsonElement row)
     {
-        if (sort.Equals(key, StringComparison.OrdinalIgnoreCase))
+        var status = Text(row, "investigationStatus", "InvestigationStatus");
+        var isHighValue = Bool(row, "isHighValue", "IsHighValue");
+
+        if (_highValueStatusFilter == "Active" && (!isHighValue || status is "False Positive" or "Valid Finding"))
         {
-            descending = !descending;
+            return false;
         }
-        else
+
+        if (!string.IsNullOrWhiteSpace(_highValueStatusFilter) &&
+            _highValueStatusFilter != "Active" &&
+            !status.Equals(_highValueStatusFilter, StringComparison.OrdinalIgnoreCase))
         {
-            sort = key;
-            descending = false;
+            return false;
         }
+
+        return string.IsNullOrWhiteSpace(_highValueSearch) ||
+               MatchesAny(row, _highValueSearch, "targetRootDomain", "TargetRootDomain", "kind", "Kind", "category", "Category", "finalUrl", "FinalUrl", "rawValue", "RawValue", "displayName", "DisplayName", "findingType", "FindingType", "severity", "Severity", "patternName", "PatternName", "matchedText", "MatchedText", "investigationStatus", "InvestigationStatus");
     }
 
-    private void ToggleAllVisibleTargets(ChangeEventArgs args) => ToggleMany(_selectedTargetIds, TargetRows.Select(t => Text(t, "id", "Id")), IsChecked(args));
-    private void ToggleAllVisibleSubdomains(ChangeEventArgs args) => ToggleMany(_selectedSubdomainKeys, SubdomainRows.Select(SubdomainKey), IsChecked(args));
-    private void ToggleAllVisibleAssets(ChangeEventArgs args) => ToggleMany(_selectedAssetIds, AssetRows.Select(a => Text(a, "id", "Id")), IsChecked(args));
-    private void ToggleAllVisibleWorkers(ChangeEventArgs args) => ToggleMany(_selectedWorkerServices, WorkerRows.Select(w => Text(w, "serviceName", "ServiceName")), IsChecked(args));
-    private void ToggleAllVisibleHttp(ChangeEventArgs args) => ToggleMany(_selectedHttpIds, HttpRows.Select(q => Text(q, "id", "Id")), IsChecked(args));
+    private bool TechnologyMatchesFilter(JsonElement row) =>
+        string.IsNullOrWhiteSpace(_technologySearch) ||
+        MatchesAny(row, _technologySearch, "targetRootDomain", "TargetRootDomain", "subdomain", "Subdomain", "technologyName", "TechnologyName", "version", "Version", "sourceType", "SourceType", "detectionMode", "DetectionMode", "evidenceSummary", "EvidenceSummary");
 
-    private void ToggleTarget(string id, ChangeEventArgs args)
+    private static IReadOnlyList<JsonElement> MaterializeSorted(IEnumerable<JsonElement> rows, Func<JsonElement, string> sortKey, bool desc)
     {
-        ToggleOne(_selectedTargetIds, id, IsChecked(args));
-
-        if (IsChecked(args))
-        {
-            ActivateTarget(id);
-        }
-    }
-
-    private void ToggleSubdomain(string key, ChangeEventArgs args) => ToggleOne(_selectedSubdomainKeys, key, IsChecked(args));
-    private void ToggleAsset(string id, ChangeEventArgs args) => ToggleOne(_selectedAssetIds, id, IsChecked(args));
-    private void ToggleWorker(string service, ChangeEventArgs args) => ToggleOne(_selectedWorkerServices, service, IsChecked(args));
-    private void ToggleHttp(string id, ChangeEventArgs args) => ToggleOne(_selectedHttpIds, id, IsChecked(args));
-
-    private void ToggleTargetRow(string id)
-    {
-        if (string.IsNullOrWhiteSpace(id))
-        {
-            return;
-        }
-
-        ActivateTarget(id);
-        ToggleOne(_selectedTargetIds, id, !_selectedTargetIds.Contains(id));
-    }
-
-    private void ToggleSubdomainRow(string key) => ToggleOne(_selectedSubdomainKeys, key, !_selectedSubdomainKeys.Contains(key));
-    private void ToggleAssetRow(string id) => ToggleOne(_selectedAssetIds, id, !_selectedAssetIds.Contains(id));
-    private void ToggleWorkerRow(string service) => ToggleOne(_selectedWorkerServices, service, !_selectedWorkerServices.Contains(service));
-    private void ToggleHttpRow(string id) => ToggleOne(_selectedHttpIds, id, !_selectedHttpIds.Contains(id));
-
-    private void ActivateTarget(string id)
-    {
-        if (!string.IsNullOrWhiteSpace(id))
-        {
-            _activeTargetId = id;
-        }
+        return desc
+            ? rows.OrderByDescending(sortKey, StringComparer.OrdinalIgnoreCase).ToArray()
+            : rows.OrderBy(sortKey, StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     private void EnsureActiveTarget()
@@ -1188,214 +1245,167 @@
         }
     }
 
-    private static void ToggleOne(HashSet<string> set, string id, bool selected)
+    private void SelectActiveTarget(string id)
     {
-        if (string.IsNullOrWhiteSpace(id))
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            _activeTargetId = id;
+        }
+    }
+
+    private void SetTargetSort(string sort) => ToggleSort(sort, ref _targetSort, ref _targetSortDescending);
+    private void SetSubdomainSort(string sort) => ToggleSort(sort, ref _subdomainSort, ref _subdomainSortDescending);
+    private void SetAssetSort(string sort) => ToggleSort(sort, ref _assetSort, ref _assetSortDescending);
+    private void SetHttpSort(string sort) => ToggleSort(sort, ref _httpSort, ref _httpSortDescending);
+
+    private static void ToggleSort(string requested, ref string current, ref bool descending)
+    {
+        if (current.Equals(requested, StringComparison.OrdinalIgnoreCase))
+        {
+            descending = !descending;
+        }
+        else
+        {
+            current = requested;
+            descending = false;
+        }
+    }
+
+    private static string SortGlyph(string current, string column, bool descending) =>
+        current.Equals(column, StringComparison.OrdinalIgnoreCase) ? (descending ? "▼" : "▲") : "";
+
+    private static string RowClass(bool selected) => selected ? "selected-row" : "";
+
+    private bool IsTargetSelected(string id) => !string.IsNullOrWhiteSpace(id) && _selectedTargetIds.Contains(id);
+    private bool IsSubdomainSelected(string key) => !string.IsNullOrWhiteSpace(key) && _selectedSubdomainKeys.Contains(key);
+    private bool IsAssetSelected(string id) => !string.IsNullOrWhiteSpace(id) && _selectedAssetIds.Contains(id);
+    private bool IsWorkerSelected(string service) => !string.IsNullOrWhiteSpace(service) && _selectedWorkerServices.Contains(service);
+    private bool IsHttpSelected(string id) => !string.IsNullOrWhiteSpace(id) && _selectedHttpIds.Contains(id);
+    private bool IsHighValueSelected(string key) => !string.IsNullOrWhiteSpace(key) && _selectedHighValueKeys.Contains(key);
+    private bool IsTechnologySelected(string key) => !string.IsNullOrWhiteSpace(key) && _selectedTechnologyKeys.Contains(key);
+
+    private void ToggleTargetSelection(string id) => ToggleSet(_selectedTargetIds, id);
+    private void ToggleSubdomainSelection(string key) => ToggleSet(_selectedSubdomainKeys, key);
+    private void ToggleAssetSelection(string id) => ToggleSet(_selectedAssetIds, id);
+    private void ToggleWorkerSelection(string service) => ToggleSet(_selectedWorkerServices, service);
+    private void ToggleHttpSelection(string id) => ToggleSet(_selectedHttpIds, id);
+    private void ToggleHighValueSelection(string key) => ToggleSet(_selectedHighValueKeys, key);
+    private void ToggleTechnologySelection(string key) => ToggleSet(_selectedTechnologyKeys, key);
+
+    private void SetTargetSelected(string id, ChangeEventArgs args) => SetSelected(_selectedTargetIds, id, IsChecked(args));
+    private void SetSubdomainSelected(string key, ChangeEventArgs args) => SetSelected(_selectedSubdomainKeys, key, IsChecked(args));
+    private void SetAssetSelected(string id, ChangeEventArgs args) => SetSelected(_selectedAssetIds, id, IsChecked(args));
+    private void SetWorkerSelected(string service, ChangeEventArgs args) => SetSelected(_selectedWorkerServices, service, IsChecked(args));
+    private void SetHttpSelected(string id, ChangeEventArgs args) => SetSelected(_selectedHttpIds, id, IsChecked(args));
+    private void SetHighValueSelected(string key, ChangeEventArgs args) => SetSelected(_selectedHighValueKeys, key, IsChecked(args));
+    private void SetTechnologySelected(string key, ChangeEventArgs args) => SetSelected(_selectedTechnologyKeys, key, IsChecked(args));
+
+    private void ToggleAllVisibleTargets(ChangeEventArgs args) => SetAll(_selectedTargetIds, TargetRows.Select(t => Text(t, "id", "Id")), IsChecked(args));
+    private void ToggleAllVisibleSubdomains(ChangeEventArgs args) => SetAll(_selectedSubdomainKeys, SubdomainRows.Select(SubdomainKey), IsChecked(args));
+    private void ToggleAllVisibleAssets(ChangeEventArgs args) => SetAll(_selectedAssetIds, AssetRows.Select(a => Text(a, "id", "Id")), IsChecked(args));
+    private void ToggleAllVisibleWorkers(ChangeEventArgs args) => SetAll(_selectedWorkerServices, WorkerRows.Select(w => Text(w, "serviceName", "ServiceName")), IsChecked(args));
+    private void ToggleAllVisibleHttp(ChangeEventArgs args) => SetAll(_selectedHttpIds, HttpRows.Select(q => Text(q, "id", "Id")), IsChecked(args));
+    private void ToggleAllVisibleHighValue(ChangeEventArgs args) => SetAll(_selectedHighValueKeys, FilteredHighValueRows.Select(HighValueKey), IsChecked(args));
+    private void ToggleAllVisibleTechnologies(ChangeEventArgs args) => SetAll(_selectedTechnologyKeys, FilteredTechnologyRows.Select(TechnologyKey), IsChecked(args));
+
+    private static void ToggleSet(HashSet<string> set, string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        if (!set.Add(key))
+        {
+            set.Remove(key);
+        }
+    }
+
+    private static void SetSelected(HashSet<string> set, string key, bool selected)
+    {
+        if (string.IsNullOrWhiteSpace(key))
         {
             return;
         }
 
         if (selected)
         {
-            set.Add(id);
+            set.Add(key);
         }
         else
         {
-            set.Remove(id);
+            set.Remove(key);
         }
     }
 
-    private static void ToggleMany(HashSet<string> set, IEnumerable<string> ids, bool selected)
+    private static void SetAll(HashSet<string> set, IEnumerable<string> keys, bool selected)
     {
-        foreach (var id in ids.Where(id => !string.IsNullOrWhiteSpace(id)))
+        foreach (var key in keys.Where(k => !string.IsNullOrWhiteSpace(k)).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (selected)
             {
-                set.Add(id);
+                set.Add(key);
             }
             else
             {
-                set.Remove(id);
+                set.Remove(key);
             }
         }
     }
 
-    private static bool IsChecked(ChangeEventArgs args) => args.Value is bool value && value;
+    private static bool IsChecked(ChangeEventArgs args) =>
+        args.Value is bool b ? b :
+        bool.TryParse(Convert.ToString(args.Value, CultureInfo.InvariantCulture), out var parsed) && parsed;
 
-    private static IReadOnlyList<JsonElement> MaterializeSorted(
-        IEnumerable<JsonElement> rows,
-        Func<JsonElement, string> sortKey,
-        bool descending)
+    private long OverviewLong(params string[] names)
     {
-        return (descending
-                ? rows.OrderByDescending(sortKey, StringComparer.OrdinalIgnoreCase)
-                : rows.OrderBy(sortKey, StringComparer.OrdinalIgnoreCase))
-            .ToList();
-    }
-
-    private static string NumberSortKey(long value) => value.ToString("D20", CultureInfo.InvariantCulture);
-
-    private static bool MatchesAny(JsonElement element, string search, params string[] propertyNames)
-    {
-        return propertyNames.Any(name => Text(element, name).Contains(search, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private long OverviewLong(params string[] propertyNames)
-    {
-        return _overview is JsonElement overview ? Long(overview, propertyNames) : 0;
-    }
-
-    private static long Long(JsonElement element, params string[] propertyNames)
-    {
-        foreach (var propertyName in propertyNames)
+        if (_overview is null)
         {
-            if (!TryGetProperty(element, propertyName, out var property))
-            {
-                continue;
-            }
-
-            if (property.ValueKind == JsonValueKind.Number && property.TryGetInt64(out var number))
-            {
-                return number;
-            }
-
-            if (property.ValueKind == JsonValueKind.String &&
-                long.TryParse(property.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-            {
-                return parsed;
-            }
+            return 0;
         }
 
-        return 0;
+        return Long(_overview.Value, names);
     }
-
-    private static string Text(JsonElement element, params string[] propertyNames)
-    {
-        foreach (var propertyName in propertyNames)
-        {
-            if (!TryGetProperty(element, propertyName, out var property))
-            {
-                continue;
-            }
-
-            return property.ValueKind switch
-            {
-                JsonValueKind.String => property.GetString() ?? "",
-                JsonValueKind.Number => property.ToString(),
-                JsonValueKind.True => "true",
-                JsonValueKind.False => "false",
-                _ => property.ToString()
-            };
-        }
-
-        return "";
-    }
-
-    private static bool TryGetProperty(JsonElement element, string propertyName, out JsonElement property)
-    {
-        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propertyName, out property))
-        {
-            return true;
-        }
-
-        property = default;
-        return false;
-    }
-
-    private static string DisplayOrDash(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
-    private static string FormatNumber(long value) => value.ToString("N0", CultureInfo.InvariantCulture);
-
-    private static string FormatTime(string value)
-    {
-        return DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
-            ? parsed.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)
-            : "—";
-    }
-
-    private static string FormatStorageSize(long bytes)
-    {
-        if (bytes <= 0)
-        {
-            return "0 B";
-        }
-
-        string[] units = ["B", "KB", "MB", "GB", "TB"];
-        var value = (double)bytes;
-        var index = 0;
-
-        while (value >= 1024 && index < units.Length - 1)
-        {
-            value /= 1024;
-            index++;
-        }
-
-        return $"{value:0.##} {units[index]}";
-    }
-
-    private static string SubdomainName(JsonElement asset)
-    {
-        foreach (var value in new[]
-                 {
-                     Text(asset, "displayName", "DisplayName"),
-                     Text(asset, "rawValue", "RawValue"),
-                     Text(asset, "canonicalKey", "CanonicalKey"),
-                     Text(asset, "finalUrl", "FinalUrl")
-                 })
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                continue;
-            }
-
-            if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host))
-            {
-                return uri.Host;
-            }
-
-            return value.Trim();
-        }
-
-        return "";
-    }
-
-    private static string SubdomainKey(JsonElement asset) => $"{Text(asset, "targetId", "TargetId")}|{SubdomainName(asset)}";
-    private static string AssetValue(JsonElement asset) => DisplayOrDash(Text(asset, "finalUrl", "FinalUrl", "displayName", "DisplayName", "rawValue", "RawValue", "canonicalKey", "CanonicalKey"));
-    private static string RowClass(bool selected) => selected ? "selected" : "";
 
     private async Task<JsonElement?> GetObjectAsync(string uri)
     {
         using var response = await WorkerApi.Client.GetAsync(uri, _cts.Token).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(_cts.Token).ConfigureAwait(false);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: _cts.Token).ConfigureAwait(false);
-
-        return doc.RootElement.Clone();
+        var json = await response.Content.ReadAsStringAsync(_cts.Token).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.ValueKind == JsonValueKind.Object ? doc.RootElement.Clone() : null;
     }
 
     private async Task<List<JsonElement>> GetArrayAsync(string uri)
     {
         using var response = await WorkerApi.Client.GetAsync(uri, _cts.Token).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            return [];
+        }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(_cts.Token).ConfigureAwait(false);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: _cts.Token).ConfigureAwait(false);
+        var json = await response.Content.ReadAsStringAsync(_cts.Token).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(json);
 
         if (doc.RootElement.ValueKind == JsonValueKind.Array)
         {
-            return doc.RootElement.EnumerateArray().Select(e => e.Clone()).ToList();
+            return doc.RootElement.EnumerateArray().Select(x => x.Clone()).ToList();
         }
 
-        return [];
-    }
-
-    private static IReadOnlyList<JsonElement> ArrayProperty(JsonElement element, params string[] propertyNames)
-    {
-        foreach (var propertyName in propertyNames)
+        if (doc.RootElement.ValueKind == JsonValueKind.Object)
         {
-            if (TryGetProperty(element, propertyName, out var property) && property.ValueKind == JsonValueKind.Array)
+            if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
             {
-                return property.EnumerateArray().Select(e => e.Clone()).ToList();
+                return items.EnumerateArray().Select(x => x.Clone()).ToList();
+            }
+
+            if (doc.RootElement.TryGetProperty("rows", out var rows) && rows.ValueKind == JsonValueKind.Array)
+            {
+                return rows.EnumerateArray().Select(x => x.Clone()).ToList();
             }
         }
 
@@ -1405,7 +1415,226 @@
     private static void Replace(List<JsonElement> target, IEnumerable<JsonElement> values)
     {
         target.Clear();
-        target.AddRange(values);
+        target.AddRange(values.Select(v => v.Clone()));
+    }
+
+    private static JsonElement? Property(JsonElement element, params string[] names)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        foreach (var name in names.Where(n => !string.IsNullOrWhiteSpace(n)))
+        {
+            if (element.TryGetProperty(name, out var value))
+            {
+                return value;
+            }
+
+            var camel = char.ToLowerInvariant(name[0]) + name[1..];
+            if (element.TryGetProperty(camel, out value))
+            {
+                return value;
+            }
+
+            var pascal = char.ToUpperInvariant(name[0]) + name[1..];
+            if (element.TryGetProperty(pascal, out value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<JsonElement> ArrayProperty(JsonElement element, params string[] names)
+    {
+        var value = Property(element, names);
+        return value is { ValueKind: JsonValueKind.Array }
+            ? value.Value.EnumerateArray().Select(x => x.Clone()).ToArray()
+            : [];
+    }
+
+    private static string Text(JsonElement element, params string[] names)
+    {
+        var value = Property(element, names);
+        if (value is null)
+        {
+            return "";
+        }
+
+        return value.Value.ValueKind switch
+        {
+            JsonValueKind.String => value.Value.GetString() ?? "",
+            JsonValueKind.Number => value.Value.ToString(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Null => "",
+            _ => value.Value.ToString()
+        };
+    }
+
+    private static long Long(JsonElement element, params string[] names)
+    {
+        var value = Property(element, names);
+        if (value is null)
+        {
+            return 0;
+        }
+
+        if (value.Value.ValueKind == JsonValueKind.Number && value.Value.TryGetInt64(out var number))
+        {
+            return number;
+        }
+
+        return long.TryParse(Text(element, names), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
+    }
+
+    private static bool Bool(JsonElement element, params string[] names)
+    {
+        var value = Property(element, names);
+        if (value is null)
+        {
+            return false;
+        }
+
+        return value.Value.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String => bool.TryParse(value.Value.GetString(), out var parsed) && parsed,
+            _ => false
+        };
+    }
+
+    private static string SubdomainKey(JsonElement asset)
+    {
+        var targetId = Text(asset, "targetId", "TargetId");
+        var subdomain = SubdomainName(asset);
+        return $"{targetId}|{subdomain}".Trim('|');
+    }
+
+    private static string SubdomainName(JsonElement asset)
+    {
+        foreach (var name in new[] { "displayName", "DisplayName", "rawValue", "RawValue", "canonicalKey", "CanonicalKey", "finalUrl", "FinalUrl" })
+        {
+            var value = Text(asset, name);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+                {
+                    return uri.Host;
+                }
+
+                return value.Trim();
+            }
+        }
+
+        return "";
+    }
+
+    private static string AssetValue(JsonElement asset)
+    {
+        var finalUrl = Text(asset, "finalUrl", "FinalUrl");
+        if (!string.IsNullOrWhiteSpace(finalUrl))
+        {
+            return finalUrl;
+        }
+
+        return DisplayOrDash(Text(asset, "displayName", "DisplayName", "rawValue", "RawValue", "canonicalKey", "CanonicalKey"));
+    }
+
+    private static string BestAssetUrl(JsonElement row)
+    {
+        foreach (var name in new[] { "finalUrl", "FinalUrl", "displayName", "DisplayName", "rawValue", "RawValue" })
+        {
+            var value = Text(row, name);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return "";
+    }
+
+    private static string HighValueKey(JsonElement row)
+    {
+        foreach (var name in new[] { "findingId", "FindingId", "assetId", "AssetId", "id", "Id" })
+        {
+            var value = Text(row, name);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return string.Join("|", Text(row, "targetRootDomain", "TargetRootDomain"), BestAssetUrl(row), Text(row, "findingType", "FindingType"));
+    }
+
+    private static string TechnologyKey(JsonElement row)
+    {
+        foreach (var name in new[] { "id", "Id", "observationId", "ObservationId" })
+        {
+            var value = Text(row, name);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return string.Join("|", Text(row, "targetId", "TargetId"), Text(row, "subdomain", "Subdomain"), Text(row, "technologyName", "TechnologyName"), Text(row, "version", "Version"));
+    }
+
+    private static bool MatchesAny(JsonElement element, string search, params string[] names) =>
+        names.Any(name => Text(element, name).Contains(search, StringComparison.OrdinalIgnoreCase));
+
+    private static string FormatNumber(long value) => value.ToString("N0", CultureInfo.InvariantCulture);
+
+    private static string FormatStorageSize(long bytes)
+    {
+        if (bytes <= 0)
+        {
+            return "0 B";
+        }
+
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var size = (double)bytes;
+        var unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+
+        return $"{size:N1} {units[unit]}";
+    }
+
+    private static string DisplayOrDash(string? value) => string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    private static string FormatTime(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "-";
+        }
+
+        return DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
+            ? parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
+            : value;
+    }
+
+    private static string? TryHttpHref(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
+            ? uri.ToString()
+            : null;
     }
 
     public void Dispose()
@@ -1413,4 +1642,7 @@
         _cts.Cancel();
         _cts.Dispose();
     }
+
+    private sealed record TopTechnologyRow(string Name, long TargetCount, long SubdomainCount);
+    private sealed record TechnologyVersionRow(string Version, long TargetCount, long SubdomainCount);
 }

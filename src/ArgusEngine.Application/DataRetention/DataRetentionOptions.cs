@@ -16,7 +16,7 @@ public sealed class DataRetentionOptions
     // By default, expired event rows are disposed instead of archived. Archiving
     // historical telemetry preserves volume elsewhere and does not solve local
     // storage pressure. Set this true only when you need a short audit archive.
-    public bool ArchiveEventTablesBeforeDelete { get; set; } = false;
+    public bool ArchiveEventTablesBeforeDelete { get; set; }
 
     // If event archiving is explicitly enabled, keep that archive short-lived.
     public int ArchivedEventRetentionDays { get; set; } = 1;

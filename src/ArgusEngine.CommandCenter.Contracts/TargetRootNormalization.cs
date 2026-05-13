@@ -6,6 +6,8 @@ namespace ArgusEngine.CommandCenter.Contracts
 {
     public static class TargetRootNormalization
     {
+        private static readonly string[] LineSeparators = ["\r\n", "\r", "\n"];
+
         public static bool TryNormalize(string raw, out string normalized)
         {
             normalized = string.Empty;
@@ -37,7 +39,7 @@ namespace ArgusEngine.CommandCenter.Contracts
             if (string.IsNullOrEmpty(text))
                 return Array.Empty<string>();
 
-            return text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+            return text.Split(LineSeparators, StringSplitOptions.RemoveEmptyEntries)
                        .Select(l => l.Trim())
                        .Where(l => l.Length > 0)
                        .ToArray();

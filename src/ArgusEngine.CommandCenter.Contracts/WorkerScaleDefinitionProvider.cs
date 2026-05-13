@@ -1,6 +1,5 @@
 using ArgusEngine.CommandCenter.Models;
 using ArgusEngine.Application.Workers;
-using ArgusEngine.CommandCenter.Models;
 
 namespace ArgusEngine.CommandCenter.Contracts;
 
@@ -30,11 +29,11 @@ public sealed class WorkerScaleDefinitionProvider
         new("worker-techid", "nightmare-worker-techid", "Technology Identification Worker"),
     ];
 
-    public IReadOnlyList<string> RequiredWorkerKeys => RequiredKeys;
+    public static IReadOnlyList<string> RequiredWorkerKeys => RequiredKeys;
 
-    public IReadOnlyList<WorkerScaleDefinition> WorkerScaleDefinitions => ScaleDefinitions;
+    public static IReadOnlyList<WorkerScaleDefinition> WorkerScaleDefinitions => ScaleDefinitions;
 
-    public WorkerScaleTargetDefinition? GetScaleTargetForWorkerKey(string workerKey) =>
+    public static WorkerScaleTargetDefinition? GetScaleTargetForWorkerKey(string workerKey) =>
         workerKey switch
         {
             WorkerKeys.Spider => new("worker-spider", "nightmare-worker-spider"),
@@ -45,7 +44,7 @@ public sealed class WorkerScaleDefinitionProvider
             _ => null,
         };
 
-    public WorkerScalingSettingsDto DefaultWorkerScalingSetting(string scaleKey)
+    public static WorkerScalingSettingsDto DefaultWorkerScalingSetting(string scaleKey)
     {
         var displayName = ScaleDefinitions.FirstOrDefault(d => d.ScaleKey == scaleKey)?.DisplayName ?? scaleKey;
         return scaleKey switch

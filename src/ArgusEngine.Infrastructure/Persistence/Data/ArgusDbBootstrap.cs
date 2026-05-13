@@ -36,6 +36,18 @@ public static class ArgusDbBootstrap
             new EventId(4, nameof(LogStartupDatabaseBootstrapMigrateFallback)),
             "Startup database bootstrap requested Migrate mode, but no EF migrations were found. Falling back to EnsureCreated compatibility mode.");
 
+    private static readonly Action<ILogger, string, int, int, Exception?> LogTransientPostgresBootstrapFailure =
+        LoggerMessage.Define<string, int, int>(
+            LogLevel.Warning,
+            new EventId(5, nameof(LogTransientPostgresBootstrapFailure)),
+            "Transient PostgreSQL bootstrap failure {SqlState} on attempt {Attempt}/{MaxAttempts}. Retrying.");
+
+    private static readonly Action<ILogger, Exception?> LogBootstrapLockReleaseFailed =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(6, nameof(LogBootstrapLockReleaseFailed)),
+            "Failed to release PostgreSQL bootstrap advisory lock.");
+
     public static async Task InitializeAsync(
         IServiceProvider services,
         IConfiguration configuration,
@@ -108,12 +120,7 @@ public static class ArgusDbBootstrap
             }
             catch (PostgresException ex) when (IsTransientBootstrapFailure(ex) && attempt < MaxBootstrapAttempts)
             {
-                logger.LogWarning(
-                    ex,
-                    "Transient PostgreSQL bootstrap failure {SqlState} on attempt {Attempt}/{MaxAttempts}. Retrying.",
-                    ex.SqlState,
-                    attempt,
-                    MaxBootstrapAttempts);
+                LogTransientPostgresBootstrapFailure(logger, ex.SqlState, attempt, MaxBootstrapAttempts, ex);
 
                 await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), cancellationToken).ConfigureAwait(false);
             }
@@ -156,7 +163,7 @@ public static class ArgusDbBootstrap
                 }
                 catch (Exception ex)
                 {
-                    logger.LogWarning(ex, "Failed to release PostgreSQL bootstrap advisory lock.");
+                    LogBootstrapLockReleaseFailed(logger, ex);
                 }
             }
         }

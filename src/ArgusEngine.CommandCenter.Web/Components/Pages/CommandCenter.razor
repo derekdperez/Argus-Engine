@@ -1,4 +1,5 @@
 @page "/"
+@page "/commandcenter"
 @page "/ops"
 @rendermode InteractiveServer
 
@@ -7,8 +8,6 @@
 @using System.Text.Json
 @using ArgusEngine.CommandCenter.Contracts
 @using ArgusEngine.CommandCenter.Web.Clients
-@using ArgusEngine.CommandCenter.Web.Components.DataGrid
-@using Microsoft.AspNetCore.Components.QuickGrid
 @implements IDisposable
 @inject WorkerControlApiClient WorkerApi
 
@@ -230,125 +229,6 @@
     <section class="ops-panel">
         <div class="panel-title">
             <div>
-                <p class="eyebrow">High Value</p>
-                <h2>High Value Assets</h2>
-            </div>
-            <span class="muted">@FormatNumber(HighValueRows.Count) rows</span>
-        </div>
-
-        <ArgusDataGrid TGridItem="JsonElement"
-                       Items="@HighValueGridRows.AsQueryable()"
-                       RowMatches="HighValueGridMatches"
-                       SearchText="@_highValueSearch"
-                       SearchTextChanged="@((string value) => _highValueSearch = value)"
-                       SearchPlaceholder="Search high value assets"
-                       IsLoading="@_highValueLoading"
-                       EmptyText="No high value assets match the current filters."
-                       PersistKey="ops-high-value-grid"
-                       VirtualizedHeightPixels="520"
-                       StickyFirstColumn="true">
-            <ToolbarTemplate>
-                <label class="argus-dg-page-size">
-                    <span>Status</span>
-                    <select @bind="_highValueStatusFilter">
-                        <option value="Active">Active</option>
-                        <option value="">All statuses</option>
-                        <option value="Pending">Pending</option>
-                        <option value="In Process">In Process</option>
-                        <option value="False Positive">False Positive</option>
-                        <option value="Valid Finding">Valid Finding</option>
-                    </select>
-                </label>
-                <button type="button" class="btn small" @onclick="ReloadHighValueAssetsAsync">Refresh</button>
-            </ToolbarTemplate>
-            <ChildContent>
-                <TemplateColumn Title="Last seen" Context="row">
-                    @FormatTime(Text(row, "lastSeenAtUtc", "LastSeenAtUtc", "findingDiscoveredAtUtc", "FindingDiscoveredAtUtc"))
-                </TemplateColumn>
-                <TemplateColumn Title="Status" Context="row">
-                    @DisplayOrDash(Text(row, "investigationStatus", "InvestigationStatus"))
-                </TemplateColumn>
-                <TemplateColumn Title="Target" Context="row">
-                    @DisplayOrDash(Text(row, "targetRootDomain", "TargetRootDomain"))
-                </TemplateColumn>
-                <TemplateColumn Title="Kind" Context="row">
-                    @DisplayOrDash(Text(row, "kind", "Kind"))
-                </TemplateColumn>
-                <TemplateColumn Title="URL / Asset" Context="row">
-                    @DisplayOrDash(BestAssetUrl(row))
-                </TemplateColumn>
-                <TemplateColumn Title="Finding" Context="row">
-                    @DisplayOrDash(Text(row, "findingType", "FindingType"))
-                </TemplateColumn>
-                <TemplateColumn Title="Severity" Context="row">
-                    @DisplayOrDash(Text(row, "severity", "Severity"))
-                </TemplateColumn>
-            </ChildContent>
-        </ArgusDataGrid>
-    </section>
-
-    <section class="ops-panel">
-        <div class="panel-title">
-            <div>
-                <p class="eyebrow">Technology ID</p>
-                <h2>Technology Summary</h2>
-            </div>
-            <span class="muted">@FormatNumber(FilteredTechnologyRows.Count) visible observations</span>
-        </div>
-
-        <ol class="top-tech-list">
-            @foreach (var row in TopTechnologyRows.Take(10))
-            {
-                <li>
-                    <button type="button" class="link-button" @onclick="() => OpenTechnologyModal(row.Name)">
-                        @row.Name (@FormatNumber(row.TargetCount) targets, @FormatNumber(row.SubdomainCount) subdomains)
-                    </button>
-                </li>
-            }
-        </ol>
-
-        <ArgusDataGrid TGridItem="JsonElement"
-                       Items="@FilteredTechnologyRows.AsQueryable()"
-                       RowMatches="TechnologyGridMatches"
-                       SearchText="@_technologySearch"
-                       SearchTextChanged="@((string value) => _technologySearch = value)"
-                       SearchPlaceholder="Search technologies"
-                       IsLoading="@_technologiesLoading"
-                       EmptyText="No technology detections match the current filters."
-                       PersistKey="ops-technology-grid"
-                       VirtualizedHeightPixels="560"
-                       StickyFirstColumn="true">
-            <ToolbarTemplate>
-                <button type="button" class="btn small" @onclick="ReloadTechnologyDataAsync">Refresh</button>
-            </ToolbarTemplate>
-            <ChildContent>
-                <TemplateColumn Title="Last seen" Context="row">
-                    @FormatTime(Text(row, "lastSeenUtc", "LastSeenUtc"))
-                </TemplateColumn>
-                <TemplateColumn Title="Target" Context="row">
-                    @DisplayOrDash(Text(row, "targetRootDomain", "TargetRootDomain"))
-                </TemplateColumn>
-                <TemplateColumn Title="Subdomain" Context="row">
-                    @DisplayOrDash(Text(row, "subdomain", "Subdomain"))
-                </TemplateColumn>
-                <TemplateColumn Title="Technology" Context="row">
-                    <button type="button" class="link-button" @onclick='() => OpenTechnologyModal(Text(row, "technologyName", "TechnologyName"))'>
-                        @DisplayOrDash(Text(row, "technologyName", "TechnologyName"))
-                    </button>
-                </TemplateColumn>
-                <TemplateColumn Title="Version" Context="row">
-                    @DisplayOrDash(Text(row, "version", "Version"))
-                </TemplateColumn>
-                <TemplateColumn Title="Source" Context="row">
-                    @DisplayOrDash(Text(row, "sourceType", "SourceType"))
-                </TemplateColumn>
-            </ChildContent>
-        </ArgusDataGrid>
-    </section>
-
-    <section class="ops-panel">
-        <div class="panel-title">
-            <div>
                 <p class="eyebrow">Infrastructure</p>
                 <h2>Workers</h2>
             </div>
@@ -448,6 +328,127 @@
                             <td>@DisplayOrDash(Text(q, "domainKey", "DomainKey"))</td>
                             <td>@DisplayOrDash(Text(q, "lastHttpStatus", "LastHttpStatus"))</td>
                             <td>@DisplayOrDash(Text(q, "lastError", "LastError"))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="ops-panel">
+        <div class="panel-title">
+            <div>
+                <p class="eyebrow">High Value</p>
+                <h2>High Value Assets</h2>
+            </div>
+            <span class="muted">@FormatNumber(HighValueRows.Count) rows</span>
+        </div>
+
+        <div class="toolbar">
+            <input placeholder="Search high value assets" @bind="_highValueSearch" @bind:event="oninput" />
+            <select @bind="_highValueStatusFilter">
+                <option value="Active">Active</option>
+                <option value="">All statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="In Process">In Process</option>
+                <option value="False Positive">False Positive</option>
+                <option value="Valid Finding">Valid Finding</option>
+            </select>
+            <button type="button" @onclick="ReloadHighValueAssetsAsync">Refresh</button>
+        </div>
+
+        <div class="table-wrap">
+            <table class="ops-table">
+                <thead>
+                    <tr>
+                        <th class="select-col">
+                            <input type="checkbox" checked="@AllVisibleHighValueSelected" @onchange="ToggleAllVisibleHighValue" />
+                        </th>
+                        <th>Last seen</th>
+                        <th>Status</th>
+                        <th>Target</th>
+                        <th>Kind</th>
+                        <th>URL / Asset</th>
+                        <th>Finding</th>
+                        <th>Severity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in FilteredHighValueRows)
+                    {
+                        var key = HighValueKey(row);
+                        <tr class="@RowClass(IsHighValueSelected(key))" @onclick="() => ToggleHighValueSelection(key)">
+                            <td class="select-col">
+                                <input type="checkbox" checked="@IsHighValueSelected(key)" @onchange="args => SetHighValueSelected(key, args)" @onclick:stopPropagation="true" />
+                            </td>
+                            <td>@FormatTime(Text(row, "lastSeenAtUtc", "LastSeenAtUtc", "findingDiscoveredAtUtc", "FindingDiscoveredAtUtc"))</td>
+                            <td>@DisplayOrDash(Text(row, "investigationStatus", "InvestigationStatus"))</td>
+                            <td>@DisplayOrDash(Text(row, "targetRootDomain", "TargetRootDomain"))</td>
+                            <td>@DisplayOrDash(Text(row, "kind", "Kind"))</td>
+                            <td>@DisplayOrDash(BestAssetUrl(row))</td>
+                            <td>@DisplayOrDash(Text(row, "findingType", "FindingType"))</td>
+                            <td>@DisplayOrDash(Text(row, "severity", "Severity"))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="ops-panel">
+        <div class="panel-title">
+            <div>
+                <p class="eyebrow">Technology ID</p>
+                <h2>Top 10 Technologies</h2>
+            </div>
+            <span class="muted">Grouped by name regardless of version</span>
+        </div>
+
+        <ol class="top-tech-list">
+            @foreach (var row in TopTechnologyRows.Take(10))
+            {
+                <li>
+                    <button type="button" class="link-button" @onclick="() => OpenTechnologyModal(row.Name)">
+                        @row.Name (@FormatNumber(row.TargetCount) targets, @FormatNumber(row.SubdomainCount) subdomains)
+                    </button>
+                </li>
+            }
+        </ol>
+
+        <div class="toolbar">
+            <input placeholder="Search technologies" @bind="_technologySearch" @bind:event="oninput" />
+            <button type="button" @onclick="ReloadTechnologyDataAsync">Refresh</button>
+        </div>
+
+        <div class="table-wrap">
+            <table class="ops-table">
+                <thead>
+                    <tr>
+                        <th class="select-col">
+                            <input type="checkbox" checked="@AllVisibleTechnologySelected" @onchange="ToggleAllVisibleTechnologies" />
+                        </th>
+                        <th>Last seen</th>
+                        <th>Target</th>
+                        <th>Subdomain</th>
+                        <th>Technology</th>
+                        <th>Version</th>
+                        <th>Source</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in FilteredTechnologyRows)
+                    {
+                        var key = TechnologyKey(row);
+                        <tr class="@RowClass(IsTechnologySelected(key))" @onclick="() => ToggleTechnologySelection(key)">
+                            <td class="select-col">
+                                <input type="checkbox" checked="@IsTechnologySelected(key)" @onchange="args => SetTechnologySelected(key, args)" @onclick:stopPropagation="true" />
+                            </td>
+                            <td>@FormatTime(Text(row, "lastSeenUtc", "LastSeenUtc"))</td>
+                            <td>@DisplayOrDash(Text(row, "targetRootDomain", "TargetRootDomain"))</td>
+                            <td>@DisplayOrDash(Text(row, "subdomain", "Subdomain"))</td>
+                            <td><button type="button" class="link-button" @onclick='() => OpenTechnologyModal(Text(row, "technologyName", "TechnologyName"))' @onclick:stopPropagation="true">@DisplayOrDash(Text(row, "technologyName", "TechnologyName"))</button></td>
+                            <td>@DisplayOrDash(Text(row, "version", "Version"))</td>
+                            <td>@DisplayOrDash(Text(row, "sourceType", "SourceType"))</td>
                         </tr>
                     }
                 </tbody>
@@ -714,9 +715,8 @@
     private IReadOnlyList<JsonElement> WorkerRows => _workers;
     private IReadOnlyList<JsonElement> HttpRows => MaterializeSorted(_queue.Where(HttpMatchesFilter), HttpSortKey, _httpSortDescending);
     private IReadOnlyList<JsonElement> HighValueRows => _highValueRows;
-    private IReadOnlyList<JsonElement> HighValueGridRows => _highValueRows.Where(StatusMatchesHighValue).ToArray();
-    private IReadOnlyList<JsonElement> FilteredHighValueRows => _highValueRows.Where(HighValueMatchesFilter).ToArray();
-    private IReadOnlyList<JsonElement> FilteredTechnologyRows => _technologyRows.Where(TechnologyMatchesFilter).ToArray();
+    private IReadOnlyList<JsonElement> FilteredHighValueRows => _highValueRows.Where(HighValueMatchesFilter).Take(500).ToArray();
+    private IReadOnlyList<JsonElement> FilteredTechnologyRows => _technologyRows.Where(TechnologyMatchesFilter).Take(500).ToArray();
 
     private IReadOnlyList<TopTechnologyRow> TopTechnologyRows => _technologyUsage
         .GroupBy(u => Text(u, "technologyName", "TechnologyName"), StringComparer.OrdinalIgnoreCase)

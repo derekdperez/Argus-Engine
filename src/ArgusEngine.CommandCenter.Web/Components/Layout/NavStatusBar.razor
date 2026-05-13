@@ -122,7 +122,7 @@
         var relative = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/');
         return relative switch
         {
-            "" or "ops" => "Operations",
+            "" or "ops" or "commandcenter" => "Operations",
             "status" => "System Status",
             "configuration" => "Configuration",
             "admin" => "Admin",
@@ -137,7 +137,7 @@
         scope.ToLowerInvariant() switch
         {
             "targets" or "assets" or "http" => "busy",
-            "workers" or "status" or "ops" => "ok",
+            "workers" or "status" or "ops" or "commandcenter" => "ok",
             "findings" => "warn",
             _ => "ok",
         };

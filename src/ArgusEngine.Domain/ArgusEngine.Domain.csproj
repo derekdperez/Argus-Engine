@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Version>2.6.1</Version>
+    <NoWarn>$(NoWarn);CA1805</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ArgusEngine.Contracts\ArgusEngine.Contracts.csproj" />

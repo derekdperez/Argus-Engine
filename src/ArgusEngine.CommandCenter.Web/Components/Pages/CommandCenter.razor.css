@@ -196,6 +196,31 @@ button.sort {
     padding-left: 1.25rem;
 }
 
+.ops-context-menu {
+    position: fixed;
+    z-index: 1500;
+    min-width: 13rem;
+    border: 1px solid #cbd5e1;
+    border-radius: .65rem;
+    background: #fff;
+    box-shadow: 0 10px 30px rgb(15 23 42 / 22%);
+    padding: .25rem;
+}
+
+.ops-context-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: .5rem .65rem;
+    border-radius: .5rem;
+}
+
+.ops-context-menu-item:hover {
+    background: #f1f5f9;
+}
+
 .modal-backdrop {
     position: fixed;
     inset: 0;

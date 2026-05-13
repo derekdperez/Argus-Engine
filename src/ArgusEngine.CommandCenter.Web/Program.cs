@@ -33,7 +33,7 @@ builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveGatewayBa
 builder.Services.AddScoped<WorkerControlApiClient>();
 builder.Services.AddScoped<DiscoveryApiClient>();
 
-// OpsRadzen and HighValueFindings inject this realtime client directly. Register
+// CommandCenter and HighValueFindings inject this realtime client directly. Register
 // it explicitly so prerender/smoke-test can construct pages before the
 // interactive circuit starts.
 builder.Services.AddScoped<DiscoveryRealtimeClient>();

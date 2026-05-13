@@ -682,6 +682,10 @@
     private bool _enumLoading;
     private bool _spiderLoading;
     private bool _loadingAny => _targetsLoading || _assetsLoading || _httpLoading || _workersLoading || _highValueLoading || _technologiesLoading || _enumLoading || _spiderLoading;
+    private bool _contextMenuVisible;
+    private double _contextMenuX;
+    private double _contextMenuY;
+    private IReadOnlyList<ContextMenuItem> _contextMenuItems = [];
 
     private long TotalTargets => Math.Max(OverviewLong("totalTargets", "TotalTargets"), _targets.Count);
     private long ConfirmedAssets => Math.Max(OverviewLong("totalAssetsConfirmed", "TotalAssetsConfirmed"), _targets.Sum(t => Long(t, "confirmedAssetCount", "ConfirmedAssetCount")));
@@ -1007,6 +1011,42 @@
         }
     }
 
+    private async Task StartEnumerationForTargetAsync(string targetId)
+    {
+        if (string.IsNullOrWhiteSpace(targetId))
+        {
+            return;
+        }
+
+        _enumLoading = true;
+        _statusMessage = "";
+        try
+        {
+            using var response = await WorkerApi.Client.PostAsJsonAsync(
+                "/api/ops/subdomain-enum/restart",
+                new RestartToolRequest([targetId], AllTargets: false),
+                _cts.Token).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(_cts.Token).ConfigureAwait(false));
+            var targets = Long(doc.RootElement, "targets", "Targets");
+            var jobs = Long(doc.RootElement, "jobsQueued", "JobsQueued");
+            var workerScale = Text(doc.RootElement, "workerScale", "WorkerScale");
+
+            _statusMessage = $"Subdomain enumeration started for {targets} target(s), {jobs} job(s) queued. {workerScale}";
+            await ReloadLiveAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Enumeration could not be started: {ex.Message}";
+        }
+        finally
+        {
+            _enumLoading = false;
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+    }
+
     private async Task StartSpiderTargetsAsync(bool selectedOnly)
     {
         var ids = selectedOnly
@@ -1091,6 +1131,19 @@
             _spiderLoading = false;
             await InvokeAsync(StateHasChanged).ConfigureAwait(false);
         }
+    }
+
+    private async Task StartSpiderForSubdomainAsync(JsonElement row)
+    {
+        var subdomain = SubdomainName(row);
+        var targetId = Text(row, "targetId", "TargetId");
+        if (string.IsNullOrWhiteSpace(targetId))
+        {
+            _statusMessage = $"Spider could not be started for {DisplayOrDash(subdomain)} because no target ID was found.";
+            return;
+        }
+
+        await StartSpiderForTargetIdsAsync([targetId], $"Spider subdomain {DisplayOrDash(subdomain)}").ConfigureAwait(false);
     }
 
     private async Task RetrySelectedHttpRowsAsync() => await MutateSelectedHttpRowsAsync("/api/http-request-queue/retry").ConfigureAwait(false);
@@ -1381,6 +1434,50 @@
                 set.Remove(key);
             }
         }
+    }
+
+    private void OpenTargetContextMenu(MouseEventArgs args, JsonElement targetRow)
+    {
+        var targetId = Text(targetRow, "id", "Id");
+        SetSelected(_selectedTargetIds, targetId, selected: true);
+        OpenContextMenu(args, BuildTargetContextMenu(targetId));
+    }
+
+    private void OpenSubdomainContextMenu(MouseEventArgs args, JsonElement subdomainRow)
+    {
+        var key = SubdomainKey(subdomainRow);
+        SetSelected(_selectedSubdomainKeys, key, selected: true);
+        OpenContextMenu(args, BuildSubdomainContextMenu(subdomainRow));
+    }
+
+    private IReadOnlyList<ContextMenuItem> BuildTargetContextMenu(string targetId) =>
+    [
+        new("Enumerate Subdomains", () => StartEnumerationForTargetAsync(targetId))
+    ];
+
+    private IReadOnlyList<ContextMenuItem> BuildSubdomainContextMenu(JsonElement subdomainRow) =>
+    [
+        new("Spider Subdomain", () => StartSpiderForSubdomainAsync(subdomainRow))
+    ];
+
+    private void OpenContextMenu(MouseEventArgs args, IReadOnlyList<ContextMenuItem> items)
+    {
+        _contextMenuX = args.ClientX;
+        _contextMenuY = args.ClientY;
+        _contextMenuItems = items;
+        _contextMenuVisible = items.Count > 0;
+    }
+
+    private void CloseContextMenu()
+    {
+        _contextMenuVisible = false;
+        _contextMenuItems = [];
+    }
+
+    private async Task OnContextMenuItemAsync(ContextMenuItem item)
+    {
+        CloseContextMenu();
+        await item.Action().ConfigureAwait(false);
     }
 
     private static bool IsChecked(ChangeEventArgs args) =>
@@ -1675,4 +1772,5 @@
 
     private sealed record TopTechnologyRow(string Name, long TargetCount, long SubdomainCount);
     private sealed record TechnologyVersionRow(string Version, long TargetCount, long SubdomainCount);
+    private sealed record ContextMenuItem(string Label, Func<Task> Action);
 }

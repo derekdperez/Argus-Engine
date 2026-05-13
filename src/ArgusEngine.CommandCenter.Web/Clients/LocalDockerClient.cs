@@ -61,6 +61,7 @@ public sealed class LocalDockerClient : IDisposable
         "db saved on disk",
         "warning memory overcommit must be enabled"
     ];
+    private static readonly string[] ComposeProjectLabelFilter = ["com.docker.compose.project=argus-engine"];
 
     private readonly HttpClient _client;
 
@@ -130,10 +131,7 @@ public sealed class LocalDockerClient : IDisposable
     {
         var filters = JsonSerializer.Serialize(new
         {
-            label = new[]
-            {
-                "com.docker.compose.project=argus-engine"
-            }
+            label = ComposeProjectLabelFilter
         });
 
         var response = await _client.GetAsync(

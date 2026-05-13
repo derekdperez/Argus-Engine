@@ -9,6 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
 builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });
+builder.Services.AddScoped<HttpQueueArtifactBackfillService>();
 
 // WorkerCancellationStore is not present in this split-service source tree.
 // Worker cancellation support is registered by AddArgusInfrastructure and the

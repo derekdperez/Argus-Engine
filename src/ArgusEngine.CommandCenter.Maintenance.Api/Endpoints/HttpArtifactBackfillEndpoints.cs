@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using ArgusEngine.CommandCenter.Maintenance.Api;
 
 namespace ArgusEngine.CommandCenter.Maintenance.Api.Endpoints;
 
@@ -9,26 +8,27 @@ public static class HttpArtifactBackfillEndpoints
 
     public static IEndpointRouteBuilder MapHttpArtifactBackfillEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/api/maintenance/backfill-http-artifacts", async (
-            [FromBody] HttpArtifactBackfillRequest request,
-            HttpQueueArtifactBackfillService service,
-            CancellationToken ct) =>
-        {
-            if (!string.Equals(request.Confirmation, ConfirmationPhrase, StringComparison.Ordinal))
+        app.MapPost(
+            "/api/maintenance/backfill-http-artifacts",
+            async (
+                [FromBody] HttpArtifactBackfillRequest request,
+                [FromServices] HttpQueueArtifactBackfillService service,
+                CancellationToken ct) =>
             {
-                return Results.BadRequest(new
+                if (!string.Equals(request.Confirmation, ConfirmationPhrase, StringComparison.Ordinal))
                 {
-                    error = $"Confirmation phrase must be exactly '{ConfirmationPhrase}'."
-                });
-            }
+                    return Results.BadRequest(new
+                    {
+                        error = $"Confirmation phrase must be exactly '{ConfirmationPhrase}'."
+                    });
+                }
 
-            var result = await service.RunOnceAsync(ct).ConfigureAwait(false);
-            return Results.Ok(result);
-        });
+                var result = await service.RunOnceAsync(ct).ConfigureAwait(false);
+                return Results.Ok(result);
+            });
 
         return app;
     }
 
     public sealed record HttpArtifactBackfillRequest(string Confirmation);
 }
-

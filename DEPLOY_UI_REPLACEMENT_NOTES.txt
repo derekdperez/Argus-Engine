@@ -1,8 +1,0 @@
-The Python deployment UI has been replaced by deploy/ArgusEngine.DeployUi.
-
-This patch leaves deploy/deploy-ui.py as a tiny compatibility shim because the current deploy/deploy.sh still executes that path when running interactively. Once all callers use deploy/argus-deploy.sh or deploy/argus-deploy.ps1 directly, deploy/deploy-ui.py can be deleted safely.
-
-Recommended follow-up when applying this patch manually:
-  git rm deploy/deploy-ui.py
-  # then change deploy/deploy.sh's interactive launcher to:
-  # exec dotnet run --project "$DEPLOY_DIR/ArgusEngine.DeployUi/ArgusEngine.DeployUi.csproj" -- "$@"

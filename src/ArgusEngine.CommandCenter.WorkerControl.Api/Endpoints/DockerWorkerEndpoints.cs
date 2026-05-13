@@ -553,11 +553,13 @@ public static class DockerWorkerEndpoints
             return Results.BadRequest("desiredCount must be between 0 and 50.");
         }
 
+        var previousCount = 0;
+
         try
         {
             var before = await DockerComposeWorkerScaler.GetComposeContainersAsync(configuration, logger, ct)
                 .ConfigureAwait(false);
-            var previousCount = before.Count(c =>
+            previousCount = before.Count(c =>
                 string.Equals(c.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase) &&
                 c.State.Equals("running", StringComparison.OrdinalIgnoreCase));
 
@@ -582,6 +584,17 @@ public static class DockerWorkerEndpoints
                 body.DesiredCount,
                 actualCount,
                 message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Docker scale unavailable for {ServiceName}.", serviceName);
+            var unavailableMessage = $"Docker scaling unavailable for {serviceName}: {ex.Message}";
+            return Results.Ok(new DockerWorkerScaleResult(
+                serviceName,
+                previousCount,
+                body.DesiredCount,
+                previousCount,
+                unavailableMessage));
         }
         catch (Exception ex)
         {

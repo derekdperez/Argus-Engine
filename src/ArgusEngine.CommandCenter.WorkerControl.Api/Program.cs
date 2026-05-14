@@ -16,11 +16,25 @@ builder.Services.AddSingleton<AwsRegionResolver>();
 builder.Services.AddSingleton<EcsServiceNameResolver>();
 builder.Services.AddSingleton<EcsWorkerServiceManager>();
 builder.Services.AddScoped<RootSpiderSeedService>();
+builder.Services.AddOptions<CoverageAutomationOptions>()
+    .Bind(builder.Configuration.GetSection("Argus:CoverageAutomation"))
+    .Validate(o => o.InitialDelaySeconds is >= 0 and <= 3600)
+    .Validate(o => o.IntervalSeconds is >= 5 and <= 3600)
+    .Validate(o => o.EnumerationBatchSize is >= 1 and <= 10_000)
+    .Validate(o => o.SpiderBatchSize is >= 1 and <= 20_000)
+    .Validate(o => o.EnumerationRetryMinutes is >= 1 and <= 10080)
+    .ValidateOnStart();
 
 var autoscalerEnabled = builder.Configuration.GetValue("Argus:Autoscaler:Enabled", defaultValue: true);
 if (autoscalerEnabled)
 {
     builder.Services.AddHostedService<WorkerAutoscalerBackgroundService>();
+}
+
+var coverageAutomationEnabled = builder.Configuration.GetValue("Argus:CoverageAutomation:Enabled", defaultValue: true);
+if (coverageAutomationEnabled)
+{
+    builder.Services.AddHostedService<CoverageAutomationBackgroundService>();
 }
 
 var app = builder.Build();

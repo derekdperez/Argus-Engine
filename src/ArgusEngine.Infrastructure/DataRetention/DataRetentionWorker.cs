@@ -43,7 +43,8 @@ public sealed class DataRetentionWorker(
                 }
             }
 
-            await Task.Delay(TimeSpan.FromHours(1), stoppingToken).ConfigureAwait(false);
+            var delayMinutes = Math.Clamp(opt.RunIntervalMinutes, 1, 24 * 60);
+            await Task.Delay(TimeSpan.FromMinutes(delayMinutes), stoppingToken).ConfigureAwait(false);
         }
     }
 
@@ -122,7 +123,10 @@ public sealed class DataRetentionWorker(
             archiveTableName: "archived_outbox_messages",
             idColumn: "id",
             whereSql: "state = 'Succeeded' AND updated_at_utc < {0}",
-            cutoff: now.AddDays(-Math.Max(1, opt.SucceededOutboxRetentionDays)),
+            cutoff: ResolveRetentionCutoff(
+                now,
+                opt.SucceededOutboxRetentionDays,
+                opt.SucceededOutboxRetentionHours),
             opt,
             metricTableName: "outbox_messages",
             ct).ConfigureAwait(false);
@@ -132,7 +136,10 @@ public sealed class DataRetentionWorker(
             archiveTableName: "archived_outbox_messages",
             idColumn: "id",
             whereSql: "state = 'Failed' AND updated_at_utc < {0}",
-            cutoff: now.AddDays(-Math.Max(1, opt.FailedOutboxRetentionDays)),
+            cutoff: ResolveRetentionCutoff(
+                now,
+                opt.FailedOutboxRetentionDays,
+                opt.FailedOutboxRetentionHours),
             opt,
             metricTableName: "outbox_messages",
             ct).ConfigureAwait(false);
@@ -142,7 +149,10 @@ public sealed class DataRetentionWorker(
             archiveTableName: "archived_outbox_messages",
             idColumn: "id",
             whereSql: "state = 'DeadLetter' AND updated_at_utc < {0}",
-            cutoff: now.AddDays(-Math.Max(1, opt.DeadLetterOutboxRetentionDays)),
+            cutoff: ResolveRetentionCutoff(
+                now,
+                opt.DeadLetterOutboxRetentionDays,
+                opt.DeadLetterOutboxRetentionHours),
             opt,
             metricTableName: "outbox_messages",
             ct).ConfigureAwait(false);
@@ -151,7 +161,10 @@ public sealed class DataRetentionWorker(
             tableName: "inbox_messages",
             idColumn: "id",
             whereSql: "processed_at_utc < {0}",
-            cutoff: now.AddDays(-Math.Max(1, opt.InboxRetentionDays)),
+            cutoff: ResolveRetentionCutoff(
+                now,
+                opt.InboxRetentionDays,
+                opt.InboxRetentionHours),
             opt,
             metricTableName: "inbox_messages",
             ct).ConfigureAwait(false);
@@ -161,7 +174,10 @@ public sealed class DataRetentionWorker(
             archiveTableName: "archived_bus_journal",
             idColumn: "id",
             whereSql: "occurred_at_utc < {0}",
-            cutoff: now.AddDays(-Math.Max(1, opt.BusJournalRetentionDays)),
+            cutoff: ResolveRetentionCutoff(
+                now,
+                opt.BusJournalRetentionDays,
+                opt.BusJournalRetentionHours),
             opt,
             metricTableName: "bus_journal",
             ct).ConfigureAwait(false);
@@ -437,6 +453,19 @@ public sealed class DataRetentionWorker(
             """;
 
         return await db.Database.ExecuteSqlRawAsync(sql, new object[] { cutoff }, ct).ConfigureAwait(false);
+    }
+
+    private static DateTimeOffset ResolveRetentionCutoff(
+        DateTimeOffset now,
+        int retentionDays,
+        int retentionHours)
+    {
+        if (retentionHours > 0)
+        {
+            return now.AddHours(-Math.Max(1, retentionHours));
+        }
+
+        return now.AddDays(-Math.Max(1, retentionDays));
     }
 
     private async Task<int> DeleteBatchAsync(

@@ -173,9 +173,15 @@ public static class DependencyInjection
         services.AddSingleton<BusJournalConsumeObserver>();
         services.AddOptions<DataRetentionOptions>()
             .Bind(configuration.GetArgusSection("DataRetention"))
+            .Validate(o => o.RunIntervalMinutes is >= 1 and <= 1440)
             .Validate(o => o.BatchSize is >= 100 and <= 10_000)
             .Validate(o => o.DelayBetweenBatchesMs is >= 0 and <= 10_000)
             .Validate(o => o.MaxBatchesPerRun is >= 1 and <= 10_000)
+            .Validate(o => o.SucceededOutboxRetentionHours is >= 0 and <= 8760)
+            .Validate(o => o.FailedOutboxRetentionHours is >= 0 and <= 8760)
+            .Validate(o => o.DeadLetterOutboxRetentionHours is >= 0 and <= 8760)
+            .Validate(o => o.InboxRetentionHours is >= 0 and <= 8760)
+            .Validate(o => o.BusJournalRetentionHours is >= 0 and <= 8760)
             .ValidateOnStart();
         services.AddSingleton<DataRetentionRunState>();
         services.AddSingleton<DataRetentionWorker>();

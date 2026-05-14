@@ -1,0 +1,174 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "ArgusEngine.CommandCenter.Gateway/2.6.3": {
+        "dependencies": {
+          "ArgusEngine.CommandCenter.Contracts": "2.6.2",
+          "ArgusEngine.Contracts": "2.6.2",
+          "Yarp.ReverseProxy": "2.3.0"
+        },
+        "runtime": {
+          "ArgusEngine.CommandCenter.Gateway.dll": {}
+        }
+      },
+      "CliWrap/3.9.0": {
+        "runtime": {
+          "lib/net9.0/CliWrap.dll": {
+            "assemblyVersion": "3.9.0.0",
+            "fileVersion": "3.9.0.0"
+          }
+        }
+      },
+      "MassTransit/8.5.4": {
+        "dependencies": {
+          "MassTransit.Abstractions": "8.5.4"
+        },
+        "runtime": {
+          "lib/net9.0/MassTransit.dll": {
+            "assemblyVersion": "8.5.4.0",
+            "fileVersion": "8.5.4.0"
+          }
+        }
+      },
+      "MassTransit.Abstractions/8.5.4": {
+        "runtime": {
+          "lib/net9.0/MassTransit.Abstractions.dll": {
+            "assemblyVersion": "8.5.4.0",
+            "fileVersion": "8.5.4.0"
+          }
+        }
+      },
+      "System.IO.Hashing/8.0.0": {
+        "runtime": {
+          "lib/net8.0/System.IO.Hashing.dll": {
+            "assemblyVersion": "8.0.0.0",
+            "fileVersion": "8.0.23.53103"
+          }
+        }
+      },
+      "Yarp.ReverseProxy/2.3.0": {
+        "dependencies": {
+          "System.IO.Hashing": "8.0.0"
+        },
+        "runtime": {
+          "lib/net8.0/Yarp.ReverseProxy.dll": {
+            "assemblyVersion": "2.3.0.0",
+            "fileVersion": "2.300.25.12702"
+          }
+        }
+      },
+      "ArgusEngine.Application/2.6.2": {
+        "dependencies": {
+          "ArgusEngine.Contracts": "2.6.2",
+          "ArgusEngine.Domain": "2.6.2",
+          "CliWrap": "3.9.0",
+          "MassTransit": "8.5.4",
+          "MassTransit.Abstractions": "8.5.4"
+        },
+        "runtime": {
+          "ArgusEngine.Application.dll": {
+            "assemblyVersion": "2.6.3.0",
+            "fileVersion": "2.6.3.0"
+          }
+        }
+      },
+      "ArgusEngine.CommandCenter.Contracts/2.6.2": {
+        "dependencies": {
+          "ArgusEngine.Application": "2.6.2"
+        },
+        "runtime": {
+          "ArgusEngine.CommandCenter.Contracts.dll": {
+            "assemblyVersion": "2.6.3.0",
+            "fileVersion": "2.6.3.0"
+          }
+        }
+      },
+      "ArgusEngine.Contracts/2.6.2": {
+        "runtime": {
+          "ArgusEngine.Contracts.dll": {
+            "assemblyVersion": "2.6.3.0",
+            "fileVersion": "2.6.3.0"
+          }
+        }
+      },
+      "ArgusEngine.Domain/2.6.2": {
+        "dependencies": {
+          "ArgusEngine.Contracts": "2.6.2"
+        },
+        "runtime": {
+          "ArgusEngine.Domain.dll": {
+            "assemblyVersion": "2.6.3.0",
+            "fileVersion": "2.6.3.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "ArgusEngine.CommandCenter.Gateway/2.6.3": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "CliWrap/3.9.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-3IpuZUbTsWhgD3jhd5mKK7VVyVu/LhfsHXUlYrAOV8mZkJCTasum8Klgv7wyMIl5tttwUralTuTQzCNDLicMRw==",
+      "path": "cliwrap/3.9.0",
+      "hashPath": "cliwrap.3.9.0.nupkg.sha512"
+    },
+    "MassTransit/8.5.4": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-uNmFkIICpCZ6AWSJfWfQJc4jjVhQygdPY4/yFEiOZkIVbwEbpFrJTjThzSSinbZFCtyYQMBN6RqHghVMwQy7pA==",
+      "path": "masstransit/8.5.4",
+      "hashPath": "masstransit.8.5.4.nupkg.sha512"
+    },
+    "MassTransit.Abstractions/8.5.4": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-6rIDZNr+mldYiIyiFXY4l4p3BsUDVQDtHpRwoZOQY7/T6TboAqCV4fbLM4tDwZqV8OOWbJHs1a4wQyyAOYwHGA==",
+      "path": "masstransit.abstractions/8.5.4",
+      "hashPath": "masstransit.abstractions.8.5.4.nupkg.sha512"
+    },
+    "System.IO.Hashing/8.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-ne1843evDugl0md7Fjzy6QjJrzsjh46ZKbhf8GwBXb5f/gw97J4bxMs0NQKifDuThh/f0bZ0e62NPl1jzTuRqA==",
+      "path": "system.io.hashing/8.0.0",
+      "hashPath": "system.io.hashing.8.0.0.nupkg.sha512"
+    },
+    "Yarp.ReverseProxy/2.3.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-gxtkN3a+9biu9V9Zd5NaTO6VZWXAnS2mhQ0R/VXmSPoTuiQNZsakKikrKpDtKxrL5nUYzbRsHtl40WNq+ZBKKg==",
+      "path": "yarp.reverseproxy/2.3.0",
+      "hashPath": "yarp.reverseproxy.2.3.0.nupkg.sha512"
+    },
+    "ArgusEngine.Application/2.6.2": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "ArgusEngine.CommandCenter.Contracts/2.6.2": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "ArgusEngine.Contracts/2.6.2": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "ArgusEngine.Domain/2.6.2": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

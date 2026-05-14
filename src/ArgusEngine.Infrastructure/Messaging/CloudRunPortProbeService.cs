@@ -40,12 +40,6 @@ public sealed partial class CloudRunPortProbeService(
         Message = "Cloud Run probe listener failed on port {Port}.")]
     private partial void LogProbeFailed(int port, Exception ex);
 
-    [LoggerMessage(
-        EventId = 4,
-        Level = LogLevel.Debug,
-        Message = "Cloud Run probe listener accepted request from {RemoteEndPoint}.")]
-    private partial void LogProbeRequest(string remoteEndPoint);
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!ShouldStart())
@@ -86,25 +80,20 @@ public sealed partial class CloudRunPortProbeService(
         }
     }
 
-    private async Task HandleClientAsync(TcpClient client, CancellationToken ct)
+    private static async Task HandleClientAsync(TcpClient client, CancellationToken ct)
     {
-        using var _ = client;
+        using var tcpClient = client;
 
         try
         {
-            if (client.Client.RemoteEndPoint is { } remote)
-            {
-                LogProbeRequest(remote.ToString());
-            }
-
-            using var stream = client.GetStream();
+            using var stream = tcpClient.GetStream();
 
             // Drain up to one small request buffer (best effort) so TCP clients
             // speaking HTTP don't see a hard close before request bytes are sent.
             var readBuffer = new byte[1024];
             if (stream.DataAvailable)
             {
-                _ = await stream.ReadAsync(readBuffer.AsMemory(0, readBuffer.Length), ct).ConfigureAwait(false);
+                await stream.ReadAsync(readBuffer.AsMemory(0, readBuffer.Length), ct).ConfigureAwait(false);
             }
 
             await stream.WriteAsync(HttpOkResponse.AsMemory(0, HttpOkResponse.Length), ct).ConfigureAwait(false);

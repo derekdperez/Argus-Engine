@@ -288,7 +288,7 @@ argus_cloud_prompt_gcp_env() {
   argus_cloud_prompt_env_var "$env_file" GCP_IMAGE_PREFIX "Container image prefix/path" "${GCP_IMAGE_PREFIX:-argus-engine}" 1
   argus_cloud_prompt_env_var "$env_file" IMAGE_TAG "Container image tag" "${IMAGE_TAG:-latest}" 1
   argus_cloud_prompt_env_var "$env_file" SERVICE_ENV_FILE "Runtime service environment file" "${SERVICE_ENV_FILE:-deploy/gcp/service-env}" 1
-  argus_cloud_prompt_env_var "$env_file" GCP_WORKER_INSTANCES "Default Cloud Run Worker Pool instances" "${GCP_WORKER_INSTANCES:-1}" 1
+  argus_cloud_prompt_env_var "$env_file" GCP_WORKER_INSTANCES "Default Cloud Run Worker Pool instances" "${GCP_WORKER_INSTANCES:-2}" 1
 }
 
 argus_cloud_gcp_ensure_login_and_project() {
@@ -474,9 +474,12 @@ argus_cloud_service_dockerfile() {
 }
 
 argus_cloud_service_default_instances() {
-  # Fresh cloud deployments should start one instance of each worker type.
-  # Scale up explicitly via provider autoscaling or per-service overrides.
-  echo "1"
+  # Operation Google Deploy starts with heavier front-door discovery capacity:
+  # spider, enum, and HTTP requester get 8 instances; all other worker pools get 2.
+  case "$1" in
+    worker-spider|worker-http-requester|worker-enum) echo "8" ;;
+    *) echo "2" ;;
+  esac
 }
 
 argus_cloud_service_default_cpu_azure() {

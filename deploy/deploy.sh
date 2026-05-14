@@ -23,6 +23,7 @@
 #   argus_SKIP_INSTALL=1   Do not install Docker / curl / git; fail if docker or compose is missing.
 #   argus_DEPLOY_FRESH=1   Same as passing -fresh on the command line.
 #   argus_ECS_REPLACE_WORKERS=1  In --ecs-workers mode, stop existing ECS worker tasks before recreating them.
+#   argus_GCP_WORKERS=1  Run the core stack locally and deploy workers to Google Cloud Run Worker Pools.
 #   argus_SKIP_BLAZOR_ASSET_VERIFY=1  Skip post-deploy verification of /_framework/blazor.web.js.
 #   argus_BUILD_TIMEOUT_MIN=0  Max minutes for a compose build invocation; 0 disables timeout.
 #   argus_BUILD_SEQUENTIAL=0   Build selected services one-by-one for clearer progress/isolation.
@@ -31,6 +32,7 @@
 #   AMASS_VERSION=...      Pinned vendored amass release version.
 #   COMPOSE_BAKE=true|false    Multi-service compose builds may use "bake"; scripts default to false for stability.
 #   argus_ECS_WORKERS=1     Deploy core stack locally on EC2 and deploy workers as ECS services.
+#   argus_GCP_WORKERS=1     Deploy core stack locally with workers on Google Cloud.
 #
 # If you see: unknown shorthand flag: 'd' in -d
 #   you ran "docker compose ..." without the Compose plugin — "compose" was ignored and
@@ -46,7 +48,7 @@ cd "$ROOT"
 
 if [[ "${ARGUS_NO_UI:-0}" != "1" ]]; then
   cmd="${1:-up}"
-  if [[ "$cmd" == "up" || "$cmd" == "-fresh" || "$cmd" == "--fresh" || "$cmd" == "--ecs-workers" ]]; then
+  if [[ "$cmd" == "up" || "$cmd" == "-fresh" || "$cmd" == "--fresh" || "$cmd" == "--ecs-workers" || "$cmd" == "--gcp-workers" || "$cmd" == "--google-workers" ]]; then
     if command -v python3 >/dev/null 2>&1 && [ -t 1 ]; then
       exec python3 "$DEPLOY_DIR/deploy-ui.py" "$@"
     fi
@@ -65,6 +67,7 @@ fi
 argus_DEPLOY_FRESH="${argus_DEPLOY_FRESH:-0}"
 argus_DEPLOY_MODE="${argus_DEPLOY_MODE:-hot}"
 argus_ECS_WORKERS="${argus_ECS_WORKERS:-0}"
+argus_GCP_WORKERS="${argus_GCP_WORKERS:-0}"
 argus_ECS_REPLACE_WORKERS="${argus_ECS_REPLACE_WORKERS:-1}"
 CMD="up"
 FOLLOW_LOGS=0
@@ -78,6 +81,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --ecs-workers)
       argus_ECS_WORKERS=1
+      argus_DEPLOY_MODE=image
+      shift
+      ;;
+    --gcp-workers | --google-workers)
+      argus_GCP_WORKERS=1
       argus_DEPLOY_MODE=image
       shift
       ;;
@@ -173,6 +181,12 @@ Service arguments are used by logs, ps/status, and restart.
              resources, push worker images to ECR, and create/update ECS worker
              services.
 
+  --gcp-workers
+             Operation Google Deploy: run the core self-hosted stack locally via
+             Docker Compose, scale local workers to zero, build/push worker
+             images to Google Artifact Registry, and deploy Google Cloud Run
+             Worker Pools.
+
 Environment:
   argus_DEPLOY_MODE=image|hot
   argus_GIT_PULL=1
@@ -183,6 +197,7 @@ Environment:
   argus_FORCE_RECREATE=1
   argus_USER_SKIP_BUILD=1
   argus_ECS_WORKERS=1
+  argus_GCP_WORKERS=1
   argus_ECS_REPLACE_WORKERS=1
   argus_SKIP_BLAZOR_ASSET_VERIFY=1
   argus_BUILD_TIMEOUT_MIN=0
@@ -200,12 +215,16 @@ done
 export argus_DEPLOY_FRESH
 export argus_DEPLOY_MODE
 export argus_ECS_WORKERS
+export argus_GCP_WORKERS
 export argus_ECS_REPLACE_WORKERS
 export argus_USER_SKIP_BUILD="${argus_USER_SKIP_BUILD:-0}"
 export argus_NO_CACHE="${argus_NO_CACHE:-0}"
 export argus_PULL_IMAGES="${argus_PULL_IMAGES:-0}"
 export argus_FORCE_RECREATE="${argus_FORCE_RECREATE:-0}"
 if [[ "$argus_ECS_WORKERS" == "1" ]]; then
+  export argus_GIT_PULL="${argus_GIT_PULL:-1}"
+fi
+if [[ "$argus_GCP_WORKERS" == "1" ]]; then
   export argus_GIT_PULL="${argus_GIT_PULL:-1}"
 fi
 
@@ -403,6 +422,15 @@ if [[ "$argus_ECS_WORKERS" == "1" ]]; then
   argus_ensure_python3
   argus_ensure_aws_cli
 fi
+if [[ "$argus_GCP_WORKERS" == "1" ]]; then
+  argus_ensure_curl
+  argus_ensure_git || true
+  argus_ensure_python3
+  if ! command -v gcloud >/dev/null 2>&1; then
+    echo "ERROR: gcloud CLI is required for --gcp-workers. Install it or run deploy/cloud-tools/install-cloud-clis.sh." >&2
+    exit 127
+  fi
+fi
 
 argus_maybe_git_pull "$ROOT"
 echo "Computing build stamp and component versions…"
@@ -428,10 +456,42 @@ fi
 
 if [[ "$argus_ECS_WORKERS" == "1" ]]; then
   echo "Applying core stack from: $ROOT (local workers scaled to zero; ECS workers enabled)"
+elif [[ "$argus_GCP_WORKERS" == "1" ]]; then
+  echo "Applying core stack from: $ROOT (local workers scaled to zero; Google Cloud workers enabled)"
 else
   echo "Applying stack from: $ROOT"
 fi
+
+if [[ "$argus_ECS_WORKERS" == "1" || "$argus_GCP_WORKERS" == "1" ]]; then
+  export ARGUS_WORKER_SPIDER_REPLICAS=0
+  export ARGUS_WORKER_HTTP_REQUESTER_REPLICAS=0
+  export ARGUS_WORKER_ENUM_REPLICAS=0
+  export ARGUS_WORKER_PORTSCAN_REPLICAS=0
+  export ARGUS_WORKER_HIGHVALUE_REPLICAS=0
+  export ARGUS_WORKER_TECHID_REPLICAS=0
+fi
+
 argus_compose_full_redeploy
+
+if [[ "$argus_GCP_WORKERS" == "1" ]]; then
+  echo ""
+  echo "Removing any local worker containers for Operation Google Deploy..."
+  compose up -d --no-deps --scale gatekeeper=0 --scale command-center-spider-dispatcher=0 \
+    --scale worker-spider=0 --scale worker-http-requester=0 --scale worker-enum=0 \
+    --scale worker-portscan=0 --scale worker-highvalue=0 --scale worker-techid=0 \
+    gatekeeper command-center-spider-dispatcher worker-spider worker-http-requester \
+    worker-enum worker-portscan worker-highvalue worker-techid || true
+
+  echo ""
+  echo "Ensuring Google Artifact Registry exists..."
+  bash "$DEPLOY_DIR/gcp/create-artifact-registry.sh"
+
+  echo "Building and pushing Google worker images..."
+  bash "$DEPLOY_DIR/gcp/build-push-artifact-registry.sh"
+
+  echo "Deploying Google Cloud Run Worker Pools..."
+  bash "$DEPLOY_DIR/gcp/deploy-cloudrun-worker-pools.sh"
+fi
 
 # argus_verify_command_center_blazor_static_assets
 
@@ -483,6 +543,12 @@ if [[ "$argus_ECS_WORKERS" == "1" ]]; then
   else
     echo "No ECS worker services need updating."
   fi
+fi
+if [[ "$argus_GCP_WORKERS" == "1" ]]; then
+  echo "  ./deploy/deploy.sh --gcp-workers          # Operation Google Deploy"
+  echo "  python3 deploy/deploy-ui.py gcp status    # show Google worker pool status"
+  echo "  python3 deploy/deploy-ui.py gcp scale worker-spider=8"
+  echo "  CONFIRM_DESTROY_GCP_ARGUS_WORKERS=yes bash deploy/gcp/destroy-cloudrun-worker-pools.sh"
 fi
 
 echo ""

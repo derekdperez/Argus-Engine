@@ -178,6 +178,7 @@ class Paths:
     smoke_test: Path
     auto_all_in_one: Path
     aws_dir: Path
+    gcp_dir: Path
 
     @staticmethod
     def resolve(explicit: Optional[Path] = None) -> "Paths":
@@ -198,6 +199,7 @@ class Paths:
                     smoke_test=deploy_dir / "smoke-test.sh",
                     auto_all_in_one=deploy_dir / "auto-all-in-one.sh",
                     aws_dir=deploy_dir / "aws",
+                    gcp_dir=deploy_dir / "gcp",
                 )
 
         raise SystemExit(
@@ -395,6 +397,7 @@ def load_environment(paths: Paths) -> dict[str, str]:
         paths.deploy_dir / ".env.local",
         paths.aws_dir / ".env",
         paths.aws_dir / ".env.generated",
+        paths.gcp_dir / ".env",
     ]:
         for key, value in parse_env_file(path).items():
             merged.setdefault(key, value)
@@ -467,6 +470,8 @@ class ArgusDeployConsole:
             return self.deploy_sh(["--fresh", *rest])
         if command in {"--ecs-workers"}:
             return self.deploy_sh(["--ecs-workers", *rest])
+        if command in {"--gcp-workers", "--google-workers"}:
+            return self.deploy_sh(["--gcp-workers", *rest])
         if command in {"--hot", "-hot"}:
             return self.deploy_sh(["--hot", *rest])
         if command in {"--image", "-image"}:
@@ -489,6 +494,8 @@ class ArgusDeployConsole:
             return self.clean()
         if command in {"ecs", "aws", "cloud"}:
             return self.ecs_from_args(rest)
+        if command in {"gcp", "google"}:
+            return self.gcp_from_args(rest)
         if command in {"services", "components"}:
             self.show_services()
             return 0
@@ -518,10 +525,11 @@ class ArgusDeployConsole:
                 [
                     "Automatic all-in-one local deploy — preflight, build, bootstrap, verify",
                     "Deploy or update the local Docker Compose stack",
-                    "Scale local or ECS workers",
+                    "Scale local, ECS, or Google workers",
                     "Monitor health, status, logs, queues, and worker counts",
                     "Operate services: restart, stop, smoke test, clean",
                     "AWS ECS / ECR deployment and monitoring",
+                    "Operation Google Deploy",
                     "Show changed/affected services",
                     "Open a command shell from the repo root",
                     "Exit",
@@ -540,9 +548,11 @@ class ArgusDeployConsole:
             elif choice == 5:
                 code = self.ecs_menu()
             elif choice == 6:
+                code = self.gcp_menu()
+            elif choice == 7:
                 self.show_changed_services()
                 code = 0
-            elif choice == 7:
+            elif choice == 8:
                 code = self.custom_shell()
             else:
                 return 0
@@ -586,6 +596,7 @@ class ArgusDeployConsole:
                 "Full fresh rebuild — no-cache image rebuild and recreate",
                 "Deploy/update selected components",
                 "Deploy local core + ECS workers from this EC2 host",
+                "Operation Google Deploy",
                 "Back",
             ],
         )
@@ -601,6 +612,8 @@ class ArgusDeployConsole:
             return self.selected_component_deploy()
         if choice == 5:
             return self.deploy_sh(["--ecs-workers"])
+        if choice == 6:
+            return self.deploy_sh(["--gcp-workers"])
         return 0
 
     def selected_component_deploy(self) -> int:
@@ -641,6 +654,8 @@ class ArgusDeployConsole:
                 "Run queue-driven ECS autoscaler once",
                 "Manually set ECS desired worker counts",
                 "Show ECS worker/service status",
+                "Manually set Google worker pool instance counts",
+                "Show Google worker pool status",
                 "Back",
             ],
         )
@@ -662,6 +677,11 @@ class ArgusDeployConsole:
             return self.apply_ecs_worker_scale(counts)
         if choice == 5:
             return self.ecs_status()
+        if choice == 6:
+            counts = self.prompt_worker_counts(include_http_requester=True)
+            return self.apply_gcp_worker_scale(counts)
+        if choice == 7:
+            return self.gcp_status()
         return 0
 
     def monitor_menu(self) -> int:
@@ -677,6 +697,7 @@ class ArgusDeployConsole:
                 "Docker stats",
                 "Queue and worker heartbeat diagnostics",
                 "ECS / Command Center status",
+                "Google worker pool status",
                 "Back",
             ],
         )
@@ -704,6 +725,8 @@ class ArgusDeployConsole:
             return self.queue_diagnostics()
         if choice == 8:
             return self.ecs_status()
+        if choice == 9:
+            return self.gcp_status()
         return 0
 
     def operations_menu(self) -> int:
@@ -780,6 +803,51 @@ class ArgusDeployConsole:
             return self.ecs_status()
         return 0
 
+    def gcp_menu(self) -> int:
+        choice = self.ui.choose(
+            "Operation Google Deploy",
+            [
+                "Deploy local core + Google Cloud workers",
+                "Create Artifact Registry repository",
+                "Build and push Google worker images",
+                "Deploy/update Google worker pools",
+                "Build, push, and deploy selected Google worker pools",
+                "Manually set Google worker pool instance counts",
+                "Show Google worker pool status",
+                "Destroy Google worker pools",
+                "Back",
+            ],
+        )
+        if choice == 0:
+            return self.deploy_sh(["--gcp-workers"])
+        if choice == 1:
+            return self.run_gcp_script("create-artifact-registry.sh")
+        if choice in {2, 3, 4}:
+            services = self.select_services(include_infra=False, only_cloudish=True, default="workers")
+            if not services:
+                self.ui.warn("No services selected.")
+                return 0
+            if choice == 2:
+                return self.run_gcp_script("build-push-artifact-registry.sh", services)
+            if choice == 3:
+                return self.run_gcp_script("deploy-cloudrun-worker-pools.sh", services)
+            build = self.run_gcp_script("build-push-artifact-registry.sh", services)
+            if build != 0:
+                return build
+            return self.run_gcp_script("deploy-cloudrun-worker-pools.sh", services)
+        if choice == 5:
+            counts = self.prompt_worker_counts(include_http_requester=True)
+            return self.apply_gcp_worker_scale(counts)
+        if choice == 6:
+            return self.gcp_status()
+        if choice == 7:
+            if self.ui.confirm("Destroy Google Cloud worker pools?", default=False, assume_yes=self.options.assume_yes):
+                return self.runner.bash_script(
+                    self.paths.gcp_dir / "destroy-cloudrun-worker-pools.sh",
+                    env={"CONFIRM_DESTROY_GCP_ARGUS_WORKERS": "yes"},
+                )
+        return 0
+
     # ---------- direct commands ----------
 
     def auto_all_in_one(self, args: Sequence[str]) -> int:
@@ -788,7 +856,9 @@ class ArgusDeployConsole:
     def deploy_from_args(self, args: Sequence[str]) -> int:
         args = list(args)
         scale_counts, remaining = self.extract_scale_args(args)
-        if "--ecs-workers" in remaining:
+        if "--gcp-workers" in remaining or "--google-workers" in remaining:
+            code = self.deploy_sh(["--gcp-workers", *[a for a in remaining if a not in {"--gcp-workers", "--google-workers"}]])
+        elif "--ecs-workers" in remaining:
             code = self.deploy_sh(["--ecs-workers", *[a for a in remaining if a != "--ecs-workers"]])
         elif "--fresh" in remaining or "-fresh" in remaining:
             code = self.deploy_sh(["--fresh", *[a for a in remaining if a not in {"--fresh", "-fresh"}]])
@@ -818,6 +888,9 @@ class ArgusDeployConsole:
         if target in {"ecs", "aws"}:
             counts = self.parse_count_pairs(args[1:])
             return self.apply_ecs_worker_scale(counts)
+        if target in {"gcp", "google"}:
+            counts = self.parse_count_pairs(args[1:])
+            return self.apply_gcp_worker_scale(counts)
         if target in {"autoscale", "auto"}:
             return self.run_aws_script("autoscale-ecs-workers.sh", args[1:])
         counts = self.parse_count_pairs(args)
@@ -840,6 +913,8 @@ class ArgusDeployConsole:
             return self.queue_diagnostics()
         if topic in {"ecs", "aws"}:
             return self.ecs_status()
+        if topic in {"gcp", "google"}:
+            return self.gcp_status()
         return self.monitor_menu()
 
     def logs_from_args(self, args: Sequence[str]) -> int:
@@ -878,6 +953,37 @@ class ArgusDeployConsole:
         if action == "status":
             return self.ecs_status()
         self.ui.error(f"Unknown ECS action: {action}")
+        return 2
+
+    def gcp_from_args(self, args: Sequence[str]) -> int:
+        if not args:
+            return self.gcp_menu()
+        action = args[0].lower()
+        rest = list(args[1:])
+        if action in {"hybrid", "workers", "deploy-all", "operation"}:
+            return self.deploy_sh(["--gcp-workers", *rest])
+        if action in {"repo", "repos", "registry"}:
+            return self.run_gcp_script("create-artifact-registry.sh", rest)
+        if action in {"build", "push"}:
+            return self.run_gcp_script("build-push-artifact-registry.sh", rest)
+        if action == "deploy":
+            return self.run_gcp_script("deploy-cloudrun-worker-pools.sh", rest)
+        if action == "release":
+            build = self.run_gcp_script("build-push-artifact-registry.sh", rest)
+            if build != 0:
+                return build
+            return self.run_gcp_script("deploy-cloudrun-worker-pools.sh", rest)
+        if action == "scale":
+            return self.apply_gcp_worker_scale(self.parse_count_pairs(rest))
+        if action == "status":
+            return self.gcp_status(rest)
+        if action in {"destroy", "delete"}:
+            return self.runner.bash_script(
+                self.paths.gcp_dir / "destroy-cloudrun-worker-pools.sh",
+                rest,
+                env={"CONFIRM_DESTROY_GCP_ARGUS_WORKERS": "yes"} if self.options.assume_yes else None,
+            )
+        self.ui.error(f"Unknown Google action: {action}")
         return 2
 
     # ---------- action helpers ----------

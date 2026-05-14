@@ -1,0 +1,120 @@
+services:
+  command-center-gateway:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+      CommandCenter__Services__Web: http://command-center-web:8080/
+      CommandCenter__Services__Discovery: http://command-center-discovery-api:8080/
+      CommandCenter__Services__Operations: http://command-center-operations-api:8080/
+      CommandCenter__Services__WorkerControl: http://command-center-worker-control-api:8080/
+      CommandCenter__Services__Maintenance: http://command-center-maintenance-api:8080/
+      CommandCenter__Services__Updates: http://command-center-updates-api:8080/
+      CommandCenter__Services__Realtime: http://command-center-realtime:8080/
+
+  command-center-web:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+      CommandCenter__GatewayBaseUrl: http://command-center-gateway:8080/
+
+  command-center-operations-api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+
+  command-center-discovery-api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+
+  command-center-worker-control-api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+      Argus__Autoscaler__Enabled: "false"
+
+  command-center-maintenance-api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+
+  command-center-updates-api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+      Argus__ComponentUpdater__Enabled: "false"
+
+  command-center-realtime:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+
+  command-center-bootstrapper:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+
+  command-center-spider-dispatcher:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+      Argus__SkipStartupDatabase: "true"
+
+  gatekeeper:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+      Argus__SkipStartupDatabase: "true"
+
+  worker-spider:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+      Argus__SkipStartupDatabase: "true"
+
+  worker-http-requester:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+      Argus__SkipStartupDatabase: "true"
+
+  worker-enum:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+      Argus__SkipStartupDatabase: "true"
+
+  worker-portscan:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+      Argus__SkipStartupDatabase: "true"
+
+  worker-highvalue:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+      Argus__SkipStartupDatabase: "true"
+
+  worker-techid:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Argus__Diagnostics__ApiKey: ${ARGUS_DIAGNOSTICS_API_KEY:-ci-smoke-test-key}
+      Argus__Diagnostics__Enabled: "true"
+      Argus__SkipStartupDatabase: "true"

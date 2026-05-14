@@ -4,8 +4,8 @@ using System.Net.WebSockets;
 var builder = WebApplication.CreateBuilder(args);
 
 var serviceRoutes = GatewayServiceRoutes.FromConfiguration(builder.Configuration);
-
 builder.Services.AddSingleton(serviceRoutes);
+
 builder.Services.AddHttpClient(GatewayServiceRoutes.WebClientName, client => ConfigureClient(client, serviceRoutes.Web));
 builder.Services.AddHttpClient(GatewayServiceRoutes.DiscoveryClientName, client => ConfigureClient(client, serviceRoutes.Discovery));
 builder.Services.AddHttpClient(GatewayServiceRoutes.OperationsClientName, client => ConfigureClient(client, serviceRoutes.Operations));
@@ -18,30 +18,27 @@ var app = builder.Build();
 
 app.UseWebSockets();
 
-app.MapGet("/health/live", () => Results.Ok(new { status = "live" })).AllowAnonymous();
-
-app.MapGet(
-    "/health/ready",
-    (GatewayServiceRoutes routes) =>
-        Results.Ok(
-            new
-            {
-                status = "ready",
-                mode = "split-command-center",
-                legacyFallback = false,
-                services = routes.AsDiagnosticObject(),
-            }))
+app.MapGet("/health/live", () => Results.Ok(new { status = "live" }))
     .AllowAnonymous();
 
 app.MapGet(
-    "/api/gateway/routes",
-    (GatewayServiceRoutes routes) =>
-        Results.Ok(
+        "/health/ready",
+        async (
+            IHttpClientFactory httpClientFactory,
+            GatewayServiceRoutes routes,
+            CancellationToken cancellationToken) =>
+            await CheckGatewayReadinessAsync(httpClientFactory, routes, cancellationToken).ConfigureAwait(false))
+    .AllowAnonymous();
+
+app.MapGet(
+        "/api/gateway/routes",
+        (GatewayServiceRoutes routes) => Results.Ok(
             new
             {
                 gateway = "command-center-gateway",
                 legacyFallback = false,
                 routes = GatewayRouteDiagnostics.Routes,
+                services = routes.AsDiagnosticObject()
             }))
     .AllowAnonymous();
 
@@ -53,6 +50,64 @@ static void ConfigureClient(HttpClient client, Uri baseAddress)
 {
     client.BaseAddress = baseAddress;
     client.Timeout = TimeSpan.FromMinutes(5);
+}
+
+static async Task<IResult> CheckGatewayReadinessAsync(
+    IHttpClientFactory httpClientFactory,
+    GatewayServiceRoutes routes,
+    CancellationToken cancellationToken)
+{
+    var targets = routes.HealthCheckTargets;
+    var checks = await Task.WhenAll(
+            targets.Select(target => CheckDownstreamAsync(httpClientFactory, target, cancellationToken)))
+        .ConfigureAwait(false);
+
+    var isReady = checks.All(check => check.Healthy);
+    var payload = new
+    {
+        status = isReady ? "ready" : "unhealthy",
+        mode = "split-command-center",
+        legacyFallback = false,
+        services = routes.AsDiagnosticObject(),
+        dependencies = checks
+    };
+
+    return isReady
+        ? Results.Ok(payload)
+        : Results.Json(payload, statusCode: StatusCodes.Status503ServiceUnavailable);
+}
+
+static async Task<DownstreamHealthResult> CheckDownstreamAsync(
+    IHttpClientFactory httpClientFactory,
+    DownstreamHealthTarget target,
+    CancellationToken cancellationToken)
+{
+    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+
+    try
+    {
+        using var response = await httpClientFactory
+            .CreateClient(target.ClientName)
+            .GetAsync("/health/live", timeoutCts.Token)
+            .ConfigureAwait(false);
+
+        return new DownstreamHealthResult(
+            target.ClientName,
+            target.BaseAddress,
+            response.IsSuccessStatusCode,
+            (int)response.StatusCode,
+            response.ReasonPhrase ?? string.Empty);
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+    {
+        return new DownstreamHealthResult(
+            target.ClientName,
+            target.BaseAddress,
+            false,
+            null,
+            ex.Message);
+    }
 }
 
 static async Task<IResult> ForwardToSplitCommandCenterAsync(
@@ -70,17 +125,20 @@ static async Task<IResult> ForwardToSplitCommandCenterAsync(
             {
                 error = "No CommandCenter split-service route owns this path.",
                 path = context.Request.Path.Value,
-                legacyFallback = false,
+                legacyFallback = false
             });
     }
 
     if (context.WebSockets.IsWebSocketRequest)
     {
-        await ForwardWebSocketAsync(context, routes.GetBaseAddress(selected), cancellationToken).ConfigureAwait(false);
+        await ForwardWebSocketAsync(context, routes.GetBaseAddress(selected), cancellationToken)
+            .ConfigureAwait(false);
+
         return Results.Empty;
     }
 
     using var request = CreateForwardRequest(context);
+
     HttpResponseMessage response;
     try
     {
@@ -101,7 +159,7 @@ static async Task<IResult> ForwardToSplitCommandCenterAsync(
                 error = "Command Center gateway could not reach the selected downstream service.",
                 service = selected,
                 path = context.Request.Path.Value,
-                detail = ex.Message,
+                detail = ex.Message
             },
             statusCode: StatusCodes.Status502BadGateway);
     }
@@ -111,9 +169,11 @@ static async Task<IResult> ForwardToSplitCommandCenterAsync(
         context.Response.StatusCode = (int)response.StatusCode;
         CopyHeaders(response.Headers, context.Response.Headers);
         CopyHeaders(response.Content.Headers, context.Response.Headers);
+
         context.Response.Headers.Remove("transfer-encoding");
 
-        await response.Content.CopyToAsync(context.Response.Body, cancellationToken).ConfigureAwait(false);
+        await response.Content.CopyToAsync(context.Response.Body, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     return Results.Empty;
@@ -156,7 +216,6 @@ static string? SelectClientName(PathString path)
     if (path.StartsWithSegments("/api/admin", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/maintenance", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/diagnostics", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/api/ui-preferences", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/bus", StringComparison.OrdinalIgnoreCase))
     {
         return GatewayServiceRoutes.MaintenanceClientName;
@@ -225,9 +284,15 @@ static HttpRequestMessage CreateForwardRequest(HttpContext context)
     return request;
 }
 
-static async Task ForwardWebSocketAsync(HttpContext context, Uri serviceBaseAddress, CancellationToken cancellationToken)
+static async Task ForwardWebSocketAsync(
+    HttpContext context,
+    Uri serviceBaseAddress,
+    CancellationToken cancellationToken)
 {
-    var targetUri = BuildWebSocketUri(serviceBaseAddress, context.Request.PathBase.Add(context.Request.Path), context.Request.QueryString);
+    var targetUri = BuildWebSocketUri(
+        serviceBaseAddress,
+        context.Request.PathBase.Add(context.Request.Path),
+        context.Request.QueryString);
 
     using var upstream = new ClientWebSocket();
     upstream.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
@@ -239,13 +304,18 @@ static async Task ForwardWebSocketAsync(HttpContext context, Uri serviceBaseAddr
 
     await upstream.ConnectAsync(targetUri, cancellationToken).ConfigureAwait(false);
 
-    using var downstream = await context.WebSockets.AcceptWebSocketAsync(upstream.SubProtocol).ConfigureAwait(false);
-    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, context.RequestAborted);
+    using var downstream = await context.WebSockets.AcceptWebSocketAsync(upstream.SubProtocol)
+        .ConfigureAwait(false);
+
+    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+        cancellationToken,
+        context.RequestAborted);
 
     var downstreamToUpstream = PumpWebSocketAsync(downstream, upstream, linkedCts.Token);
     var upstreamToDownstream = PumpWebSocketAsync(upstream, downstream, linkedCts.Token);
 
     await Task.WhenAny(downstreamToUpstream, upstreamToDownstream).ConfigureAwait(false);
+
     linkedCts.Cancel();
 }
 
@@ -253,13 +323,18 @@ static Uri BuildWebSocketUri(Uri serviceBaseAddress, PathString path, QueryStrin
 {
     var builder = new UriBuilder(new Uri(serviceBaseAddress, path + query.ToString()))
     {
-        Scheme = serviceBaseAddress.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ? "wss" : "ws",
+        Scheme = serviceBaseAddress.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)
+            ? "wss"
+            : "ws"
     };
 
     return builder.Uri;
 }
 
-static async Task PumpWebSocketAsync(WebSocket source, WebSocket destination, CancellationToken cancellationToken)
+static async Task PumpWebSocketAsync(
+    WebSocket source,
+    WebSocket destination,
+    CancellationToken cancellationToken)
 {
     var buffer = new byte[64 * 1024];
 
@@ -273,7 +348,8 @@ static async Task PumpWebSocketAsync(WebSocket source, WebSocket destination, Ca
         {
             if (destination.State == WebSocketState.Open || destination.State == WebSocketState.CloseReceived)
             {
-                await destination.CloseOutputAsync(
+                await destination
+                    .CloseOutputAsync(
                         result.CloseStatus ?? WebSocketCloseStatus.NormalClosure,
                         result.CloseStatusDescription,
                         cancellationToken)
@@ -284,7 +360,11 @@ static async Task PumpWebSocketAsync(WebSocket source, WebSocket destination, Ca
         }
 
         await destination
-            .SendAsync(buffer.AsMemory(0, result.Count), result.MessageType, result.EndOfMessage, cancellationToken)
+            .SendAsync(
+                buffer.AsMemory(0, result.Count),
+                result.MessageType,
+                result.EndOfMessage,
+                cancellationToken)
             .ConfigureAwait(false);
     }
 }
@@ -297,7 +377,16 @@ static void CopyHeaders(HttpHeaders source, IHeaderDictionary destination)
     }
 }
 
-sealed record GatewayRouteOwner(string owner, string[] prefixes);
+sealed record DownstreamHealthTarget(string ClientName, Uri BaseAddress);
+
+sealed record DownstreamHealthResult(
+    string Service,
+    Uri BaseAddress,
+    bool Healthy,
+    int? StatusCode,
+    string Detail);
+
+sealed record GatewayRouteOwner(string Owner, string[] Prefixes);
 
 static class GatewayRouteDiagnostics
 {
@@ -307,7 +396,7 @@ static class GatewayRouteDiagnostics
         "/api/ec2-workers",
         "/api/ops/ecs-status",
         "/api/ops/spider/restart",
-        "/api/ops/subdomain-enum/restart",
+        "/api/ops/subdomain-enum/restart"
     ];
 
     private static readonly string[] OperationsPrefixes = ["/api/status", "/api/ops"];
@@ -326,10 +415,18 @@ static class GatewayRouteDiagnostics
         "/api/http-request-queue",
         "/api/filestore",
         "/api/events",
-        "/api/discovery",
+        "/api/discovery"
     ];
 
-    private static readonly string[] MaintenancePrefixes = ["/api/admin", "/api/maintenance", "/api/diagnostics", "/api/ui-preferences", "/api/bus"];
+    private static readonly string[] MaintenancePrefixes =
+    [
+        "/api/admin",
+        "/api/maintenance",
+        "/api/diagnostics",
+        "/api/ui-preferences",
+        "/api/bus"
+    ];
+
     private static readonly string[] UpdatesPrefixes = ["/api/development/components"];
     private static readonly string[] RealtimePrefixes = ["/hubs/discovery"];
 
@@ -348,7 +445,7 @@ static class GatewayRouteDiagnostics
         "/_framework",
         "/_content",
         "/css",
-        "/js",
+        "/js"
     ];
 
     public static readonly GatewayRouteOwner[] Routes =
@@ -359,7 +456,7 @@ static class GatewayRouteDiagnostics
         new("command-center-maintenance-api", MaintenancePrefixes),
         new("command-center-updates-api", UpdatesPrefixes),
         new("command-center-realtime", RealtimePrefixes),
-        new("command-center-web", WebPrefixes),
+        new("command-center-web", WebPrefixes)
     ];
 }
 
@@ -379,6 +476,17 @@ sealed record GatewayServiceRoutes(
     public const string MaintenanceClientName = "command-center-maintenance-api";
     public const string UpdatesClientName = "command-center-updates-api";
     public const string RealtimeClientName = "command-center-realtime";
+
+    public IReadOnlyList<DownstreamHealthTarget> HealthCheckTargets =>
+    [
+        new(WebClientName, Web),
+        new(DiscoveryClientName, Discovery),
+        new(OperationsClientName, Operations),
+        new(WorkerControlClientName, WorkerControl),
+        new(MaintenanceClientName, Maintenance),
+        new(UpdatesClientName, Updates),
+        new(RealtimeClientName, Realtime)
+    ];
 
     public static GatewayServiceRoutes FromConfiguration(IConfiguration configuration)
     {
@@ -402,7 +510,7 @@ sealed record GatewayServiceRoutes(
             MaintenanceClientName => Maintenance,
             UpdatesClientName => Updates,
             RealtimeClientName => Realtime,
-            _ => throw new InvalidOperationException($"Unknown CommandCenter split-service client '{clientName}'."),
+            _ => throw new InvalidOperationException($"Unknown CommandCenter split-service client '{clientName}'.")
         };
 
     public object AsDiagnosticObject() =>
@@ -414,22 +522,23 @@ sealed record GatewayServiceRoutes(
             workerControl = WorkerControl,
             maintenance = Maintenance,
             updates = Updates,
-            realtime = Realtime,
+            realtime = Realtime
         };
 
-    static Uri GetUri(IConfiguration configuration, string serviceName, string localDefault)
+    private static Uri GetUri(IConfiguration configuration, string serviceName, string localDefault)
     {
         var value =
-            configuration[$"CommandCenter:Services:{serviceName}"]
-            ?? configuration[$"Argus:CommandCenter:Services:{serviceName}"]
-            ?? configuration[$"CommandCenter:{serviceName}BaseUrl"]
-            ?? configuration[$"Argus:CommandCenter:{serviceName}BaseUrl"]
-            ?? localDefault;
+            configuration[$"CommandCenter:Services:{serviceName}"] ??
+            configuration[$"Argus:CommandCenter:Services:{serviceName}"] ??
+            configuration[$"CommandCenter:{serviceName}BaseUrl"] ??
+            configuration[$"Argus:CommandCenter:{serviceName}BaseUrl"] ??
+            localDefault;
 
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
         {
             throw new InvalidOperationException(
-                $"Invalid CommandCenter split-service URL for '{serviceName}': '{value}'. Configure CommandCenter:Services:{serviceName}.");
+                $"Invalid CommandCenter split-service URL for '{serviceName}': '{value}'. " +
+                $"Configure CommandCenter:Services:{serviceName}.");
         }
 
         return uri;

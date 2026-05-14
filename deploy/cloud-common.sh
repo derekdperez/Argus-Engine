@@ -324,12 +324,67 @@ argus_cloud_file_has_placeholders() {
   grep -Eq 'CHANGE_ME|10\.0\.0\.10|replace-with|REPLACE_ME|<[^>]+>' "$file" 2>/dev/null
 }
 
+argus_cloud_generate_secret() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 32
+    return 0
+  fi
+  tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32
+}
+
+argus_cloud_autofill_service_env_passwords() {
+  local target="$1"
+  local db_password="${ARGUS_CLOUD_DB_PASSWORD:-${ARGUS_DB_PASSWORD:-argus}}"
+  local rabbit_password="${ARGUS_CLOUD_RABBITMQ_PASSWORD:-${ARGUS_RABBITMQ_PASSWORD:-argus}}"
+  local diagnostics_key="${ARGUS_DIAGNOSTICS_API_KEY:-}"
+  local tmp changed
+  changed=0
+
+  if [[ -z "$diagnostics_key" || "$diagnostics_key" == *CHANGE_ME* || "$diagnostics_key" == *replace* ]]; then
+    diagnostics_key="$(argus_cloud_generate_secret)"
+  fi
+
+  tmp="$(mktemp)"
+  awk \
+    -v db_password="$db_password" \
+    -v rabbit_password="$rabbit_password" \
+    -v diagnostics_key="$diagnostics_key" \
+    '
+      {
+        line=$0
+        if ($0 ~ /^ConnectionStrings__Postgres=/) {
+          gsub(/Password=CHANGE_ME/, "Password=" db_password, line)
+        } else if ($0 ~ /^ConnectionStrings__FileStore=/) {
+          gsub(/Password=CHANGE_ME/, "Password=" db_password, line)
+        } else if ($0 ~ /^RabbitMq__Password=/) {
+          sub(/=.*/, "=" rabbit_password, line)
+        } else if ($0 ~ /^Argus__Diagnostics__ApiKey=/) {
+          if (line ~ /CHANGE_ME|REPLACE_ME|replace-with|replace_me|replace/) {
+            sub(/=.*/, "=" diagnostics_key, line)
+          }
+        }
+        print line
+      }
+    ' "$target" > "$tmp"
+
+  if ! cmp -s "$target" "$tmp"; then
+    mv "$tmp" "$target"
+    argus_cloud_restore_ownership_if_sudo "$target"
+    changed=1
+  else
+    rm -f "$tmp"
+  fi
+
+  return "$changed"
+}
+
 argus_cloud_ensure_service_env() {
   local target="$1"
   local example="${2:-}"
   local label="${3:-cloud}"
 
   argus_cloud_ensure_config_file "$target" "$example" "${label} runtime service environment file"
+  argus_cloud_autofill_service_env_passwords "$target" || true
 
   while argus_cloud_file_has_placeholders "$target"; do
     cat >&2 <<EOF

@@ -1,6 +1,7 @@
 using ArgusEngine.CommandCenter.Maintenance.Api;
 using ArgusEngine.CommandCenter.Maintenance.Api.Endpoints;
 using ArgusEngine.Infrastructure;
+using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +11,12 @@ builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });
 builder.Services.AddScoped<HttpQueueArtifactBackfillService>();
 
 var app = builder.Build();
+
+await ArgusDbBootstrap.InitializeAsync(
+    app.Services,
+    app.Configuration,
+    app.Logger,
+    includeFileStore: false).ConfigureAwait(false);
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }))
     .AllowAnonymous();

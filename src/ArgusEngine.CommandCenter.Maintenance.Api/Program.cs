@@ -22,5 +22,6 @@ app.MapDataMaintenanceEndpoints();
 app.MapDataRetentionAdminEndpoints();
 app.MapDiagnosticsEndpoints();
 app.MapHttpArtifactBackfillEndpoints();
+app.MapUiPreferencesEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

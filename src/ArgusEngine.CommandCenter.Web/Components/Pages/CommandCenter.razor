@@ -240,7 +240,7 @@
                 <option value="IpAddress">IP address</option>
                 <option value="OpenPort">Open port</option>
             </select>
-            <button type="button" @onclick="ReloadAssetsAsync">Reload assets</button>
+            <button type="button" @onclick="() => ReloadAssetsAsync()">Reload assets</button>
         </div>
 
         <div class="table-wrap grid-wrap">
@@ -488,7 +488,7 @@
                 <option value="False Positive">False Positive</option>
                 <option value="Valid Finding">Valid Finding</option>
             </select>
-            <button type="button" @onclick="ReloadHighValueAssetsAsync">Refresh</button>
+            <button type="button" @onclick="() => ReloadHighValueAssetsAsync()">Refresh</button>
         </div>
 
         <div class="table-wrap grid-wrap">
@@ -552,7 +552,7 @@
 
         <div class="toolbar">
             <input placeholder="Search technologies" @bind="_technologySearch" @bind:event="oninput" />
-            <button type="button" @onclick="ReloadTechnologyDataAsync">Refresh</button>
+            <button type="button" @onclick="() => ReloadTechnologyDataAsync()">Refresh</button>
         </div>
 
         <div class="table-wrap grid-wrap">
@@ -884,6 +884,10 @@
 
     private const int CompactRowHeight = 32;
     private const string SummaryCardsPreferenceKey = "command-center.summary-cards";
+    private const int InitialAssetsTake = 5_000;
+    private const int InitialHttpQueueTake = 5_000;
+    private const int InitialHighValueTake = 2_000;
+    private const int InitialTechnologyTake = 3_000;
 
     private long TotalTargets => Math.Max(OverviewLong("totalTargets", "TotalTargets"), _targets.Count);
     private long ConfirmedAssets => Math.Max(OverviewLong("totalAssetsConfirmed", "TotalAssetsConfirmed"), _targets.Sum(t => Long(t, "confirmedAssetCount", "ConfirmedAssetCount")));
@@ -990,10 +994,67 @@
     protected override async Task OnInitializedAsync()
     {
         Realtime.DomainEventReceived += OnRealtimeEvent;
-        await LoadSummaryCardPreferencesAsync().ConfigureAwait(false);
-        await ReloadAllAsync().ConfigureAwait(false);
+        var preferencesTask = LoadSummaryCardPreferencesAsync();
+        await ReloadInitialAsync().ConfigureAwait(false);
+        await preferencesTask.ConfigureAwait(false);
         await StartRealtimeAsync().ConfigureAwait(false);
         _ = PollAsync();
+        _ = FinishInitialHydrationAsync();
+    }
+
+    private async Task ReloadInitialAsync()
+    {
+        _statusMessage = "Loading command center data...";
+        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+
+        try
+        {
+            await Task.WhenAll(
+                ReloadOverviewAsync(),
+                ReloadTargetsAsync(),
+                ReloadAssetsAsync(InitialAssetsTake),
+                ReloadHttpQueueAsync(InitialHttpQueueTake),
+                ReloadDockerWorkersAsync(),
+                ReloadCloudWorkersAsync(),
+                ReloadHighValueAssetsAsync(InitialHighValueTake),
+                ReloadTechnologyDataAsync(InitialTechnologyTake)).ConfigureAwait(false);
+
+            _statusMessage = "Loaded recent data. Finishing background sync...";
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Initial command center load failed: {ex.Message}";
+        }
+
+        EnsureActiveTarget();
+        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+    }
+
+    private async Task FinishInitialHydrationAsync()
+    {
+        try
+        {
+            await Task.WhenAll(
+                ReloadAssetsAsync(),
+                ReloadHttpQueueAsync(),
+                ReloadHighValueAssetsAsync(),
+                ReloadTechnologyDataAsync()).ConfigureAwait(false);
+
+            if (_statusMessage.StartsWith("Loaded recent data.", StringComparison.Ordinal))
+            {
+                _statusMessage = "";
+            }
+
+            EnsureActiveTarget();
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Background command center hydration failed.");
+        }
     }
 
     private async Task LoadSummaryCardPreferencesAsync()
@@ -1185,7 +1246,11 @@
         try
         {
             Replace(_targets, await GetArrayAsync("/api/targets").ConfigureAwait(false));
-            _selectedTargetIds.RemoveWhere(id => !_targets.Any(t => Text(t, "id", "Id").Equals(id, StringComparison.OrdinalIgnoreCase)));
+            var targetIds = _targets
+                .Select(t => Text(t, "id", "Id"))
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _selectedTargetIds.RemoveWhere(id => !targetIds.Contains(id));
             EnsureActiveTarget();
         }
         finally
@@ -1194,15 +1259,24 @@
         }
     }
 
-    private async Task ReloadAssetsAsync()
+    private async Task ReloadAssetsAsync(int? take = null)
     {
         _assetsLoading = true;
         try
         {
-            Replace(_assets, await GetArrayAsync("/api/assets").ConfigureAwait(false));
+            var uri = take is > 0 ? $"/api/assets?take={take.Value}" : "/api/assets";
+            Replace(_assets, await GetArrayAsync(uri).ConfigureAwait(false));
             RebuildSubdomainIndex();
-            _selectedAssetIds.RemoveWhere(id => !_assets.Any(a => Text(a, "id", "Id").Equals(id, StringComparison.OrdinalIgnoreCase)));
-            _selectedSubdomainKeys.RemoveWhere(key => !_assets.Any(a => SubdomainKey(a).Equals(key, StringComparison.OrdinalIgnoreCase)));
+            var assetIds = _assets
+                .Select(a => Text(a, "id", "Id"))
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var subdomainKeys = _assets
+                .Select(SubdomainKey)
+                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _selectedAssetIds.RemoveWhere(id => !assetIds.Contains(id));
+            _selectedSubdomainKeys.RemoveWhere(key => !subdomainKeys.Contains(key));
         }
         finally
         {
@@ -1210,16 +1284,25 @@
         }
     }
 
-    private async Task ReloadHttpQueueAsync()
+    private async Task ReloadHttpQueueAsync(int? take = null)
     {
         _httpLoading = true;
         try
         {
-            var uri = string.IsNullOrWhiteSpace(_httpStateFilter)
+            var baseUri = string.IsNullOrWhiteSpace(_httpStateFilter)
                 ? "/api/http-request-queue"
                 : $"/api/http-request-queue?state={Uri.EscapeDataString(_httpStateFilter)}";
+            var uri = take is > 0
+                ? (baseUri.Contains('?', StringComparison.Ordinal) ? $"{baseUri}&take={take.Value}" : $"{baseUri}?take={take.Value}")
+                : baseUri;
+
             Replace(_queue, await GetArrayAsync(uri).ConfigureAwait(false));
-            _selectedHttpIds.RemoveWhere(id => !_queue.Any(q => Text(q, "id", "Id").Equals(id, StringComparison.OrdinalIgnoreCase)));
+
+            var queueIds = _queue
+                .Select(q => Text(q, "id", "Id"))
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _selectedHttpIds.RemoveWhere(id => !queueIds.Contains(id));
         }
         finally
         {
@@ -1245,7 +1328,11 @@
                 Replace(_workers, ArrayProperty(obj, "services", "Services"));
             }
 
-            _selectedWorkerServices.RemoveWhere(id => !_workers.Any(w => Text(w, "serviceName", "ServiceName").Equals(id, StringComparison.OrdinalIgnoreCase)));
+            var workerServices = _workers
+                .Select(w => Text(w, "serviceName", "ServiceName"))
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _selectedWorkerServices.RemoveWhere(id => !workerServices.Contains(id));
         }
         catch (Exception ex)
         {
@@ -1293,13 +1380,21 @@
         }
     }
 
-    private async Task ReloadHighValueAssetsAsync()
+    private async Task ReloadHighValueAssetsAsync(int? take = null)
     {
         _highValueLoading = true;
         try
         {
-            Replace(_highValueRows, await GetArrayAsync("/api/high-value-assets?includeResolved=true").ConfigureAwait(false));
-            _selectedHighValueKeys.RemoveWhere(key => !_highValueRows.Any(row => HighValueKey(row).Equals(key, StringComparison.OrdinalIgnoreCase)));
+            var uri = take is > 0
+                ? $"/api/high-value-assets?includeResolved=true&take={take.Value}"
+                : "/api/high-value-assets?includeResolved=true";
+            Replace(_highValueRows, await GetArrayAsync(uri).ConfigureAwait(false));
+
+            var highValueKeys = _highValueRows
+                .Select(HighValueKey)
+                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _selectedHighValueKeys.RemoveWhere(key => !highValueKeys.Contains(key));
         }
         catch (Exception ex)
         {
@@ -1311,16 +1406,27 @@
         }
     }
 
-    private async Task ReloadTechnologyDataAsync()
+    private async Task ReloadTechnologyDataAsync(int? take = null)
     {
         _technologiesLoading = true;
         try
         {
-            var technologiesTask = GetArrayAsync("/api/technology-identification/technologies");
-            var usageTask = GetArrayAsync("/api/technology-identification/usage");
+            var technologiesUri = take is > 0
+                ? $"/api/technology-identification/technologies?take={take.Value}"
+                : "/api/technology-identification/technologies";
+            var usageUri = take is > 0
+                ? $"/api/technology-identification/usage?take={take.Value}"
+                : "/api/technology-identification/usage";
+            var technologiesTask = GetArrayAsync(technologiesUri);
+            var usageTask = GetArrayAsync(usageUri);
             Replace(_technologyRows, await technologiesTask.ConfigureAwait(false));
             Replace(_technologyUsage, await usageTask.ConfigureAwait(false));
-            _selectedTechnologyKeys.RemoveWhere(key => !_technologyRows.Any(row => TechnologyKey(row).Equals(key, StringComparison.OrdinalIgnoreCase)));
+
+            var technologyKeys = _technologyRows
+                .Select(TechnologyKey)
+                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _selectedTechnologyKeys.RemoveWhere(key => !technologyKeys.Contains(key));
         }
         catch (Exception ex)
         {

@@ -44,7 +44,7 @@ public static class TechnologyIdentificationEndpoints
             .ToDictionaryAsync(x => x.TargetId, x => x.Count, ct)
             .ConfigureAwait(false);
 
-        var technologyRows = await QueryTechnologyRowsAsync(db, null, null, ct).ConfigureAwait(false);
+        var technologyRows = await QueryTechnologyRowsAsync(db, null, null, null, ct).ConfigureAwait(false);
         var technologyRollups = technologyRows
             .GroupBy(x => x.TargetId)
             .ToDictionary(
@@ -93,7 +93,7 @@ public static class TechnologyIdentificationEndpoints
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
-        var technologyRows = await QueryTechnologyRowsAsync(db, targetId, null, ct).ConfigureAwait(false);
+        var technologyRows = await QueryTechnologyRowsAsync(db, targetId, null, null, ct).ConfigureAwait(false);
         var technologyRollups = technologyRows
             .GroupBy(x => new { x.TargetId, Subdomain = NormalizeHostLike(x.Subdomain) })
             .ToDictionary(
@@ -139,9 +139,10 @@ public static class TechnologyIdentificationEndpoints
         Guid? targetId,
         string? subdomain,
         string? search,
+        int? take,
         CancellationToken ct)
     {
-        var rows = await QueryTechnologyRowsAsync(db, targetId, subdomain, ct).ConfigureAwait(false);
+        var rows = await QueryTechnologyRowsAsync(db, targetId, subdomain, take, ct).ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -168,9 +169,10 @@ public static class TechnologyIdentificationEndpoints
     private static async Task<IResult> QueryTechnologyUsageAsync(
         ArgusDbContext db,
         Guid? targetId,
+        int? take,
         CancellationToken ct)
     {
-        var rows = await QueryTechnologyRowsAsync(db, targetId, null, ct).ConfigureAwait(false);
+        var rows = await QueryTechnologyRowsAsync(db, targetId, null, take, ct).ConfigureAwait(false);
         var usage = rows
             .GroupBy(r => new
             {
@@ -206,6 +208,7 @@ public static class TechnologyIdentificationEndpoints
         ArgusDbContext db,
         Guid? targetId,
         string? subdomain,
+        int? take,
         CancellationToken ct)
     {
         var observationQuery =
@@ -324,15 +327,26 @@ public static class TechnologyIdentificationEndpoints
             })
             .ToArray();
 
-        if (string.IsNullOrWhiteSpace(subdomain))
+        IReadOnlyList<TechnologyIdentificationRowDto> filteredRows = rows;
+        if (!string.IsNullOrWhiteSpace(subdomain))
         {
-            return rows;
+            var normalizedSubdomain = NormalizeHostLike(subdomain);
+            filteredRows = rows
+                .Where(x => string.Equals(NormalizeHostLike(x.Subdomain), normalizedSubdomain, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
         }
 
-        var normalizedSubdomain = NormalizeHostLike(subdomain);
-        return rows
-            .Where(x => string.Equals(NormalizeHostLike(x.Subdomain), normalizedSubdomain, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
+        if (take is > 0)
+        {
+            var bounded = Math.Clamp(take.Value, 1, 100_000);
+            filteredRows = filteredRows
+                .OrderByDescending(x => x.LastSeenUtc)
+                .ThenBy(x => x.TechnologyName, StringComparer.OrdinalIgnoreCase)
+                .Take(bounded)
+                .ToArray();
+        }
+
+        return filteredRows;
     }
 
     private static string DeriveSubdomain(AssetKind kind, string canonicalKey, string rawValue, string? finalUrl)
@@ -421,8 +435,6 @@ public static class TechnologyIdentificationEndpoints
         string? EvidenceSummary,
         string DataSource);
 }
-
-
 
 
 

@@ -185,6 +185,32 @@ internal sealed class CloudRunWorkerManager(
                 LastError:        null
             );
         }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.InvalidArgument)
+        {
+            return new WorkerStatus(
+                Worker:           worker,
+                Status:           CloudDeployStatus.Failed,
+                ServiceUrl:       null,
+                CurrentInstances: 0,
+                MinInstances:     0,
+                MaxInstances:     0,
+                ImageUri:         null,
+                LastError:        $"Invalid Cloud Run request/resource for {ServiceName(worker)}: {ex.Status.Detail}"
+            );
+        }
+        catch (Exception ex)
+        {
+            return new WorkerStatus(
+                Worker:           worker,
+                Status:           CloudDeployStatus.Failed,
+                ServiceUrl:       null,
+                CurrentInstances: 0,
+                MinInstances:     0,
+                MaxInstances:     0,
+                ImageUri:         null,
+                LastError:        $"Cloud status fetch failed for {ServiceName(worker)}: {ex.Message}"
+            );
+        }
     }
 
     // ── Teardown ──────────────────────────────────────────────────────────────

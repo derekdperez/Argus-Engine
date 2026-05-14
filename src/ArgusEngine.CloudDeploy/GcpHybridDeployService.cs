@@ -109,8 +109,34 @@ internal sealed class GcpHybridDeployService(
         CancellationToken                 ct)
     {
         var targets = ResolveWorkers(workers);
-        var statuses = await Task.WhenAll(
-            targets.Select(w => cloudRunManager.GetStatusAsync(w, ct)));
+        var statuses = new List<WorkerStatus>();
+
+        foreach (var worker in targets)
+        {
+            try
+            {
+                statuses.Add(await cloudRunManager.GetStatusAsync(worker, ct).ConfigureAwait(false));
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Cloud status fetch failed for {Worker}", worker);
+                statuses.Add(
+                    new WorkerStatus(
+                        Worker: worker,
+                        Status: CloudDeployStatus.Failed,
+                        ServiceUrl: null,
+                        CurrentInstances: 0,
+                        MinInstances: 0,
+                        MaxInstances: 0,
+                        ImageUri: null,
+                        LastError: ex.Message));
+            }
+        }
+
         return statuses;
     }
 

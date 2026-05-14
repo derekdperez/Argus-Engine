@@ -20,7 +20,6 @@ public sealed class CommandCenterStatusSnapshotService(
     ArgusDbContext db,
     IConfiguration configuration,
     IWebHostEnvironment environment,
-    WorkerScaleDefinitionProvider workerDefinitions,
     IConnectionMultiplexer redis,
     IOptions<RabbitMqOptions> rabbitOptions,
     ILogger<CommandCenterStatusSnapshotService> logger) : ICommandCenterStatusSnapshotService

@@ -25,9 +25,9 @@ public static class WorkerEndpoints
                         .Select(w => new WorkerSwitchDto(w.WorkerKey, w.IsEnabled, w.UpdatedAtUtc))
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
-                    var rows = workerDefinitions.RequiredWorkerKeys
+                    var rows = WorkerScaleDefinitionProvider.RequiredWorkerKeys
                         .Select(key => persisted.FirstOrDefault(w => w.WorkerKey == key) ?? new WorkerSwitchDto(key, true, now))
-                        .Concat(persisted.Where(w => !workerDefinitions.RequiredWorkerKeys.Contains(w.WorkerKey, StringComparer.Ordinal)))
+                        .Concat(persisted.Where(w => !WorkerScaleDefinitionProvider.RequiredWorkerKeys.Contains(w.WorkerKey, StringComparer.Ordinal)))
                         .OrderBy(w => w.WorkerKey, StringComparer.Ordinal)
                         .ToList();
                     return Results.Ok(rows);
@@ -168,8 +168,8 @@ public static class WorkerEndpoints
                         .ToDictionaryAsync(t => t.ScaleKey, t => t, StringComparer.Ordinal, ct)
                         .ConfigureAwait(false);
 
-                    var definitions = workerDefinitions.RequiredWorkerKeys
-                        .Select(key => new { WorkerKey = key, Target = workerDefinitions.GetScaleTargetForWorkerKey(key) })
+                    var definitions = WorkerScaleDefinitionProvider.RequiredWorkerKeys
+                        .Select(key => new { WorkerKey = key, Target = WorkerScaleDefinitionProvider.GetScaleTargetForWorkerKey(key) })
                         .Where(x => x.Target is not null)
                         .Select(
                             x =>
@@ -219,7 +219,7 @@ public static class WorkerEndpoints
                             if (!services.TryGetValue(definition.ServiceName, out var service))
                                 continue;
 
-                            var fallback = workerDefinitions.DefaultWorkerScalingSetting(definition.ScaleKey);
+                            var fallback = WorkerScaleDefinitionProvider.DefaultWorkerScalingSetting(definition.ScaleKey);
                             var currentDesired = Math.Max(0, service.DesiredCount.GetValueOrDefault());
                             if (currentDesired >= fallback.MinTasks)
                                 continue;
@@ -244,7 +244,7 @@ public static class WorkerEndpoints
                             {
                                 overrides.TryGetValue(definition.ScaleKey, out var manual);
                                 services.TryGetValue(definition.ServiceName, out var service);
-                                var fallback = workerDefinitions.DefaultWorkerScalingSetting(definition.ScaleKey);
+                                var fallback = WorkerScaleDefinitionProvider.DefaultWorkerScalingSetting(definition.ScaleKey);
                                 var displayedDesired = service?.DesiredCount;
                                 var displayedManual = manual?.DesiredCount ?? (service is null ? (int?)fallback.MinTasks : null);
                                 return new WorkerScaleTargetDto(
@@ -272,11 +272,11 @@ public static class WorkerEndpoints
                         .ToDictionaryAsync(s => s.ScaleKey, StringComparer.Ordinal, ct)
                         .ConfigureAwait(false);
 
-                    var rows = workerDefinitions.WorkerScaleDefinitions
+                    var rows = WorkerScaleDefinitionProvider.WorkerScaleDefinitions
                         .Select(
                             definition =>
                             {
-                                var fallback = workerDefinitions.DefaultWorkerScalingSetting(definition.ScaleKey);
+                                var fallback = WorkerScaleDefinitionProvider.DefaultWorkerScalingSetting(definition.ScaleKey);
                                 return persisted.TryGetValue(definition.ScaleKey, out var row)
                                     ? new WorkerScalingSettingsDto(
                                         definition.ScaleKey,
@@ -303,7 +303,7 @@ public static class WorkerEndpoints
                     IPublishEndpoint publishEndpoint,
                     CancellationToken ct) =>
                 {
-                    if (!workerDefinitions.WorkerScaleDefinitions.Any(d => string.Equals(d.ScaleKey, scaleKey, StringComparison.Ordinal)))
+                    if (!WorkerScaleDefinitionProvider.WorkerScaleDefinitions.Any(d => string.Equals(d.ScaleKey, scaleKey, StringComparison.Ordinal)))
                         return Results.BadRequest($"Unknown worker scale key: {scaleKey}");
 
                     if (body.MinTasks < 0)
@@ -332,7 +332,7 @@ public static class WorkerEndpoints
                             ct)
                         .ConfigureAwait(false);
 
-                    var displayName = workerDefinitions.WorkerScaleDefinitions.First(d => d.ScaleKey == scaleKey).DisplayName;
+                    var displayName = WorkerScaleDefinitionProvider.WorkerScaleDefinitions.First(d => d.ScaleKey == scaleKey).DisplayName;
                     return Results.Ok(new WorkerScalingSettingsDto(scaleKey, displayName, row.MinTasks, row.MaxTasks, row.TargetBacklogPerTask, now));
                 })
             .WithName("UpdateWorkerScalingSettings");
@@ -363,7 +363,7 @@ public static class WorkerEndpoints
                                 []));
                     }
 
-                    var definitions = workerDefinitions.WorkerScaleDefinitions
+                    var definitions = WorkerScaleDefinitionProvider.WorkerScaleDefinitions
                         .Select(d => new
                         {
                             d.ScaleKey,
@@ -476,7 +476,7 @@ public static class WorkerEndpoints
                     IPublishEndpoint publishEndpoint,
                     CancellationToken ct) =>
                 {
-                    var target = workerDefinitions.GetScaleTargetForWorkerKey(key);
+                    var target = WorkerScaleDefinitionProvider.GetScaleTargetForWorkerKey(key);
                     if (target is null)
                         return Results.BadRequest($"{key} does not map to a scalable ECS worker service.");
 

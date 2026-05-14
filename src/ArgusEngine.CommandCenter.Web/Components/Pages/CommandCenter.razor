@@ -193,7 +193,7 @@
                         <option value="Completed">Completed</option>
                         <option value="Failed">Failed</option>
                     </select>
-                    <button class="cc-btn" @onclick="ReloadHttpQueueAsync" disabled="@_httpLoading">Reload</button>
+                    <button class="cc-btn" @onclick="@(() => ReloadHttpQueueAsync())" disabled="@_httpLoading">Reload</button>
                     <button class="cc-btn" @onclick="RetrySelectedHttpAsync" disabled="@(!_selectedHttpIds.Any() || _queueMutationLoading)">Retry selected</button>
                     <button class="cc-btn" @onclick="ClearSelectedHttpAsync" disabled="@(!_selectedHttpIds.Any() || _queueMutationLoading)">Clear selected</button>
                 </div>

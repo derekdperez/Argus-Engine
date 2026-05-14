@@ -40,7 +40,7 @@ public static class CloudDeployEndpoints
                 return Results.BadRequest($"Unknown worker type: {worker}");
 
             var statuses = await svc.GetWorkerStatusesAsync([workerType], ct);
-            return Results.Ok(statuses.FirstOrDefault());
+            return Results.Ok(statuses.Count > 0 ? statuses[0] : null);
         });
 
         // ── Build & Push ──────────────────────────────────────────────────────

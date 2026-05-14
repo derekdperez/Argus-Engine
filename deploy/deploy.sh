@@ -28,6 +28,7 @@
 #   argus_BUILD_TIMEOUT_MIN=0  Max minutes for a compose build invocation; 0 disables timeout.
 #   argus_BUILD_SEQUENTIAL=0   Build selected services one-by-one for clearer progress/isolation.
 #   argus_BUILD_PROGRESS=auto  Build progress style: auto|plain|tty.
+#   argus_PREDEPLOY_SMOKE=1  Run a predeploy publish smoke check for Command Center Web before deploy.
 #   SUBFINDER_VERSION=...  Pinned vendored subfinder release version.
 #   AMASS_VERSION=...      Pinned vendored amass release version.
 #   COMPOSE_BAKE=true|false    Multi-service compose builds may use "bake"; scripts default to false for stability.
@@ -234,6 +235,7 @@ export argus_USER_SKIP_BUILD="${argus_USER_SKIP_BUILD:-0}"
 export argus_NO_CACHE="${argus_NO_CACHE:-0}"
 export argus_PULL_IMAGES="${argus_PULL_IMAGES:-0}"
 export argus_FORCE_RECREATE="${argus_FORCE_RECREATE:-0}"
+export argus_PREDEPLOY_SMOKE="${argus_PREDEPLOY_SMOKE:-1}"
 if [[ "$argus_ECS_WORKERS" == "1" ]]; then
   export argus_GIT_PULL="${argus_GIT_PULL:-1}"
 fi
@@ -450,6 +452,12 @@ echo "Computing build stamp and component versions…"
 argus_export_build_stamp "$ROOT"
 argus_export_version_and_build_time "$ROOT"
 argus_export_component_versions "$ROOT"
+
+if [[ "${argus_PREDEPLOY_SMOKE:-1}" == "1" ]]; then
+  echo ""
+  echo "Running predeploy smoke build check..."
+  bash "$DEPLOY_DIR/smoke-predeploy-build.sh"
+fi
 if [[ "$argus_ECS_WORKERS" == "1" && "${argus_ECS_USE_MUTABLE_TAG:-0}" != "1" ]]; then
   ecs_source_stamp="$BUILD_SOURCE_STAMP"
   if [[ -d "$ROOT/.git" ]] && ! git -C "$ROOT" diff --quiet HEAD -- 2>/dev/null; then

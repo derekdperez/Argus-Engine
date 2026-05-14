@@ -1,9 +1,12 @@
+using System.Diagnostics;
+using System.Globalization;
 using ArgusEngine.CommandCenter.Realtime;
 using ArgusEngine.CommandCenter.Web.Clients;
 using ArgusEngine.CommandCenter.Web.Components;
 using ArgusEngine.CloudDeploy;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -16,33 +19,20 @@ builder.Services
     .AddInteractiveServerComponents();
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+});
 
-// Register the Radzen services used by the Web UI without relying on the
-// AddRadzenComponents extension method being visible to this project at compile time.
 builder.Services.AddScoped<ThemeService>();
 builder.Services.AddScoped<DialogService>();
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<TooltipService>();
 builder.Services.AddScoped<ContextMenuService>();
-
-// Blazor server components execute on the server. Relative HttpClient calls
-// must therefore target the Command Center gateway, not command-center-web
-// itself. The gateway owns split-service routing for /api and /hubs paths.
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveGatewayBaseAddress(sp) });
-
-// Client wrappers used by Ops and restored standalone pages.
 builder.Services.AddScoped<WorkerControlApiClient>();
 builder.Services.AddScoped<DiscoveryApiClient>();
-builder.Services.AddScoped<MaintenanceApiClient>();
-builder.Services.AddScoped<OperationsApiClient>();
-builder.Services.AddScoped<UpdatesApiClient>();
-builder.Services.AddScoped<RealtimeApiClient>();
-builder.Services.AddScoped<LocalDockerClient>();
 builder.Services.AddGcpHybridDeploy(builder.Configuration);
-
-// CommandCenter and HighValueFindings inject this realtime client directly. Register
-// it explicitly so prerender/smoke-test can construct pages before the
-// interactive circuit starts.
 builder.Services.AddScoped<DiscoveryRealtimeClient>();
 
 var app = builder.Build();
@@ -53,11 +43,27 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+app.UseResponseCompression();
+
+app.Use(async (context, next) =>
+{
+    var stopwatch = Stopwatch.StartNew();
+
+    context.Response.OnStarting(() =>
+    {
+        stopwatch.Stop();
+        var elapsedMs = stopwatch.Elapsed.TotalMilliseconds.ToString("0.##", CultureInfo.InvariantCulture);
+        context.Response.Headers["Server-Timing"] = $"app;dur={elapsedMs}";
+        context.Response.Headers["X-Argus-App-Duration-Ms"] = elapsedMs;
+        return Task.CompletedTask;
+    });
+
+    await next().ConfigureAwait(false);
+});
+
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
-// Prevent browsers from caching the HTML shell — it embeds fingerprinted asset URLs
-// (blazor.web.js, app.css, etc.) that change on every deploy. A stale cached shell
-// causes 404s for those assets until the user hard-refreshes.
+// Keep the prerendered HTML shell fresh even when static assets are aggressively cached.
 app.Use(async (context, next) =>
 {
     context.Response.OnStarting(() =>
@@ -71,18 +77,14 @@ app.Use(async (context, next) =>
         return Task.CompletedTask;
     });
 
-    await next();
+    await next().ConfigureAwait(false);
 });
 
 app.MapStaticAssets();
 app.UseStaticFiles();
 
-// Compatibility alias for clients, proxies, or stale HTML that still request the
-// pre-split Command Center CSS isolation bundle name. The current web project
-// emits ArgusEngine.CommandCenter.Web.styles.css.
-app.MapGet(
-    "/ArgusEngine.CommandCenter.styles.css",
-    () => Results.Redirect("/ArgusEngine.CommandCenter.Web.styles.css", permanent: false));
+app.MapGet("/ArgusEngine.CommandCenter.styles.css", () =>
+    Results.Redirect("/ArgusEngine.CommandCenter.Web.styles.css", permanent: false));
 
 app.UseAntiforgery();
 
@@ -109,9 +111,6 @@ static Uri ResolveGatewayBaseAddress(IServiceProvider services)
         return configuredUri;
     }
 
-    // In Docker Compose the environment sets CommandCenter__GatewayBaseUrl.
-    // This local-network fallback keeps the deployed container from routing API
-    // calls back into itself if that setting is accidentally omitted.
     if (!IsDevelopment(services))
     {
         return new Uri("http://command-center-gateway:8080/");

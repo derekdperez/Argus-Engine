@@ -42,22 +42,24 @@ public sealed class DefaultAssetCanonicalizerTests
         Assert.Equal("url:https://example.com/users/{id}/files/{guid}/?a=1&b=2", canonical.CanonicalKey);
     }
 
-    [Fact]
-    public void Canonicalize_AddsHttpsWhenStructuredAssetHasNoScheme()
+    [Theory]
+    [InlineData(AssetKind.ApiEndpoint, "Example.COM/Products/42?B=2&A=1", "url:https://example.com/products/{id}?a=1&b=2")]
+    [InlineData(AssetKind.JavaScriptFile, "http://Example.COM:8080/Assets/App.js", "url:http://example.com:8080/assets/app.js")]
+    public void Canonicalize_UsesUrlKeyNamespaceForStructuredAssets(AssetKind kind, string rawValue, string expectedKey)
     {
-        var canonical = _canonicalizer.Canonicalize(CreateDiscovery(AssetKind.ApiEndpoint, "Example.COM/Products/42?B=2&A=1"));
+        var canonical = _canonicalizer.Canonicalize(CreateDiscovery(kind, rawValue));
 
-        Assert.Equal(AssetKind.ApiEndpoint, canonical.Kind);
-        Assert.Equal("apiendpoint:https://example.com/products/{id}?a=1&b=2", canonical.CanonicalKey);
+        Assert.Equal(kind, canonical.Kind);
+        Assert.Equal(expectedKey, canonical.CanonicalKey);
     }
 
     [Fact]
-    public void Canonicalize_PreservesNonDefaultPortsInStructuredAssetKeys()
+    public void Canonicalize_FallsBackToStableHashWhenStructuredUrlCannotBeParsed()
     {
-        var canonical = _canonicalizer.Canonicalize(CreateDiscovery(AssetKind.JavaScriptFile, "http://Example.COM:8080/Assets/App.js"));
+        var canonical = _canonicalizer.Canonicalize(CreateDiscovery(AssetKind.ApiEndpoint, "not really a url ???"));
 
-        Assert.Equal(AssetKind.JavaScriptFile, canonical.Kind);
-        Assert.Equal("javascriptfile:http://example.com:8080/assets/app.js", canonical.CanonicalKey);
+        Assert.Equal(AssetKind.ApiEndpoint, canonical.Kind);
+        Assert.StartsWith("apiendpoint:", canonical.CanonicalKey, StringComparison.Ordinal);
     }
 
     private static AssetDiscovered CreateDiscovery(AssetKind kind, string rawValue) =>

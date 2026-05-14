@@ -60,8 +60,12 @@ public sealed class HtmlSignalExtractor
 
     private static string ResolveAgainstBaseUrl(string src, Uri? baseUri)
     {
-        if (Uri.TryCreate(src, UriKind.Absolute, out var absolute))
+        if (Uri.TryCreate(src, UriKind.Absolute, out var absolute)
+            && (absolute.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                || absolute.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        {
             return absolute.ToString();
+        }
 
         return baseUri is not null
             && Uri.TryCreate(baseUri, src, out var resolved)

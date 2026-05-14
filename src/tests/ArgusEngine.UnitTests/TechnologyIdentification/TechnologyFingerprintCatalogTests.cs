@@ -48,6 +48,23 @@ public sealed class HtmlSignalExtractorTests
         Assert.Single(signals.ScriptUrls);
     }
 
+    [Fact]
+    public void Extract_DoesNotTreatRootRelativeScriptPathAsFileUriWhenNoBaseUrlIsAvailable()
+    {
+        const string html = """
+            <html>
+              <head>
+                <script src="/assets/app.js"></script>
+              </head>
+            </html>
+            """;
+
+        var signals = HtmlSignalExtractor.Extract(html, "text/html", "not-a-valid-url");
+
+        Assert.Single(signals.ScriptUrls);
+        Assert.Contains("/assets/app.js", signals.ScriptUrls);
+    }
+
     [Theory]
     [InlineData(null, "text/html")]
     [InlineData("", "text/html")]

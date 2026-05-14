@@ -23,6 +23,8 @@ public sealed class OutboxMessageTypeRegistryTests
     [InlineData("nightmare.events.target-created")]
     [InlineData("TargetCreated")]
     [InlineData("ArgusEngine.Contracts.Events.TargetCreated")]
+    [InlineData("ArgusEngine.Contracts.Events.TargetCreated, ArgusEngine.Contracts")]
+    [InlineData("Nightmare.Contracts.Events.TargetCreated, Nightmare.Contracts")]
     public void TryResolve_AcceptsCurrentAndLegacyEventIdentifiers(string identifier)
     {
         Assert.True(OutboxMessageTypeRegistry.TryResolve(identifier, out var resolvedType));

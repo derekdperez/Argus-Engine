@@ -72,6 +72,11 @@ public static class OutboxMessageTypeRegistry
             return true;
         }
 
+        if (TryResolveByTypeNamePrefix(messageKeyOrLegacyTypeName, out messageType))
+        {
+            return true;
+        }
+
         // 4. Fallback: try mapping Nightmare namespace to ArgusEngine in the type string
         if (messageKeyOrLegacyTypeName.Contains("Nightmare", StringComparison.OrdinalIgnoreCase))
         {
@@ -80,6 +85,11 @@ public static class OutboxMessageTypeRegistry
                 .Replace("Nightmare.Events", "ArgusEngine.Contracts.Events", StringComparison.OrdinalIgnoreCase);
 
             if (LegacyTypesByName.TryGetValue(mappedName, out messageType))
+            {
+                return true;
+            }
+
+            if (TryResolveByTypeNamePrefix(mappedName, out messageType))
             {
                 return true;
             }
@@ -180,5 +190,18 @@ public static class OutboxMessageTypeRegistry
         {
             builder.Append('-');
         }
+    }
+
+    private static bool TryResolveByTypeNamePrefix(string messageIdentifier, out Type? messageType)
+    {
+        var commaIndex = messageIdentifier.IndexOf(',');
+        if (commaIndex <= 0)
+        {
+            messageType = null;
+            return false;
+        }
+
+        var typeName = messageIdentifier[..commaIndex].Trim();
+        return LegacyTypesByName.TryGetValue(typeName, out messageType);
     }
 }

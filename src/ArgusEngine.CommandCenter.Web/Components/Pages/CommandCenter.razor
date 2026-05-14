@@ -64,7 +64,7 @@
                 <p class="eyebrow">Scope</p>
                 <h2>Targets</h2>
             </div>
-            <span class="muted">@FormatNumber(TargetRows.Count) visible</span>
+            <span class="muted">@FormatNumber(TargetRows.Length) visible</span>
         </div>
 
         <div class="toolbar">
@@ -73,9 +73,9 @@
             <input class="depth-input" type="number" min="1" max="50" @bind="_newTargetDepth" />
             <button type="button" @onclick="CreateTargetAsync" disabled="@(!CanCreateTarget)">Add Target</button>
             <button type="button" @onclick="() => StartEnumerationAsync(selectedOnly: true)" disabled="@(_selectedTargetIds.Count == 0)">Enumerate selected (@_selectedTargetIds.Count)</button>
-            <button type="button" @onclick="() => StartEnumerationAsync(selectedOnly: false)" disabled="@(TargetRows.Count == 0)">Enumerate all visible</button>
+            <button type="button" @onclick="() => StartEnumerationAsync(selectedOnly: false)" disabled="@(TargetRows.Length == 0)">Enumerate all visible</button>
             <button type="button" @onclick="() => StartSpiderTargetsAsync(selectedOnly: true)" disabled="@(_selectedTargetIds.Count == 0)">Spider selected (@_selectedTargetIds.Count)</button>
-            <button type="button" @onclick="() => StartSpiderTargetsAsync(selectedOnly: false)" disabled="@(TargetRows.Count == 0)">Spider all visible</button>
+            <button type="button" @onclick="() => StartSpiderTargetsAsync(selectedOnly: false)" disabled="@(TargetRows.Length == 0)">Spider all visible</button>
         </div>
 
         <div class="table-wrap http-queue-wrap">
@@ -122,13 +122,13 @@
                 <p class="eyebrow">Scope</p>
                 <h2>Subdomains</h2>
             </div>
-            <span class="muted">@ActiveTargetLabel · @FormatNumber(SubdomainRows.Count) visible</span>
+            <span class="muted">@ActiveTargetLabel · @FormatNumber(SubdomainRows.Length) visible</span>
         </div>
 
         <div class="toolbar">
             <input placeholder="Search subdomains" @bind="_subdomainSearch" @bind:event="oninput" />
             <button type="button" @onclick="() => StartSpiderSubdomainsAsync(selectedOnly: true)" disabled="@(_selectedSubdomainKeys.Count == 0)">Spider selected subdomains (@_selectedSubdomainKeys.Count)</button>
-            <button type="button" @onclick="() => StartSpiderSubdomainsAsync(selectedOnly: false)" disabled="@(SubdomainRows.Count == 0)">Spider all visible subdomains</button>
+            <button type="button" @onclick="() => StartSpiderSubdomainsAsync(selectedOnly: false)" disabled="@(SubdomainRows.Length == 0)">Spider all visible subdomains</button>
             <button type="button" @onclick="SpiderActiveTargetAsync" disabled="@(string.IsNullOrWhiteSpace(_activeTargetId))">Spider active target</button>
         </div>
 
@@ -172,7 +172,7 @@
                 <p class="eyebrow">Inventory</p>
                 <h2>Assets</h2>
             </div>
-            <span class="muted">@FormatNumber(AssetRows.Count) visible</span>
+            <span class="muted">@FormatNumber(AssetRows.Length) visible</span>
         </div>
 
         <div class="toolbar">
@@ -286,7 +286,7 @@
                 <p class="eyebrow">HTTP</p>
                 <h2>HTTP Queue</h2>
             </div>
-            <span class="muted">@FormatNumber(HttpRows.Count) requests</span>
+            <span class="muted">@FormatNumber(HttpRows.Length) requests</span>
         </div>
 
         <div class="toolbar">
@@ -710,8 +710,8 @@
     private string StorageBreakdownLabel => $"Assets {FormatStorageSize(AssetMetadataStorageBytes)} / HTTP {FormatStorageSize(HttpArtifactStorageBytes + InlineHttpStorageBytes)} / Events {FormatStorageSize(EventJournalStorageBytes)}";
     private bool CanCreateTarget => !string.IsNullOrWhiteSpace(_newTargetRootDomain) && _newTargetDepth > 0;
 
-    private IReadOnlyList<JsonElement> TargetRows => MaterializeSorted(_targets.Where(TargetMatchesFilter), TargetSortKey, _targetSortDescending);
-    private IReadOnlyList<JsonElement> SubdomainRows => MaterializeSorted(
+    private JsonElement[] TargetRows => MaterializeSorted(_targets.Where(TargetMatchesFilter), TargetSortKey, _targetSortDescending);
+    private JsonElement[] SubdomainRows => MaterializeSorted(
         _assets
             .Where(MatchesSelectedTargetsScope)
             .Where(a => Text(a, "kind", "Kind").Equals("Subdomain", StringComparison.OrdinalIgnoreCase))
@@ -720,9 +720,9 @@
             .Select(g => g.OrderByDescending(a => Text(a, "discoveredAtUtc", "DiscoveredAtUtc"), StringComparer.Ordinal).First()),
         SubdomainSortKey,
         _subdomainSortDescending);
-    private IReadOnlyList<JsonElement> AssetRows => MaterializeSorted(_assets.Where(MatchesSelectedSubdomainsScope).Where(AssetMatchesFilter), AssetSortKey, _assetSortDescending);
+    private JsonElement[] AssetRows => MaterializeSorted(_assets.Where(MatchesSelectedSubdomainsScope).Where(AssetMatchesFilter), AssetSortKey, _assetSortDescending);
     private IReadOnlyList<JsonElement> WorkerRows => _workers;
-    private IReadOnlyList<JsonElement> HttpRows => MaterializeSorted(_queue.Where(HttpMatchesFilter), HttpSortKey, _httpSortDescending);
+    private JsonElement[] HttpRows => MaterializeSorted(_queue.Where(HttpMatchesFilter), HttpSortKey, _httpSortDescending);
     private IReadOnlyList<JsonElement> HighValueRows => _highValueRows;
     private IReadOnlyList<JsonElement> FilteredHighValueRows => _highValueRows.Where(HighValueMatchesFilter).Take(500).ToArray();
     private IReadOnlyList<JsonElement> FilteredTechnologyRows => _technologyRows.Where(TechnologyMatchesFilter).Take(500).ToArray();
@@ -770,11 +770,11 @@
         }
     }
 
-    private bool AllVisibleTargetsSelected => TargetRows.Count > 0 && TargetRows.All(t => _selectedTargetIds.Contains(Text(t, "id", "Id")));
-    private bool AllVisibleSubdomainsSelected => SubdomainRows.Count > 0 && SubdomainRows.All(s => _selectedSubdomainKeys.Contains(SubdomainKey(s)));
-    private bool AllVisibleAssetsSelected => AssetRows.Count > 0 && AssetRows.All(a => _selectedAssetIds.Contains(Text(a, "id", "Id")));
+    private bool AllVisibleTargetsSelected => TargetRows.Length > 0 && TargetRows.All(t => _selectedTargetIds.Contains(Text(t, "id", "Id")));
+    private bool AllVisibleSubdomainsSelected => SubdomainRows.Length > 0 && SubdomainRows.All(s => _selectedSubdomainKeys.Contains(SubdomainKey(s)));
+    private bool AllVisibleAssetsSelected => AssetRows.Length > 0 && AssetRows.All(a => _selectedAssetIds.Contains(Text(a, "id", "Id")));
     private bool AllVisibleWorkersSelected => WorkerRows.Count > 0 && WorkerRows.All(w => _selectedWorkerServices.Contains(Text(w, "serviceName", "ServiceName")));
-    private bool AllVisibleHttpSelected => HttpRows.Count > 0 && HttpRows.All(q => _selectedHttpIds.Contains(Text(q, "id", "Id")));
+    private bool AllVisibleHttpSelected => HttpRows.Length > 0 && HttpRows.All(q => _selectedHttpIds.Contains(Text(q, "id", "Id")));
     private bool AllVisibleHighValueSelected => FilteredHighValueRows.Count > 0 && FilteredHighValueRows.All(x => _selectedHighValueKeys.Contains(HighValueKey(x)));
     private bool AllVisibleTechnologySelected => FilteredTechnologyRows.Count > 0 && FilteredTechnologyRows.All(x => _selectedTechnologyKeys.Contains(TechnologyKey(x)));
 
@@ -1397,7 +1397,7 @@
         string.IsNullOrWhiteSpace(search) ||
         MatchesAny(row, search, "targetRootDomain", "TargetRootDomain", "subdomain", "Subdomain", "technologyName", "TechnologyName", "version", "Version", "sourceType", "SourceType", "detectionMode", "DetectionMode", "evidenceSummary", "EvidenceSummary");
 
-    private static IReadOnlyList<JsonElement> MaterializeSorted(IEnumerable<JsonElement> rows, Func<JsonElement, string> sortKey, bool desc)
+    private static JsonElement[] MaterializeSorted(IEnumerable<JsonElement> rows, Func<JsonElement, string> sortKey, bool desc)
     {
         return desc
             ? rows.OrderByDescending(sortKey, StringComparer.OrdinalIgnoreCase).ToArray()

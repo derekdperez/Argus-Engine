@@ -46,57 +46,6 @@ DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 cd "$ROOT"
 
-# ARGUS_QUICK_DEPLOY_WEB_OPTION_BEGIN
-argus_quick_deploy_menu() {
-  echo ""
-  echo "Argus Engine Deploy"
-  echo "==================="
-  echo "[Q] Quick Deploy"
-  echo "[Enter] Full DeployOps menu"
-  echo ""
-  read -r -p "Choose: " argus_deploy_choice
-  case "$argus_deploy_choice" in
-    [Qq])
-      echo ""
-      echo "Quick Deploy"
-      echo "============"
-      echo "[1] Deploy Web App Only"
-      echo "[0] Back/Exit"
-      echo ""
-      read -r -p "Choose: " argus_quick_choice
-      case "$argus_quick_choice" in
-        1)
-          exec bash "$DEPLOY_DIR/quick-deploy-web.sh"
-          ;;
-        ""|0)
-          exit 0
-          ;;
-        *)
-          echo "Invalid quick deploy choice." >&2
-          exit 2
-          ;;
-      esac
-      ;;
-    *)
-      return 0
-      ;;
-  esac
-}
-
-if [[ $# -gt 0 ]]; then
-  case "${1:-}" in
-    q|Q|quick|quick-web|quick-deploy|quick-deploy-web)
-      shift
-      exec bash "$DEPLOY_DIR/quick-deploy-web.sh" "$@"
-      ;;
-  esac
-fi
-
-if [[ "${ARGUS_NO_UI:-0}" != "1" && $# -eq 0 && -t 0 && -t 1 ]]; then
-  argus_quick_deploy_menu
-fi
-# ARGUS_QUICK_DEPLOY_WEB_OPTION_END
-
 if [[ "${ARGUS_NO_UI:-0}" != "1" ]]; then
   cmd="${1:-up}"
   if [[ "$cmd" == "up" || "$cmd" == "-fresh" || "$cmd" == "--fresh" || "$cmd" == "--ecs-workers" || "$cmd" == "--gcp-workers" || "$cmd" == "--google-workers" ]]; then

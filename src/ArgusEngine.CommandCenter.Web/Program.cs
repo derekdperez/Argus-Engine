@@ -33,6 +33,11 @@ builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveGatewayBa
 // Client wrappers used by Ops and restored standalone pages.
 builder.Services.AddScoped<WorkerControlApiClient>();
 builder.Services.AddScoped<DiscoveryApiClient>();
+builder.Services.AddScoped<MaintenanceApiClient>();
+builder.Services.AddScoped<OperationsApiClient>();
+builder.Services.AddScoped<UpdatesApiClient>();
+builder.Services.AddScoped<RealtimeApiClient>();
+builder.Services.AddScoped<LocalDockerClient>();
 builder.Services.AddGcpHybridDeploy(builder.Configuration);
 
 // CommandCenter and HighValueFindings inject this realtime client directly. Register

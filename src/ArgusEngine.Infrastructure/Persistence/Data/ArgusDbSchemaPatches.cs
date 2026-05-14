@@ -917,6 +917,19 @@ public static partial class ArgusDbSchemaPatches
                 CREATE INDEX IF NOT EXISTS ix_system_errors_timestamp ON system_errors ("Timestamp" DESC);
                 CREATE INDEX IF NOT EXISTS ix_system_errors_component ON system_errors ("Component");
 
+                CREATE TABLE IF NOT EXISTS user_ui_preferences (
+                    id uuid NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_key character varying(256) NOT NULL,
+                    preference_key character varying(128) NOT NULL,
+                    preference_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+                    created_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    updated_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    CONSTRAINT ux_user_ui_preferences_user_pref UNIQUE (user_key, preference_key)
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_user_ui_preferences_updated
+                    ON user_ui_preferences (updated_at_utc DESC);
+
                 CREATE TABLE IF NOT EXISTS cloud_resource_usage_samples (
                     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
                     sampled_at_utc timestamp with time zone NOT NULL,

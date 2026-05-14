@@ -26,6 +26,7 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
     public DbSet<WorkerScaleTarget> WorkerScaleTargets => Set<WorkerScaleTarget>();
     public DbSet<WorkerScalingSetting> WorkerScalingSettings => Set<WorkerScalingSetting>();
     public DbSet<SystemError> SystemErrors => Set<SystemError>();
+    public DbSet<UserUiPreference> UserUiPreferences => Set<UserUiPreference>();
     public DbSet<Ec2WorkerMachine> Ec2WorkerMachines => Set<Ec2WorkerMachine>();
     public DbSet<TargetScanState> TargetScanStates => Set<TargetScanState>();
     public DbSet<WorkerHeartbeat> WorkerHeartbeats => Set<WorkerHeartbeat>();
@@ -290,6 +291,20 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
                 t.HasCheckConstraint("ck_worker_scaling_settings_max_gte_min", "max_tasks >= min_tasks");
                 t.HasCheckConstraint("ck_worker_scaling_settings_target_positive", "target_backlog_per_task > 0");
             });
+        });
+
+        modelBuilder.Entity<UserUiPreference>(e =>
+        {
+            e.ToTable("user_ui_preferences");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.UserKey).HasColumnName("user_key").HasMaxLength(256).IsRequired();
+            e.Property(x => x.PreferenceKey).HasColumnName("preference_key").HasMaxLength(128).IsRequired();
+            e.Property(x => x.PreferenceJson).HasColumnName("preference_json").HasColumnType("jsonb").IsRequired();
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.HasIndex(x => new { x.UserKey, x.PreferenceKey }).IsUnique();
+            e.HasIndex(x => x.UpdatedAtUtc);
         });
 
         modelBuilder.Entity<Ec2WorkerMachine>(e =>

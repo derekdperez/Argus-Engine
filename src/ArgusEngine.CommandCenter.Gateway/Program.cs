@@ -156,6 +156,7 @@ static string? SelectClientName(PathString path)
     if (path.StartsWithSegments("/api/admin", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/maintenance", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/diagnostics", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/ui-preferences", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/bus", StringComparison.OrdinalIgnoreCase))
     {
         return GatewayServiceRoutes.MaintenanceClientName;
@@ -328,7 +329,7 @@ static class GatewayRouteDiagnostics
         "/api/discovery",
     ];
 
-    private static readonly string[] MaintenancePrefixes = ["/api/admin", "/api/maintenance", "/api/diagnostics", "/api/bus"];
+    private static readonly string[] MaintenancePrefixes = ["/api/admin", "/api/maintenance", "/api/diagnostics", "/api/ui-preferences", "/api/bus"];
     private static readonly string[] UpdatesPrefixes = ["/api/development/components"];
     private static readonly string[] RealtimePrefixes = ["/hubs/discovery"];
 

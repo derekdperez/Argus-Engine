@@ -20,7 +20,7 @@ builder.Services
     .AddOptions<CommandCenterWebOptions>()
     .Configure<IConfiguration, IHostEnvironment>((options, configuration, environment) =>
     {
-        options.GatewayBaseUrl = ResolveGatewayBaseAddress(configuration, environment).ToString();
+        options.GatewayBaseUrl = ResolveGatewayBaseAddressFromConfiguration(configuration, environment).ToString();
     })
     .Validate(
         options => Uri.TryCreate(options.GatewayBaseUrl, UriKind.Absolute, out _),
@@ -170,7 +170,7 @@ static Uri ResolveGatewayBaseAddress(IServiceProvider services)
     return new Uri("http://localhost/");
 }
 
-static Uri ResolveGatewayBaseAddress(IConfiguration configuration, IHostEnvironment environment)
+static Uri ResolveGatewayBaseAddressFromConfiguration(IConfiguration configuration, IHostEnvironment environment)
 {
     var configured =
         configuration["CommandCenter:GatewayBaseUrl"] ??

@@ -3,6 +3,7 @@
 @page "/admin"
 @rendermode InteractiveServer
 @using System.Net.Http.Json
+@using ArgusEngine.Application.DataRetention
 @using ArgusEngine.CommandCenter.Web.Clients
 @inject MaintenanceApiClient MaintenanceApi
 
@@ -95,6 +96,89 @@
         <section class="panel">
             <div class="section-heading">
                 <div>
+                    <p class="eyebrow">Storage</p>
+                    <h2>Event Retention Cleanup</h2>
+                </div>
+                @if (_retentionStatus is not null)
+                {
+                    <span class="muted">
+                        Last run @AppTimeFormat.Format(_retentionStatus.LastRunAtUtc)
+                    </span>
+                }
+            </div>
+
+            <p class="muted">
+                Deletes old high-volume event telemetry rows (bus journal and outbox) to reduce database disk usage.
+            </p>
+
+            @if (!string.IsNullOrWhiteSpace(_retentionMessage))
+            {
+                <p class="muted">@_retentionMessage</p>
+            }
+
+            <div class="retention-grid">
+                <label>
+                    <span class="muted">Bus journal retention (hours)</span>
+                    <input class="admin-number" type="number" min="1" max="720" @bind="_busJournalRetentionHours" />
+                </label>
+                <label>
+                    <span class="muted">Succeeded outbox retention (hours)</span>
+                    <input class="admin-number" type="number" min="1" max="720" @bind="_succeededOutboxRetentionHours" />
+                </label>
+                <label>
+                    <span class="muted">Failed outbox retention (hours)</span>
+                    <input class="admin-number" type="number" min="1" max="720" @bind="_failedOutboxRetentionHours" />
+                </label>
+                <label>
+                    <span class="muted">Dead-letter outbox retention (hours)</span>
+                    <input class="admin-number" type="number" min="1" max="720" @bind="_deadLetterOutboxRetentionHours" />
+                </label>
+                <label>
+                    <span class="muted">Batch size per delete pass</span>
+                    <input class="admin-number" type="number" min="100" max="20000" @bind="_retentionBatchSize" />
+                </label>
+                <label>
+                    <span class="muted">Max batches this run</span>
+                    <input class="admin-number" type="number" min="1" max="5000" @bind="_retentionMaxBatchesPerRun" />
+                </label>
+            </div>
+
+            <label class="retention-toggle">
+                <input type="checkbox" @bind="_archiveEventRowsBeforeDelete" />
+                <span>Archive event rows before deleting (uses more storage)</span>
+            </label>
+
+            <div class="hero-actions">
+                <button type="button" class="btn primary" disabled="@_retentionBusy" @onclick="RunDataRetentionNowAsync">
+                    @(_retentionBusy ? "Running cleanup..." : "Run Event Cleanup Now")
+                </button>
+                <button type="button" class="btn secondary" disabled="@_retentionBusy" @onclick="ReloadRetentionStatusAsync">Refresh Status</button>
+            </div>
+
+            @if (_retentionStatus?.LastResult is not null)
+            {
+                var result = _retentionStatus.LastResult;
+                var eventRowsDeleted = result.BusJournalDeleted + result.SucceededOutboxDeleted + result.FailedOutboxDeleted + result.DeadLetterOutboxDeleted + result.InboxDeleted;
+                <div class="admin-traffic-grid">
+                    <div>
+                        <span class="muted">Event rows deleted</span>
+                        <strong>@eventRowsDeleted.ToString("N0")</strong>
+                    </div>
+                    <div>
+                        <span class="muted">Bus journal deleted</span>
+                        <strong>@result.BusJournalDeleted.ToString("N0")</strong>
+                    </div>
+                    <div>
+                        <span class="muted">Outbox deleted</span>
+                        <strong>@(result.SucceededOutboxDeleted + result.FailedOutboxDeleted + result.DeadLetterOutboxDeleted).ToString("N0")</strong>
+                    </div>
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
                     <p class="eyebrow">Cloud samples</p>
                     <h2>Resource-hour rollup</h2>
                 </div>
@@ -176,9 +260,19 @@
     private readonly List<EditableWorkerScalingSetting> _scalingSettings = [];
     private string _error = string.Empty;
     private string _scalingMessage = string.Empty;
+    private string _retentionMessage = string.Empty;
     private bool _initialLoadStarted;
     private bool _loading = true;
     private bool _scalingBusy;
+    private bool _retentionBusy;
+    private DataRetentionStatusResponse? _retentionStatus;
+    private int _busJournalRetentionHours = 48;
+    private int _succeededOutboxRetentionHours = 24;
+    private int _failedOutboxRetentionHours = 168;
+    private int _deadLetterOutboxRetentionHours = 720;
+    private int _retentionBatchSize = 5000;
+    private int _retentionMaxBatchesPerRun = 500;
+    private bool _archiveEventRowsBeforeDelete;
 
     private string UsageBarWidth => $"{Math.Clamp(_snapshot?.EcsWorkerPercentUsed ?? 0, 0, 100):0.##}%";
 
@@ -207,9 +301,23 @@
         {
             _snapshot = await MaintenanceApi.Client.GetFromJsonAsync<AdminUsageSnapshotDto>("/api/admin/usage").ConfigureAwait(false);
             var settings = await MaintenanceApi.Client.GetFromJsonAsync<List<WorkerScalingSettingsDto>>("/api/workers/scaling-settings").ConfigureAwait(false);
+            _retentionStatus = await MaintenanceApi.Client.GetFromJsonAsync<DataRetentionStatusResponse>("/api/admin/data-retention/status").ConfigureAwait(false);
             _scalingSettings.Clear();
             if (settings is not null)
                 _scalingSettings.AddRange(settings.Select(EditableWorkerScalingSetting.FromDto));
+
+            if (_retentionStatus?.Options is not null)
+            {
+                var opt = _retentionStatus.Options;
+                _busJournalRetentionHours = ResolveHours(opt.BusJournalRetentionDays, opt.BusJournalRetentionHours, fallbackHours: 48);
+                _succeededOutboxRetentionHours = ResolveHours(opt.SucceededOutboxRetentionDays, opt.SucceededOutboxRetentionHours, fallbackHours: 24);
+                _failedOutboxRetentionHours = ResolveHours(opt.FailedOutboxRetentionDays, opt.FailedOutboxRetentionHours, fallbackHours: 7 * 24);
+                _deadLetterOutboxRetentionHours = ResolveHours(opt.DeadLetterOutboxRetentionDays, opt.DeadLetterOutboxRetentionHours, fallbackHours: 30 * 24);
+                _retentionBatchSize = opt.BatchSize > 0 ? opt.BatchSize : _retentionBatchSize;
+                _retentionMaxBatchesPerRun = opt.MaxBatchesPerRun > 0 ? opt.MaxBatchesPerRun : _retentionMaxBatchesPerRun;
+                _archiveEventRowsBeforeDelete = opt.ArchiveEventTablesBeforeDelete;
+            }
+
             if (_snapshot is null)
                 _error = "Usage payload was empty.";
         }
@@ -255,6 +363,78 @@
         }
     }
 
+    private async Task ReloadRetentionStatusAsync()
+    {
+        try
+        {
+            _retentionStatus = await MaintenanceApi.Client.GetFromJsonAsync<DataRetentionStatusResponse>("/api/admin/data-retention/status").ConfigureAwait(false);
+            _retentionMessage = "Retention status refreshed.";
+        }
+        catch (Exception ex)
+        {
+            _retentionMessage = ex.Message;
+        }
+    }
+
+    private async Task RunDataRetentionNowAsync()
+    {
+        _retentionBusy = true;
+        _retentionMessage = "";
+        try
+        {
+            using var response = await MaintenanceApi.Client.PostAsJsonAsync(
+                    "/api/admin/data-retention/run-now",
+                    new DataRetentionRunRequest(
+                        Confirmation: "RUN DATA RETENTION",
+                        BusJournalRetentionHours: _busJournalRetentionHours,
+                        SucceededOutboxRetentionHours: _succeededOutboxRetentionHours,
+                        FailedOutboxRetentionHours: _failedOutboxRetentionHours,
+                        DeadLetterOutboxRetentionHours: _deadLetterOutboxRetentionHours,
+                        BatchSize: _retentionBatchSize,
+                        MaxBatchesPerRun: _retentionMaxBatchesPerRun,
+                        ArchiveEventTablesBeforeDelete: _archiveEventRowsBeforeDelete))
+                .ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _retentionMessage = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                return;
+            }
+
+            await ReloadRetentionStatusAsync().ConfigureAwait(false);
+            if (_retentionStatus?.LastResult is DataRetentionRunResult result)
+            {
+                var eventRowsDeleted = result.BusJournalDeleted +
+                                       result.SucceededOutboxDeleted +
+                                       result.FailedOutboxDeleted +
+                                       result.DeadLetterOutboxDeleted +
+                                       result.InboxDeleted;
+                _retentionMessage = $"Cleanup completed. Deleted {eventRowsDeleted:N0} event rows.";
+            }
+            else
+            {
+                _retentionMessage = "Cleanup completed.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _retentionMessage = ex.Message;
+        }
+        finally
+        {
+            _retentionBusy = false;
+        }
+    }
+
+    private static int ResolveHours(int retentionDays, int retentionHours, int fallbackHours)
+    {
+        if (retentionHours > 0)
+            return retentionHours;
+        if (retentionDays > 0)
+            return retentionDays * 24;
+        return fallbackHours;
+    }
+
     private static string FormatBytes(long bytes)
     {
         string[] units = ["B", "KB", "MB", "GB", "TB"];
@@ -298,6 +478,38 @@
             UpdatedAtUtc = dto.UpdatedAtUtc;
         }
     }
+
+    private sealed record DataRetentionRunRequest(
+        string Confirmation,
+        int BusJournalRetentionHours,
+        int SucceededOutboxRetentionHours,
+        int FailedOutboxRetentionHours,
+        int DeadLetterOutboxRetentionHours,
+        int BatchSize,
+        int MaxBatchesPerRun,
+        bool ArchiveEventTablesBeforeDelete);
+
+    private sealed class DataRetentionStatusResponse
+    {
+        public bool Enabled { get; set; }
+        public DateTimeOffset? LastRunAtUtc { get; set; }
+        public DataRetentionRunResult? LastResult { get; set; }
+        public DataRetentionOptionsSummary? Options { get; set; }
+    }
+
+    private sealed class DataRetentionOptionsSummary
+    {
+        public int RunIntervalMinutes { get; set; }
+        public int SucceededOutboxRetentionDays { get; set; }
+        public int SucceededOutboxRetentionHours { get; set; }
+        public int FailedOutboxRetentionDays { get; set; }
+        public int FailedOutboxRetentionHours { get; set; }
+        public int DeadLetterOutboxRetentionDays { get; set; }
+        public int DeadLetterOutboxRetentionHours { get; set; }
+        public int BusJournalRetentionDays { get; set; }
+        public int BusJournalRetentionHours { get; set; }
+        public int BatchSize { get; set; }
+        public int MaxBatchesPerRun { get; set; }
+        public bool ArchiveEventTablesBeforeDelete { get; set; }
+    }
 }
-
-

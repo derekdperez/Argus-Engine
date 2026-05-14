@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <Version>2.6.3</Version>
+    <NoWarn>$(NoWarn);CA1305;CA1822;CA1848;CA1859</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

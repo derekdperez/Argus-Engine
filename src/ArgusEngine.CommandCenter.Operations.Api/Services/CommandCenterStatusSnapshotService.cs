@@ -198,7 +198,7 @@ public sealed class CommandCenterStatusSnapshotService(
 
         var result = new List<CommandCenterWorkerStatus>();
 
-        foreach (var definition in workerDefinitions.WorkerScaleDefinitions)
+        foreach (var definition in WorkerScaleDefinitionProvider.WorkerScaleDefinitions)
         {
             var desiredCount = ResolveDesiredCount(definition.ScaleKey, scaleTargets);
             
@@ -270,7 +270,7 @@ public sealed class CommandCenterStatusSnapshotService(
                 Reason: reason));
         }
 
-        foreach (var requiredWorkerKey in workerDefinitions.RequiredWorkerKeys)
+        foreach (var requiredWorkerKey in WorkerScaleDefinitionProvider.RequiredWorkerKeys)
         {
             if (result.Any(r => string.Equals(r.Key, requiredWorkerKey, StringComparison.OrdinalIgnoreCase)))
             {
@@ -335,7 +335,7 @@ public sealed class CommandCenterStatusSnapshotService(
 
     private List<CommandCenterWorkerStatus> BuildUnavailableWorkerStatuses()
     {
-        return workerDefinitions.WorkerScaleDefinitions
+        return WorkerScaleDefinitionProvider.WorkerScaleDefinitions
             .Select(definition => new CommandCenterWorkerStatus(
                 Key: definition.ScaleKey,
                 DisplayName: definition.DisplayName,
@@ -357,7 +357,7 @@ public sealed class CommandCenterStatusSnapshotService(
             return Math.Max(0, desired);
         }
 
-        var defaults = workerDefinitions.DefaultWorkerScalingSetting(scaleKey);
+        var defaults = WorkerScaleDefinitionProvider.DefaultWorkerScalingSetting(scaleKey);
         return Math.Max(0, defaults.MinTasks);
     }
 

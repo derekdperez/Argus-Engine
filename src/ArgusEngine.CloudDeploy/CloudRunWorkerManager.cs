@@ -97,34 +97,55 @@ internal sealed class CloudRunWorkerManager(
         CancellationToken ct)
     {
         var client = await ServicesClient.CreateAsync(cancellationToken: ct);
+        var normalizedMin = Math.Clamp(minInstances, 0, 1000);
+        var normalizedMax = Math.Clamp(Math.Max(maxInstances, Math.Max(normalizedMin, 1)), 1, 1000);
 
         try
         {
             var existing = await client.GetServiceAsync(ServiceResourceName(worker), ct);
 
-            existing.Template.Scaling = new RevisionScaling
+            var patch = new Service
             {
-                MinInstanceCount = minInstances,
-                MaxInstanceCount = maxInstances,
+                Name = existing.Name,
+                Template = new RevisionTemplate
+                {
+                    Scaling = new RevisionScaling
+                    {
+                        MinInstanceCount = normalizedMin,
+                        MaxInstanceCount = normalizedMax
+                    }
+                }
             };
 
             var op = await client.UpdateServiceAsync(new UpdateServiceRequest
             {
-                Service = existing
+                Service = patch,
+                UpdateMask = new FieldMask
+                {
+                    Paths =
+                    {
+                        "template.scaling.min_instance_count",
+                        "template.scaling.max_instance_count"
+                    }
+                }
             });
 
             await op.PollUntilCompletedAsync();
 
             logger.LogInformation(
                 "Scaled {Worker} to min={Min} max={Max}",
-                worker, minInstances, maxInstances);
+                worker, normalizedMin, normalizedMax);
 
             return CloudDeployResult.Ok(
-                $"Scaled {ServiceName(worker)}: min={minInstances}, max={maxInstances}");
+                $"Scaled {ServiceName(worker)}: min={normalizedMin}, max={normalizedMax}");
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
         {
             return CloudDeployResult.Fail($"{ServiceName(worker)} is not deployed yet.");
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.InvalidArgument)
+        {
+            return CloudDeployResult.Fail($"Scale rejected for {ServiceName(worker)}: {ex.Status.Detail}");
         }
         catch (Exception ex)
         {

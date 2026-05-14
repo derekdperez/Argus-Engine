@@ -92,6 +92,33 @@
                         </Template>
                     </RadzenDataGridColumn>
 
+                    <RadzenDataGridColumn TItem="WorkerStatus" Title="Manual Scale" Width="210px">
+                        <Template Context="ws">
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.35rem">
+                                <RadzenNumeric TValue="int"
+                                               Value="@DesiredMin(ws)"
+                                               Change="@(value => SetDesiredMin(ws.Worker, value))"
+                                               Min="0"
+                                               Max="100"
+                                               Style="width: 70px" />
+                                <span>-</span>
+                                <RadzenNumeric TValue="int"
+                                               Value="@DesiredMax(ws)"
+                                               Change="@(value => SetDesiredMax(ws.Worker, value))"
+                                               Min="0"
+                                               Max="100"
+                                               Style="width: 70px" />
+                                <RadzenButton Icon="done"
+                                              Size="ButtonSize.ExtraSmall"
+                                              ButtonStyle="ButtonStyle.Primary"
+                                              Variant="Variant.Text"
+                                              Click="() => ApplyManualScaleAsync(ws.Worker)"
+                                              Disabled="_busy || ws.Status == CloudDeployStatus.NotDeployed"
+                                              title="Apply manual scale" />
+                            </RadzenStack>
+                        </Template>
+                    </RadzenDataGridColumn>
+
                     <RadzenDataGridColumn TItem="WorkerStatus" Title="Image" >
                         <Template Context="ws">
                             <RadzenText Style="font-size: 0.8rem; font-family: monospace; overflow: hidden; text-overflow: ellipsis">
@@ -204,6 +231,8 @@
     private IReadOnlyList<WorkerStatus>? _workerStatuses;
     private IReadOnlyList<string>? _preflightIssues;
     private readonly List<LogEntry> _log = [];
+    private readonly Dictionary<WorkerType, int> _desiredMin = [];
+    private readonly Dictionary<WorkerType, int> _desiredMax = [];
 
     protected override async Task OnInitializedAsync() =>
         await RefreshStatusAsync();
@@ -215,6 +244,11 @@
         await RunAsync(async ct =>
         {
             _workerStatuses = await DeployService.GetWorkerStatusesAsync(null, ct);
+            foreach (var status in _workerStatuses)
+            {
+                _desiredMin.TryAdd(status.Worker, status.MinInstances);
+                _desiredMax.TryAdd(status.Worker, status.MaxInstances);
+            }
         });
     }
 
@@ -274,6 +308,13 @@
             LogResult(result);
         });
         await RefreshStatusAsync();
+    }
+
+    private async Task ApplyManualScaleAsync(WorkerType worker)
+    {
+        var min = DesiredMin(worker);
+        var max = Math.Max(min, DesiredMax(worker));
+        await ScaleWorkerAsync(worker, min, max);
     }
 
     // ── Teardown ──────────────────────────────────────────────────────────────
@@ -356,6 +397,29 @@
         // Cap log at 500 entries
         if (_log.Count > 500) _log.RemoveAt(0);
     }
+
+    private int DesiredMin(WorkerStatus status) => DesiredMin(status.Worker);
+
+    private int DesiredMin(WorkerType worker) =>
+        _desiredMin.TryGetValue(worker, out var value) ? value : DefaultMin(worker);
+
+    private int DesiredMax(WorkerStatus status) => DesiredMax(status.Worker);
+
+    private int DesiredMax(WorkerType worker) =>
+        _desiredMax.TryGetValue(worker, out var value) ? value : Math.Max(DefaultMin(worker), 10);
+
+    private void SetDesiredMin(WorkerType worker, int value)
+    {
+        _desiredMin[worker] = Math.Clamp(value, 0, 100);
+        if (DesiredMax(worker) < _desiredMin[worker])
+            _desiredMax[worker] = _desiredMin[worker];
+    }
+
+    private void SetDesiredMax(WorkerType worker, int value) =>
+        _desiredMax[worker] = Math.Clamp(Math.Max(value, DesiredMin(worker)), 0, 100);
+
+    private static int DefaultMin(WorkerType worker) =>
+        worker is WorkerType.Spider or WorkerType.Enumeration or WorkerType.HttpRequester ? 8 : 2;
 
     private void LogResult(BulkDeployResult result)
     {

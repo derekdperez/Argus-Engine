@@ -1008,6 +1008,13 @@ class ArgusDeployConsole:
             return 2
         return self.runner.bash_script(script, list(args))
 
+    def run_gcp_script(self, name: str, args: Sequence[str] = ()) -> int:
+        script = self.paths.gcp_dir / name
+        if not script.exists():
+            self.ui.error(f"Google Cloud helper not found: {self.paths.rel(script)}")
+            return 2
+        return self.runner.bash_script(script, list(args))
+
     def health_checks(self) -> int:
         self.ui.section("Health checks")
         failures = 0
@@ -1121,6 +1128,39 @@ class ArgusDeployConsole:
             ]
         )
 
+    def gcp_status(self, services: Sequence[str] = ()) -> int:
+        selected = [self.normalize_worker_name(s) for s in services] if services else self.worker_services()
+        if not selected:
+            selected = list(WORKERS)
+        project = self.get_env("GCP_PROJECT_ID")
+        region = self.get_env("GCP_REGION", "us-central1")
+        if not project:
+            self.ui.error("GCP_PROJECT_ID is not configured. Add it to deploy/gcp/.env.")
+            return 2
+
+        self.ui.section("Google Cloud worker pool status")
+        exit_code = 0
+        for service in selected:
+            pool_name = self.gcp_worker_pool_name(service)
+            code = self.runner.run(
+                [
+                    "gcloud",
+                    "run",
+                    "worker-pools",
+                    "describe",
+                    pool_name,
+                    "--project",
+                    project,
+                    "--region",
+                    region,
+                    "--format",
+                    "table(metadata.name,status.conditions[0].type,status.conditions[0].state,template.template.containers[0].image)",
+                ]
+            )
+            if code != 0:
+                exit_code = code
+        return exit_code
+
     def apply_local_worker_scale(self, counts: Mapping[str, int]) -> int:
         if not counts:
             self.ui.warn("No worker counts provided.")
@@ -1164,6 +1204,42 @@ class ArgusDeployConsole:
                     ecs_service,
                     "--desired-count",
                     str(count),
+                ]
+            )
+            if code != 0:
+                exit_code = code
+        return exit_code
+
+    def apply_gcp_worker_scale(self, counts: Mapping[str, int]) -> int:
+        if not counts:
+            self.ui.warn("No Google worker counts provided.")
+            return 0
+        normalized = self.normalize_worker_counts(counts, include_http_requester=True)
+        project = self.get_env("GCP_PROJECT_ID")
+        region = self.get_env("GCP_REGION", "us-central1")
+        if not project:
+            self.ui.error("GCP_PROJECT_ID is not configured. Add it to deploy/gcp/.env.")
+            return 2
+
+        self.ui.section("Applying Google Cloud worker pool instance counts")
+        exit_code = 0
+        for service, count in normalized.items():
+            pool_name = self.gcp_worker_pool_name(service)
+            self.ui.info(f"{service} -> {pool_name}: instances={count}")
+            code = self.runner.run(
+                [
+                    "gcloud",
+                    "run",
+                    "worker-pools",
+                    "update",
+                    pool_name,
+                    "--project",
+                    project,
+                    "--region",
+                    region,
+                    "--instances",
+                    str(count),
+                    "--quiet",
                 ]
             )
             if code != 0:
@@ -1473,6 +1549,10 @@ class ArgusDeployConsole:
         env_name = str(meta["ecs_env"])
         return self.get_env(env_name, str(meta["ecs_default"]))
 
+    def gcp_worker_pool_name(self, worker: str) -> str:
+        suffix = worker.replace("-", "_").upper()
+        return self.get_env(f"GCP_WORKER_POOL_NAME_{suffix}", f"argus-{worker}")
+
     def get_env(self, key: str, default: str = "") -> str:
         return os.environ.get(key) or self.env.get(key) or default
 
@@ -1507,10 +1587,12 @@ Deploy/update:
   deploy/deploy-ui.py deploy --image [service...]
   deploy/deploy-ui.py deploy --fresh
   deploy/deploy-ui.py deploy --ecs-workers
+  deploy/deploy-ui.py deploy --gcp-workers
 
 Scaling:
   deploy/deploy-ui.py scale local worker-spider=4 worker-enum=2 worker-http-requester=2
   deploy/deploy-ui.py scale ecs worker-spider=6 worker-techid=1
+  deploy/deploy-ui.py scale gcp worker-spider=8 worker-enum=8 worker-http-requester=8
   deploy/deploy-ui.py scale autoscale
 
 Monitoring:
@@ -1531,6 +1613,13 @@ AWS/ECS:
   deploy/deploy-ui.py ecs replace [worker-service...]
   deploy/deploy-ui.py ecs status
 
+Google:
+  deploy/deploy-ui.py gcp workers
+  deploy/deploy-ui.py gcp build [service...]
+  deploy/deploy-ui.py gcp deploy [service...]
+  deploy/deploy-ui.py gcp scale worker-spider=8 worker-techid=2
+  deploy/deploy-ui.py gcp status
+
 Global options:
   --dry-run, -n       Print commands without executing them
   --yes, -y           Assume yes for destructive confirmations
@@ -1541,7 +1630,7 @@ Global options:
 Compatibility:
   deploy-ui.py still accepts deploy.sh handoff-style arguments such as:
   up, --fresh, -fresh, --ecs-workers, --hot, --image, logs, status, restart,
-  down, smoke.
+  down, smoke, --gcp-workers.
             """.strip()
         )
 

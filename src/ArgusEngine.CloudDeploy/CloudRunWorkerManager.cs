@@ -231,8 +231,8 @@ internal sealed class CloudRunWorkerManager(
                 },
                 Scaling = new RevisionScaling
                 {
-                    MinInstanceCount = _opts.WorkerMinInstances,
-                    MaxInstanceCount = _opts.WorkerMaxInstances,
+                    MinInstanceCount = InitialMinInstances(worker),
+                    MaxInstanceCount = Math.Max(_opts.WorkerMaxInstances, InitialMinInstances(worker)),
                 },
                 MaxInstanceRequestConcurrency = _opts.WorkerConcurrency,
             },
@@ -261,4 +261,9 @@ internal sealed class CloudRunWorkerManager(
 
     private static EnvVar Env(string name, string value) =>
         new() { Name = name, Value = value };
+
+    private int InitialMinInstances(WorkerType worker) =>
+        worker is WorkerType.Spider or WorkerType.Enumeration or WorkerType.HttpRequester
+            ? Math.Max(8, _opts.WorkerMinInstances)
+            : Math.Max(2, _opts.WorkerMinInstances);
 }

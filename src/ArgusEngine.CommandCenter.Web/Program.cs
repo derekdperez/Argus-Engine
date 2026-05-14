@@ -1,6 +1,7 @@
 using ArgusEngine.CommandCenter.Realtime;
 using ArgusEngine.CommandCenter.Web.Clients;
 using ArgusEngine.CommandCenter.Web.Components;
+using ArgusEngine.CloudDeploy;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -32,6 +33,7 @@ builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ResolveGatewayBa
 // Client wrappers used by Ops and restored standalone pages.
 builder.Services.AddScoped<WorkerControlApiClient>();
 builder.Services.AddScoped<DiscoveryApiClient>();
+builder.Services.AddGcpHybridDeploy(builder.Configuration);
 
 // CommandCenter and HighValueFindings inject this realtime client directly. Register
 // it explicitly so prerender/smoke-test can construct pages before the

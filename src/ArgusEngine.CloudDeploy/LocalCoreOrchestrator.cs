@@ -32,7 +32,17 @@ internal sealed class LocalCoreOrchestrator(
         progress?.Report(new(null, "Starting local core services via docker compose..."));
         logger.LogInformation("Starting local core services from {File}", ComposeFilePath);
 
-        return await RunComposeAsync(["up", "-d", "--pull", "missing"], progress, ct);
+        return await RunComposeAsync([
+            "up", "-d", "--pull", "missing",
+            "--scale", "gatekeeper=0",
+            "--scale", "command-center-spider-dispatcher=0",
+            "--scale", "worker-spider=0",
+            "--scale", "worker-http-requester=0",
+            "--scale", "worker-enum=0",
+            "--scale", "worker-portscan=0",
+            "--scale", "worker-highvalue=0",
+            "--scale", "worker-techid=0",
+        ], progress, ct);
     }
 
     public async Task<CloudDeployResult> StopAsync(
@@ -58,6 +68,15 @@ internal sealed class LocalCoreOrchestrator(
                 ..args,
             ])
             .WithWorkingDirectory(_opts.RepoRoot)
+            .WithEnvironmentVariables(new Dictionary<string, string?>
+            {
+                ["ARGUS_WORKER_SPIDER_REPLICAS"] = "0",
+                ["ARGUS_WORKER_HTTP_REQUESTER_REPLICAS"] = "0",
+                ["ARGUS_WORKER_ENUM_REPLICAS"] = "0",
+                ["ARGUS_WORKER_PORTSCAN_REPLICAS"] = "0",
+                ["ARGUS_WORKER_HIGHVALUE_REPLICAS"] = "0",
+                ["ARGUS_WORKER_TECHID_REPLICAS"] = "0",
+            })
             .WithValidation(CommandResultValidation.None);
 
         var errors = new List<string>();

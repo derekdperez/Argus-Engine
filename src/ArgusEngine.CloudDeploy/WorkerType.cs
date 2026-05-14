@@ -19,9 +19,9 @@ public static class WorkerTypeExtensions
     /// <summary>Kebab-case slug used in Cloud Run service names and image tags.</summary>
     public static string ToSlug(this WorkerType worker) => worker switch
     {
-        WorkerType.Enumeration            => "enumeration",
+        WorkerType.Enumeration            => "enum",
         WorkerType.Spider                 => "spider",
-        WorkerType.HttpRequester          => "httprequester",
+        WorkerType.HttpRequester          => "http-requester",
         WorkerType.PortScan               => "portscan",
         WorkerType.HighValue              => "highvalue",
         WorkerType.TechnologyIdentification => "techid",
@@ -40,6 +40,28 @@ public static class WorkerTypeExtensions
         WorkerType.PortScan               => "src/ArgusEngine.Workers.PortScan/ArgusEngine.Workers.PortScan.csproj",
         WorkerType.HighValue              => "src/ArgusEngine.Workers.HighValue/ArgusEngine.Workers.HighValue.csproj",
         WorkerType.TechnologyIdentification => "src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj",
+        _ => throw new ArgumentOutOfRangeException(nameof(worker), worker, null),
+    };
+
+    public static string ToProjectDir(this WorkerType worker) => worker switch
+    {
+        WorkerType.Enumeration            => "ArgusEngine.Workers.Enumeration",
+        WorkerType.Spider                 => "ArgusEngine.Workers.Spider",
+        WorkerType.HttpRequester          => "ArgusEngine.Workers.HttpRequester",
+        WorkerType.PortScan               => "ArgusEngine.Workers.PortScan",
+        WorkerType.HighValue              => "ArgusEngine.Workers.HighValue",
+        WorkerType.TechnologyIdentification => "ArgusEngine.Workers.TechnologyIdentification",
+        _ => throw new ArgumentOutOfRangeException(nameof(worker), worker, null),
+    };
+
+    public static string ToAppDll(this WorkerType worker) => worker switch
+    {
+        WorkerType.Enumeration            => "ArgusEngine.Workers.Enumeration.dll",
+        WorkerType.Spider                 => "ArgusEngine.Workers.Spider.dll",
+        WorkerType.HttpRequester          => "ArgusEngine.Workers.HttpRequester.dll",
+        WorkerType.PortScan               => "ArgusEngine.Workers.PortScan.dll",
+        WorkerType.HighValue              => "ArgusEngine.Workers.HighValue.dll",
+        WorkerType.TechnologyIdentification => "ArgusEngine.Workers.TechnologyIdentification.dll",
         _ => throw new ArgumentOutOfRangeException(nameof(worker), worker, null),
     };
 

@@ -30,7 +30,7 @@ public sealed class GcpDeployOptions
     public string ImageTag { get; set; } = "latest";
 
     // ── Worker scaling defaults ───────────────────────────────────────────────
-    public int  WorkerMinInstances  { get; set; } = 0;   // 0 = scale to zero
+    public int  WorkerMinInstances  { get; set; } = 2;
     public int  WorkerMaxInstances  { get; set; } = 10;
     public int  WorkerConcurrency   { get; set; } = 4;
     public string WorkerCpu         { get; set; } = "1";
@@ -55,7 +55,7 @@ public sealed class GcpDeployOptions
     /// Path to the docker-compose file for local core services.
     /// Defaults to "deploy/docker-compose.core.yml" relative to RepoRoot.
     /// </summary>
-    public string CoreComposeFile { get; set; } = "deploy/docker-compose.core.yml";
+    public string CoreComposeFile { get; set; } = "deploy/docker-compose.yml";
 
     /// <summary>
     /// Absolute path to the repository root.  Required for building images and

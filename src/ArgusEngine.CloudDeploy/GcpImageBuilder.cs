@@ -89,8 +89,10 @@ internal sealed class GcpImageBuilder(
         CancellationToken               ct)
     {
         var imageUri = GetImageUri(worker);
-        var csprojRelPath = worker.ToCsprojPath();
-        var dockerfilePath = Path.Combine(_opts.RepoRoot, "deploy", "Dockerfile.worker");
+        var projectDir = worker.ToProjectDir();
+        var appDll = worker.ToAppDll();
+        var dockerfileName = worker == WorkerType.Enumeration ? "Dockerfile.worker-enum" : "Dockerfile.worker";
+        var dockerfilePath = Path.Combine(_opts.RepoRoot, "deploy", dockerfileName);
 
         if (!File.Exists(dockerfilePath))
             return CloudDeployResult.Fail(
@@ -106,7 +108,8 @@ internal sealed class GcpImageBuilder(
             .WithArguments([
                 "build",
                 "--file", dockerfilePath,
-                "--build-arg", $"WORKER_PROJECT={csprojRelPath}",
+                "--build-arg", $"PROJECT_DIR={projectDir}",
+                "--build-arg", $"APP_DLL={appDll}",
                 "--tag", imageUri,
                 _opts.RepoRoot,
             ])

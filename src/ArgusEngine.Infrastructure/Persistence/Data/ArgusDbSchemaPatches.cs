@@ -921,7 +921,7 @@ public static partial class ArgusDbSchemaPatches
                     id uuid NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
                     user_key character varying(256) NOT NULL,
                     preference_key character varying(128) NOT NULL,
-                    preference_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+                    preference_json jsonb NOT NULL DEFAULT '{{}}'::jsonb,
                     created_at_utc timestamp with time zone NOT NULL DEFAULT now(),
                     updated_at_utc timestamp with time zone NOT NULL DEFAULT now(),
                     CONSTRAINT ux_user_ui_preferences_user_pref UNIQUE (user_key, preference_key)

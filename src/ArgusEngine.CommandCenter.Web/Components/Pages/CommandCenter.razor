@@ -89,10 +89,7 @@
 
     <nav class="cc-tabs" aria-label="Command Center sections">
         <button class="@TabClass(CommandTab.Targets)" @onclick="@(() => SelectTabAsync(CommandTab.Targets))">Targets</button>
-        <button class="@TabClass(CommandTab.Assets)" @onclick="@(() => SelectTabAsync(CommandTab.Assets))">Assets</button>
-        <button class="@TabClass(CommandTab.HttpQueue)" @onclick="@(() => SelectTabAsync(CommandTab.HttpQueue))">HTTP queue</button>
-        <button class="@TabClass(CommandTab.HighValue)" @onclick="@(() => SelectTabAsync(CommandTab.HighValue))">High value</button>
-        <button class="@TabClass(CommandTab.Technology)" @onclick="@(() => SelectTabAsync(CommandTab.Technology))">Technology</button>
+        <button class="@TabClass(CommandTab.Discovery)" @onclick="@(() => SelectTabAsync(CommandTab.Discovery))">Discovery</button>
         <button class="@TabClass(CommandTab.Workers)" @onclick="@(() => SelectTabAsync(CommandTab.Workers))">Workers</button>
     </nav>
 
@@ -111,32 +108,47 @@
                     <button class="cc-btn" @onclick="SpiderSelectedTargetsAsync" disabled="@(!_selectedTargetIds.Any() || _targetActionLoading)">Spider selected</button>
                 </div>
             </div>
-
-            <div class="cc-grid cc-grid-targets" role="table" aria-label="Targets">
-                <div class="cc-row cc-header" role="row">
-                    <span></span><span>Root domain</span><span>Status</span><span>Depth</span><span>Created</span>
+            <div class="cc-two-column">
+                <div class="cc-grid cc-grid-targets" role="table" aria-label="Targets">
+                    <div class="cc-row cc-header" role="row">
+                        <span></span><span>Root domain</span><span>Status</span><span>Depth</span><span>Created</span>
+                    </div>
+                    <Virtualize Items="TargetRows" Context="target" ItemSize="44" OverscanCount="8">
+                        <ItemContent>
+                            <div class="cc-row" role="row" @key="RowKey(target)" @onclick="@(() => ToggleTarget(target))">
+                                <span><input type="checkbox" checked="@IsSelectedTarget(target)" @onchange="@(_ => ToggleTarget(target))" @onclick:stopPropagation="true" /></span>
+                                <span class="cc-main-cell">@Display(Text(target, "rootDomain", "RootDomain", "domain", "Domain"))</span>
+                                <span><span class="cc-pill">@Display(Text(target, "status", "Status", "state", "State"))</span></span>
+                                <span>@Display(Text(target, "globalMaxDepth", "GlobalMaxDepth", "maxDepth", "MaxDepth"))</span>
+                                <span>@FormatTime(Text(target, "createdAtUtc", "CreatedAtUtc", "createdAt", "CreatedAt"))</span>
+                            </div>
+                        </ItemContent>
+                        <Placeholder>
+                            <div class="cc-row cc-placeholder"><span></span><span>Loading target...</span><span></span><span></span><span></span></div>
+                        </Placeholder>
+                    </Virtualize>
                 </div>
-                <Virtualize Items="TargetRows" Context="target" ItemSize="44" OverscanCount="8">
-                    <ItemContent>
-                        <div class="cc-row" role="row" @key="RowKey(target)" @onclick="@(() => ToggleTarget(target))">
-                            <span><input type="checkbox" checked="@IsSelectedTarget(target)" @onchange="@(_ => ToggleTarget(target))" @onclick:stopPropagation="true" /></span>
-                            <span class="cc-main-cell">@Display(Text(target, "rootDomain", "RootDomain", "domain", "Domain"))</span>
-                            <span><span class="cc-pill">@Display(Text(target, "status", "Status", "state", "State"))</span></span>
-                            <span>@Display(Text(target, "globalMaxDepth", "GlobalMaxDepth", "maxDepth", "MaxDepth"))</span>
-                            <span>@FormatTime(Text(target, "createdAtUtc", "CreatedAtUtc", "createdAt", "CreatedAt"))</span>
-                        </div>
-                    </ItemContent>
-                    <Placeholder>
-                        <div class="cc-row cc-placeholder"><span></span><span>Loading target...</span><span></span><span></span><span></span></div>
-                    </Placeholder>
-                </Virtualize>
-            </div>
-        </section>
-    }
 
-    @if (_activeTab == CommandTab.Assets)
-    {
-        <section class="cc-panel">
+                <div class="cc-grid cc-grid-subdomains" role="table" aria-label="Subdomains">
+                    <div class="cc-row cc-header" role="row">
+                        <span>Target</span><span>Subdomain</span><span>Technologies</span><span>Last seen</span>
+                    </div>
+                    <Virtualize Items="SubdomainRows" Context="subdomain" ItemSize="44" OverscanCount="8">
+                        <ItemContent>
+                            <div class="cc-row" role="row" @key="RowKey(subdomain)">
+                                <span>@Display(Text(subdomain, "rootDomain", "RootDomain", "target", "Target"))</span>
+                                <span class="cc-main-cell">@Display(Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue"))</span>
+                                <span>@Display(Text(subdomain, "technologyCount", "TechnologyCount"))</span>
+                                <span>@FormatTime(Text(subdomain, "lastSeenUtc", "LastSeenUtc", "lastSeenAtUtc", "LastSeenAtUtc"))</span>
+                            </div>
+                        </ItemContent>
+                        <Placeholder>
+                            <div class="cc-row cc-placeholder"><span></span><span>Loading subdomain...</span><span></span><span></span></div>
+                        </Placeholder>
+                    </Virtualize>
+                </div>
+            </div>
+
             <div class="cc-panel-header">
                 <div>
                     <h2>Assets</h2>
@@ -175,66 +187,21 @@
         </section>
     }
 
-    @if (_activeTab == CommandTab.HttpQueue)
+    @if (_activeTab == CommandTab.Discovery)
     {
         <section class="cc-panel">
             <div class="cc-panel-header">
                 <div>
-                    <h2>HTTP request queue</h2>
-                    <p class="cc-muted">Loads a small recent queue window. Select rows for retry or clearing without blocking the whole page.</p>
-                </div>
-                <div class="cc-toolbar">
-                    <input class="cc-input" placeholder="Filter queue rows" @bind="_httpSearch" @bind:event="oninput" />
-                    <select class="cc-input" @bind="_httpStateFilter">
-                        <option value="">Any state</option>
-                        <option value="Queued">Queued</option>
-                        <option value="InProgress">In progress</option>
-                        <option value="Completed">Completed</option>
-                        <option value="Failed">Failed</option>
-                    </select>
-                    <button class="cc-btn" @onclick="@(() => ReloadHttpQueueAsync())" disabled="@_httpLoading">Reload</button>
-                    <button class="cc-btn" @onclick="RetrySelectedHttpAsync" disabled="@(!_selectedHttpIds.Any() || _queueMutationLoading)">Retry selected</button>
-                    <button class="cc-btn" @onclick="ClearSelectedHttpAsync" disabled="@(!_selectedHttpIds.Any() || _queueMutationLoading)">Clear selected</button>
-                </div>
-            </div>
-
-            <div class="cc-grid cc-grid-http" role="table" aria-label="HTTP queue">
-                <div class="cc-row cc-header" role="row">
-                    <span></span><span>State</span><span>Method</span><span>URL</span><span>Status</span><span>Created</span>
-                </div>
-                <Virtualize Items="HttpRows" Context="http" ItemSize="48" OverscanCount="8">
-                    <ItemContent>
-                        <div class="cc-row" role="row" @key="RowKey(http)">
-                            <span><input type="checkbox" checked="@IsSelectedHttp(http)" @onchange="@(_ => ToggleHttp(http))" /></span>
-                            <span><span class="cc-pill">@Display(Text(http, "state", "State"))</span></span>
-                            <span>@Display(Text(http, "method", "Method", "requestMethod", "RequestMethod"))</span>
-                            <span class="cc-main-cell">@Display(Text(http, "url", "Url", "requestUrl", "RequestUrl", "finalUrl", "FinalUrl"))</span>
-                            <span>@Display(Text(http, "statusCode", "StatusCode", "responseStatusCode", "ResponseStatusCode"))</span>
-                            <span>@FormatTime(Text(http, "createdAtUtc", "CreatedAtUtc", "createdAt", "CreatedAt"))</span>
-                        </div>
-                    </ItemContent>
-                    <Placeholder>
-                        <div class="cc-row cc-placeholder"><span></span><span>Loading</span><span></span><span>Request...</span><span></span><span></span></div>
-                    </Placeholder>
-                </Virtualize>
-            </div>
-        </section>
-    }
-
-    @if (_activeTab == CommandTab.HighValue)
-    {
-        <section class="cc-panel">
-            <div class="cc-panel-header">
-                <div>
-                    <h2>High-value findings</h2>
-                    <p class="cc-muted">Bounded active findings window with local filtering for quick triage.</p>
+                    <h2>Discovery</h2>
+                    <p class="cc-muted">High-value and technology identification in one workspace.</p>
                 </div>
                 <div class="cc-toolbar">
                     <input class="cc-input" placeholder="Filter findings" @bind="_highValueSearch" @bind:event="oninput" />
-                    <button class="cc-btn" @onclick="ReloadHighValueAsync" disabled="@_highValueLoading">Reload</button>
+                    <input class="cc-input" placeholder="Filter technologies" @bind="_technologySearch" @bind:event="oninput" />
+                    <button class="cc-btn" @onclick="ReloadHighValueAsync" disabled="@_highValueLoading">Reload high value</button>
+                    <button class="cc-btn" @onclick="ReloadTechnologyAsync" disabled="@_technologyLoading">Reload tech ID</button>
                 </div>
             </div>
-
             <div class="cc-grid cc-grid-high-value" role="table" aria-label="High-value assets">
                 <div class="cc-row cc-header" role="row">
                     <span>Severity</span><span>Asset</span><span>Finding</span><span>Score</span><span>Seen</span>
@@ -253,22 +220,6 @@
                         <div class="cc-row cc-placeholder"><span>Loading</span><span>Finding...</span><span></span><span></span><span></span></div>
                     </Placeholder>
                 </Virtualize>
-            </div>
-        </section>
-    }
-
-    @if (_activeTab == CommandTab.Technology)
-    {
-        <section class="cc-panel">
-            <div class="cc-panel-header">
-                <div>
-                    <h2>Technology identification</h2>
-                    <p class="cc-muted">Recent observations, loaded only when this tab is opened.</p>
-                </div>
-                <div class="cc-toolbar">
-                    <input class="cc-input" placeholder="Filter technologies" @bind="_technologySearch" @bind:event="oninput" />
-                    <button class="cc-btn" @onclick="ReloadTechnologyAsync" disabled="@_technologyLoading">Reload</button>
-                </div>
             </div>
 
             <div class="cc-grid cc-grid-technology" role="table" aria-label="Technology observations">
@@ -303,10 +254,12 @@
                 <div class="cc-toolbar">
                     <input class="cc-input" placeholder="Filter workers" @bind="_workerSearch" @bind:event="oninput" />
                     <button class="cc-btn" @onclick="ReloadWorkersAsync" disabled="@_workersLoading">Reload</button>
+                    <button class="cc-btn" @onclick="ReloadCloudWorkersAsync" disabled="@_workersLoading">Refresh cloud</button>
                 </div>
             </div>
 
-            <div class="cc-grid cc-grid-workers" role="table" aria-label="Workers">
+            <h3>Local worker controls</h3>
+            <div class="cc-grid cc-grid-workers" role="table" aria-label="Local workers">
                 <div class="cc-row cc-header" role="row">
                     <span>Worker</span><span>State</span><span>Running</span><span>Total</span>
                 </div>
@@ -321,6 +274,26 @@
                     </ItemContent>
                     <Placeholder>
                         <div class="cc-row cc-placeholder"><span>Loading worker...</span><span></span><span></span><span></span></div>
+                    </Placeholder>
+                </Virtualize>
+            </div>
+
+            <h3>Cloud worker controls</h3>
+            <div class="cc-grid cc-grid-workers" role="table" aria-label="Cloud workers">
+                <div class="cc-row cc-header" role="row">
+                    <span>Service</span><span>Status</span><span>Running</span><span>Desired</span>
+                </div>
+                <Virtualize Items="CloudWorkerRows" Context="worker" ItemSize="46" OverscanCount="8">
+                    <ItemContent>
+                        <div class="cc-row" role="row" @key="RowKey(worker)">
+                            <span class="cc-main-cell">@Display(Text(worker, "serviceName", "ServiceName", "scaleKey", "ScaleKey"))</span>
+                            <span><span class="cc-pill">@Display(Text(worker, "status", "Status", "deploymentStatus", "DeploymentStatus"))</span></span>
+                            <span>@Display(Text(worker, "runningCount", "RunningCount"))</span>
+                            <span>@Display(Text(worker, "desiredCount", "DesiredCount"))</span>
+                        </div>
+                    </ItemContent>
+                    <Placeholder>
+                        <div class="cc-row cc-placeholder"><span>Loading cloud worker...</span><span></span><span></span><span></span></div>
                     </Placeholder>
                 </Virtualize>
             </div>

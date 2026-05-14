@@ -10,11 +10,13 @@
 @inject NavigationManager Navigation
 @inject DiscoveryRealtimeClient Realtime
 
-<div class="nav-status nav-status-@_statusTone" role="status" aria-live="polite" title="@_statusDetail">
-    <span class="nav-status-dot" aria-hidden="true"></span>
-    <span class="nav-status-text">@_statusText</span>
-    <span class="nav-status-time">@_statusTimeLabel</span>
-    <span class="nav-status-version" title="@_versionDetail">@_versionLabel</span>
+<div class="nav-status-shell">
+    <div class="nav-status nav-status-@_statusTone" role="status" aria-live="polite" title="@_statusDetail">
+        <span class="nav-status-dot" aria-hidden="true"></span>
+        <span class="nav-status-text">@_statusText</span>
+        <span class="nav-status-time">@_statusTimeLabel</span>
+    </div>
+    <span class="nav-version-label" title="@_versionDetail">@_versionLabel</span>
 </div>
 
 @code {

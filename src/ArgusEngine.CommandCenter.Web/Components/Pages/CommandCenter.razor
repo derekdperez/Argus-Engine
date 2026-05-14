@@ -17,11 +17,6 @@
         <div>
             <p class="cc-eyebrow">Argus Engine</p>
             <h1>Command Center</h1>
-            <p class="cc-muted">Fast workspace focused on small, visible result sets instead of loading every known asset into the circuit.</p>
-        </div>
-        <div class="cc-hero-actions">
-            <button class="cc-btn cc-btn-primary" @onclick="RefreshActiveAsync" disabled="@_loadingAny">Refresh visible data</button>
-            <button class="cc-btn" @onclick="RefreshEverythingAsync" disabled="@_loadingAny">Refresh summary</button>
         </div>
     </header>
 
@@ -43,48 +38,33 @@
         <article class="cc-card">
             <span>Targets</span>
             <strong>@FormatNumber(TotalTargets)</strong>
-            <small>@FormatNumber(TargetRows.Length) loaded for the workspace</small>
+            <small>Database total</small>
         </article>
         <article class="cc-card">
             <span>Confirmed assets</span>
             <strong>@FormatNumber(ConfirmedAssets)</strong>
-            <small>@FormatNumber(AssetRows.Length) rendered in the visible grid</small>
+            <small>Database total</small>
         </article>
         <article class="cc-card">
             <span>HTTP queue</span>
             <strong>@FormatNumber(HttpQueueCount)</strong>
-            <small>@FormatNumber(HttpRows.Length) recent rows loaded</small>
+            <small>Database total</small>
         </article>
         <article class="cc-card">
             <span>High value</span>
             <strong>@FormatNumber(HighValueCount)</strong>
-            <small>@FormatNumber(HighValueRows.Length) active rows loaded</small>
+            <small>Database total</small>
         </article>
         <article class="cc-card">
             <span>Technologies</span>
             <strong>@FormatNumber(TechnologyCount)</strong>
-            <small>@FormatNumber(TechnologyRows.Length) observations loaded</small>
+            <small>Database total</small>
         </article>
         <article class="cc-card">
             <span>Workers</span>
             <strong>@FormatNumber(WorkerCount)</strong>
-            <small>@FormatNumber(WorkerRows.Length) visible worker records</small>
+            <small>Database total</small>
         </article>
-    </section>
-
-    <section class="cc-panel cc-create-target">
-        <div>
-            <h2>Create target</h2>
-            <p class="cc-muted">Creates one root target without forcing a full dashboard reload.</p>
-        </div>
-        <input class="cc-input" placeholder="example.com" @bind="_newTargetRootDomain" @bind:event="oninput" />
-        <label class="cc-inline-label">
-            Depth
-            <input class="cc-input cc-depth-input" type="number" min="0" max="10" @bind="_newTargetDepth" />
-        </label>
-        <button class="cc-btn cc-btn-primary" @onclick="CreateTargetAsync" disabled="@(!CanCreateTarget || _creatingTarget)">
-            @(_creatingTarget ? "Creating..." : "Create")
-        </button>
     </section>
 
     <nav class="cc-tabs" aria-label="Command Center sections">
@@ -102,6 +82,14 @@
                     <p class="cc-muted">Loaded in a bounded request. Use the search box to filter only the loaded window.</p>
                 </div>
                 <div class="cc-toolbar">
+                    <input class="cc-input" placeholder="example.com" @bind="_newTargetRootDomain" @bind:event="oninput" />
+                    <label class="cc-inline-label">
+                        Depth
+                        <input class="cc-input cc-depth-input" type="number" min="0" max="10" @bind="_newTargetDepth" />
+                    </label>
+                    <button class="cc-btn cc-btn-primary" @onclick="CreateTargetAsync" disabled="@(!CanCreateTarget || _creatingTarget)">
+                        @(_creatingTarget ? "Creating..." : "Create")
+                    </button>
                     <input class="cc-input" placeholder="Filter targets" @bind="_targetSearch" @bind:event="oninput" />
                     <button class="cc-btn" @onclick="ReloadTargetsAsync" disabled="@_targetsLoading">Reload</button>
                     <button class="cc-btn" @onclick="EnumerateSelectedTargetsAsync" disabled="@(!_selectedTargetIds.Any() || _targetActionLoading)">Enumerate selected</button>
@@ -312,11 +300,13 @@
     private readonly CancellationTokenSource _disposeCts = new();
     private JsonElement? _overview;
     private readonly List<JsonElement> _targets = [];
+    private readonly List<JsonElement> _subdomains = [];
     private readonly List<JsonElement> _assets = [];
     private readonly List<JsonElement> _httpQueue = [];
     private readonly List<JsonElement> _highValue = [];
     private readonly List<JsonElement> _technology = [];
     private readonly List<JsonElement> _workers = [];
+    private readonly List<JsonElement> _cloudWorkers = [];
     private readonly HashSet<string> _selectedTargetIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _selectedAssetIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _selectedHttpIds = new(StringComparer.OrdinalIgnoreCase);
@@ -329,8 +319,8 @@
     private string? _targetSearch;
     private string? _assetSearch;
     private string? _assetKindFilter;
-    private string? _httpSearch;
-    private string? _httpStateFilter;
+    private string _httpSearch = string.Empty;
+    private string _httpStateFilter = string.Empty;
     private string? _highValueSearch;
     private string? _technologySearch;
     private string? _workerSearch;
@@ -338,6 +328,7 @@
     private int _newTargetDepth = 2;
     private bool _overviewLoading;
     private bool _targetsLoading;
+    private bool _subdomainsLoading;
     private bool _assetsLoading;
     private bool _httpLoading;
     private bool _highValueLoading;
@@ -349,6 +340,7 @@
 
     private bool _loadingAny => _overviewLoading
         || _targetsLoading
+        || _subdomainsLoading
         || _assetsLoading
         || _httpLoading
         || _highValueLoading
@@ -370,6 +362,10 @@
         .Where(row => Matches(row, _assetSearch, "kind", "Kind", "category", "Category", "displayName", "DisplayName", "canonicalKey", "CanonicalKey", "rawValue", "RawValue", "finalUrl", "FinalUrl"))
         .ToArray();
 
+    private JsonElement[] SubdomainRows => _subdomains
+        .Where(row => Matches(row, _targetSearch, "subdomain", "Subdomain", "rootDomain", "RootDomain", "target", "Target"))
+        .ToArray();
+
     private JsonElement[] HttpRows => _httpQueue
         .Where(row => string.IsNullOrWhiteSpace(_httpStateFilter)
             || string.Equals(Text(row, "state", "State"), _httpStateFilter, StringComparison.OrdinalIgnoreCase))
@@ -388,6 +384,10 @@
         .Where(row => Matches(row, _workerSearch, "name", "Name", "workerName", "WorkerName", "id", "Id", "status", "Status", "state", "State", "type", "Type", "kind", "Kind"))
         .ToArray();
 
+    private JsonElement[] CloudWorkerRows => _cloudWorkers
+        .Where(row => Matches(row, _workerSearch, "serviceName", "ServiceName", "scaleKey", "ScaleKey", "status", "Status", "deploymentStatus", "DeploymentStatus"))
+        .ToArray();
+
     private string[] AssetKinds => _assets
         .Select(row => Text(row, "kind", "Kind"))
         .Where(static value => !string.IsNullOrWhiteSpace(value))
@@ -395,12 +395,12 @@
         .OrderBy(static value => value, StringComparer.OrdinalIgnoreCase)
         .ToArray();
 
-    private long TotalTargets => Math.Max(OverviewLong("totalTargets", "TotalTargets", "targetCount", "TargetCount"), _targets.Count);
-    private long ConfirmedAssets => Math.Max(OverviewLong("confirmedAssets", "ConfirmedAssets", "assetCount", "AssetCount", "totalAssets", "TotalAssets"), _assets.Count);
-    private long HttpQueueCount => Math.Max(OverviewLong("httpQueueCount", "HttpQueueCount", "queuedHttpRequests", "QueuedHttpRequests"), _httpQueue.Count);
-    private long HighValueCount => Math.Max(OverviewLong("highValueCount", "HighValueCount", "highValueFindings", "HighValueFindings"), _highValue.Count);
-    private long TechnologyCount => Math.Max(OverviewLong("technologyCount", "TechnologyCount", "technologies", "Technologies"), _technology.Count);
-    private long WorkerCount => Math.Max(OverviewLong("workerCount", "WorkerCount", "activeWorkers", "ActiveWorkers"), _workers.Count);
+    private long TotalTargets => OverviewLong("totalTargets", "TotalTargets", "targetCount", "TargetCount");
+    private long ConfirmedAssets => OverviewLong("confirmedAssets", "ConfirmedAssets", "assetCount", "AssetCount", "totalAssets", "TotalAssets");
+    private long HttpQueueCount => OverviewLong("httpQueueCount", "HttpQueueCount", "queuedHttpRequests", "QueuedHttpRequests");
+    private long HighValueCount => OverviewLong("highValueCount", "HighValueCount", "highValueFindings", "HighValueFindings");
+    private long TechnologyCount => OverviewLong("technologyCount", "TechnologyCount", "technologies", "Technologies");
+    private long WorkerCount => OverviewLong("workerCount", "WorkerCount", "activeWorkers", "ActiveWorkers");
 
     protected override async Task OnInitializedAsync()
     {
@@ -418,8 +418,8 @@
             await Task.WhenAll(
                 ReloadOverviewAsync(),
                 ReloadTargetsAsync(),
+                ReloadSubdomainsAsync(),
                 ReloadAssetsAsync(),
-                ReloadHttpQueueAsync(),
                 ReloadWorkersAsync()).ConfigureAwait(false);
         }
         finally
@@ -441,11 +441,6 @@
             {
                 await ReloadOverviewAsync(showLoading: false).ConfigureAwait(false);
 
-                if (_activeTab == CommandTab.HttpQueue)
-                {
-                    await ReloadHttpQueueAsync(showLoading: false).ConfigureAwait(false);
-                }
-
                 await InvokeAsync(StateHasChanged).ConfigureAwait(false);
             }
         }
@@ -464,20 +459,12 @@
             case CommandTab.Targets when _targets.Count == 0:
                 await ReloadTargetsAsync().ConfigureAwait(false);
                 break;
-            case CommandTab.Assets when _assets.Count == 0:
-                await ReloadAssetsAsync().ConfigureAwait(false);
-                break;
-            case CommandTab.HttpQueue when _httpQueue.Count == 0:
-                await ReloadHttpQueueAsync().ConfigureAwait(false);
-                break;
-            case CommandTab.HighValue when _highValue.Count == 0:
+            case CommandTab.Discovery when _highValue.Count == 0 || _technology.Count == 0:
                 await ReloadHighValueAsync().ConfigureAwait(false);
-                break;
-            case CommandTab.Technology when _technology.Count == 0:
                 await ReloadTechnologyAsync().ConfigureAwait(false);
                 break;
             case CommandTab.Workers when _workers.Count == 0:
-                await ReloadWorkersAsync().ConfigureAwait(false);
+                await Task.WhenAll(ReloadWorkersAsync(), ReloadCloudWorkersAsync()).ConfigureAwait(false);
                 break;
         }
     }
@@ -487,22 +474,13 @@
         switch (_activeTab)
         {
             case CommandTab.Targets:
-                await ReloadTargetsAsync().ConfigureAwait(false);
+                await Task.WhenAll(ReloadTargetsAsync(), ReloadSubdomainsAsync(), ReloadAssetsAsync()).ConfigureAwait(false);
                 break;
-            case CommandTab.Assets:
-                await ReloadAssetsAsync().ConfigureAwait(false);
-                break;
-            case CommandTab.HttpQueue:
-                await ReloadHttpQueueAsync().ConfigureAwait(false);
-                break;
-            case CommandTab.HighValue:
-                await ReloadHighValueAsync().ConfigureAwait(false);
-                break;
-            case CommandTab.Technology:
-                await ReloadTechnologyAsync().ConfigureAwait(false);
+            case CommandTab.Discovery:
+                await Task.WhenAll(ReloadHighValueAsync(), ReloadTechnologyAsync()).ConfigureAwait(false);
                 break;
             case CommandTab.Workers:
-                await ReloadWorkersAsync().ConfigureAwait(false);
+                await Task.WhenAll(ReloadWorkersAsync(), ReloadCloudWorkersAsync()).ConfigureAwait(false);
                 break;
         }
 
@@ -514,8 +492,8 @@
         await Task.WhenAll(
             ReloadOverviewAsync(),
             ReloadTargetsAsync(),
+            ReloadSubdomainsAsync(),
             ReloadAssetsAsync(),
-            ReloadHttpQueueAsync(),
             ReloadWorkersAsync()).ConfigureAwait(false);
     }
 
@@ -550,6 +528,19 @@
         finally
         {
             _targetsLoading = false;
+        }
+    }
+
+    private async Task ReloadSubdomainsAsync()
+    {
+        _subdomainsLoading = true;
+        try
+        {
+            Replace(_subdomains, await GetArrayAsync("/api/technology-identification/subdomains").ConfigureAwait(false));
+        }
+        finally
+        {
+            _subdomainsLoading = false;
         }
     }
 
@@ -622,11 +613,23 @@
         _workersLoading = true;
         try
         {
-            Replace(_workers, await GetArrayAsync("/api/workers/docker-status").ConfigureAwait(false));
+            Replace(_workers, await GetArrayAsync("/api/ops/docker-status").ConfigureAwait(false));
         }
         finally
         {
             _workersLoading = false;
+        }
+    }
+
+    private async Task ReloadCloudWorkersAsync()
+    {
+        try
+        {
+            Replace(_cloudWorkers, await GetArrayAsync("/api/ops/ecs-status").ConfigureAwait(false));
+        }
+        catch
+        {
+            // best-effort: cloud status is optional in local-only deployments
         }
     }
 
@@ -1027,10 +1030,7 @@
     private enum CommandTab
     {
         Targets,
-        Assets,
-        HttpQueue,
-        HighValue,
-        Technology,
+        Discovery,
         Workers
     }
 }

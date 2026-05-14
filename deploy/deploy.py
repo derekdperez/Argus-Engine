@@ -1177,11 +1177,12 @@ LIMIT 50;
 
         changed = self.changed_services(self.changed_files())
         worker_names = self.worker_services()
+        infra_names = {"postgres", "redis", "rabbitmq", "filestore-db-init"}
 
         self.ui.section("Components")
         for idx, service in enumerate(candidates, 1):
             mark = "*" if service in changed else " "
-            kind = "worker" if service in WORKERS else "infra" if service in {"postgres", "redis", "rabbitmq", "filestore-db-init"} else "app"
+            kind = "worker" if service in WORKERS else "infra" if service in infra_names else "app"
             print(f"{idx:>2}. {mark} {service:<42} {kind}")
 
         if changed:
@@ -1197,7 +1198,7 @@ LIMIT 50;
             default_value = default if default in {"all", "changed", "workers"} else "all"
 
         raw = self.ui.prompt(
-            "Select numbers/names separated by commas, or all/changed/workers/none",
+            "Select numbers/names separated by commas, or all/changed/app/infra/workers/none",
             default_value,
         ).strip()
 
@@ -1209,6 +1210,10 @@ LIMIT 50;
             return [s for s in candidates if s in changed] or ([] if allow_empty else candidates)
         if raw.lower() == "workers":
             return [s for s in candidates if s in worker_names]
+        if raw.lower() == "app":
+            return [s for s in candidates if s not in worker_names and s not in infra_names]
+        if raw.lower() == "infra":
+            return [s for s in candidates if s in infra_names]
 
         selected: list[str] = []
         by_name = {s.lower(): s for s in candidates}

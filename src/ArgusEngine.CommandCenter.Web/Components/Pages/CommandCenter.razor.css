@@ -111,6 +111,10 @@
     margin-bottom: 1rem;
 }
 
+.cc-panel h3 {
+    margin: 1rem 0 0.65rem;
+}
+
 .cc-create-target {
     justify-content: space-between;
 }
@@ -194,6 +198,13 @@
     background: rgba(2, 6, 23, 0.35);
 }
 
+.cc-two-column {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.9rem;
+    margin-bottom: 1rem;
+}
+
 .cc-row {
     display: grid;
     gap: 0.75rem;
@@ -258,6 +269,10 @@
     grid-template-columns: minmax(7rem, 0.6fr) minmax(16rem, 1.8fr) minmax(10rem, 1fr) minmax(5rem, 0.45fr) minmax(8rem, 0.7fr);
 }
 
+.cc-grid-subdomains .cc-row {
+    grid-template-columns: minmax(10rem, 1fr) minmax(16rem, 1.8fr) minmax(6rem, 0.5fr) minmax(8rem, 0.7fr);
+}
+
 .cc-grid-technology .cc-row,
 .cc-grid-workers .cc-row {
     grid-template-columns: minmax(12rem, 1.2fr) minmax(7rem, 0.7fr) minmax(10rem, 1fr) minmax(8rem, 0.7fr);
@@ -273,6 +288,10 @@
     .cc-create-target {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .cc-two-column {
+        grid-template-columns: 1fr;
     }
 }
 

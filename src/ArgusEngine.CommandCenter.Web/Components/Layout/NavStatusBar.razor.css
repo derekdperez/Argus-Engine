@@ -1,10 +1,16 @@
+.nav-status-shell {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+
 .nav-status {
     display: grid;
-    grid-template-columns: auto minmax(8rem, 20rem) auto minmax(16rem, 30rem);
+    grid-template-columns: auto minmax(8rem, 20rem) auto;
     align-items: center;
     gap: 0.55rem;
     min-height: 2.35rem;
-    max-width: min(54vw, 54rem);
+    max-width: min(36vw, 36rem);
     padding: 0.42rem 0.65rem;
     border: 1px solid rgba(15, 23, 42, 0.12);
     border-radius: 0.65rem;
@@ -53,7 +59,7 @@
     letter-spacing: 0.04em;
 }
 
-.nav-status-version {
+.nav-version-label {
     color: #475569;
     font-size: 0.72rem;
     font-weight: 700;
@@ -74,14 +80,19 @@
 }
 
 @media (max-width: 840px) {
+    .nav-status-shell {
+        width: 100%;
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
     .nav-status {
         width: 100%;
         max-width: none;
         grid-template-columns: auto minmax(0, 1fr) auto;
     }
 
-    .nav-status-version {
-        grid-column: 1 / -1;
+    .nav-version-label {
         white-space: normal;
         overflow: visible;
     }

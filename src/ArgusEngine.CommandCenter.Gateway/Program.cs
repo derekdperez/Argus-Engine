@@ -3,26 +3,6 @@ using System.Net.WebSockets;
 
 var builder = WebApplication.CreateBuilder(args);
 
-string[] workerControlPrefixes =
-{
-    "/api/workers", "/api/ec2-workers", "/api/ops/ecs-status", "/api/ops/spider/restart", "/api/ops/subdomain-enum/restart"
-};
-string[] operationsPrefixes = ["/api/status", "/api/ops"];
-string[] discoveryPrefixes =
-{
-    "/api/targets", "/api/assets", "/api/asset-graph", "/api/tags", "/api/technologies", "/api/asset-admission-decisions",
-    "/api/high-value-findings", "/api/high-value-assets", "/api/technology-identification", "/api/http-request-queue",
-    "/api/filestore", "/api/events", "/api/discovery"
-};
-string[] maintenancePrefixes = ["/api/admin", "/api/maintenance", "/api/diagnostics", "/api/bus"];
-string[] updatesPrefixes = ["/api/development/components"];
-string[] realtimePrefixes = ["/hubs/discovery"];
-string[] webPrefixes =
-{
-    "/", "/ops", "/commandcenter", "/status", "/admin", "/asset-admission", "/configuration", "/development",
-    "/high-value-findings", "/technology-identification", "/_framework", "/_content", "/css", "/js"
-};
-
 var serviceRoutes = GatewayServiceRoutes.FromConfiguration(builder.Configuration);
 
 builder.Services.AddSingleton(serviceRoutes);
@@ -61,16 +41,7 @@ app.MapGet(
             {
                 gateway = "command-center-gateway",
                 legacyFallback = false,
-                routes = new[]
-                {
-                    new { owner = "command-center-worker-control-api", prefixes = workerControlPrefixes },
-                    new { owner = "command-center-operations-api", prefixes = operationsPrefixes },
-                    new { owner = "command-center-discovery-api", prefixes = discoveryPrefixes },
-                    new { owner = "command-center-maintenance-api", prefixes = maintenancePrefixes },
-                    new { owner = "command-center-updates-api", prefixes = updatesPrefixes },
-                    new { owner = "command-center-realtime", prefixes = realtimePrefixes },
-                    new { owner = "command-center-web", prefixes = webPrefixes },
-                },
+                routes = GatewayRouteDiagnostics.Routes,
             }))
     .AllowAnonymous();
 
@@ -323,6 +294,72 @@ static void CopyHeaders(HttpHeaders source, IHeaderDictionary destination)
     {
         destination[header.Key] = header.Value.ToArray();
     }
+}
+
+sealed record GatewayRouteOwner(string owner, string[] prefixes);
+
+static class GatewayRouteDiagnostics
+{
+    private static readonly string[] WorkerControlPrefixes =
+    [
+        "/api/workers",
+        "/api/ec2-workers",
+        "/api/ops/ecs-status",
+        "/api/ops/spider/restart",
+        "/api/ops/subdomain-enum/restart",
+    ];
+
+    private static readonly string[] OperationsPrefixes = ["/api/status", "/api/ops"];
+
+    private static readonly string[] DiscoveryPrefixes =
+    [
+        "/api/targets",
+        "/api/assets",
+        "/api/asset-graph",
+        "/api/tags",
+        "/api/technologies",
+        "/api/asset-admission-decisions",
+        "/api/high-value-findings",
+        "/api/high-value-assets",
+        "/api/technology-identification",
+        "/api/http-request-queue",
+        "/api/filestore",
+        "/api/events",
+        "/api/discovery",
+    ];
+
+    private static readonly string[] MaintenancePrefixes = ["/api/admin", "/api/maintenance", "/api/diagnostics", "/api/bus"];
+    private static readonly string[] UpdatesPrefixes = ["/api/development/components"];
+    private static readonly string[] RealtimePrefixes = ["/hubs/discovery"];
+
+    private static readonly string[] WebPrefixes =
+    [
+        "/",
+        "/ops",
+        "/commandcenter",
+        "/status",
+        "/admin",
+        "/asset-admission",
+        "/configuration",
+        "/development",
+        "/high-value-findings",
+        "/technology-identification",
+        "/_framework",
+        "/_content",
+        "/css",
+        "/js",
+    ];
+
+    public static readonly GatewayRouteOwner[] Routes =
+    [
+        new("command-center-worker-control-api", WorkerControlPrefixes),
+        new("command-center-operations-api", OperationsPrefixes),
+        new("command-center-discovery-api", DiscoveryPrefixes),
+        new("command-center-maintenance-api", MaintenancePrefixes),
+        new("command-center-updates-api", UpdatesPrefixes),
+        new("command-center-realtime", RealtimePrefixes),
+        new("command-center-web", WebPrefixes),
+    ];
 }
 
 sealed record GatewayServiceRoutes(

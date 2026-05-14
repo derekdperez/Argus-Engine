@@ -217,6 +217,7 @@ services:
       <<: *common-env
       ASPNETCORE_URLS: http://+:8080
       Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_CONTROL_API_POSTGRES_MAX_POOL_SIZE:-4}
+      Argus__Autoscaler__Enabled: ${ARGUS_AUTOSCALER_ENABLED:-false}
       Argus__Autoscaler__RepoRoot: /workspace
       Argus__Autoscaler__DockerComposePath: /workspace/deploy/docker-compose.yml
       Argus__Autoscaler__DockerComposeProject: argus-engine

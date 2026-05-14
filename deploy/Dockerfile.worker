@@ -51,6 +51,7 @@ RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,shar
 FROM argus-engine-base:local AS final
 ARG APP_DLL
 ARG BUILD_SOURCE_STAMP=unknown
+ARG BUILD_TIME_UTC=unknown
 ARG COMPONENT_VERSION=2.6.1
 
 WORKDIR /app
@@ -62,9 +63,11 @@ ENV APP_DLL=${APP_DLL}
 LABEL org.opencontainers.image.title="Argus Engine Worker" \
       org.opencontainers.image.description="Worker service for Argus Engine" \
       org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}" \
-      org.opencontainers.image.version="${COMPONENT_VERSION}"
+      org.opencontainers.image.version="${COMPONENT_VERSION}" \
+      org.opencontainers.image.created="${BUILD_TIME_UTC}"
 
 ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
 ENV ARGUS_COMPONENT_VERSION=${COMPONENT_VERSION}
+ENV ARGUS_BUILD_TIME_UTC=${BUILD_TIME_UTC}
 
 ENTRYPOINT ["sh", "-c", "exec dotnet /app/${APP_DLL}"]

@@ -35,6 +35,7 @@ RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,shar
 
 FROM argus-engine-base:local AS final
 ARG BUILD_SOURCE_STAMP=unknown
+ARG BUILD_TIME_UTC=unknown
 ARG COMPONENT_VERSION=2.6.2
 
 WORKDIR /app
@@ -54,8 +55,10 @@ LABEL org.opencontainers.image.title="Argus Engine Command Center"
 LABEL org.opencontainers.image.description="Command Center for Argus Engine"
 LABEL org.opencontainers.image.revision="${BUILD_SOURCE_STAMP}"
 LABEL org.opencontainers.image.version="${COMPONENT_VERSION}"
+LABEL org.opencontainers.image.created="${BUILD_TIME_UTC}"
 
 ENV ARGUS_BUILD_STAMP=${BUILD_SOURCE_STAMP}
 ENV ARGUS_COMPONENT_VERSION=${COMPONENT_VERSION}
+ENV ARGUS_BUILD_TIME_UTC=${BUILD_TIME_UTC}
 
 ENTRYPOINT ["dotnet", "ArgusEngine.CommandCenter.dll"]

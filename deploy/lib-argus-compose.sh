@@ -706,6 +706,33 @@ argus_export_build_stamp() {
   echo "BUILD_SOURCE_STAMP=${BUILD_SOURCE_STAMP}"
 }
 
+argus_export_version_and_build_time() {
+  local root="${1:-}"
+  [[ -n "$root" ]] || return 1
+
+  local base_version short_sha dirty_suffix
+  base_version="$(cat "$root/VERSION" 2>/dev/null | tr -d '[:space:]')"
+  [[ -n "$base_version" ]] || base_version="0.0.0"
+
+  if [[ -d "$root/.git" ]]; then
+    short_sha="$(git -C "$root" rev-parse --short=12 HEAD 2>/dev/null || echo nogit)"
+    if git -C "$root" diff --quiet 2>/dev/null && git -C "$root" diff --cached --quiet 2>/dev/null; then
+      dirty_suffix=""
+    else
+      dirty_suffix="-dirty"
+    fi
+  else
+    short_sha="nogit"
+    dirty_suffix=""
+  fi
+
+  export ARGUS_BUILD_TIME_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  export ARGUS_ENGINE_VERSION="${base_version}-${short_sha}${dirty_suffix}"
+
+  echo "ARGUS_ENGINE_VERSION=${ARGUS_ENGINE_VERSION}"
+  echo "ARGUS_BUILD_TIME_UTC=${ARGUS_BUILD_TIME_UTC}"
+}
+
 argus_export_component_versions() {
   local root="${1:-}"
   [[ -n "$root" ]] || return 1
@@ -1156,4 +1183,3 @@ argus_compose_deploy_all() {
 argus_compose_full_redeploy() {
   argus_compose_deploy_all
 }
-

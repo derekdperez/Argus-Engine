@@ -448,6 +448,7 @@ fi
 argus_maybe_git_pull "$ROOT"
 echo "Computing build stamp and component versions…"
 argus_export_build_stamp "$ROOT"
+argus_export_version_and_build_time "$ROOT"
 argus_export_component_versions "$ROOT"
 if [[ "$argus_ECS_WORKERS" == "1" && "${argus_ECS_USE_MUTABLE_TAG:-0}" != "1" ]]; then
   ecs_source_stamp="$BUILD_SOURCE_STAMP"
@@ -591,4 +592,3 @@ if [[ "$argus_ECS_WORKERS" == "1" ]]; then
 fi
 echo "(or docker-compose -f deploy/docker-compose.yml ... if you use V1)"
 echo ""
-

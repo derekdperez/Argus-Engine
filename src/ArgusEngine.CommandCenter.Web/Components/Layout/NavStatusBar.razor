@@ -3,6 +3,10 @@
 @using ArgusEngine.CommandCenter.Contracts
 @using ArgusEngine.CommandCenter.Models
 @using ArgusEngine.CommandCenter.Realtime
+@using System.Globalization
+@using System.Reflection
+@using System.Text.Json
+@inject IWebHostEnvironment HostEnvironment
 @inject NavigationManager Navigation
 @inject DiscoveryRealtimeClient Realtime
 
@@ -10,6 +14,7 @@
     <span class="nav-status-dot" aria-hidden="true"></span>
     <span class="nav-status-text">@_statusText</span>
     <span class="nav-status-time">@_statusTimeLabel</span>
+    <span class="nav-status-version" title="@_versionDetail">@_versionLabel</span>
 </div>
 
 @code {
@@ -17,10 +22,13 @@
     private string _statusDetail = "Preparing the application shell.";
     private string _statusTone = "busy";
     private string _statusTimeLabel = "now";
+    private string _versionLabel = "Command Center version unknown";
+    private string _versionDetail = "Version metadata is not available yet.";
     private bool _initialized;
 
     protected override Task OnInitializedAsync()
     {
+        LoadVersionMetadata();
         Navigation.LocationChanged += OnLocationChanged;
         Realtime.DomainEventReceived += OnDomainEventReceived;
         Realtime.StatusChangedReceived += OnStatusChangedReceived;
@@ -141,6 +149,66 @@
             "findings" => "warn",
             _ => "ok",
         };
+
+    private void LoadVersionMetadata()
+    {
+        var assembly = typeof(CommandCenterAssemblyMarker).Assembly;
+        var releaseVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?? assembly.GetName().Version?.ToString()
+            ?? "unknown";
+        releaseVersion = releaseVersion.Split('+', 2)[0];
+
+        DateTimeOffset? buildTimeUtc = null;
+
+        try
+        {
+            var versionFile = Path.Combine(HostEnvironment.ContentRootPath, "version.json");
+            if (File.Exists(versionFile))
+            {
+                using var stream = File.OpenRead(versionFile);
+                using var doc = JsonDocument.Parse(stream);
+                if (doc.RootElement.TryGetProperty("version", out var versionElement) &&
+                    versionElement.ValueKind == JsonValueKind.String)
+                {
+                    var versionFromFile = versionElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(versionFromFile))
+                    {
+                        releaseVersion = versionFromFile.Trim();
+                    }
+                }
+
+                if (doc.RootElement.TryGetProperty("buildTime", out var buildTimeElement) &&
+                    buildTimeElement.ValueKind == JsonValueKind.String &&
+                    DateTimeOffset.TryParse(
+                        buildTimeElement.GetString(),
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                        out var parsed))
+                {
+                    buildTimeUtc = parsed;
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        if (buildTimeUtc is null)
+        {
+            var assemblyLocation = assembly.Location;
+            if (!string.IsNullOrWhiteSpace(assemblyLocation) && File.Exists(assemblyLocation))
+            {
+                buildTimeUtc = new DateTimeOffset(File.GetLastWriteTimeUtc(assemblyLocation), TimeSpan.Zero);
+            }
+        }
+
+        _versionLabel = buildTimeUtc is null
+            ? $"Command Center version {releaseVersion}"
+            : $"Command Center version {releaseVersion} · built {buildTimeUtc.Value:yyyy-MM-dd HH:mm} UTC";
+        _versionDetail = buildTimeUtc is null
+            ? $"Release version {releaseVersion}."
+            : $"Release version {releaseVersion}. Build time {buildTimeUtc.Value:yyyy-MM-dd HH:mm:ss} UTC.";
+    }
 
     public void Dispose()
     {

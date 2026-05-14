@@ -281,13 +281,28 @@ class Ui:
             return default
         return raw in {"y", "yes"}
 
-    def choose(self, title: str, choices: Sequence[str], *, default: int = 1) -> int:
+    def choose(
+        self,
+        title: str,
+        choices: Sequence[str],
+        *,
+        default: int = 1,
+        aliases: Optional[Mapping[str, int]] = None,
+    ) -> int:
+        alias_map = {k.lower(): v for k, v in (aliases or {}).items()}
         while True:
             print()
             self.info(title)
             for i, choice in enumerate(choices, 1):
                 print(f" {i:2}. {choice}")
             raw = self.prompt("Choose", str(default))
+            lowered = raw.strip().lower()
+            if lowered in alias_map:
+                idx = alias_map[lowered]
+                if 0 <= idx < len(choices):
+                    return idx
+                self.warn("Alias is mapped to an invalid menu entry.")
+                continue
             try:
                 idx = int(raw)
             except ValueError:
@@ -476,6 +491,8 @@ class ArgusDeployConsole:
             return self.deploy_sh(["--hot", *rest])
         if command in {"--image", "-image"}:
             return self.deploy_sh(["--image", *rest])
+        if command in {"q", "quick", "quick-web", "quick-deploy", "quick-deploy-web"}:
+            return self.quick_deploy_web(rest)
         if command in {"deploy", "update"}:
             return self.deploy_from_args(rest)
         if command in {"scale", "workers", "worker"}:
@@ -532,8 +549,10 @@ class ArgusDeployConsole:
                     "Operation Google Deploy",
                     "Show changed/affected services",
                     "Open a command shell from the repo root",
+                    "Quick Deploy Web App Only [Q]",
                     "Exit",
                 ],
+                aliases={"q": 9},
             )
             if choice == 0:
                 code = self.auto_all_in_one_menu()
@@ -554,6 +573,8 @@ class ArgusDeployConsole:
                 code = 0
             elif choice == 8:
                 code = self.custom_shell()
+            elif choice == 9:
+                code = self.quick_deploy_web()
             else:
                 return 0
 
@@ -990,6 +1011,13 @@ class ArgusDeployConsole:
 
     def deploy_sh(self, args: Sequence[str]) -> int:
         return self.runner.bash_script(self.paths.deploy_sh, list(args))
+
+    def quick_deploy_web(self, args: Sequence[str] = ()) -> int:
+        script = self.paths.deploy_dir / "quick-deploy-web.sh"
+        if not script.exists():
+            self.ui.error(f"Quick deploy helper not found: {self.paths.rel(script)}")
+            return 2
+        return self.runner.bash_script(script, list(args))
 
     def clean(self) -> int:
         self.ui.warn("This removes compose containers, orphans, volumes, and hot-publish output.")
@@ -1588,6 +1616,8 @@ Deploy/update:
   deploy/deploy-ui.py deploy --fresh
   deploy/deploy-ui.py deploy --ecs-workers
   deploy/deploy-ui.py deploy --gcp-workers
+  deploy/deploy-ui.py q
+  deploy/deploy-ui.py quick
 
 Scaling:
   deploy/deploy-ui.py scale local worker-spider=4 worker-enum=2 worker-http-requester=2
@@ -1630,7 +1660,7 @@ Global options:
 Compatibility:
   deploy-ui.py still accepts deploy.sh handoff-style arguments such as:
   up, --fresh, -fresh, --ecs-workers, --hot, --image, logs, status, restart,
-  down, smoke, --gcp-workers.
+  down, smoke, --gcp-workers, q, quick.
             """.strip()
         )
 

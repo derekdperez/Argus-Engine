@@ -47,42 +47,6 @@ ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 cd "$ROOT"
 
 # ARGUS_QUICK_DEPLOY_WEB_OPTION_BEGIN
-argus_quick_deploy_menu() {
-  echo ""
-  echo "Argus Engine Deploy"
-  echo "==================="
-  echo "[Q] Quick Deploy"
-  echo "[Enter] Full DeployOps menu"
-  echo ""
-  read -r -p "Choose: " argus_deploy_choice
-  case "$argus_deploy_choice" in
-    [Qq])
-      echo ""
-      echo "Quick Deploy"
-      echo "============"
-      echo "[1] Deploy Web App Only"
-      echo "[0] Back/Exit"
-      echo ""
-      read -r -p "Choose: " argus_quick_choice
-      case "$argus_quick_choice" in
-        1)
-          exec bash "$DEPLOY_DIR/quick-deploy-web.sh"
-          ;;
-        ""|0)
-          exit 0
-          ;;
-        *)
-          echo "Invalid quick deploy choice." >&2
-          exit 2
-          ;;
-      esac
-      ;;
-    *)
-      return 0
-      ;;
-  esac
-}
-
 if [[ $# -gt 0 ]]; then
   case "${1:-}" in
     q|Q|quick|quick-web|quick-deploy|quick-deploy-web)
@@ -90,10 +54,6 @@ if [[ $# -gt 0 ]]; then
       exec bash "$DEPLOY_DIR/quick-deploy-web.sh" "$@"
       ;;
   esac
-fi
-
-if [[ "${ARGUS_NO_UI:-0}" != "1" && $# -eq 0 && -t 0 && -t 1 ]]; then
-  argus_quick_deploy_menu
 fi
 # ARGUS_QUICK_DEPLOY_WEB_OPTION_END
 
@@ -204,6 +164,7 @@ while [[ $# -gt 0 ]]; do
     -h | --help)
       cat <<'EOF'
 Usage: ./deploy/deploy.sh [options] [up|down|logs|ps|status|restart|smoke|clean] [service...]
+       ./deploy/deploy.sh [q|quick|quick-web|quick-deploy|quick-deploy-web]
 
   up (default)
              Universal incremental deploy. Source-only changes in running .NET
@@ -223,6 +184,7 @@ Usage: ./deploy/deploy.sh [options] [up|down|logs|ps|status|restart|smoke|clean]
   restart    Restart listed services, or all compose services if none are listed.
   smoke      Run deploy/smoke-test.sh.
   clean      Stop the stack and remove compose volumes after confirmation.
+  q|quick    Quick Deploy Web App Only (runs deploy/quick-deploy-web.sh).
 
 Service arguments are used by logs, ps/status, and restart.
 
@@ -629,5 +591,4 @@ if [[ "$argus_ECS_WORKERS" == "1" ]]; then
 fi
 echo "(or docker-compose -f deploy/docker-compose.yml ... if you use V1)"
 echo ""
-
 

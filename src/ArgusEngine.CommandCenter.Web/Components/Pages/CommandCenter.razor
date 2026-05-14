@@ -850,6 +850,7 @@
     private bool _loadingAny => _targetsLoading || _assetsLoading || _httpLoading || _workersLoading || _cloudWorkersLoading || _highValueLoading || _technologiesLoading || _enumLoading || _spiderLoading;
     private bool _contextMenuVisible;
     private bool _summaryCardConfigurationOpen;
+    private bool _summaryCardPreferencesLoaded;
     private double _contextMenuX;
     private double _contextMenuY;
     private IReadOnlyList<ContextMenuItem> _contextMenuItems = [];
@@ -882,6 +883,7 @@
     ];
 
     private const int CompactRowHeight = 32;
+    private const string SummaryCardsPreferenceKey = "command-center.summary-cards";
 
     private long TotalTargets => Math.Max(OverviewLong("totalTargets", "TotalTargets"), _targets.Count);
     private long ConfirmedAssets => Math.Max(OverviewLong("totalAssetsConfirmed", "TotalAssetsConfirmed"), _targets.Sum(t => Long(t, "confirmedAssetCount", "ConfirmedAssetCount")));
@@ -988,9 +990,82 @@
     protected override async Task OnInitializedAsync()
     {
         Realtime.DomainEventReceived += OnRealtimeEvent;
+        await LoadSummaryCardPreferencesAsync().ConfigureAwait(false);
         await ReloadAllAsync().ConfigureAwait(false);
         await StartRealtimeAsync().ConfigureAwait(false);
         _ = PollAsync();
+    }
+
+    private async Task LoadSummaryCardPreferencesAsync()
+    {
+        try
+        {
+            using var response = await WorkerApi.Client
+                .GetAsync($"/api/ui-preferences/{Uri.EscapeDataString(SummaryCardsPreferenceKey)}", _cts.Token)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return;
+            }
+
+            var payload = await response.Content.ReadFromJsonAsync<UiPreferenceResponse>(cancellationToken: _cts.Token).ConfigureAwait(false);
+            if (payload?.Value.ValueKind is not JsonValueKind.Object)
+            {
+                return;
+            }
+
+            foreach (var option in SummaryCardOptions)
+            {
+                if (!payload.Value.TryGetProperty(option.Key, out var property))
+                {
+                    continue;
+                }
+
+                if (property.ValueKind == JsonValueKind.True || property.ValueKind == JsonValueKind.False)
+                {
+                    _summaryCardVisibility[option.Key] = property.GetBoolean();
+                }
+                else if (property.ValueKind == JsonValueKind.String
+                         && bool.TryParse(property.GetString(), out var parsed))
+                {
+                    _summaryCardVisibility[option.Key] = parsed;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Failed to load summary card preferences.");
+        }
+        finally
+        {
+            _summaryCardPreferencesLoaded = true;
+        }
+    }
+
+    private async Task SaveSummaryCardPreferencesAsync()
+    {
+        if (!_summaryCardPreferencesLoaded)
+        {
+            return;
+        }
+
+        try
+        {
+            using var response = await WorkerApi.Client
+                .PutAsJsonAsync(
+                    $"/api/ui-preferences/{Uri.EscapeDataString(SummaryCardsPreferenceKey)}",
+                    new UiPreferenceUpsertRequest(new Dictionary<string, bool>(_summaryCardVisibility)),
+                    _cts.Token)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                Logger.LogDebug("Saving summary card preferences returned status {StatusCode}.", response.StatusCode);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Failed to save summary card preferences.");
+        }
     }
 
     private async Task PollAsync()
@@ -2030,6 +2105,7 @@
     private void SetSummaryCardVisibility(string key, ChangeEventArgs args)
     {
         _summaryCardVisibility[key] = IsChecked(args);
+        _ = SaveSummaryCardPreferencesAsync();
     }
 
     private async Task OnContextMenuItemAsync(ContextMenuItem item)
@@ -2393,4 +2469,9 @@
     private sealed record TechnologyVersionRow(string Version, long TargetCount, long SubdomainCount);
     private sealed record ContextMenuItem(string Label, Func<Task> Action);
     private sealed record SummaryCardOption(string Key, string Label);
+    private sealed record UiPreferenceUpsertRequest(Dictionary<string, bool> Value, string? UserKey = null);
+    private sealed class UiPreferenceResponse
+    {
+        public JsonElement Value { get; set; }
+    }
 }

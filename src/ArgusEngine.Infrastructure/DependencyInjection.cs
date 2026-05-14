@@ -50,6 +50,7 @@ public static class DependencyInjection
             workerKey,
             sp.GetRequiredService<ILogger<WorkerHeartbeatService>>()));
         services.AddHostedService(sp => sp.GetRequiredService<WorkerHeartbeatService>());
+        services.AddHostedService<CloudRunPortProbeService>();
         
         return services;
     }

@@ -22,12 +22,13 @@
 
 <div class="ops-page" @onclick="CloseContextMenu">
     <header class="ops-header">
-        <div>
-            <p class="eyebrow">Operations</p>
+        <div class="ops-header-copy">
             <h1>Argus Command Center</h1>
-            <p class="muted">Targets, assets, workers, HTTP queue, high value assets, and technology detection in one operations view.</p>
         </div>
-        <button class="primary" type="button" @onclick="ReloadAllAsync">Refresh</button>
+        <div class="ops-header-actions">
+            <button type="button" @onclick="OpenSummaryCardConfiguration">Summary Card Configuration</button>
+            <button class="primary" type="button" @onclick="ReloadAllAsync">Refresh</button>
+        </div>
     </header>
 
     @if (!string.IsNullOrWhiteSpace(_statusMessage))
@@ -36,34 +37,86 @@
     }
 
     <section class="summary-grid" aria-label="Operations summary">
-        <article class="summary-card">
-            <span>Targets</span>
-            <strong>@FormatNumber(TotalTargets)</strong>
-        </article>
-        <article class="summary-card">
-            <span>Assets</span>
-            <strong>@FormatNumber(ConfirmedAssets)</strong>
-        </article>
-        <article class="summary-card">
-            <span>Subdomains</span>
-            <strong>@FormatNumber(ConfirmedSubdomains)</strong>
-        </article>
-        <article class="summary-card">
-            <span>HTTP Queue</span>
-            <strong>@FormatNumber(HttpQueueQueuedCount)</strong>
-            <small>@FormatNumber(HttpRequestsSentPerMinute) sent/min</small>
-        </article>
-        <article class="summary-card summary-card-wide">
-            <span>Asset Storage</span>
-            <strong>@FormatStorageSize(TotalTrackedStorageBytes)</strong>
-            <small>@StorageBreakdownLabel</small>
-        </article>
+        @if (ShowSummaryCard("targets"))
+        {
+            <article class="summary-card">
+                <span>Targets</span>
+                <strong>@FormatNumber(TotalTargets)</strong>
+            </article>
+        }
+        @if (ShowSummaryCard("assets"))
+        {
+            <article class="summary-card">
+                <span>Assets</span>
+                <strong>@FormatNumber(ConfirmedAssets)</strong>
+            </article>
+        }
+        @if (ShowSummaryCard("subdomains"))
+        {
+            <article class="summary-card">
+                <span>Subdomains</span>
+                <strong>@FormatNumber(ConfirmedSubdomains)</strong>
+            </article>
+        }
+        @if (ShowSummaryCard("httpQueue"))
+        {
+            <article class="summary-card">
+                <span>HTTP Queue</span>
+                <strong>@FormatNumber(HttpQueueQueuedCount)</strong>
+                <small>@FormatNumber(HttpRequestsSentPerMinute) sent/min</small>
+            </article>
+        }
+        @if (ShowSummaryCard("assetStorage"))
+        {
+            <article class="summary-card summary-card-wide">
+                <span>Asset Storage</span>
+                <strong>@FormatStorageSize(TotalTrackedStorageBytes)</strong>
+                <small>@StorageBreakdownLabel</small>
+            </article>
+        }
+        @if (ShowSummaryCard("localWorkers"))
+        {
+            <article class="summary-card">
+                <span>Local Workers</span>
+                <strong>@FormatNumber(LocalWorkersRunning) running</strong>
+                <small>@FormatNumber(LocalWorkersIdle) idle / @FormatNumber(LocalWorkersFailed) failed</small>
+            </article>
+        }
+        @if (ShowSummaryCard("cloudWorkers"))
+        {
+            <article class="summary-card summary-card-wide">
+                <span>Cloud Workers</span>
+                <strong>@CloudWorkersSummary</strong>
+                <small>Google + Azure worker health view</small>
+            </article>
+        }
+        @if (ShowSummaryCard("highValueFindings"))
+        {
+            <article class="summary-card">
+                <span>High Value Findings</span>
+                <strong>@FormatNumber(HighValueFindingsCount)</strong>
+            </article>
+        }
+        @if (ShowSummaryCard("technologiesIdentified"))
+        {
+            <article class="summary-card">
+                <span>Technologies Identified</span>
+                <strong>@FormatNumber(TechnologiesIdentifiedCount)</strong>
+            </article>
+        }
+        @if (ShowSummaryCard("totalUrls"))
+        {
+            <article class="summary-card">
+                <span>Total URLs</span>
+                <strong>@FormatNumber(TotalUrlCount)</strong>
+            </article>
+        }
     </section>
 
-    <section class="ops-panel">
+    <section class="ops-split-grid">
+    <section class="ops-panel ops-panel-half">
         <div class="panel-title">
             <div>
-                <p class="eyebrow">Scope</p>
                 <h2>Targets</h2>
             </div>
             <span class="muted">@FormatNumber(TargetRows.Length) visible</span>
@@ -95,7 +148,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <Virtualize TItem="JsonElement" Items="@TargetRows" Context="target" ItemSize="40" OverscanCount="20">
+                    <Virtualize TItem="JsonElement" Items="@TargetRows" Context="target" ItemSize="@CompactRowHeight" OverscanCount="20">
                     @{
                         var id = Text(target, "id", "Id");
                         <tr class="@RowClass(IsTargetSelected(id))"
@@ -121,7 +174,6 @@
     <section class="ops-panel">
         <div class="panel-title">
             <div>
-                <p class="eyebrow">Scope</p>
                 <h2>Subdomains</h2>
             </div>
             <span class="muted">@ActiveTargetLabel · @FormatNumber(SubdomainRows.Length) visible</span>
@@ -147,7 +199,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <Virtualize TItem="JsonElement" Items="@SubdomainRows" Context="row" ItemSize="40" OverscanCount="20">
+                    <Virtualize TItem="JsonElement" Items="@SubdomainRows" Context="row" ItemSize="@CompactRowHeight" OverscanCount="20">
                     @{
                         var key = SubdomainKey(row);
                         <tr class="@RowClass(IsSubdomainSelected(key))"
@@ -168,11 +220,11 @@
         </div>
 
     </section>
+    </section>
 
     <section class="ops-panel">
         <div class="panel-title">
             <div>
-                <p class="eyebrow">Inventory</p>
                 <h2>Assets</h2>
             </div>
             <span class="muted">@FormatNumber(AssetRows.Length) visible</span>
@@ -192,7 +244,7 @@
         </div>
 
         <div class="table-wrap grid-wrap">
-            <table class="ops-table">
+            <table class="ops-table assets-table">
                 <thead>
                     <tr>
                         <th class="select-col">
@@ -206,29 +258,32 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <Virtualize TItem="JsonElement" Items="@AssetRows" Context="asset" ItemSize="40" OverscanCount="20">
+                    <Virtualize TItem="JsonElement" Items="@AssetRows" Context="asset" ItemSize="@CompactRowHeight" OverscanCount="20">
                     @{
                         var id = Text(asset, "id", "Id");
                         var finalUrl = Text(asset, "finalUrl", "FinalUrl");
                         var href = TryHttpHref(finalUrl);
+                        var kind = DisplayOrDash(Text(asset, "kind", "Kind"));
+                        var assetValue = DisplayOrDash(AssetValue(asset));
+                        var discoveryContext = DisplayOrDash(Text(asset, "discoveryContext", "DiscoveryContext"));
                         <tr class="@RowClass(IsAssetSelected(id))" @onclick="() => ToggleAssetSelection(id)">
                             <td class="select-col">
                                 <input type="checkbox" checked="@IsAssetSelected(id)" @onchange="args => SetAssetSelected(id, args)" @onclick:stopPropagation="true" />
                             </td>
-                            <td>@DisplayOrDash(Text(asset, "kind", "Kind"))</td>
-                            <td>
+                            <td class="truncate" title="@kind">@kind</td>
+                            <td class="truncate" title="@assetValue">
                                 @if (href is null)
                                 {
-                                    @DisplayOrDash(AssetValue(asset))
+                                    @assetValue
                                 }
                                 else
                                 {
                                     <a href="@href" target="_blank" rel="noopener noreferrer">@DisplayOrDash(finalUrl)</a>
                                 }
                             </td>
-                            <td>@FormatTime(Text(asset, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
-                            <td>@FormatTime(Text(asset, "lastSeenAtUtc", "LastSeenAtUtc"))</td>
-                            <td>@DisplayOrDash(Text(asset, "discoveryContext", "DiscoveryContext"))</td>
+                            <td class="truncate" title="@FormatTime(Text(asset, "discoveredAtUtc", "DiscoveredAtUtc"))">@FormatTime(Text(asset, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
+                            <td class="truncate" title="@FormatTime(Text(asset, "lastSeenAtUtc", "LastSeenAtUtc"))">@FormatTime(Text(asset, "lastSeenAtUtc", "LastSeenAtUtc"))</td>
+                            <td class="truncate" title="@discoveryContext">@discoveryContext</td>
                         </tr>
                     }
                     </Virtualize>
@@ -266,7 +321,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <Virtualize TItem="JsonElement" Items="@WorkerRows" Context="worker" ItemSize="40" OverscanCount="20">
+                    <Virtualize TItem="JsonElement" Items="@WorkerRows" Context="worker" ItemSize="@CompactRowHeight" OverscanCount="20">
                     @{
                         var service = Text(worker, "serviceName", "ServiceName");
                         <tr class="@RowClass(IsWorkerSelected(service))" @onclick="() => ToggleWorkerSelection(service)">
@@ -310,7 +365,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <Virtualize TItem="WorkerStatus" Items="@CloudWorkerRows" Context="cloudWorker" ItemSize="40" OverscanCount="20">
+                    <Virtualize TItem="WorkerStatus" Items="@CloudWorkerRows" Context="cloudWorker" ItemSize="@CompactRowHeight" OverscanCount="20">
                     @{
                         var busy = _cloudScaleBusy.Contains(cloudWorker.Worker);
                         <tr>
@@ -392,7 +447,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <Virtualize TItem="JsonElement" Items="@HttpRows" Context="q" ItemSize="40" OverscanCount="24">
+                    <Virtualize TItem="JsonElement" Items="@HttpRows" Context="q" ItemSize="@CompactRowHeight" OverscanCount="24">
                     @{
                         var id = Text(q, "id", "Id");
                         <tr class="@RowClass(IsHttpSelected(id))" @onclick="() => ToggleHttpSelection(id)">
@@ -453,7 +508,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <Virtualize TItem="JsonElement" Items="@FilteredHighValueRows" Context="row" ItemSize="40" OverscanCount="24">
+                    <Virtualize TItem="JsonElement" Items="@FilteredHighValueRows" Context="row" ItemSize="@CompactRowHeight" OverscanCount="24">
                     @{
                         var key = HighValueKey(row);
                         <tr class="@RowClass(IsHighValueSelected(key))" @onclick="() => ToggleHighValueSelection(key)">
@@ -516,7 +571,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <Virtualize TItem="JsonElement" Items="@FilteredTechnologyRows" Context="row" ItemSize="40" OverscanCount="24">
+                    <Virtualize TItem="JsonElement" Items="@FilteredTechnologyRows" Context="row" ItemSize="@CompactRowHeight" OverscanCount="24">
                     @{
                         var key = TechnologyKey(row);
                         <tr class="@RowClass(IsTechnologySelected(key))" @onclick="() => ToggleTechnologySelection(key)">
@@ -548,6 +603,28 @@
         {
             <button type="button" class="ops-context-menu-item" @onclick="() => OnContextMenuItemAsync(item)">@item.Label</button>
         }
+    </div>
+}
+
+@if (_summaryCardConfigurationOpen)
+{
+    <div class="modal-backdrop" role="presentation" @onclick="CloseSummaryCardConfiguration">
+        <div class="modal-card summary-config-modal" role="dialog" aria-modal="true" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h2>Summary Card Configuration</h2>
+                <button type="button" @onclick="CloseSummaryCardConfiguration">Close</button>
+            </div>
+            <p class="muted">Choose which cards are visible at the top of the Command Center.</p>
+            <div class="summary-config-list">
+                @foreach (var option in SummaryCardOptions)
+                {
+                    <label class="summary-config-item">
+                        <input type="checkbox" checked="@ShowSummaryCard(option.Key)" @onchange="args => SetSummaryCardVisibility(option.Key, args)" />
+                        <span>@option.Label</span>
+                    </label>
+                }
+            </div>
+        </div>
     </div>
 }
 
@@ -717,6 +794,7 @@
     private readonly List<JsonElement> _highValueRows = [];
     private readonly List<JsonElement> _technologyRows = [];
     private readonly List<JsonElement> _technologyUsage = [];
+    private readonly Dictionary<string, List<JsonElement>> _subdomainAssetsByTarget = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<WorkerStatus> _cloudWorkers = [];
     private readonly Dictionary<WorkerType, int> _cloudDesiredMin = [];
     private readonly Dictionary<WorkerType, int> _cloudDesiredMax = [];
@@ -771,9 +849,39 @@
     private bool _spiderLoading;
     private bool _loadingAny => _targetsLoading || _assetsLoading || _httpLoading || _workersLoading || _cloudWorkersLoading || _highValueLoading || _technologiesLoading || _enumLoading || _spiderLoading;
     private bool _contextMenuVisible;
+    private bool _summaryCardConfigurationOpen;
     private double _contextMenuX;
     private double _contextMenuY;
     private IReadOnlyList<ContextMenuItem> _contextMenuItems = [];
+    private readonly Dictionary<string, bool> _summaryCardVisibility = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["targets"] = true,
+        ["assets"] = true,
+        ["subdomains"] = true,
+        ["httpQueue"] = true,
+        ["assetStorage"] = true,
+        ["localWorkers"] = true,
+        ["cloudWorkers"] = true,
+        ["highValueFindings"] = true,
+        ["technologiesIdentified"] = true,
+        ["totalUrls"] = true
+    };
+
+    private static readonly IReadOnlyList<SummaryCardOption> SummaryCardOptions =
+    [
+        new("targets", "Targets"),
+        new("assets", "Assets"),
+        new("subdomains", "Subdomains"),
+        new("httpQueue", "Http Queue"),
+        new("assetStorage", "Asset Storage"),
+        new("localWorkers", "Local Workers"),
+        new("cloudWorkers", "Cloud Workers"),
+        new("highValueFindings", "High Value Findings"),
+        new("technologiesIdentified", "Technologies Identified"),
+        new("totalUrls", "Total URLs")
+    ];
+
+    private const int CompactRowHeight = 32;
 
     private long TotalTargets => Math.Max(OverviewLong("totalTargets", "TotalTargets"), _targets.Count);
     private long ConfirmedAssets => Math.Max(OverviewLong("totalAssetsConfirmed", "TotalAssetsConfirmed"), _targets.Sum(t => Long(t, "confirmedAssetCount", "ConfirmedAssetCount")));
@@ -787,12 +895,30 @@
     private long HttpRequestsSentPerMinute => OverviewLong("httpRequestsSentLastMinuteCount", "HttpRequestsSentLastMinuteCount");
     private string StorageBreakdownLabel => $"Assets {FormatStorageSize(AssetMetadataStorageBytes)} / HTTP {FormatStorageSize(HttpArtifactStorageBytes + InlineHttpStorageBytes)} / Events {FormatStorageSize(EventJournalStorageBytes)}";
     private bool CanCreateTarget => !string.IsNullOrWhiteSpace(_newTargetRootDomain) && _newTargetDepth > 0;
+    private long LocalWorkersRunning => _workers.Sum(w => Long(w, "runningCount", "RunningCount"));
+    private long LocalWorkersTotal => _workers.Sum(w => Long(w, "totalCount", "TotalCount"));
+    private long LocalWorkersFailed =>
+        Math.Max(
+            _workers.Sum(w => Long(w, "failedCount", "FailedCount")),
+            _workers.LongCount(w => Text(w, "overallState", "OverallState").Contains("fail", StringComparison.OrdinalIgnoreCase)));
+    private long LocalWorkersIdle => Math.Max(LocalWorkersTotal - LocalWorkersRunning - LocalWorkersFailed, 0);
+    private long GoogleCloudRunning => _cloudWorkers.LongCount(w => w.Status == CloudDeployStatus.Running);
+    private long GoogleCloudFailed => _cloudWorkers.LongCount(w => w.Status == CloudDeployStatus.Failed);
+    private long GoogleCloudIdle => Math.Max(_cloudWorkers.Count - GoogleCloudRunning - GoogleCloudFailed, 0);
+    private string CloudWorkersSummary =>
+        $"Google: {FormatNumber(GoogleCloudRunning)} running / {FormatNumber(GoogleCloudIdle)} idle / {FormatNumber(GoogleCloudFailed)} failed, Azure: 0 running / 0 idle / 0 failed";
+    private long HighValueFindingsCount =>
+        Math.Max(_highValueRows.LongCount(row => Bool(row, "isHighValue", "IsHighValue")), _highValueRows.LongCount());
+    private long TechnologiesIdentifiedCount => _technologyRows
+        .Select(row => Text(row, "technologyName", "TechnologyName"))
+        .Where(name => !string.IsNullOrWhiteSpace(name))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .LongCount();
+    private long TotalUrlCount => _assets.LongCount(asset => Text(asset, "kind", "Kind").Equals("Url", StringComparison.OrdinalIgnoreCase));
 
     private JsonElement[] TargetRows => MaterializeSorted(_targets.Where(TargetMatchesFilter), TargetSortKey, _targetSortDescending);
     private JsonElement[] SubdomainRows => MaterializeSorted(
-        _assets
-            .Where(MatchesSelectedTargetsScope)
-            .Where(a => Text(a, "kind", "Kind").Equals("Subdomain", StringComparison.OrdinalIgnoreCase))
+        SelectedTargetSubdomainAssets()
             .Where(SubdomainMatchesFilter)
             .GroupBy(SubdomainKey, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.OrderByDescending(a => Text(a, "discoveredAtUtc", "DiscoveredAtUtc"), StringComparer.Ordinal).First()),
@@ -999,6 +1125,7 @@
         try
         {
             Replace(_assets, await GetArrayAsync("/api/assets").ConfigureAwait(false));
+            RebuildSubdomainIndex();
             _selectedAssetIds.RemoveWhere(id => !_assets.Any(a => Text(a, "id", "Id").Equals(id, StringComparison.OrdinalIgnoreCase)));
             _selectedSubdomainKeys.RemoveWhere(key => !_assets.Any(a => SubdomainKey(a).Equals(key, StringComparison.OrdinalIgnoreCase)));
         }
@@ -1495,6 +1622,52 @@
         _ => Text(target, "rootDomain", "RootDomain")
     };
 
+    private IEnumerable<JsonElement> SelectedTargetSubdomainAssets()
+    {
+        if (_selectedTargetIds.Count == 0)
+        {
+            return _assets.Where(a => Text(a, "kind", "Kind").Equals("Subdomain", StringComparison.OrdinalIgnoreCase));
+        }
+
+        var rows = new List<JsonElement>();
+        foreach (var targetId in _selectedTargetIds)
+        {
+            if (_subdomainAssetsByTarget.TryGetValue(targetId, out var assets))
+            {
+                rows.AddRange(assets);
+            }
+        }
+
+        return rows;
+    }
+
+    private void RebuildSubdomainIndex()
+    {
+        _subdomainAssetsByTarget.Clear();
+
+        foreach (var asset in _assets)
+        {
+            if (!Text(asset, "kind", "Kind").Equals("Subdomain", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var targetId = Text(asset, "targetId", "TargetId");
+            if (string.IsNullOrWhiteSpace(targetId))
+            {
+                continue;
+            }
+
+            if (!_subdomainAssetsByTarget.TryGetValue(targetId, out var items))
+            {
+                items = [];
+                _subdomainAssetsByTarget[targetId] = items;
+            }
+
+            items.Add(asset);
+        }
+    }
+
     private bool MatchesSelectedTargetsScope(JsonElement asset)
     {
         if (_selectedTargetIds.Count == 0)
@@ -1726,7 +1899,11 @@
     private bool IsHighValueSelected(string key) => !string.IsNullOrWhiteSpace(key) && _selectedHighValueKeys.Contains(key);
     private bool IsTechnologySelected(string key) => !string.IsNullOrWhiteSpace(key) && _selectedTechnologyKeys.Contains(key);
 
-    private void ToggleTargetSelection(string id) => ToggleSet(_selectedTargetIds, id);
+    private void ToggleTargetSelection(string id)
+    {
+        SelectActiveTarget(id);
+        ToggleSet(_selectedTargetIds, id);
+    }
     private void ToggleSubdomainSelection(string key) => ToggleSet(_selectedSubdomainKeys, key);
     private void ToggleAssetSelection(string id) => ToggleSet(_selectedAssetIds, id);
     private void ToggleWorkerSelection(string service) => ToggleSet(_selectedWorkerServices, service);
@@ -1734,7 +1911,16 @@
     private void ToggleHighValueSelection(string key) => ToggleSet(_selectedHighValueKeys, key);
     private void ToggleTechnologySelection(string key) => ToggleSet(_selectedTechnologyKeys, key);
 
-    private void SetTargetSelected(string id, ChangeEventArgs args) => SetSelected(_selectedTargetIds, id, IsChecked(args));
+    private void SetTargetSelected(string id, ChangeEventArgs args)
+    {
+        var selected = IsChecked(args);
+        if (selected)
+        {
+            SelectActiveTarget(id);
+        }
+
+        SetSelected(_selectedTargetIds, id, selected);
+    }
     private void SetSubdomainSelected(string key, ChangeEventArgs args) => SetSelected(_selectedSubdomainKeys, key, IsChecked(args));
     private void SetAssetSelected(string id, ChangeEventArgs args) => SetSelected(_selectedAssetIds, id, IsChecked(args));
     private void SetWorkerSelected(string service, ChangeEventArgs args) => SetSelected(_selectedWorkerServices, service, IsChecked(args));
@@ -1799,6 +1985,7 @@
     {
         var targetId = Text(targetRow, "id", "Id");
         SetSelected(_selectedTargetIds, targetId, selected: true);
+        SelectActiveTarget(targetId);
         OpenContextMenu(args, BuildTargetContextMenu(targetId));
     }
 
@@ -1831,6 +2018,18 @@
     {
         _contextMenuVisible = false;
         _contextMenuItems = [];
+    }
+
+    private void OpenSummaryCardConfiguration() => _summaryCardConfigurationOpen = true;
+
+    private void CloseSummaryCardConfiguration() => _summaryCardConfigurationOpen = false;
+
+    private bool ShowSummaryCard(string key) =>
+        _summaryCardVisibility.TryGetValue(key, out var visible) && visible;
+
+    private void SetSummaryCardVisibility(string key, ChangeEventArgs args)
+    {
+        _summaryCardVisibility[key] = IsChecked(args);
     }
 
     private async Task OnContextMenuItemAsync(ContextMenuItem item)
@@ -2193,4 +2392,5 @@
     private sealed record TopTechnologyRow(string Name, long TargetCount, long SubdomainCount);
     private sealed record TechnologyVersionRow(string Version, long TargetCount, long SubdomainCount);
     private sealed record ContextMenuItem(string Label, Func<Task> Action);
+    private sealed record SummaryCardOption(string Key, string Label);
 }

@@ -78,3 +78,23 @@
     border-radius: 0.55rem;
     padding: 0.3rem 0.45rem;
 }
+
+.retention-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+    margin: 0.75rem 0;
+}
+
+.retention-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.retention-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}

@@ -3,6 +3,7 @@
 @page "/admin"
 @rendermode InteractiveServer
 @using System.Net.Http.Json
+@using ArgusEngine.Application.DataRetention
 @using ArgusEngine.CommandCenter.Web.Clients
 @inject MaintenanceApiClient MaintenanceApi
 
@@ -512,4 +513,3 @@
         public bool ArchiveEventTablesBeforeDelete { get; set; }
     }
 }
-

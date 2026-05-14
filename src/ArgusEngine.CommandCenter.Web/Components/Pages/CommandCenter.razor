@@ -7,9 +7,14 @@
 @using System.Net.Http.Json
 @using System.Text.Json
 @using ArgusEngine.CommandCenter.Contracts
+@using ArgusEngine.CommandCenter.Models
+@using ArgusEngine.CommandCenter.Realtime
 @using ArgusEngine.CommandCenter.Web.Clients
+@using Microsoft.AspNetCore.Components.Web.Virtualization
 @implements IDisposable
 @inject WorkerControlApiClient WorkerApi
+@inject DiscoveryRealtimeClient Realtime
+@inject Microsoft.Extensions.Logging.ILogger<CommandCenter> Logger
 
 <PageTitle>Argus Command Center - Argus Engine</PageTitle>
 
@@ -73,7 +78,7 @@
             <button type="button" @onclick="() => StartSpiderTargetsAsync(selectedOnly: false)" disabled="@(TargetRows.Count == 0)">Spider all visible</button>
         </div>
 
-        <div class="table-wrap">
+        <div class="table-wrap http-queue-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
@@ -88,8 +93,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var target in TargetRows)
-                    {
+                    <Virtualize TItem="JsonElement" Items="@TargetRows" Context="target" ItemSize="40" OverscanCount="20">
+                    @{
                         var id = Text(target, "id", "Id");
                         <tr class="@RowClass(IsTargetSelected(id))"
                             @onclick="() => ToggleTargetSelection(id)"
@@ -105,6 +110,7 @@
                             <td>@FormatTime(Text(target, "lastRunAtUtc", "LastRunAtUtc"))</td>
                         </tr>
                     }
+                    </Virtualize>
                 </tbody>
             </table>
         </div>
@@ -139,8 +145,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var row in SubdomainRows)
-                    {
+                    <Virtualize TItem="JsonElement" Items="@SubdomainRows" Context="row" ItemSize="40" OverscanCount="20">
+                    @{
                         var key = SubdomainKey(row);
                         <tr class="@RowClass(IsSubdomainSelected(key))"
                             @onclick="() => ToggleSubdomainSelection(key)"
@@ -154,6 +160,7 @@
                             <td>@DisplayOrDash(Text(row, "discoveryContext", "DiscoveryContext"))</td>
                         </tr>
                     }
+                    </Virtualize>
                 </tbody>
             </table>
         </div>
@@ -196,8 +203,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var asset in AssetRows)
-                    {
+                    <Virtualize TItem="JsonElement" Items="@AssetRows" Context="asset" ItemSize="40" OverscanCount="20">
+                    @{
                         var id = Text(asset, "id", "Id");
                         var finalUrl = Text(asset, "finalUrl", "FinalUrl");
                         var href = TryHttpHref(finalUrl);
@@ -221,6 +228,7 @@
                             <td>@DisplayOrDash(Text(asset, "discoveryContext", "DiscoveryContext"))</td>
                         </tr>
                     }
+                    </Virtualize>
                 </tbody>
             </table>
         </div>
@@ -314,8 +322,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var q in HttpRows)
-                    {
+                    <Virtualize TItem="JsonElement" Items="@HttpRows" Context="q" ItemSize="40" OverscanCount="24">
+                    @{
                         var id = Text(q, "id", "Id");
                         <tr class="@RowClass(IsHttpSelected(id))" @onclick="() => ToggleHttpSelection(id)">
                             <td class="select-col">
@@ -330,6 +338,7 @@
                             <td>@DisplayOrDash(Text(q, "lastError", "LastError"))</td>
                         </tr>
                     }
+                    </Virtualize>
                 </tbody>
             </table>
         </div>
@@ -704,14 +713,14 @@
     private IReadOnlyList<JsonElement> TargetRows => MaterializeSorted(_targets.Where(TargetMatchesFilter), TargetSortKey, _targetSortDescending);
     private IReadOnlyList<JsonElement> SubdomainRows => MaterializeSorted(
         _assets
-            .Where(MatchesActiveTarget)
+            .Where(MatchesSelectedTargetsScope)
             .Where(a => Text(a, "kind", "Kind").Equals("Subdomain", StringComparison.OrdinalIgnoreCase))
             .Where(SubdomainMatchesFilter)
             .GroupBy(SubdomainKey, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.OrderByDescending(a => Text(a, "discoveredAtUtc", "DiscoveredAtUtc"), StringComparer.Ordinal).First()),
         SubdomainSortKey,
         _subdomainSortDescending);
-    private IReadOnlyList<JsonElement> AssetRows => MaterializeSorted(_assets.Where(MatchesActiveTarget).Where(AssetMatchesFilter), AssetSortKey, _assetSortDescending);
+    private IReadOnlyList<JsonElement> AssetRows => MaterializeSorted(_assets.Where(MatchesSelectedSubdomainsScope).Where(AssetMatchesFilter), AssetSortKey, _assetSortDescending);
     private IReadOnlyList<JsonElement> WorkerRows => _workers;
     private IReadOnlyList<JsonElement> HttpRows => MaterializeSorted(_queue.Where(HttpMatchesFilter), HttpSortKey, _httpSortDescending);
     private IReadOnlyList<JsonElement> HighValueRows => _highValueRows;
@@ -771,7 +780,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Realtime.DomainEventReceived += OnRealtimeEvent;
         await ReloadAllAsync().ConfigureAwait(false);
+        await StartRealtimeAsync().ConfigureAwait(false);
         _ = PollAsync();
     }
 
@@ -782,12 +793,67 @@
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(8));
             while (await timer.WaitForNextTickAsync(_cts.Token).ConfigureAwait(false))
             {
-                await ReloadLiveAsync().ConfigureAwait(false);
+                if (!Realtime.IsConnected)
+                {
+                    await ReloadLiveAsync().ConfigureAwait(false);
+                }
             }
         }
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private async Task StartRealtimeAsync()
+    {
+        try
+        {
+            await Realtime.EnsureStartedAsync(_cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "CommandCenter realtime connection failed; polling remains active.");
+        }
+    }
+
+    private void OnRealtimeEvent(object? sender, LiveUiEventDto evt)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (_cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            try
+            {
+                switch (evt.Scope)
+                {
+                    case "targets":
+                        await Task.WhenAll(ReloadTargetsAsync(), ReloadAssetsAsync(), ReloadOverviewAsync()).ConfigureAwait(false);
+                        break;
+                    case "assets":
+                    case "http":
+                        await Task.WhenAll(ReloadAssetsAsync(), ReloadHttpQueueAsync(), ReloadOverviewAsync()).ConfigureAwait(false);
+                        break;
+                    case "workers":
+                        await Task.WhenAll(ReloadDockerWorkersAsync(), ReloadOverviewAsync()).ConfigureAwait(false);
+                        break;
+                    default:
+                        await ReloadLiveAsync().ConfigureAwait(false);
+                        break;
+                }
+
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "CommandCenter realtime refresh failed.");
+            }
+        });
     }
 
     private async Task ReloadLiveAsync()
@@ -1233,8 +1299,33 @@
         _ => Text(target, "rootDomain", "RootDomain")
     };
 
-    private bool MatchesActiveTarget(JsonElement asset) =>
-        string.IsNullOrWhiteSpace(_activeTargetId) || Text(asset, "targetId", "TargetId").Equals(_activeTargetId, StringComparison.OrdinalIgnoreCase);
+    private bool MatchesSelectedTargetsScope(JsonElement asset)
+    {
+        if (_selectedTargetIds.Count == 0)
+        {
+            return true;
+        }
+
+        var targetId = Text(asset, "targetId", "TargetId");
+        return !string.IsNullOrWhiteSpace(targetId) && _selectedTargetIds.Contains(targetId);
+    }
+
+    private bool MatchesSelectedSubdomainsScope(JsonElement asset)
+    {
+        if (_selectedSubdomainKeys.Count == 0)
+        {
+            return true;
+        }
+
+        var targetId = Text(asset, "targetId", "TargetId");
+        var host = ExtractHost(asset);
+        if (string.IsNullOrWhiteSpace(targetId) || string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+
+        return _selectedSubdomainKeys.Contains($"{targetId}|{host}");
+    }
 
     private bool SubdomainMatchesFilter(JsonElement subdomain) =>
         string.IsNullOrWhiteSpace(_subdomainSearch) || SubdomainName(subdomain).Contains(_subdomainSearch, StringComparison.OrdinalIgnoreCase);
@@ -1672,6 +1763,17 @@
         return DisplayOrDash(Text(asset, "displayName", "DisplayName", "rawValue", "RawValue", "canonicalKey", "CanonicalKey"));
     }
 
+    private static string ExtractHost(JsonElement asset)
+    {
+        var value = AssetValue(asset);
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return uri.Host.Trim().ToLowerInvariant();
+        }
+
+        return value.Trim().ToLowerInvariant();
+    }
+
     private static string BestAssetUrl(JsonElement row)
     {
         foreach (var name in new[] { "finalUrl", "FinalUrl", "displayName", "DisplayName", "rawValue", "RawValue" })
@@ -1766,6 +1868,7 @@
 
     public void Dispose()
     {
+        Realtime.DomainEventReceived -= OnRealtimeEvent;
         _cts.Cancel();
         _cts.Dispose();
     }

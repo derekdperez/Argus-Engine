@@ -501,17 +501,41 @@ argus_cloud_write_service_env_file() {
     exit 2
   fi
 
-  cp "$source_env" "$output"
-  {
-    echo ""
-    echo "# Added by Argus cloud deployment scripts for ${service}"
-    echo "Argus__SkipStartupDatabase=true"
-    echo "ARGUS_SKIP_STARTUP_DATABASE=1"
-    if [[ "$service" == "worker-spider" || "$service" == "worker-http-requester" ]]; then
-      echo "Spider__Http__AllowInsecureSsl=false"
-      echo "HttpRequester__AllowInsecureSsl=false"
-    fi
-  } >> "$output"
+  python3 - "$source_env" "$service" "$output" <<'PY'
+import json
+import sys
+
+source_env, service, output = sys.argv[1], sys.argv[2], sys.argv[3]
+
+def unquote(value: str) -> str:
+    if len(value) >= 2 and ((value[0] == "'" and value[-1] == "'") or (value[0] == '"' and value[-1] == '"')):
+        return value[1:-1]
+    return value
+
+env_map: dict[str, str] = {}
+
+with open(source_env, "r", encoding="utf-8") as f:
+    for raw in f:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = unquote(value.strip())
+        if key:
+            env_map[key] = value
+
+# Added by Argus cloud deployment scripts.
+env_map["Argus__SkipStartupDatabase"] = "true"
+env_map["ARGUS_SKIP_STARTUP_DATABASE"] = "1"
+if service in ("worker-spider", "worker-http-requester"):
+    env_map["Spider__Http__AllowInsecureSsl"] = "false"
+    env_map["HttpRequester__AllowInsecureSsl"] = "false"
+
+with open(output, "w", encoding="utf-8") as out:
+    for key, value in env_map.items():
+        out.write(f"{key}: {json.dumps(value)}\n")
+PY
 }
 
 argus_cloud_default_services() {

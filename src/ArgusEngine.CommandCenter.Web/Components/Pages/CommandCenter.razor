@@ -338,7 +338,7 @@
                             <td>
                                 <button type="button"
                                         @onclick="() => ApplyCloudScaleAsync(cloudWorker.Worker)"
-                                        disabled="@busy">
+                                        disabled="@(busy || cloudWorker.Status == CloudDeployStatus.NotDeployed)">
                                     @(busy ? "Applying..." : "Apply")
                                 </button>
                             </td>
@@ -1068,15 +1068,17 @@
 
             foreach (var status in statuses)
             {
+                var normalizedMin = Math.Clamp(status.MinInstances, 0, 100);
+                var normalizedMax = NormalizeCloudMax(normalizedMin, status.MaxInstances);
                 if (!_cloudScaleBusy.Contains(status.Worker))
                 {
-                    _cloudDesiredMin[status.Worker] = status.MinInstances;
-                    _cloudDesiredMax[status.Worker] = Math.Max(status.MinInstances, status.MaxInstances);
+                    _cloudDesiredMin[status.Worker] = normalizedMin;
+                    _cloudDesiredMax[status.Worker] = normalizedMax;
                     continue;
                 }
 
-                _cloudDesiredMin.TryAdd(status.Worker, status.MinInstances);
-                _cloudDesiredMax.TryAdd(status.Worker, Math.Max(status.MinInstances, status.MaxInstances));
+                _cloudDesiredMin.TryAdd(status.Worker, normalizedMin);
+                _cloudDesiredMax.TryAdd(status.Worker, normalizedMax);
             }
         }
         catch (Exception ex)
@@ -1365,7 +1367,7 @@
     private int DesiredCloudMax(WorkerType worker)
     {
         var min = DesiredCloudMin(worker);
-        return _cloudDesiredMax.TryGetValue(worker, out var value) ? Math.Max(value, min) : Math.Max(min, 10);
+        return _cloudDesiredMax.TryGetValue(worker, out var value) ? NormalizeCloudMax(min, value) : NormalizeCloudMax(min, 10);
     }
 
     private void OnDesiredCloudMinChanged(WorkerType worker, ChangeEventArgs args)
@@ -1378,7 +1380,7 @@
         _cloudDesiredMin[worker] = Math.Clamp(value, 0, 100);
         if (DesiredCloudMax(worker) < _cloudDesiredMin[worker])
         {
-            _cloudDesiredMax[worker] = _cloudDesiredMin[worker];
+            _cloudDesiredMax[worker] = NormalizeCloudMax(_cloudDesiredMin[worker], _cloudDesiredMin[worker]);
         }
     }
 
@@ -1389,7 +1391,7 @@
             return;
         }
 
-        _cloudDesiredMax[worker] = Math.Clamp(Math.Max(value, DesiredCloudMin(worker)), 0, 100);
+        _cloudDesiredMax[worker] = NormalizeCloudMax(DesiredCloudMin(worker), value);
     }
 
     private async Task ApplyCloudScaleAsync(WorkerType worker)
@@ -1401,8 +1403,17 @@
 
         try
         {
-            var min = DesiredCloudMin(worker);
-            var max = Math.Max(min, DesiredCloudMax(worker));
+            var status = _cloudWorkers.FirstOrDefault(x => x.Worker == worker);
+            if (status is { Status: CloudDeployStatus.NotDeployed })
+            {
+                _statusMessage = $"Cloud scale skipped for {CloudWorkerLabel(worker)} because the service is not deployed.";
+                return;
+            }
+
+            var min = Math.Clamp(DesiredCloudMin(worker), 0, 100);
+            var max = NormalizeCloudMax(min, DesiredCloudMax(worker));
+            _cloudDesiredMin[worker] = min;
+            _cloudDesiredMax[worker] = max;
 
             var result = await DeployService.ScaleWorkersAsync(min, max, [worker], _cts.Token).ConfigureAwait(false);
             var row = result.Results.FirstOrDefault(x => x.Worker == worker);
@@ -1841,6 +1852,13 @@
 
     private static int DefaultCloudMin(WorkerType worker) =>
         worker is WorkerType.Spider or WorkerType.Enumeration or WorkerType.HttpRequester ? 8 : 2;
+
+    private static int NormalizeCloudMax(int min, int max)
+    {
+        // Cloud Run requires max instances >= 1 even when min is 0.
+        var minAllowed = Math.Max(min, 1);
+        return Math.Clamp(Math.Max(max, minAllowed), 1, 100);
+    }
 
     private static bool TryReadInt(ChangeEventArgs args, out int value) =>
         int.TryParse(

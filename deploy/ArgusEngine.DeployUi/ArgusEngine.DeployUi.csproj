@@ -7,6 +7,8 @@
     <Nullable>enable</Nullable>
     <AssemblyName>argus-deploy</AssemblyName>
     <RootNamespace>ArgusEngine.DeployUi</RootNamespace>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+    <NoWarn>$(NoWarn);CA1822;CA1859;CA1861</NoWarn>
   </PropertyGroup>
 
 </Project>

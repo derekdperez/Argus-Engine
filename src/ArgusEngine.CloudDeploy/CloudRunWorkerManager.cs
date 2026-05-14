@@ -1,5 +1,4 @@
 using Google.Cloud.Run.V2;
-using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -103,31 +102,19 @@ internal sealed class CloudRunWorkerManager(
         try
         {
             var existing = await client.GetServiceAsync(ServiceResourceName(worker), ct);
+            var currentImage = existing.Template?.Containers.FirstOrDefault()?.Image;
+            var desiredService = BuildServiceSpec(worker, string.IsNullOrWhiteSpace(currentImage) ? imageBuilder.GetImageUri(worker) : currentImage);
+            desiredService.Name = existing.Name;
 
-            var patch = new Service
+            desiredService.Template.Scaling = new RevisionScaling
             {
-                Name = existing.Name,
-                Template = new RevisionTemplate
-                {
-                    Scaling = new RevisionScaling
-                    {
-                        MinInstanceCount = normalizedMin,
-                        MaxInstanceCount = normalizedMax
-                    }
-                }
+                MinInstanceCount = normalizedMin,
+                MaxInstanceCount = normalizedMax
             };
 
             var op = await client.UpdateServiceAsync(new UpdateServiceRequest
             {
-                Service = patch,
-                UpdateMask = new FieldMask
-                {
-                    Paths =
-                    {
-                        "template.scaling.min_instance_count",
-                        "template.scaling.max_instance_count"
-                    }
-                }
+                Service = desiredService
             });
 
             await op.PollUntilCompletedAsync();

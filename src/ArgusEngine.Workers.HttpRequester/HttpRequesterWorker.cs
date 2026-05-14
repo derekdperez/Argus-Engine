@@ -118,6 +118,14 @@ public sealed class HttpRequesterWorker(
                     WHERE (state = 'Queued' OR state = 'Retry')
                       AND (next_attempt_at_utc IS NULL OR next_attempt_at_utc <= {now})
                       AND (locked_until_utc IS NULL OR locked_until_utc <= {now})
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM http_request_queue AS in_flight
+                          WHERE in_flight.domain_key = http_request_queue.domain_key
+                            AND in_flight.state = 'InFlight'
+                            AND in_flight.locked_until_utc IS NOT NULL
+                            AND in_flight.locked_until_utc > {now}
+                      )
                     ORDER BY priority DESC, created_at_utc ASC
                     LIMIT {limit}
                     FOR UPDATE SKIP LOCKED

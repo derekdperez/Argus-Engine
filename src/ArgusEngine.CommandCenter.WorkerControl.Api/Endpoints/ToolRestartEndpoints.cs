@@ -161,11 +161,12 @@ public static class ToolRestartEndpoints
 
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
+                    var spiderWorkersTarget = ResolveSpiderWorkerReplicaTarget(configuration, targets.Count);
                     var workerScale = await EnsureWorkersAvailableAsync(
                             configuration,
                             logger,
                             ct,
-                            ("worker-spider", 1),
+                            ("worker-spider", spiderWorkersTarget),
                             ("worker-http-requester", 1))
                         .ConfigureAwait(false);
 
@@ -225,11 +226,12 @@ public static class ToolRestartEndpoints
                         queuedRootSeeds += queued;
                     }
 
+                    var spiderWorkersTarget = ResolveSpiderWorkerReplicaTarget(configuration, targets.Count);
                     var workerScale = await EnsureWorkersAvailableAsync(
                             configuration,
                             logger,
                             ct,
-                            ("worker-spider", 1),
+                            ("worker-spider", spiderWorkersTarget),
                             ("worker-http-requester", 1))
                         .ConfigureAwait(false);
 
@@ -243,6 +245,142 @@ public static class ToolRestartEndpoints
                         });
                 })
             .WithName("ContinuousSpider");
+
+        app.MapPost(
+                "/api/ops/spider/subdomains/restart",
+                async (
+                    RestartSpiderSubdomainsRequest body,
+                    ArgusDbContext db,
+                    IConfiguration configuration,
+                    ILogger<ToolRestartEndpointsLogger> logger,
+                    CancellationToken ct) =>
+                {
+                    var targets = await ResolveTargetsAsync(
+                            new RestartToolRequest(body.TargetIds, AllTargets: false),
+                            db,
+                            logger,
+                            ct)
+                        .ConfigureAwait(false);
+
+                    if (targets.Count == 0)
+                    {
+                        return Results.BadRequest(new { Message = "Select at least one target first." });
+                    }
+
+                    var targetIds = targets.Select(t => t.Id).ToHashSet();
+                    var requestedSubdomains = body.Subdomains?
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .Select(s => NormalizeHostForQueue(s))
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+
+                    if (requestedSubdomains.Count == 0)
+                    {
+                        return Results.BadRequest(new { Message = "Select at least one subdomain first." });
+                    }
+
+                    var matchingAssets = await db.Assets
+                        .AsNoTracking()
+                        .Where(a => targetIds.Contains(a.TargetId) && a.Kind == AssetKind.Subdomain)
+                        .Where(a => requestedSubdomains.Contains(a.CanonicalKey) || requestedSubdomains.Contains(a.RawValue))
+                        .Select(a => new
+                        {
+                            a.Id,
+                            a.TargetId,
+                            a.Kind,
+                            a.RawValue,
+                            a.CanonicalKey
+                        })
+                        .ToListAsync(ct)
+                        .ConfigureAwait(false);
+
+                    if (matchingAssets.Count == 0)
+                    {
+                        return Results.Ok(new
+                        {
+                            Targets = targets.Count,
+                            RequestedSubdomains = requestedSubdomains.Count,
+                            QueuedRequests = 0,
+                            RequeuedExistingRequests = 0,
+                            WorkerScale = "no matching subdomain assets found",
+                            WorkerScaleSucceeded = true
+                        });
+                    }
+
+                    var now = DateTimeOffset.UtcNow;
+                    var existingByAssetId = await db.HttpRequestQueue
+                        .Where(q => matchingAssets.Select(a => a.Id).Contains(q.AssetId))
+                        .ToDictionaryAsync(q => q.AssetId, q => q, ct)
+                        .ConfigureAwait(false);
+
+                    var queued = 0;
+                    var requeued = 0;
+
+                    foreach (var asset in matchingAssets)
+                    {
+                        if (!TryBuildSubdomainRequest(asset.RawValue, out var requestUrl, out var domainKey))
+                        {
+                            continue;
+                        }
+
+                        if (existingByAssetId.TryGetValue(asset.Id, out var existing))
+                        {
+                            existing.RequestUrl = requestUrl;
+                            existing.DomainKey = domainKey;
+                            existing.State = HttpRequestQueueState.Queued;
+                            existing.LockedBy = null;
+                            existing.LockedUntilUtc = null;
+                            existing.StartedAtUtc = null;
+                            existing.CompletedAtUtc = null;
+                            existing.LastError = null;
+                            existing.UpdatedAtUtc = now;
+                            existing.NextAttemptAtUtc = now;
+                            requeued++;
+                            continue;
+                        }
+
+                        db.HttpRequestQueue.Add(new HttpRequestQueueItem
+                        {
+                            Id = Guid.NewGuid(),
+                            AssetId = asset.Id,
+                            TargetId = asset.TargetId,
+                            AssetKind = asset.Kind,
+                            Method = "GET",
+                            RequestUrl = requestUrl,
+                            DomainKey = domainKey,
+                            State = HttpRequestQueueState.Queued,
+                            Priority = 10,
+                            CreatedAtUtc = now,
+                            UpdatedAtUtc = now,
+                            NextAttemptAtUtc = now,
+                        });
+                        queued++;
+                    }
+
+                    await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+                    var spiderWorkersTarget = ResolveSpiderWorkerReplicaTarget(configuration, targets.Count);
+                    var workerScale = await EnsureWorkersAvailableAsync(
+                            configuration,
+                            logger,
+                            ct,
+                            ("worker-spider", spiderWorkersTarget),
+                            ("worker-http-requester", 1))
+                        .ConfigureAwait(false);
+
+                    return Results.Ok(new
+                    {
+                        Targets = targets.Count,
+                        RequestedSubdomains = requestedSubdomains.Count,
+                        MatchingAssets = matchingAssets.Count,
+                        QueuedRequests = queued,
+                        RequeuedExistingRequests = requeued,
+                        WorkerScale = workerScale.Message,
+                        WorkerScaleSucceeded = workerScale.Succeeded
+                    });
+                })
+            .WithName("RestartSpiderSubdomains");
 
         app.MapPost(
                 "/api/ops/subdomain-enum/continuous",
@@ -606,6 +744,55 @@ public static class ToolRestartEndpoints
         }
     }
 
+    private static int ResolveSpiderWorkerReplicaTarget(IConfiguration configuration, int targetCount)
+    {
+        var perTarget = Math.Max(1, configuration.GetValue("ARGUS_SPIDER_WORKERS_PER_TARGET_MAX", 4));
+        var min = Math.Max(1, configuration.GetValue("ARGUS_SPIDER_WORKERS_MIN", perTarget));
+        var max = Math.Max(min, configuration.GetValue("ARGUS_SPIDER_WORKERS_MAX", 50));
+        var desired = Math.Max(min, targetCount * perTarget);
+        return Math.Min(max, desired);
+    }
+
+    private static string NormalizeHostForQueue(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var candidate = value.Trim().TrimEnd('.');
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host))
+        {
+            return uri.IdnHost.ToLowerInvariant();
+        }
+
+        var slash = candidate.IndexOf('/', StringComparison.Ordinal);
+        if (slash >= 0)
+        {
+            candidate = candidate[..slash];
+        }
+
+        return candidate.Trim().TrimEnd('.').ToLowerInvariant();
+    }
+
+    private static bool TryBuildSubdomainRequest(string value, out string requestUrl, out string domainKey)
+    {
+        requestUrl = string.Empty;
+        domainKey = NormalizeHostForQueue(value);
+        if (string.IsNullOrWhiteSpace(domainKey))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate($"https://{domainKey}/", UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        requestUrl = uri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped);
+        return true;
+    }
+
     private sealed record FallbackTarget(
         Guid Id,
         string RootDomain,
@@ -613,6 +800,7 @@ public static class ToolRestartEndpoints
         DateTimeOffset CreatedAtUtc);
 
     private sealed record WorkerEnsureResult(bool Succeeded, string Message);
+    private sealed record RestartSpiderSubdomainsRequest(string[]? TargetIds, string[]? Subdomains);
 
     private sealed class ToolRestartEndpointsLogger
     {

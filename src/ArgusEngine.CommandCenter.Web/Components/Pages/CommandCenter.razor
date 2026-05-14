@@ -118,8 +118,8 @@
                 </div>
                 <Virtualize Items="TargetRows" Context="target" ItemSize="44" OverscanCount="8">
                     <ItemContent>
-                        <div class="cc-row" role="row" @key="RowKey(target)">
-                            <span><input type="checkbox" checked="@IsSelectedTarget(target)" @onchange="@(_ => ToggleTarget(target))" /></span>
+                        <div class="cc-row" role="row" @key="RowKey(target)" @onclick="@(() => ToggleTarget(target))">
+                            <span><input type="checkbox" checked="@IsSelectedTarget(target)" @onchange="@(_ => ToggleTarget(target))" @onclick:stopPropagation="true" /></span>
                             <span class="cc-main-cell">@Display(Text(target, "rootDomain", "RootDomain", "domain", "Domain"))</span>
                             <span><span class="cc-pill">@Display(Text(target, "status", "Status", "state", "State"))</span></span>
                             <span>@Display(Text(target, "globalMaxDepth", "GlobalMaxDepth", "maxDepth", "MaxDepth"))</span>
@@ -154,129 +154,13 @@
                     <button class="cc-btn" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">Reload</button>
                 </div>
             </div>
-        <div class="table-wrap grid-wrap">
-            <table class="ops-table">
-                <thead>
-                    <tr>
-                        <th class="select-col">
-                            <input type="checkbox" checked="@AllVisibleSubdomainsSelected" @onchange="ToggleAllVisibleSubdomains" />
-                        </th>
-                        <th><button type="button" class="sort" @onclick='@EventCallback.Factory.Create(this, () => SetSubdomainSort("name"))'>Subdomain @SortGlyph(_subdomainSort, "name", _subdomainSortDescending)</button></th>
-                        <th><button type="button" class="sort" @onclick='@EventCallback.Factory.Create(this, () => SetSubdomainSort("discovered"))'>Discovered @SortGlyph(_subdomainSort, "discovered", _subdomainSortDescending)</button></th>
-                        <th>How found</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <Virtualize TItem="JsonElement" Items="@SubdomainRows" Context="row" ItemSize="@CompactRowHeight" OverscanCount="20">
-                    @{
-                        var key = SubdomainKey(row);
-                        <tr class="@RowClass(IsSubdomainSelected(key))"
-                            @onclick="() => ToggleSubdomainSelection(key)"
-                            @oncontextmenu="args => OpenSubdomainContextMenu(args, row)"
-                            @oncontextmenu:preventDefault="true">
-                            <td class="select-col">
-                                <input type="checkbox" checked="@IsSubdomainSelected(key)" @onchange="args => SetSubdomainSelected(key, args)" @onclick:stopPropagation="true" />
-                            </td>
-                            <td>@DisplayOrDash(SubdomainName(row))</td>
-                            <td>@FormatTime(Text(row, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
-                            <td>@DisplayOrDash(Text(row, "discoveryContext", "DiscoveryContext"))</td>
-                        </tr>
-                    }
-                    </Virtualize>
-                </tbody>
-            </table>
-        </div>
-
-    </section>
-    </section>
-
-    <section class="ops-panel">
-        <div class="panel-title">
-            <div>
-                <h2>Assets</h2>
-            </div>
-            <span class="muted">@FormatNumber(AssetRows.Length) visible</span>
-        </div>
-
-        <div class="toolbar">
-            <input placeholder="Search assets" @bind="_assetSearch" @bind:event="oninput" />
-            <select @bind="_assetFilter">
-                <option value="">All kinds</option>
-                <option value="Domain">Domain</option>
-                <option value="Subdomain">Subdomain</option>
-                <option value="Url">URL</option>
-                <option value="IpAddress">IP address</option>
-                <option value="OpenPort">Open port</option>
-            </select>
-            <button type="button" @onclick="() => ReloadAssetsAsync()">Reload assets</button>
-        </div>
-
-        <div class="table-wrap grid-wrap">
-            <table class="ops-table assets-table">
-                <thead>
-                    <tr>
-                        <th class="select-col">
-                            <input type="checkbox" checked="@AllVisibleAssetsSelected" @onchange="ToggleAllVisibleAssets" />
-                        </th>
-                        <th><button type="button" class="sort" @onclick='() => SetAssetSort("kind")'>Kind @SortGlyph(_assetSort, "kind", _assetSortDescending)</button></th>
-                        <th>Value</th>
-                        <th><button type="button" class="sort" @onclick='() => SetAssetSort("discovered")'>Discovered @SortGlyph(_assetSort, "discovered", _assetSortDescending)</button></th>
-                        <th>Last seen</th>
-                        <th>How found</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <Virtualize TItem="JsonElement" Items="@AssetRows" Context="asset" ItemSize="@CompactRowHeight" OverscanCount="20">
-                    @{
-                        var id = Text(asset, "id", "Id");
-                        var finalUrl = Text(asset, "finalUrl", "FinalUrl");
-                        var href = TryHttpHref(finalUrl);
-                        var kind = DisplayOrDash(Text(asset, "kind", "Kind"));
-                        var assetValue = DisplayOrDash(AssetValue(asset));
-                        var discoveryContext = DisplayOrDash(Text(asset, "discoveryContext", "DiscoveryContext"));
-                        <tr class="@RowClass(IsAssetSelected(id))" @onclick="() => ToggleAssetSelection(id)">
-                            <td class="select-col">
-                                <input type="checkbox" checked="@IsAssetSelected(id)" @onchange="args => SetAssetSelected(id, args)" @onclick:stopPropagation="true" />
-                            </td>
-                            <td class="truncate" title="@kind">@kind</td>
-                            <td class="truncate" title="@assetValue">
-                                @if (href is null)
-                                {
-                                    @assetValue
-                                }
-                                else
-                                {
-                                    <a href="@href" target="_blank" rel="noopener noreferrer">@DisplayOrDash(finalUrl)</a>
-                                }
-                            </td>
-                            <td class="truncate" title="@FormatTime(Text(asset, "discoveredAtUtc", "DiscoveredAtUtc"))">@FormatTime(Text(asset, "discoveredAtUtc", "DiscoveredAtUtc"))</td>
-                            <td class="truncate" title="@FormatTime(Text(asset, "lastSeenAtUtc", "LastSeenAtUtc"))">@FormatTime(Text(asset, "lastSeenAtUtc", "LastSeenAtUtc"))</td>
-                            <td class="truncate" title="@discoveryContext">@discoveryContext</td>
-                        </tr>
-                    }
-                    </Virtualize>
-                </tbody>
-            </table>
-        </div>
-
-    </section>
-
-    <section class="ops-panel">
-        <div class="panel-title">
-            <div>
-                <p class="eyebrow">Infrastructure</p>
-                <h2>Workers</h2>
-            </div>
-            <span class="muted">@FormatNumber(WorkerRows.Count) services</span>
-        </div>
-
             <div class="cc-grid cc-grid-assets" role="table" aria-label="Assets">
                 <div class="cc-row cc-header" role="row">
                     <span>Kind</span><span>Asset</span><span>Category</span><span>Seen</span>
                 </div>
                 <Virtualize Items="AssetRows" Context="asset" ItemSize="46" OverscanCount="8">
                     <ItemContent>
-                        <div class="cc-row" role="row" @key="RowKey(asset)">
+                        <div class="cc-row" role="row" @key="RowKey(asset)" @onclick="@(() => ToggleAsset(asset))">
                             <span><span class="cc-pill">@Display(Text(asset, "kind", "Kind"))</span></span>
                             <span class="cc-main-cell">@Display(Text(asset, "displayName", "DisplayName", "canonicalKey", "CanonicalKey", "rawValue", "RawValue", "finalUrl", "FinalUrl"))</span>
                             <span>@Display(Text(asset, "category", "Category"))</span>
@@ -308,7 +192,7 @@
                         <option value="Completed">Completed</option>
                         <option value="Failed">Failed</option>
                     </select>
-                    <button class="cc-btn" @onclick="ReloadHttpQueueAsync" disabled="@_httpLoading">Reload</button>
+                    <button class="cc-btn" @onclick="@(() => ReloadHttpQueueAsync())" disabled="@_httpLoading">Reload</button>
                     <button class="cc-btn" @onclick="RetrySelectedHttpAsync" disabled="@(!_selectedHttpIds.Any() || _queueMutationLoading)">Retry selected</button>
                     <button class="cc-btn" @onclick="ClearSelectedHttpAsync" disabled="@(!_selectedHttpIds.Any() || _queueMutationLoading)">Clear selected</button>
                 </div>
@@ -461,6 +345,7 @@
     private readonly List<JsonElement> _technology = [];
     private readonly List<JsonElement> _workers = [];
     private readonly HashSet<string> _selectedTargetIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _selectedAssetIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _selectedHttpIds = new(StringComparer.OrdinalIgnoreCase);
 
     private CommandTab _activeTab = CommandTab.Targets;
@@ -1114,9 +999,20 @@
         return !string.IsNullOrWhiteSpace(id) && _selectedHttpIds.Contains(id);
     }
 
+    private bool IsSelectedAsset(JsonElement row)
+    {
+        var id = RowKey(row);
+        return !string.IsNullOrWhiteSpace(id) && _selectedAssetIds.Contains(id);
+    }
+
     private void ToggleHttp(JsonElement row)
     {
         ToggleSelection(_selectedHttpIds, RowKey(row));
+    }
+
+    private void ToggleAsset(JsonElement row)
+    {
+        ToggleSelection(_selectedAssetIds, RowKey(row));
     }
 
     private static void ToggleSelection(HashSet<string> selected, string id)

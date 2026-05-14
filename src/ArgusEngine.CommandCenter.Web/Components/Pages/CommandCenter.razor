@@ -6,6 +6,7 @@
 @using System.Globalization
 @using System.Net.Http.Json
 @using System.Text.Json
+@using ArgusEngine.CloudDeploy
 @using ArgusEngine.CommandCenter.Contracts
 @using ArgusEngine.CommandCenter.Models
 @using ArgusEngine.CommandCenter.Realtime
@@ -13,6 +14,7 @@
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @implements IDisposable
 @inject WorkerControlApiClient WorkerApi
+@inject IGcpHybridDeployService DeployService
 @inject DiscoveryRealtimeClient Realtime
 @inject Microsoft.Extensions.Logging.ILogger<CommandCenter> Logger
 
@@ -78,7 +80,7 @@
             <button type="button" @onclick="() => StartSpiderTargetsAsync(selectedOnly: false)" disabled="@(TargetRows.Length == 0)">Spider all visible</button>
         </div>
 
-        <div class="table-wrap http-queue-wrap">
+        <div class="table-wrap grid-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
@@ -132,7 +134,7 @@
             <button type="button" @onclick="SpiderActiveTargetAsync" disabled="@(string.IsNullOrWhiteSpace(_activeTargetId))">Spider active target</button>
         </div>
 
-        <div class="table-wrap">
+        <div class="table-wrap grid-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
@@ -164,6 +166,7 @@
                 </tbody>
             </table>
         </div>
+
     </section>
 
     <section class="ops-panel">
@@ -188,7 +191,7 @@
             <button type="button" @onclick="ReloadAssetsAsync">Reload assets</button>
         </div>
 
-        <div class="table-wrap">
+        <div class="table-wrap grid-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
@@ -232,6 +235,7 @@
                 </tbody>
             </table>
         </div>
+
     </section>
 
     <section class="ops-panel">
@@ -248,7 +252,7 @@
             <div class="warning">@_dockerWorkersError</div>
         }
 
-        <div class="table-wrap">
+        <div class="table-wrap grid-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
@@ -262,8 +266,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var worker in WorkerRows)
-                    {
+                    <Virtualize TItem="JsonElement" Items="@WorkerRows" Context="worker" ItemSize="40" OverscanCount="20">
+                    @{
                         var service = Text(worker, "serviceName", "ServiceName");
                         <tr class="@RowClass(IsWorkerSelected(service))" @onclick="() => ToggleWorkerSelection(service)">
                             <td class="select-col">
@@ -275,6 +279,72 @@
                             <td>@FormatNumber(Long(worker, "totalCount", "TotalCount"))</td>
                         </tr>
                     }
+                    </Virtualize>
+                </tbody>
+            </table>
+        </div>
+
+        <h3>Google Cloud Run manual scale</h3>
+        @if (!string.IsNullOrWhiteSpace(_cloudWorkersError))
+        {
+            <div class="warning">@_cloudWorkersError</div>
+        }
+
+        <div class="toolbar">
+            <button type="button" @onclick="ReloadCloudWorkersAsync" disabled="@_cloudWorkersLoading">Refresh Cloud worker status</button>
+            <span class="muted">@FormatNumber(CloudWorkerRows.Length) worker types</span>
+        </div>
+
+        <div class="table-wrap grid-wrap">
+            <table class="ops-table">
+                <thead>
+                    <tr>
+                        <th>Worker Type</th>
+                        <th>Status</th>
+                        <th>Current</th>
+                        <th>Live Min</th>
+                        <th>Live Max</th>
+                        <th>Manual Min</th>
+                        <th>Manual Max</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <Virtualize TItem="WorkerStatus" Items="@CloudWorkerRows" Context="cloudWorker" ItemSize="40" OverscanCount="20">
+                    @{
+                        var busy = _cloudScaleBusy.Contains(cloudWorker.Worker);
+                        <tr>
+                            <td>@CloudWorkerLabel(cloudWorker.Worker)</td>
+                            <td>@cloudWorker.Status</td>
+                            <td>@FormatNumber(cloudWorker.CurrentInstances)</td>
+                            <td>@FormatNumber(cloudWorker.MinInstances)</td>
+                            <td>@FormatNumber(cloudWorker.MaxInstances)</td>
+                            <td>
+                                <input type="number"
+                                       min="0"
+                                       max="100"
+                                       value="@DesiredCloudMin(cloudWorker.Worker)"
+                                       @onchange="args => OnDesiredCloudMinChanged(cloudWorker.Worker, args)"
+                                       disabled="@busy" />
+                            </td>
+                            <td>
+                                <input type="number"
+                                       min="0"
+                                       max="100"
+                                       value="@DesiredCloudMax(cloudWorker.Worker)"
+                                       @onchange="args => OnDesiredCloudMaxChanged(cloudWorker.Worker, args)"
+                                       disabled="@busy" />
+                            </td>
+                            <td>
+                                <button type="button"
+                                        @onclick="() => ApplyCloudScaleAsync(cloudWorker.Worker)"
+                                        disabled="@busy">
+                                    @(busy ? "Applying..." : "Apply")
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                    </Virtualize>
                 </tbody>
             </table>
         </div>
@@ -305,7 +375,7 @@
             <button type="button" @onclick="ClearFailedHttpRowsAsync">Clear failed</button>
         </div>
 
-        <div class="table-wrap">
+        <div class="table-wrap grid-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
@@ -366,7 +436,7 @@
             <button type="button" @onclick="ReloadHighValueAssetsAsync">Refresh</button>
         </div>
 
-        <div class="table-wrap">
+        <div class="table-wrap grid-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
@@ -383,8 +453,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var row in FilteredHighValueRows)
-                    {
+                    <Virtualize TItem="JsonElement" Items="@FilteredHighValueRows" Context="row" ItemSize="40" OverscanCount="24">
+                    @{
                         var key = HighValueKey(row);
                         <tr class="@RowClass(IsHighValueSelected(key))" @onclick="() => ToggleHighValueSelection(key)">
                             <td class="select-col">
@@ -399,6 +469,7 @@
                             <td>@DisplayOrDash(Text(row, "severity", "Severity"))</td>
                         </tr>
                     }
+                    </Virtualize>
                 </tbody>
             </table>
         </div>
@@ -429,7 +500,7 @@
             <button type="button" @onclick="ReloadTechnologyDataAsync">Refresh</button>
         </div>
 
-        <div class="table-wrap">
+        <div class="table-wrap grid-wrap">
             <table class="ops-table">
                 <thead>
                     <tr>
@@ -445,8 +516,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var row in FilteredTechnologyRows)
-                    {
+                    <Virtualize TItem="JsonElement" Items="@FilteredTechnologyRows" Context="row" ItemSize="40" OverscanCount="24">
+                    @{
                         var key = TechnologyKey(row);
                         <tr class="@RowClass(IsTechnologySelected(key))" @onclick="() => ToggleTechnologySelection(key)">
                             <td class="select-col">
@@ -460,6 +531,7 @@
                             <td>@DisplayOrDash(Text(row, "sourceType", "SourceType"))</td>
                         </tr>
                     }
+                    </Virtualize>
                 </tbody>
             </table>
         </div>
@@ -645,6 +717,10 @@
     private readonly List<JsonElement> _highValueRows = [];
     private readonly List<JsonElement> _technologyRows = [];
     private readonly List<JsonElement> _technologyUsage = [];
+    private readonly List<WorkerStatus> _cloudWorkers = [];
+    private readonly Dictionary<WorkerType, int> _cloudDesiredMin = [];
+    private readonly Dictionary<WorkerType, int> _cloudDesiredMax = [];
+    private readonly HashSet<WorkerType> _cloudScaleBusy = [];
 
     private JsonElement? _workerDetailModal;
     private bool _workerDetailLoading;
@@ -660,6 +736,7 @@
 
     private string _statusMessage = "";
     private string _dockerWorkersError = "";
+    private string _cloudWorkersError = "";
     private string _activeTargetId = "";
     private string _newTargetRootDomain = "";
     private int _newTargetDepth = 12;
@@ -687,11 +764,12 @@
     private bool _assetsLoading;
     private bool _httpLoading;
     private bool _workersLoading;
+    private bool _cloudWorkersLoading;
     private bool _highValueLoading;
     private bool _technologiesLoading;
     private bool _enumLoading;
     private bool _spiderLoading;
-    private bool _loadingAny => _targetsLoading || _assetsLoading || _httpLoading || _workersLoading || _highValueLoading || _technologiesLoading || _enumLoading || _spiderLoading;
+    private bool _loadingAny => _targetsLoading || _assetsLoading || _httpLoading || _workersLoading || _cloudWorkersLoading || _highValueLoading || _technologiesLoading || _enumLoading || _spiderLoading;
     private bool _contextMenuVisible;
     private double _contextMenuX;
     private double _contextMenuY;
@@ -721,11 +799,14 @@
         SubdomainSortKey,
         _subdomainSortDescending);
     private JsonElement[] AssetRows => MaterializeSorted(_assets.Where(MatchesSelectedSubdomainsScope).Where(AssetMatchesFilter), AssetSortKey, _assetSortDescending);
-    private IReadOnlyList<JsonElement> WorkerRows => _workers;
+    private List<JsonElement> WorkerRows => _workers;
+    private WorkerStatus[] CloudWorkerRows => _cloudWorkers
+        .OrderBy(x => CloudWorkerLabel(x.Worker), StringComparer.OrdinalIgnoreCase)
+        .ToArray();
     private JsonElement[] HttpRows => MaterializeSorted(_queue.Where(HttpMatchesFilter), HttpSortKey, _httpSortDescending);
     private IReadOnlyList<JsonElement> HighValueRows => _highValueRows;
-    private IReadOnlyList<JsonElement> FilteredHighValueRows => _highValueRows.Where(HighValueMatchesFilter).Take(500).ToArray();
-    private IReadOnlyList<JsonElement> FilteredTechnologyRows => _technologyRows.Where(TechnologyMatchesFilter).Take(500).ToArray();
+    private JsonElement[] FilteredHighValueRows => _highValueRows.Where(HighValueMatchesFilter).ToArray();
+    private JsonElement[] FilteredTechnologyRows => _technologyRows.Where(TechnologyMatchesFilter).ToArray();
 
     private IReadOnlyList<TopTechnologyRow> TopTechnologyRows => _technologyUsage
         .GroupBy(u => Text(u, "technologyName", "TechnologyName"), StringComparer.OrdinalIgnoreCase)
@@ -775,8 +856,8 @@
     private bool AllVisibleAssetsSelected => AssetRows.Length > 0 && AssetRows.All(a => _selectedAssetIds.Contains(Text(a, "id", "Id")));
     private bool AllVisibleWorkersSelected => WorkerRows.Count > 0 && WorkerRows.All(w => _selectedWorkerServices.Contains(Text(w, "serviceName", "ServiceName")));
     private bool AllVisibleHttpSelected => HttpRows.Length > 0 && HttpRows.All(q => _selectedHttpIds.Contains(Text(q, "id", "Id")));
-    private bool AllVisibleHighValueSelected => FilteredHighValueRows.Count > 0 && FilteredHighValueRows.All(x => _selectedHighValueKeys.Contains(HighValueKey(x)));
-    private bool AllVisibleTechnologySelected => FilteredTechnologyRows.Count > 0 && FilteredTechnologyRows.All(x => _selectedTechnologyKeys.Contains(TechnologyKey(x)));
+    private bool AllVisibleHighValueSelected => FilteredHighValueRows.Length > 0 && FilteredHighValueRows.All(x => _selectedHighValueKeys.Contains(HighValueKey(x)));
+    private bool AllVisibleTechnologySelected => FilteredTechnologyRows.Length > 0 && FilteredTechnologyRows.All(x => _selectedTechnologyKeys.Contains(TechnologyKey(x)));
 
     protected override async Task OnInitializedAsync()
     {
@@ -840,7 +921,7 @@
                         await Task.WhenAll(ReloadAssetsAsync(), ReloadHttpQueueAsync(), ReloadOverviewAsync()).ConfigureAwait(false);
                         break;
                     case "workers":
-                        await Task.WhenAll(ReloadDockerWorkersAsync(), ReloadOverviewAsync()).ConfigureAwait(false);
+                        await Task.WhenAll(ReloadDockerWorkersAsync(), ReloadCloudWorkersAsync(), ReloadOverviewAsync()).ConfigureAwait(false);
                         break;
                     default:
                         await ReloadLiveAsync().ConfigureAwait(false);
@@ -860,7 +941,7 @@
     {
         try
         {
-            await Task.WhenAll(ReloadOverviewAsync(), ReloadHttpQueueAsync(), ReloadDockerWorkersAsync()).ConfigureAwait(false);
+            await Task.WhenAll(ReloadOverviewAsync(), ReloadHttpQueueAsync(), ReloadDockerWorkersAsync(), ReloadCloudWorkersAsync()).ConfigureAwait(false);
             await InvokeAsync(StateHasChanged).ConfigureAwait(false);
         }
         catch
@@ -879,6 +960,7 @@
                 ReloadAssetsAsync(),
                 ReloadHttpQueueAsync(),
                 ReloadDockerWorkersAsync(),
+                ReloadCloudWorkersAsync(),
                 ReloadHighValueAssetsAsync(),
                 ReloadTechnologyDataAsync()).ConfigureAwait(false);
         }
@@ -970,6 +1052,40 @@
         finally
         {
             _workersLoading = false;
+        }
+    }
+
+    private async Task ReloadCloudWorkersAsync()
+    {
+        _cloudWorkersLoading = true;
+        try
+        {
+            var statuses = await DeployService.GetWorkerStatusesAsync(null, _cts.Token).ConfigureAwait(false);
+            _cloudWorkersError = "";
+
+            _cloudWorkers.Clear();
+            _cloudWorkers.AddRange(statuses);
+
+            foreach (var status in statuses)
+            {
+                if (!_cloudScaleBusy.Contains(status.Worker))
+                {
+                    _cloudDesiredMin[status.Worker] = status.MinInstances;
+                    _cloudDesiredMax[status.Worker] = Math.Max(status.MinInstances, status.MaxInstances);
+                    continue;
+                }
+
+                _cloudDesiredMin.TryAdd(status.Worker, status.MinInstances);
+                _cloudDesiredMax.TryAdd(status.Worker, Math.Max(status.MinInstances, status.MaxInstances));
+            }
+        }
+        catch (Exception ex)
+        {
+            _cloudWorkersError = ex.Message;
+        }
+        finally
+        {
+            _cloudWorkersLoading = false;
         }
     }
 
@@ -1243,6 +1359,75 @@
         await ReloadHttpQueueAsync().ConfigureAwait(false);
     }
 
+    private int DesiredCloudMin(WorkerType worker) =>
+        _cloudDesiredMin.TryGetValue(worker, out var value) ? value : DefaultCloudMin(worker);
+
+    private int DesiredCloudMax(WorkerType worker)
+    {
+        var min = DesiredCloudMin(worker);
+        return _cloudDesiredMax.TryGetValue(worker, out var value) ? Math.Max(value, min) : Math.Max(min, 10);
+    }
+
+    private void OnDesiredCloudMinChanged(WorkerType worker, ChangeEventArgs args)
+    {
+        if (!TryReadInt(args, out var value))
+        {
+            return;
+        }
+
+        _cloudDesiredMin[worker] = Math.Clamp(value, 0, 100);
+        if (DesiredCloudMax(worker) < _cloudDesiredMin[worker])
+        {
+            _cloudDesiredMax[worker] = _cloudDesiredMin[worker];
+        }
+    }
+
+    private void OnDesiredCloudMaxChanged(WorkerType worker, ChangeEventArgs args)
+    {
+        if (!TryReadInt(args, out var value))
+        {
+            return;
+        }
+
+        _cloudDesiredMax[worker] = Math.Clamp(Math.Max(value, DesiredCloudMin(worker)), 0, 100);
+    }
+
+    private async Task ApplyCloudScaleAsync(WorkerType worker)
+    {
+        if (!_cloudScaleBusy.Add(worker))
+        {
+            return;
+        }
+
+        try
+        {
+            var min = DesiredCloudMin(worker);
+            var max = Math.Max(min, DesiredCloudMax(worker));
+
+            var result = await DeployService.ScaleWorkersAsync(min, max, [worker], _cts.Token).ConfigureAwait(false);
+            var row = result.Results.FirstOrDefault(x => x.Worker == worker);
+            if (row != default && !row.Result.Success)
+            {
+                _statusMessage = $"Cloud scale failed for {CloudWorkerLabel(worker)}: {row.Result.Message}";
+            }
+            else
+            {
+                _statusMessage = $"Cloud scale applied for {CloudWorkerLabel(worker)} (min={min}, max={max}).";
+            }
+
+            await ReloadCloudWorkersAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Cloud scale request failed for {CloudWorkerLabel(worker)}: {ex.Message}";
+        }
+        finally
+        {
+            _cloudScaleBusy.Remove(worker);
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        }
+    }
+
     private async Task OpenWorkerDetailsAsync(string serviceName)
     {
         if (string.IsNullOrWhiteSpace(serviceName))
@@ -1327,6 +1512,73 @@
         return _selectedSubdomainKeys.Contains($"{targetId}|{host}");
     }
 
+    private bool MatchesSelectedTargetsScopeForAnyRow(JsonElement row)
+    {
+        if (_selectedTargetIds.Count == 0)
+        {
+            return true;
+        }
+
+        var targetId = Text(row, "targetId", "TargetId");
+        if (!string.IsNullOrWhiteSpace(targetId) && _selectedTargetIds.Contains(targetId))
+        {
+            return true;
+        }
+
+        var rowTargetRootDomain = Text(row, "targetRootDomain", "TargetRootDomain");
+        if (string.IsNullOrWhiteSpace(rowTargetRootDomain))
+        {
+            return false;
+        }
+
+        return _targets
+            .Where(t => _selectedTargetIds.Contains(Text(t, "id", "Id")))
+            .Select(t => Text(t, "rootDomain", "RootDomain"))
+            .Any(domain => !string.IsNullOrWhiteSpace(domain) && domain.Equals(rowTargetRootDomain, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool MatchesSelectedSubdomainsScopeForAnyRow(JsonElement row)
+    {
+        if (_selectedSubdomainKeys.Count == 0)
+        {
+            return true;
+        }
+
+        var targetId = Text(row, "targetId", "TargetId");
+        var host = ExtractHostForScope(row);
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(targetId) && _selectedSubdomainKeys.Contains($"{targetId}|{host}"))
+        {
+            return true;
+        }
+
+        return _selectedSubdomainKeys.Any(key =>
+        {
+            var parts = key.Split('|', 2);
+            return parts.Length == 2 && parts[1].Equals(host, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    private bool MatchesSelectedWorkersScopeForHttp(JsonElement row)
+    {
+        if (_selectedWorkerServices.Count == 0)
+        {
+            return true;
+        }
+
+        var directWorker = Text(row, "worker", "Worker", "workerKey", "WorkerKey", "lockedBy", "LockedBy");
+        if (_selectedWorkerServices.Contains(directWorker))
+        {
+            return true;
+        }
+
+        return _selectedWorkerServices.Any(service => directWorker.Contains(service, StringComparison.OrdinalIgnoreCase));
+    }
+
     private bool SubdomainMatchesFilter(JsonElement subdomain) =>
         string.IsNullOrWhiteSpace(_subdomainSearch) || SubdomainName(subdomain).Contains(_subdomainSearch, StringComparison.OrdinalIgnoreCase);
 
@@ -1354,8 +1606,9 @@
     };
 
     private bool HttpMatchesFilter(JsonElement row) =>
-        string.IsNullOrWhiteSpace(_httpSearch) ||
-        MatchesAny(row, _httpSearch, "createdAtUtc", "CreatedAtUtc", "state", "State", "method", "Method", "requestUrl", "RequestUrl", "domainKey", "DomainKey", "lastHttpStatus", "LastHttpStatus", "lastError", "LastError");
+        MatchesSelectedWorkersScopeForHttp(row) &&
+        (string.IsNullOrWhiteSpace(_httpSearch) ||
+         MatchesAny(row, _httpSearch, "createdAtUtc", "CreatedAtUtc", "state", "State", "method", "Method", "requestUrl", "RequestUrl", "domainKey", "DomainKey", "lastHttpStatus", "LastHttpStatus", "lastError", "LastError"));
 
     private string HttpSortKey(JsonElement row) => _httpSort switch
     {
@@ -1383,6 +1636,8 @@
     }
 
     private bool HighValueMatchesFilter(JsonElement row) =>
+        MatchesSelectedTargetsScopeForAnyRow(row) &&
+        MatchesSelectedSubdomainsScopeForAnyRow(row) &&
         StatusMatchesHighValue(row) &&
         HighValueGridMatches(row, _highValueSearch);
 
@@ -1391,6 +1646,8 @@
         MatchesAny(row, search, "targetRootDomain", "TargetRootDomain", "kind", "Kind", "category", "Category", "finalUrl", "FinalUrl", "rawValue", "RawValue", "displayName", "DisplayName", "findingType", "FindingType", "severity", "Severity", "patternName", "PatternName", "matchedText", "MatchedText", "investigationStatus", "InvestigationStatus");
 
     private bool TechnologyMatchesFilter(JsonElement row) =>
+        MatchesSelectedTargetsScopeForAnyRow(row) &&
+        MatchesSelectedSubdomainsScopeForAnyRow(row) &&
         TechnologyGridMatches(row, _technologySearch);
 
     private bool TechnologyGridMatches(JsonElement row, string search) =>
@@ -1570,6 +1827,27 @@
         CloseContextMenu();
         await item.Action().ConfigureAwait(false);
     }
+
+    private static string CloudWorkerLabel(WorkerType worker) => worker switch
+    {
+        WorkerType.Enumeration => "Enumeration (enum)",
+        WorkerType.Spider => "Spider",
+        WorkerType.HttpRequester => "HTTP Requester",
+        WorkerType.PortScan => "Port Scan",
+        WorkerType.HighValue => "High Value",
+        WorkerType.TechnologyIdentification => "Technology ID",
+        _ => worker.ToString()
+    };
+
+    private static int DefaultCloudMin(WorkerType worker) =>
+        worker is WorkerType.Spider or WorkerType.Enumeration or WorkerType.HttpRequester ? 8 : 2;
+
+    private static bool TryReadInt(ChangeEventArgs args, out int value) =>
+        int.TryParse(
+            Convert.ToString(args.Value, CultureInfo.InvariantCulture),
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out value);
 
     private static bool IsChecked(ChangeEventArgs args) =>
         args.Value is bool b ? b :
@@ -1772,6 +2050,27 @@
         }
 
         return value.Trim().ToLowerInvariant();
+    }
+
+    private static string ExtractHostForScope(JsonElement row)
+    {
+        foreach (var name in new[] { "subdomain", "Subdomain", "domainKey", "DomainKey", "targetRootDomain", "TargetRootDomain", "requestUrl", "RequestUrl", "finalUrl", "FinalUrl", "displayName", "DisplayName", "rawValue", "RawValue" })
+        {
+            var value = Text(row, name);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+            {
+                return uri.Host.Trim().ToLowerInvariant();
+            }
+
+            return value.Trim().ToLowerInvariant();
+        }
+
+        return "";
     }
 
     private static string BestAssetUrl(JsonElement row)

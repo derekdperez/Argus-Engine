@@ -145,8 +145,8 @@ button.sort {
     border-radius: .75rem;
 }
 
-.http-queue-wrap {
-    max-height: 28rem;
+.grid-wrap {
+    max-height: 50vh;
 }
 
 .table-wrap.compact {

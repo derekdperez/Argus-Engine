@@ -1,7 +1,10 @@
 using ArgusEngine.CommandCenter.Realtime.Host.Hubs;
 using ArgusEngine.CommandCenter.Realtime.Host.Services;
 using ArgusEngine.Infrastructure;
+using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
+using MassTransit;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,8 +16,23 @@ builder.Services.AddSingleton<IRealtimeUpdatePublisher>(sp => sp.GetRequiredServ
 
 var app = builder.Build();
 
-app.MapGet("/health/live", () => Results.Ok(new { status = "live" })).AllowAnonymous();
-app.MapGet("/health/ready", () => Results.Ok(new { status = "ready" })).AllowAnonymous();
+app.MapGet("/health/live", () => Results.Ok(new { status = "live" }))
+    .AllowAnonymous();
+
+app.MapGet(
+        "/health/ready",
+        async (ArgusDbContext db, CancellationToken ct) =>
+        {
+            var canConnect = await db.Database.CanConnectAsync(ct).ConfigureAwait(false);
+
+            return canConnect
+                ? Results.Ok(new { status = "ready", postgres = "ok", signalr = "ok" })
+                : Results.Json(
+                    new { status = "unhealthy", postgres = "unreachable", signalr = "unknown" },
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+        })
+    .AllowAnonymous();
+
 app.MapHub<DiscoveryHub>("/hubs/discovery");
 
 await app.RunAsync().ConfigureAwait(false);

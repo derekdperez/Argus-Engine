@@ -324,6 +324,36 @@ argus_cloud_file_has_placeholders() {
   grep -Eq 'CHANGE_ME|10\.0\.0\.10|replace-with|REPLACE_ME|<[^>]+>' "$file" 2>/dev/null
 }
 
+argus_cloud_guess_runtime_host() {
+  local candidates=(
+    "${ARGUS_CLOUD_RUNTIME_HOST:-}"
+    "${GCP_CORE_HOST:-}"
+    "${CORE_HOST:-}"
+    "${ARGUS_CORE_HOST:-}"
+    "${EC2_WORKER_CORE_HOST:-}"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -n "$candidate" && "$candidate" != *CHANGE_ME* && "$candidate" != *replace* && "$candidate" != 10.0.0.10 ]]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  if command -v hostname >/dev/null 2>&1; then
+    local ips ip
+    ips="$(hostname -I 2>/dev/null || true)"
+    for ip in $ips; do
+      if [[ "$ip" != 127.* && "$ip" != 169.254.* ]]; then
+        printf '%s' "$ip"
+        return 0
+      fi
+    done
+  fi
+
+  printf '%s' "10.0.0.10"
+}
+
 argus_cloud_generate_secret() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 32
@@ -334,11 +364,21 @@ argus_cloud_generate_secret() {
 
 argus_cloud_autofill_service_env_passwords() {
   local target="$1"
+  local runtime_host
+  runtime_host="$(argus_cloud_guess_runtime_host)"
+  local postgres_host="${ARGUS_CLOUD_POSTGRES_HOST:-${ARGUS_POSTGRES_HOST:-$runtime_host}}"
+  local redis_host="${ARGUS_CLOUD_REDIS_HOST:-${ARGUS_REDIS_HOST:-$runtime_host}}"
+  local rabbit_host="${ARGUS_CLOUD_RABBITMQ_HOST:-${ARGUS_RABBITMQ_HOST:-$runtime_host}}"
+  local rabbit_management_url="${ARGUS_CLOUD_RABBITMQ_MANAGEMENT_URL:-}"
   local db_password="${ARGUS_CLOUD_DB_PASSWORD:-${ARGUS_DB_PASSWORD:-argus}}"
   local rabbit_password="${ARGUS_CLOUD_RABBITMQ_PASSWORD:-${ARGUS_RABBITMQ_PASSWORD:-argus}}"
   local diagnostics_key="${ARGUS_DIAGNOSTICS_API_KEY:-}"
   local tmp changed
   changed=0
+
+  if [[ -z "$rabbit_management_url" && -n "$rabbit_host" ]]; then
+    rabbit_management_url="http://${rabbit_host}:15672"
+  fi
 
   if [[ -z "$diagnostics_key" || "$diagnostics_key" == *CHANGE_ME* || "$diagnostics_key" == *replace* ]]; then
     diagnostics_key="$(argus_cloud_generate_secret)"
@@ -346,6 +386,10 @@ argus_cloud_autofill_service_env_passwords() {
 
   tmp="$(mktemp)"
   awk \
+    -v postgres_host="$postgres_host" \
+    -v redis_host="$redis_host" \
+    -v rabbit_host="$rabbit_host" \
+    -v rabbit_management_url="$rabbit_management_url" \
     -v db_password="$db_password" \
     -v rabbit_password="$rabbit_password" \
     -v diagnostics_key="$diagnostics_key" \
@@ -353,11 +397,23 @@ argus_cloud_autofill_service_env_passwords() {
       {
         line=$0
         if ($0 ~ /^ConnectionStrings__Postgres=/) {
+          gsub(/Host=10\.0\.0\.10/, "Host=" postgres_host, line)
           gsub(/Password=CHANGE_ME/, "Password=" db_password, line)
         } else if ($0 ~ /^ConnectionStrings__FileStore=/) {
+          gsub(/Host=10\.0\.0\.10/, "Host=" postgres_host, line)
           gsub(/Password=CHANGE_ME/, "Password=" db_password, line)
+        } else if ($0 ~ /^ConnectionStrings__Redis=/) {
+          gsub(/10\.0\.0\.10/, redis_host, line)
+        } else if ($0 ~ /^RabbitMq__Host=/) {
+          sub(/=.*/, "=" rabbit_host, line)
         } else if ($0 ~ /^RabbitMq__Password=/) {
           sub(/=.*/, "=" rabbit_password, line)
+        } else if ($0 ~ /^RabbitMq__ManagementUrl=/) {
+          if (rabbit_management_url != "") {
+            sub(/=.*/, "=" rabbit_management_url, line)
+          } else {
+            gsub(/10\.0\.0\.10/, rabbit_host, line)
+          }
         } else if ($0 ~ /^Argus__Diagnostics__ApiKey=/) {
           if (line ~ /CHANGE_ME|REPLACE_ME|replace-with|replace_me|replace/) {
             sub(/=.*/, "=" diagnostics_key, line)
@@ -378,6 +434,11 @@ argus_cloud_autofill_service_env_passwords() {
   return "$changed"
 }
 
+argus_cloud_print_unresolved_placeholders() {
+  local target="$1"
+  grep -nE 'CHANGE_ME|10\.0\.0\.10|replace-with|REPLACE_ME|<[^>]+>' "$target" 2>/dev/null || true
+}
+
 argus_cloud_ensure_service_env() {
   local target="$1"
   local example="${2:-}"
@@ -386,31 +447,26 @@ argus_cloud_ensure_service_env() {
   argus_cloud_ensure_config_file "$target" "$example" "${label} runtime service environment file"
   argus_cloud_autofill_service_env_passwords "$target" || true
 
-  while argus_cloud_file_has_placeholders "$target"; do
+  if argus_cloud_file_has_placeholders "$target"; then
     cat >&2 <<EOF
 
 ${target} still contains example placeholders such as CHANGE_ME or 10.0.0.10.
 These values must be endpoints and credentials that ${label} workers can reach at runtime.
+
+Unresolved placeholder lines:
+$(argus_cloud_print_unresolved_placeholders "$target")
+
+Set explicit host overrides in your shell or deploy/gcp/.env before rerun:
+  ARGUS_CLOUD_RUNTIME_HOST=<reachable host/ip>
+  ARGUS_CLOUD_POSTGRES_HOST=<reachable host/ip>
+  ARGUS_CLOUD_REDIS_HOST=<reachable host/ip>
+  ARGUS_CLOUD_RABBITMQ_HOST=<reachable host/ip>
+  ARGUS_CLOUD_RABBITMQ_MANAGEMENT_URL=http://<host>:15672
 EOF
 
-    if ! argus_cloud_is_interactive; then
-      echo "Edit ${target} and rerun." >&2
-      exit 2
-    fi
-
-    local editor answer
-    editor="${EDITOR:-nano}"
-    read -r -p "Open ${target} in ${editor} now? [Y/n]: " answer
-    case "${answer:-Y}" in
-      y|Y|yes|YES)
-        "$editor" "$target"
-        ;;
-      *)
-        echo "Edit ${target} and rerun." >&2
-        exit 2
-        ;;
-    esac
-  done
+    echo "Edit ${target} and rerun." >&2
+    exit 2
+  fi
 }
 
 argus_cloud_env_file_to_azure_args() {

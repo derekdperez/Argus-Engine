@@ -193,8 +193,8 @@
                         <th class="select-col">
                             <input type="checkbox" checked="@AllVisibleSubdomainsSelected" @onchange="ToggleAllVisibleSubdomains" />
                         </th>
-                        <th><button type="button" class="sort" @onclick='() => SetSubdomainSort("name")'>Subdomain @SortGlyph(_subdomainSort, "name", _subdomainSortDescending)</button></th>
-                        <th><button type="button" class="sort" @onclick='() => SetSubdomainSort("discovered")'>Discovered @SortGlyph(_subdomainSort, "discovered", _subdomainSortDescending)</button></th>
+                        <th><button type="button" class="sort" @onclick='@EventCallback.Factory.Create(this, () => SetSubdomainSort("name"))'>Subdomain @SortGlyph(_subdomainSort, "name", _subdomainSortDescending)</button></th>
+                        <th><button type="button" class="sort" @onclick='@EventCallback.Factory.Create(this, () => SetSubdomainSort("discovered"))'>Discovered @SortGlyph(_subdomainSort, "discovered", _subdomainSortDescending)</button></th>
                         <th>How found</th>
                     </tr>
                 </thead>

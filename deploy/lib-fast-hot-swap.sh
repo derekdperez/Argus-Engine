@@ -34,14 +34,16 @@ argus_host_dotnet() {
 }
 
 # ── Parallel publish of a list of services ──────────────────────────────────
-# Writes per-service log to /tmp/argus-publish-<service>.log.
+# Writes per-service log under deploy/logs/hot-swap/.
 # Emits structured status lines to stdout: ARGUS_STATUS:<service>:<ok|fail>.
 argus_parallel_publish() {
   local services=("$@")
   [[ ${#services[@]} -gt 0 ]] || return 0
 
   local nuget_dir="$ROOT/.nuget/packages"
+  local hot_swap_log_dir="$ROOT/deploy/logs/hot-swap"
   mkdir -p "$nuget_dir"
+  mkdir -p "$hot_swap_log_dir"
 
   # Staging root — all build intermediates and outputs go here, never inside src/.
   local staging_root="$ROOT/deploy/.hot-publish"
@@ -52,7 +54,7 @@ argus_parallel_publish() {
     csproj="$ROOT/$(argus_service_csproj "$service")"
     out_dir="$staging_root/$service/publish"
     obj_dir="$staging_root/$service/obj"
-    log_file="/tmp/argus-publish-${service}.log"
+    log_file="$hot_swap_log_dir/argus-publish-${service}.log"
 
     rm -rf "$staging_root/$service"
     mkdir -p "$out_dir" "$obj_dir"

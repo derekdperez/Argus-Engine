@@ -733,6 +733,8 @@ public static partial class ArgusDbSchemaPatches
 
                 CREATE UNIQUE INDEX IF NOT EXISTS "IX_recon_targets_RootDomain"
                     ON recon_targets ("RootDomain");
+                CREATE INDEX IF NOT EXISTS ix_recon_targets_created_at_utc
+                    ON recon_targets ("CreatedAtUtc");
 
                 CREATE TABLE IF NOT EXISTS stored_assets (
                     "Id" uuid NOT NULL PRIMARY KEY,
@@ -809,6 +811,8 @@ public static partial class ArgusDbSchemaPatches
                     ON http_request_queue (state, next_attempt_at_utc);
                 CREATE INDEX IF NOT EXISTS ix_http_request_queue_domain_started
                     ON http_request_queue (domain_key, started_at_utc);
+                CREATE INDEX IF NOT EXISTS ix_http_request_queue_state_created_locked
+                    ON http_request_queue (state, created_at_utc, locked_until_utc, id);
 
                 CREATE TABLE IF NOT EXISTS http_request_queue_settings (
                     id integer NOT NULL PRIMARY KEY,
@@ -827,6 +831,14 @@ public static partial class ArgusDbSchemaPatches
                     custom_headers_json jsonb NULL,
                     updated_at_utc timestamp with time zone NOT NULL DEFAULT now()
                 );
+
+                ALTER TABLE http_request_queue_settings
+                    ADD COLUMN IF NOT EXISTS proxy_fingerprint_min_delay_ms integer NOT NULL DEFAULT 250,
+                    ADD COLUMN IF NOT EXISTS proxy_fingerprint_max_delay_ms integer NOT NULL DEFAULT 1500,
+                    ADD COLUMN IF NOT EXISTS proxy_routing_enabled boolean NOT NULL DEFAULT false,
+                    ADD COLUMN IF NOT EXISTS proxy_sticky_subdomains_enabled boolean NOT NULL DEFAULT true,
+                    ADD COLUMN IF NOT EXISTS proxy_assignment_salt text NULL DEFAULT 'argus-proxy-v1',
+                    ADD COLUMN IF NOT EXISTS proxy_servers_json text NULL DEFAULT '[]';
 
                 CREATE TABLE IF NOT EXISTS worker_heartbeats (
                     "HostName" character varying(256) NOT NULL,

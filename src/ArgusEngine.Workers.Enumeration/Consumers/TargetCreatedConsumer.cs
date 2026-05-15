@@ -19,11 +19,11 @@ public sealed class TargetCreatedConsumer(
             new EventId(1, nameof(LogAttaching)),
             "TargetCreated: attaching ReconOrchestrator to target {TargetId} ({RootDomain}).");
 
-    private static readonly Action<ILogger, Guid, bool, int, int, int, int, bool, Exception?> LogTickCompleted =
-        LoggerMessage.Define<Guid, bool, int, int, int, int, bool>(
+    private static readonly Action<ILogger, Guid, bool, int, int, int, bool, Exception?> LogTickCompleted =
+        LoggerMessage.Define<Guid, bool, int, int, int, bool>(
             LogLevel.Information,
             new EventId(2, nameof(LogTickCompleted)),
-            "TargetCreated: ReconOrchestrator tick finished for target {TargetId}. Claimed={Claimed}, ProvidersQueued={ProvidersQueued}, SubdomainsChecked={SubdomainsChecked}, SeedsQueued={SeedsQueued}, IncompleteSubdomains={IncompleteSubdomains}, Completed={Completed}");
+            "TargetCreated: ReconOrchestrator tick finished for target {TargetId}. Claimed={Claimed}, ProvidersQueued={ProvidersQueued}, SubdomainsChecked={SubdomainsChecked}, SeedsQueued={SeedsQueued}, Completed={Completed}");
 
     private static readonly Action<ILogger, Guid, Exception?> LogEnumerationDisabled =
         LoggerMessage.Define<Guid>(
@@ -70,7 +70,6 @@ public sealed class TargetCreatedConsumer(
             result.ProvidersQueued,
             result.SubdomainsChecked,
             result.SubdomainSeedsQueued,
-            result.IncompleteSubdomains,
             result.Completed,
             null);
     }

@@ -33,6 +33,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
@@ -182,6 +183,25 @@ GLOBAL_INVALIDATORS = {
     "deployment/Dockerfile.commandcenter-host",
     "deployment/Dockerfile.worker",
     "deployment/Dockerfile.worker-enum",
+}
+
+GLOBAL_BUILD_INPUTS = {
+    "ArgusEngine.slnx",
+    "Directory.Build.props",
+    "Directory.Build.targets",
+    "Directory.Packages.props",
+    "NuGet.config",
+    "global.json",
+    ".dockerignore",
+    "deployment/service-catalog.tsv",
+    "deploy.py",
+}
+
+DOCKERFILE_RESOURCE_HINTS = {
+    "deployment/Dockerfile.base-runtime": "all",
+    "deployment/Dockerfile.base-recon": {"worker-enum"},
+    "deployment/wordlists": {"worker-enum"},
+    "deployment/artifacts/recon-tools": {"worker-enum"},
 }
 
 GCP_WORKER_SERVICES = [
@@ -456,6 +476,9 @@ class ArgusDeployConsole:
         self.runner = Runner(paths, options, self.ui, self.env)
         self._compose_cmd: Optional[list[str]] = None
         self._services: Optional[list[str]] = None
+        self._service_catalog_cache: Optional[dict[str, dict[str, object]]] = None
+        self._service_source_paths_cache: dict[str, list[str]] = {}
+        self._service_signature_cache: dict[tuple[str, str], dict[str, str]] = {}
 
     # ---------- command discovery ----------
 
@@ -524,6 +547,8 @@ class ArgusDeployConsole:
             return self.compose_action(["--hot", *rest])
         if command in {"--image", "-image"}:
             return self.compose_action(["--image", *rest])
+        if command in {"--fast", "-fast"}:
+            return self.all_in_one_deploy(rest)
 
         if command in {"deploy", "update"}:
             return self.deploy_from_args(rest)
@@ -577,7 +602,7 @@ class ArgusDeployConsole:
             choice = self.ui.choose(
                 "Choose a deployment task",
                 [
-                    "All-in-1 incremental hot deploy from GitHub",
+                    "All-in-1 fastest smart deploy from GitHub",
                     "Deploy Web App",
                     "Deploy Infrastructure",
                     "Deploy All Workers",
@@ -1746,6 +1771,12 @@ GCP commands:
         requested = [arg for arg in args if not arg.startswith("-")]
         no_fetch = "--no-fetch" in flags
         no_update = "--no-update" in flags
+        use_github_artifacts = "--no-github-artifacts" not in flags and self.get_env(
+            "ARGUS_DEPLOY_USE_GITHUB_ARTIFACTS", "1"
+        ).lower() not in {"0", "false", "no", "off"}
+        use_remote_images = "--no-remote-images" not in flags and self.get_env(
+            "ARGUS_DEPLOY_USE_REMOTE_IMAGES", "1"
+        ).lower() not in {"0", "false", "no", "off"}
 
         target = self.resolve_github_target(fetch=not no_fetch)
         if target is None:
@@ -1763,12 +1794,12 @@ GCP commands:
             return 0
 
         plan = self.services_requiring_deploy(services, target_sha)
-        stale = [item["service"] for item in plan if item["deploy"]]
+        stale = [str(item["service"]) for item in plan if item["deploy"]]
 
         self.ui.section("All-in-1 incremental deploy plan")
         self.ui.info(f"GitHub target: {target_ref} @ {target_sha[:12]}")
         for item in plan:
-            service = item["service"]
+            service = str(item["service"])
             status = "deploy" if item["deploy"] else "current"
             print(f"{service:<42} {status:<8} {item['reason']}")
 
@@ -1777,12 +1808,24 @@ GCP commands:
             return 0
 
         env = self.build_stamp_env(target_sha)
-        self.ui.info("Rebuilding only stale images: " + ", ".join(stale))
-        code = self.runner.run(self.compose("build", *stale), env=env)
-        if code != 0:
-            return code
+        pulled_services: list[str] = []
+        if use_github_artifacts:
+            pulled_services = self.sync_github_artifact_images(stale, target_sha, env)
+        if use_remote_images:
+            remaining = [service for service in stale if service not in pulled_services]
+            pulled_services.extend(self.sync_remote_images(remaining, target_sha, env))
 
-        self.ui.info("Recreating only stale services with the freshly stamped images.")
+        needs_build = [service for service in stale if service not in pulled_services]
+
+        if needs_build:
+            self.ui.info("Rebuilding only stale images: " + ", ".join(needs_build))
+            code = self.runner.run(self.compose("build", *needs_build), env=env)
+            if code != 0:
+                return code
+        elif pulled_services:
+            self.ui.ok("Remote images were reused for all stale services; no local rebuild needed.")
+
+        self.ui.info("Recreating only stale services with refreshed artifacts.")
         return self.runner.run(self.compose("up", "-d", "--no-deps", *stale), env=env)
 
     def resolve_github_target(self, *, fetch: bool) -> Optional[tuple[str, str]]:
@@ -1898,14 +1941,176 @@ GCP commands:
             if not revisions:
                 plan.append({"service": service, "deploy": True, "reason": "not running or no deployed stamp found"})
                 continue
-            mismatched = [revision for revision in revisions if not self.revision_matches(revision, target_sha)]
-            if mismatched:
+
+            target_sig = self.service_source_signature(service, target_sha)
+            if target_sig is None:
                 joined = ", ".join(revision[:12] for revision in revisions)
-                plan.append({"service": service, "deploy": True, "reason": f"deployed {joined}"})
-            else:
-                joined = ", ".join(revision[:12] for revision in revisions)
-                plan.append({"service": service, "deploy": False, "reason": f"deployed {joined}"})
+                plan.append(
+                    {
+                        "service": service,
+                        "deploy": True,
+                        "reason": f"could not resolve service source fingerprint; deployed {joined}",
+                    }
+                )
+                continue
+
+            deployed_sigs: list[dict[str, str]] = []
+            unresolved_revisions: list[str] = []
+            for revision in revisions:
+                sig = self.service_source_signature(service, revision)
+                if sig is None:
+                    unresolved_revisions.append(revision)
+                    continue
+                deployed_sigs.append(sig)
+
+            if unresolved_revisions:
+                joined = ", ".join(revision[:12] for revision in unresolved_revisions)
+                plan.append(
+                    {
+                        "service": service,
+                        "deploy": True,
+                        "reason": f"could not inspect deployed revision(s): {joined}",
+                    }
+                )
+                continue
+
+            mismatch = any(sig["commit"] != target_sig["commit"] for sig in deployed_sigs)
+            if mismatch:
+                deployed_view = ", ".join(
+                    f"{sig['commit'][:12]} @ {sig['date_human']}" for sig in deployed_sigs
+                )
+                plan.append(
+                    {
+                        "service": service,
+                        "deploy": True,
+                        "reason": (
+                            f"service updated on GitHub at {target_sig['date_human']} "
+                            f"({target_sig['commit'][:12]}); deployed fingerprint(s): {deployed_view}"
+                        ),
+                    }
+                )
+                continue
+
+            plan.append(
+                {
+                    "service": service,
+                    "deploy": False,
+                    "reason": (
+                        f"source unchanged since {target_sig['date_human']} "
+                        f"({target_sig['commit'][:12]})"
+                    ),
+                }
+            )
         return plan
+
+    def service_source_signature(self, service: str, git_ref: str) -> Optional[dict[str, str]]:
+        key = (service, git_ref)
+        cached = self._service_signature_cache.get(key)
+        if cached is not None:
+            return cached
+
+        source_paths = self.service_source_paths(service)
+        if not source_paths:
+            return None
+
+        code, stdout, _ = self.runner.capture(
+            ["git", "log", "-1", "--format=%H|%ct|%cI", git_ref, "--", *source_paths]
+        )
+        if code != 0 or not stdout.strip():
+            return None
+
+        parts = stdout.strip().split("|", 2)
+        if len(parts) != 3:
+            return None
+
+        commit, epoch_raw, iso = (part.strip() for part in parts)
+        try:
+            epoch = int(epoch_raw)
+        except ValueError:
+            epoch = 0
+        date_human = time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime(epoch)) if epoch > 0 else iso
+
+        signature = {
+            "commit": commit,
+            "epoch": str(epoch),
+            "iso": iso,
+            "date_human": date_human,
+        }
+        self._service_signature_cache[key] = signature
+        return signature
+
+    def service_source_paths(self, service: str) -> list[str]:
+        cached = self._service_source_paths_cache.get(service)
+        if cached is not None:
+            return list(cached)
+
+        row = self.service_catalog().get(service)
+        if row is None:
+            base = PROJECT_HINTS.get(service, [])
+            normalized = sorted({path.rstrip("/") for path in base})
+            self._service_source_paths_cache[service] = normalized
+            return list(normalized)
+
+        source_dirs = set(self.project_reference_closure(str(row["csproj"])))
+        source_dirs.update(path.rstrip("/") for path in row.get("extra_source_dirs", []))
+        source_dirs.update(path.rstrip("/") for path in PROJECT_HINTS.get(service, []))
+
+        build_inputs = set(path.rstrip("/") for path in GLOBAL_BUILD_INPUTS)
+        build_inputs.add(str(row.get("dockerfile", "")).rstrip("/"))
+
+        dockerfile = str(row.get("dockerfile", "")).rstrip("/")
+        for hint_path, hint_services in DOCKERFILE_RESOURCE_HINTS.items():
+            if hint_services == "all" or service in hint_services:
+                build_inputs.add(hint_path.rstrip("/"))
+
+        if dockerfile == "deployment/Dockerfile.worker-enum":
+            build_inputs.add("deployment/Dockerfile.base-recon")
+            build_inputs.add("deployment/wordlists")
+            build_inputs.add("deployment/artifacts/recon-tools")
+
+        combined = sorted(item for item in {*source_dirs, *build_inputs} if item)
+        self._service_source_paths_cache[service] = combined
+        return list(combined)
+
+    def project_reference_closure(self, csproj_relpath: str) -> set[str]:
+        start = (self.paths.repo_root / csproj_relpath).resolve()
+        visited: set[Path] = set()
+        dirs: set[str] = set()
+
+        def visit(csproj: Path) -> None:
+            if csproj in visited:
+                return
+            visited.add(csproj)
+            if not csproj.exists():
+                return
+
+            try:
+                rel_dir = csproj.parent.resolve().relative_to(self.paths.repo_root.resolve())
+                dirs.add(str(rel_dir).replace("\\", "/").rstrip("/"))
+            except ValueError:
+                pass
+
+            for ref in self.project_references(csproj):
+                visit(ref)
+
+        visit(start)
+        return dirs
+
+    def project_references(self, csproj: Path) -> list[Path]:
+        try:
+            tree = ET.parse(csproj)
+        except (ET.ParseError, OSError):
+            return []
+
+        refs: list[Path] = []
+        for item in tree.iter():
+            if item.tag.split("}")[-1] != "ProjectReference":
+                continue
+            include = item.attrib.get("Include")
+            if not include:
+                continue
+            refs.append((csproj.parent / include).resolve())
+        return refs
 
     def deployed_revisions(self, service: str) -> list[str]:
         code, stdout, _ = self.runner.capture(self.compose("ps", "-q", service))
@@ -1980,6 +2185,177 @@ GCP commands:
             "ARGUS_BUILD_TIME_UTC": build_time,
         }
 
+    def sync_github_artifact_images(self, services: Sequence[str], target_sha: str, env: Mapping[str, str]) -> list[str]:
+        if not services:
+            return []
+        if which("gh") is None or which("docker") is None:
+            self.ui.info("GitHub artifact reuse disabled: gh CLI or docker is not available.")
+            return []
+
+        repo = self.github_repository_slug()
+        if not repo:
+            self.ui.info("GitHub artifact reuse disabled: could not infer repository slug.")
+            return []
+
+        run_id = self.github_successful_run_for_sha(repo, target_sha)
+        if not run_id:
+            self.ui.info(f"No successful GitHub Actions run found for {target_sha[:12]}; skipping artifact reuse.")
+            return []
+
+        artifacts = self.github_artifacts_for_run(repo, run_id)
+        if artifacts is None:
+            self.ui.info("Could not list GitHub artifacts for the target run; skipping artifact reuse.")
+            return []
+
+        component_version = env.get("ARGUS_ENGINE_VERSION") or self.version() or target_sha[:12]
+        pulled: list[str] = []
+
+        with tempfile.TemporaryDirectory(prefix="argus-gh-artifacts-") as tempdir:
+            for service in services:
+                artifact_name = f"argus-image-{service}-{target_sha}"
+                if artifact_name not in artifacts:
+                    continue
+
+                self.ui.info(f"Trying GitHub artifact for {service}: {artifact_name}")
+                download = self.runner.run(
+                    ["gh", "run", "download", str(run_id), "--repo", repo, "--name", artifact_name, "--dir", tempdir]
+                )
+                if download != 0:
+                    self.ui.warn(f"Failed downloading artifact {artifact_name}; falling back.")
+                    continue
+
+                archive = Path(tempdir) / f"{service}-{target_sha}.tar.gz"
+                if not archive.exists():
+                    self.ui.warn(f"Artifact {artifact_name} did not include expected archive {archive.name}.")
+                    continue
+
+                load = self.runner.run(["docker", "load", "-i", str(archive)])
+                if load != 0:
+                    self.ui.warn(f"Failed loading Docker archive for {service}; falling back.")
+                    continue
+
+                loaded_ref = f"argus-engine/{service}:ci"
+                local_ref = f"argus-engine/{service}:{component_version}"
+                tag = self.runner.run(["docker", "tag", loaded_ref, local_ref])
+                if tag != 0:
+                    self.ui.warn(f"Loaded artifact for {service} but failed to tag {local_ref}; falling back.")
+                    continue
+
+                pulled.append(service)
+                self.ui.ok(f"Reused GitHub build artifact for {service} without local rebuild.")
+
+        return pulled
+
+    def github_repository_slug(self) -> str:
+        explicit = self.get_env("GITHUB_REPOSITORY", "").strip()
+        if explicit and "/" in explicit:
+            return explicit
+
+        code, stdout, _ = self.runner.capture(["git", "remote", "get-url", "origin"])
+        if code != 0:
+            return ""
+        url = stdout.strip()
+        if not url:
+            return ""
+
+        if url.startswith("git@github.com:"):
+            slug = url.split("git@github.com:", 1)[1]
+        elif "github.com/" in url:
+            slug = url.split("github.com/", 1)[1]
+        else:
+            return ""
+
+        if slug.endswith(".git"):
+            slug = slug[:-4]
+        return slug.strip("/")
+
+    def github_successful_run_for_sha(self, repo: str, sha: str) -> int:
+        code, stdout, _ = self.runner.capture(
+            ["gh", "api", f"repos/{repo}/actions/runs", "-f", f"head_sha={sha}", "-f", "status=completed", "-f", "per_page=30"]
+        )
+        if code != 0 or not stdout.strip():
+            return 0
+
+        try:
+            payload = json.loads(stdout)
+        except json.JSONDecodeError:
+            return 0
+
+        for run in payload.get("workflow_runs", []):
+            if str(run.get("conclusion", "")).lower() == "success":
+                try:
+                    return int(run.get("id") or 0)
+                except (TypeError, ValueError):
+                    continue
+        return 0
+
+    def github_artifacts_for_run(self, repo: str, run_id: int) -> Optional[set[str]]:
+        code, stdout, _ = self.runner.capture(
+            ["gh", "api", f"repos/{repo}/actions/runs/{run_id}/artifacts", "-f", "per_page=100"]
+        )
+        if code != 0 or not stdout.strip():
+            return None
+
+        try:
+            payload = json.loads(stdout)
+        except json.JSONDecodeError:
+            return None
+
+        names: set[str] = set()
+        for artifact in payload.get("artifacts", []):
+            name = str(artifact.get("name") or "").strip()
+            expired = bool(artifact.get("expired"))
+            if name and not expired:
+                names.add(name)
+        return names
+
+    def sync_remote_images(self, services: Sequence[str], target_sha: str, env: Mapping[str, str]) -> list[str]:
+        if not services:
+            return []
+
+        registry = self.try_ecr_registry()
+        if not registry:
+            self.ui.info("Remote image reuse disabled: AWS/ECR configuration not available.")
+            return []
+
+        region = self.get_env("AWS_REGION", "us-east-1")
+        component_version = env.get("ARGUS_ENGINE_VERSION") or self.version() or target_sha[:12]
+        pulled: list[str] = []
+
+        for service in services:
+            row = self.service_catalog().get(service)
+            if not row or not bool(row.get("ecr_enabled")):
+                continue
+
+            remote_repo = f"{registry}/{self.ecr_repository(service)}"
+            remote_ref = f"{remote_repo}:{target_sha}"
+            local_ref = f"argus-engine/{service}:{component_version}"
+
+            self.ui.info(f"Trying remote artifact for {service}: {remote_ref}")
+            pull = self.runner.run(["docker", "pull", remote_ref])
+            if pull != 0:
+                self.ui.warn(f"Remote artifact unavailable for {service}; will build locally.")
+                continue
+
+            tag = self.runner.run(["docker", "tag", remote_ref, local_ref])
+            if tag != 0:
+                self.ui.warn(f"Pulled {service} but failed to retag {local_ref}; falling back to local build.")
+                continue
+
+            pulled.append(service)
+            self.ui.ok(f"Reused remote artifact for {service} without local rebuild.")
+
+        return pulled
+
+    def try_ecr_registry(self) -> str:
+        account_id = self.get_env("AWS_ACCOUNT_ID", "").strip()
+        region = self.get_env("AWS_REGION", "us-east-1").strip()
+        if not account_id or not region:
+            return ""
+        if which("docker") is None:
+            return ""
+        return f"{account_id}.dkr.ecr.{region}.amazonaws.com"
+
     def validate_manifests(self, args: Sequence[str]) -> int:
         compose_files = [self.paths.compose_file]
         if any(arg in {"--ci", "ci"} for arg in args):
@@ -1993,9 +2369,12 @@ GCP commands:
         command.extend(["config", "--quiet"])
         return self.runner.run(command)
 
-    def service_catalog(self) -> dict[str, dict[str, str]]:
+    def service_catalog(self) -> dict[str, dict[str, object]]:
+        if self._service_catalog_cache is not None:
+            return dict(self._service_catalog_cache)
+
         catalog_path = self.paths.deploy_dir / "service-catalog.tsv"
-        services: dict[str, dict[str, str]] = {}
+        services: dict[str, dict[str, object]] = {}
         if not catalog_path.exists():
             return services
 
@@ -2012,17 +2391,30 @@ GCP commands:
                 if not headers or len(parts) < len(headers):
                     continue
                 row = dict(zip(headers, parts))
-                services[row["service"]] = row
-        return services
+                extras = [item.strip() for item in row.get("extra_source_dirs", "").split(",") if item.strip()]
+                service_name = row["service"]
+                project_dir = row.get("project_dir", "")
+                services[service_name] = {
+                    **row,
+                    "service": service_name,
+                    "project_dir": project_dir,
+                    "csproj": f"src/{project_dir}/{project_dir}.csproj" if project_dir else "",
+                    "project_path": f"src/{project_dir}" if project_dir else "",
+                    "extra_source_dirs": extras,
+                    "ecr_enabled": row.get("ecr_enabled") == "1",
+                }
 
-    def selected_ecr_services(self, args: Sequence[str]) -> list[dict[str, str]]:
+        self._service_catalog_cache = services
+        return dict(services)
+
+    def selected_ecr_services(self, args: Sequence[str]) -> list[dict[str, object]]:
         catalog = self.service_catalog()
         requested = [arg for arg in args if arg and arg != "all"]
-        names = requested or [name for name, row in catalog.items() if row.get("ecr_enabled") == "1"]
+        names = requested or [name for name, row in catalog.items() if bool(row.get("ecr_enabled"))]
         missing = [name for name in names if name not in catalog]
         if missing:
             raise SystemExit(f"Unknown ECR service(s): {', '.join(missing)}")
-        return [catalog[name] for name in names if catalog[name].get("ecr_enabled") == "1"]
+        return [catalog[name] for name in names if bool(catalog[name].get("ecr_enabled"))]
 
     def ecr_repository(self, service: str) -> str:
         prefix = self.get_env("ECR_PREFIX", "argus-v2").strip("/")
@@ -2638,11 +3030,14 @@ Interactive:
   ./deploy menu
 
 Deploy/update:
-  ./deploy all-in-1 [service...]            Fetch GitHub, compare deployed build stamps, rebuild stale services only
+  ./deploy all-in-1 [service...]            Fast path: compare per-service source update dates, rebuild changed artifacts only
   ./deploy all-in-1 --no-update [service...] Compare without fast-forwarding the local checkout
   ./deploy all-in-1 --no-fetch [service...]  Use the already-fetched GitHub ref
+  ./deploy all-in-1 --no-github-artifacts    Disable downloading prebuilt image artifacts from GitHub Actions
+  ./deploy all-in-1 --no-remote-images       Disable pulling prebuilt images from remote registry
   ./deploy deploy --hot [service...]
   ./deploy deploy --image [service...]
+  ./deploy -fast, --fast [service...]        Non-interactive: runs all-in-1 deploy without showing the menu
   ./deploy deploy --fresh
   ./deploy deploy --ecs-workers
   ./deploy deploy --gcp-workers

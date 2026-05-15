@@ -124,7 +124,7 @@ public sealed class CoverageAutomationBackgroundService(
         var cooldown = TimeSpan.FromMinutes(Math.Clamp(settings.EnumerationRetryMinutes, 1, 7 * 24 * 60));
 
         var candidates = await db.Targets.AsNoTracking()
-            .Where(t => !string.IsNullOrWhiteSpace(t.RootDomain))
+            .Where(t => t.RootDomain != null && t.RootDomain != "")
             .Where(t => !db.Assets.Any(a => a.TargetId == t.Id && a.Kind == AssetKind.Subdomain))
             .OrderBy(t => t.CreatedAtUtc)
             .Take(batchSize * 4)

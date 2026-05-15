@@ -1,0 +1,28 @@
+{
+  "protocol_version": 1,
+  "last_updated": "2026-05-15T18:57:31Z",
+  "agents": {
+    "agent-alpha": {
+      "status": "idle",
+      "current_task": "",
+      "last_active": "2026-05-15T18:57:31Z",
+      "working_on": []
+    },
+    "agent-beta": {
+      "status": "idle",
+      "current_task": "",
+      "last_active": "2026-05-15T18:57:31Z",
+      "working_on": []
+    },
+    "agent-gamma": {
+      "status": "idle",
+      "current_task": "",
+      "last_active": "2026-05-15T18:57:31Z",
+      "working_on": []
+    }
+  },
+  "file_locks": {},
+  "shared_files": {},
+  "pending_merges": [],
+  "agent_notes": {}
+}

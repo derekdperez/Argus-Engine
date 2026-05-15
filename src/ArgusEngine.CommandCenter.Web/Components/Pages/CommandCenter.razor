@@ -6,9 +6,7 @@
 @using System.Globalization
 @using System.Net
 @using System.Net.Http.Json
-@using System.Text
 @using System.Text.Json
-@using Microsoft.AspNetCore.Components.Web.Virtualization
 @implements IDisposable
 @inject HttpClient Http
 @inject ILogger<CommandCenter> Logger
@@ -93,53 +91,96 @@
                     <button class="cc-btn cc-btn-primary" @onclick="CreateTargetAsync" disabled="@(!CanCreateTarget || _creatingTarget)">
                         @(_creatingTarget ? "Creating..." : "Create")
                     </button>
-                    <input class="cc-input" placeholder="Filter targets" @bind="_targetSearch" @bind:event="oninput" />
                     <button class="cc-btn" @onclick="ReloadTargetsAsync" disabled="@_targetsLoading">Reload</button>
                     <button class="cc-btn" @onclick="EnumerateSelectedTargetsAsync" disabled="@(!_selectedTargetIds.Any() || _targetActionLoading)">Enumerate selected</button>
                     <button class="cc-btn" @onclick="SpiderSelectedTargetsAsync" disabled="@(!_selectedTargetIds.Any() || _targetActionLoading)">Spider selected</button>
                 </div>
             </div>
             <div class="cc-two-column">
-                <div class="cc-grid cc-grid-targets" role="table" aria-label="Targets">
-                    @GridDebug(TargetRows, _targets, _targetsRefreshedUtc)
-                    <div class="cc-row cc-header" role="row">
-                        <span></span><span>Root domain</span><span>Status</span><span>Depth</span><span>Created</span>
-                    </div>
-                    <Virtualize Items="TargetRows" Context="target" ItemSize="44" OverscanCount="8">
-                        <ItemContent>
-                            <div class="cc-row" role="row" @key="RowKey(target)" @onclick="@(() => ToggleTarget(target))">
-                                <span><input type="checkbox" checked="@IsSelectedTarget(target)" @onchange="@(_ => ToggleTarget(target))" @onclick:stopPropagation="true" /></span>
-                                <span class="cc-main-cell">@Display(Text(target, "rootDomain", "RootDomain", "domain", "Domain"))</span>
-                                <span><span class="cc-pill">@Display(Text(target, "status", "Status", "state", "State"))</span></span>
-                                <span>@Display(Text(target, "globalMaxDepth", "GlobalMaxDepth", "maxDepth", "MaxDepth"))</span>
-                                <span>@FormatTime(Text(target, "createdAtUtc", "CreatedAtUtc", "createdAt", "CreatedAt"))</span>
-                            </div>
-                        </ItemContent>
-                        <Placeholder>
-                            <div class="cc-row cc-placeholder"><span></span><span>Loading target...</span><span></span><span></span><span></span></div>
-                        </Placeholder>
-                    </Virtualize>
-                </div>
+                <ArgusDataGrid TGridItem="JsonElement"
+                               Items="@TargetRows.AsQueryable()"
+                               RowMatches="@JsonRowMatches"
+                               SearchText="@_targetSearch"
+                               SearchTextChanged="@((string value) => _targetSearch = value)"
+                               SearchPlaceholder="Search targets..."
+                               IsLoading="@_targetsLoading"
+                               EmptyText="No targets found."
+                               PersistKey="command-center-targets"
+                               EnableCsvExport="true"
+                               ExportFileName="targets.csv"
+                               StickyFirstColumn="true"
+                               VirtualizedHeightPixels="420"
+                               ItemKey="@RowKeyObject">
+                    <ConfigurationTemplate>
+                        @ColumnPicker(TargetGridColumns)
+                    </ConfigurationTemplate>
+                    <ChildContent>
+                        @if (ColumnVisible("targets.select"))
+                        {
+                            <TemplateColumn Title="" Context="target" Class="select-col">
+                                <input type="checkbox" checked="@IsSelectedTarget(target)" @onchange="@(_ => ToggleTarget(target))" />
+                            </TemplateColumn>
+                        }
+                        @if (ColumnVisible("targets.root"))
+                        {
+                            <TemplateColumn Title="Root domain" Context="target" SortBy="@SortTargetRoot" Class="wide-col">
+                                <span class="argus-dg-clip" title="@Text(target, "rootDomain", "RootDomain", "domain", "Domain")">@Display(Text(target, "rootDomain", "RootDomain", "domain", "Domain"))</span>
+                            </TemplateColumn>
+                        }
+                        @if (ColumnVisible("targets.status"))
+                        {
+                            <TemplateColumn Title="Status" Context="target" SortBy="@SortTargetStatus">
+                                <span class="cc-pill">@Display(Text(target, "status", "Status", "state", "State"))</span>
+                            </TemplateColumn>
+                        }
+                        @if (ColumnVisible("targets.depth"))
+                        {
+                            <TemplateColumn Title="Depth" Context="target" SortBy="@SortTargetDepth">@Display(Text(target, "globalMaxDepth", "GlobalMaxDepth", "maxDepth", "MaxDepth"))</TemplateColumn>
+                        }
+                        @if (ColumnVisible("targets.created"))
+                        {
+                            <TemplateColumn Title="Created" Context="target" SortBy="@SortTargetCreated">@FormatTime(Text(target, "createdAtUtc", "CreatedAtUtc", "createdAt", "CreatedAt"))</TemplateColumn>
+                        }
+                    </ChildContent>
+                </ArgusDataGrid>
 
-                <div class="cc-grid cc-grid-subdomains" role="table" aria-label="Subdomains">
-                    @GridDebug(SubdomainRows, _subdomains, _subdomainsRefreshedUtc)
-                    <div class="cc-row cc-header" role="row">
-                        <span>Target</span><span>Subdomain</span><span>Technologies</span><span>Last seen</span>
-                    </div>
-                    <Virtualize Items="SubdomainRows" Context="subdomain" ItemSize="44" OverscanCount="8">
-                        <ItemContent>
-                            <div class="cc-row" role="row" @key="RowKey(subdomain)">
-                                <span>@Display(Text(subdomain, "rootDomain", "RootDomain", "target", "Target"))</span>
-                                <span class="cc-main-cell">@Display(Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue"))</span>
-                                <span>@Display(Text(subdomain, "technologyCount", "TechnologyCount"))</span>
-                                <span>@FormatTime(Text(subdomain, "lastSeenUtc", "LastSeenUtc", "lastSeenAtUtc", "LastSeenAtUtc"))</span>
-                            </div>
-                        </ItemContent>
-                        <Placeholder>
-                            <div class="cc-row cc-placeholder"><span></span><span>Loading subdomain...</span><span></span><span></span></div>
-                        </Placeholder>
-                    </Virtualize>
-                </div>
+                <ArgusDataGrid TGridItem="JsonElement"
+                               Items="@SubdomainRows.AsQueryable()"
+                               RowMatches="@JsonRowMatches"
+                               SearchText="@_subdomainSearch"
+                               SearchTextChanged="@((string value) => _subdomainSearch = value)"
+                               SearchPlaceholder="Search subdomains..."
+                               IsLoading="@_subdomainsLoading"
+                               EmptyText="No subdomains found."
+                               PersistKey="command-center-subdomains"
+                               EnableCsvExport="true"
+                               ExportFileName="subdomains.csv"
+                               VirtualizedHeightPixels="420"
+                               ItemKey="@RowKeyObject">
+                    <ConfigurationTemplate>
+                        @ColumnPicker(SubdomainGridColumns)
+                    </ConfigurationTemplate>
+                    <ChildContent>
+                        @if (ColumnVisible("subdomains.target"))
+                        {
+                            <TemplateColumn Title="Target" Context="subdomain" SortBy="@SortSubdomainTarget">@Display(Text(subdomain, "rootDomain", "RootDomain", "target", "Target"))</TemplateColumn>
+                        }
+                        @if (ColumnVisible("subdomains.name"))
+                        {
+                            <TemplateColumn Title="Subdomain" Context="subdomain" SortBy="@SortSubdomainName" Class="wide-col">
+                                <span class="argus-dg-clip" title="@Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue")">@Display(Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue"))</span>
+                            </TemplateColumn>
+                        }
+                        @if (ColumnVisible("subdomains.technologies"))
+                        {
+                            <TemplateColumn Title="Technologies" Context="subdomain" SortBy="@SortSubdomainTechnologyCount">@Display(Text(subdomain, "technologyCount", "TechnologyCount"))</TemplateColumn>
+                        }
+                        @if (ColumnVisible("subdomains.lastSeen"))
+                        {
+                            <TemplateColumn Title="Last seen" Context="subdomain" SortBy="@SortSubdomainLastSeen">@FormatTime(Text(subdomain, "lastSeenUtc", "LastSeenUtc", "lastSeenAtUtc", "LastSeenAtUtc"))</TemplateColumn>
+                        }
+                    </ChildContent>
+                </ArgusDataGrid>
             </div>
 
             <div class="cc-panel-header">
@@ -148,7 +189,6 @@
                     <p class="cc-muted">Recent confirmed assets only. This avoids the previous full-table hydration path.</p>
                 </div>
                 <div class="cc-toolbar">
-                    <input class="cc-input" placeholder="Filter loaded assets" @bind="_assetSearch" @bind:event="oninput" />
                     <select class="cc-input" @bind="_assetKindFilter">
                         <option value="">All kinds</option>
                         @foreach (var kind in AssetKinds)
@@ -159,38 +199,54 @@
                     <button class="cc-btn" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">Reload</button>
                 </div>
             </div>
-            <div class="cc-grid cc-grid-assets" role="table" aria-label="Assets">
-                @GridDebug(AssetRows, _assets, _assetsRefreshedUtc)
-                <div class="cc-row cc-header" role="row">
-                    <span>Kind</span><span>Asset</span><span>Category</span><span>Seen</span>
-                </div>
-                <Virtualize Items="AssetRows" Context="asset" ItemSize="46" OverscanCount="8">
-                    <ItemContent>
-                        <div class="cc-row" role="row" @key="RowKey(asset)" @onclick="@(() => ToggleAsset(asset))">
-                            <span><span class="cc-pill">@Display(Text(asset, "kind", "Kind"))</span></span>
-                            <span class="cc-main-cell">
-                                @{
-                                    var assetText = Text(asset, "displayName", "DisplayName", "canonicalKey", "CanonicalKey", "rawValue", "RawValue", "finalUrl", "FinalUrl");
-                                    var assetHref = TryHttpHref(assetText);
-                                }
-                                @if (assetHref is null)
-                                {
-                                    @Display(assetText)
-                                }
-                                else
-                                {
-                                    <a href="@assetHref" target="_blank" rel="noopener noreferrer">@assetText</a>
-                                }
-                            </span>
-                            <span>@Display(Text(asset, "category", "Category"))</span>
-                            <span>@FormatTime(Text(asset, "lastSeenAtUtc", "LastSeenAtUtc", "discoveredAtUtc", "DiscoveredAtUtc"))</span>
-                        </div>
-                    </ItemContent>
-                    <Placeholder>
-                        <div class="cc-row cc-placeholder"><span>Loading</span><span>Asset...</span><span></span><span></span></div>
-                    </Placeholder>
-                </Virtualize>
-            </div>
+            <ArgusDataGrid TGridItem="JsonElement"
+                           Items="@AssetRows.AsQueryable()"
+                           RowMatches="@JsonRowMatches"
+                           SearchText="@_assetSearch"
+                           SearchTextChanged="@((string value) => _assetSearch = value)"
+                           SearchPlaceholder="Search loaded assets..."
+                           IsLoading="@_assetsLoading"
+                           EmptyText="No assets match the current filters."
+                           PersistKey="command-center-assets"
+                           EnableCsvExport="true"
+                           ExportFileName="assets.csv"
+                           VirtualizedHeightPixels="520"
+                           ItemKey="@RowKeyObject">
+                <ConfigurationTemplate>
+                    @ColumnPicker(AssetGridColumns)
+                </ConfigurationTemplate>
+                <ChildContent>
+                    @if (ColumnVisible("assets.kind"))
+                    {
+                        <TemplateColumn Title="Kind" Context="asset" SortBy="@SortAssetKind"><span class="cc-pill">@Display(Text(asset, "kind", "Kind"))</span></TemplateColumn>
+                    }
+                    @if (ColumnVisible("assets.asset"))
+                    {
+                        <TemplateColumn Title="Asset" Context="asset" SortBy="@SortAssetText" Class="wide-col">
+                            @{
+                                var assetText = Text(asset, "displayName", "DisplayName", "canonicalKey", "CanonicalKey", "rawValue", "RawValue", "finalUrl", "FinalUrl");
+                                var assetHref = TryHttpHref(assetText);
+                            }
+                            @if (assetHref is null)
+                            {
+                                <span class="argus-dg-clip" title="@assetText">@Display(assetText)</span>
+                            }
+                            else
+                            {
+                                <a href="@assetHref" target="_blank" rel="noopener noreferrer" class="argus-dg-clip" title="@assetText">@assetText</a>
+                            }
+                        </TemplateColumn>
+                    }
+                    @if (ColumnVisible("assets.category"))
+                    {
+                        <TemplateColumn Title="Category" Context="asset" SortBy="@SortAssetCategory">@Display(Text(asset, "category", "Category"))</TemplateColumn>
+                    }
+                    @if (ColumnVisible("assets.seen"))
+                    {
+                        <TemplateColumn Title="Seen" Context="asset" SortBy="@SortAssetSeen">@FormatTime(Text(asset, "lastSeenAtUtc", "LastSeenAtUtc", "discoveredAtUtc", "DiscoveredAtUtc"))</TemplateColumn>
+                    }
+                </ChildContent>
+            </ArgusDataGrid>
         </section>
     }
 
@@ -203,52 +259,89 @@
                     <p class="cc-muted">High-value and technology identification in one workspace.</p>
                 </div>
                 <div class="cc-toolbar">
-                    <input class="cc-input" placeholder="Filter findings" @bind="_highValueSearch" @bind:event="oninput" />
-                    <input class="cc-input" placeholder="Filter technologies" @bind="_technologySearch" @bind:event="oninput" />
                     <button class="cc-btn" @onclick="ReloadHighValueAsync" disabled="@_highValueLoading">Reload high value</button>
                     <button class="cc-btn" @onclick="ReloadTechnologyAsync" disabled="@_technologyLoading">Reload tech ID</button>
                 </div>
             </div>
-            <div class="cc-grid cc-grid-high-value" role="table" aria-label="High-value assets">
-                @GridDebug(HighValueRows, _highValue, _highValueRefreshedUtc)
-                <div class="cc-row cc-header" role="row">
-                    <span>Severity</span><span>Asset</span><span>Finding</span><span>Score</span><span>Seen</span>
-                </div>
-                <Virtualize Items="HighValueRows" Context="finding" ItemSize="48" OverscanCount="8">
-                    <ItemContent>
-                        <div class="cc-row" role="row" @key="RowKey(finding)">
-                            <span><span class="cc-pill">@Display(Text(finding, "severity", "Severity"))</span></span>
-                            <span class="cc-main-cell">@Display(Text(finding, "displayName", "DisplayName", "canonicalKey", "CanonicalKey", "rawValue", "RawValue"))</span>
-                            <span>@Display(Text(finding, "findingType", "FindingType", "patternName", "PatternName"))</span>
-                            <span>@Display(Text(finding, "importanceScore", "ImportanceScore", "confidence", "Confidence"))</span>
-                            <span>@FormatTime(Text(finding, "findingDiscoveredAtUtc", "FindingDiscoveredAtUtc", "discoveredAtUtc", "DiscoveredAtUtc"))</span>
-                        </div>
-                    </ItemContent>
-                    <Placeholder>
-                        <div class="cc-row cc-placeholder"><span>Loading</span><span>Finding...</span><span></span><span></span><span></span></div>
-                    </Placeholder>
-                </Virtualize>
-            </div>
+            <ArgusDataGrid TGridItem="JsonElement"
+                           Items="@HighValueRows.AsQueryable()"
+                           RowMatches="@JsonRowMatches"
+                           SearchText="@_highValueSearch"
+                           SearchTextChanged="@((string value) => _highValueSearch = value)"
+                           SearchPlaceholder="Search high-value findings..."
+                           IsLoading="@_highValueLoading"
+                           EmptyText="No high-value findings match the current filters."
+                           PersistKey="command-center-high-value"
+                           EnableCsvExport="true"
+                           ExportFileName="high-value.csv"
+                           VirtualizedHeightPixels="420"
+                           ItemKey="@RowKeyObject">
+                <ConfigurationTemplate>
+                    @ColumnPicker(HighValueGridColumns)
+                </ConfigurationTemplate>
+                <ChildContent>
+                    @if (ColumnVisible("highValue.severity"))
+                    {
+                        <TemplateColumn Title="Severity" Context="finding" SortBy="@SortHighValueSeverity"><span class="cc-pill">@Display(Text(finding, "severity", "Severity"))</span></TemplateColumn>
+                    }
+                    @if (ColumnVisible("highValue.asset"))
+                    {
+                        <TemplateColumn Title="Asset" Context="finding" SortBy="@SortHighValueAsset" Class="wide-col">
+                            <span class="argus-dg-clip" title="@Text(finding, "displayName", "DisplayName", "canonicalKey", "CanonicalKey", "rawValue", "RawValue")">@Display(Text(finding, "displayName", "DisplayName", "canonicalKey", "CanonicalKey", "rawValue", "RawValue"))</span>
+                        </TemplateColumn>
+                    }
+                    @if (ColumnVisible("highValue.finding"))
+                    {
+                        <TemplateColumn Title="Finding" Context="finding" SortBy="@SortHighValueFinding">@Display(Text(finding, "findingType", "FindingType", "patternName", "PatternName"))</TemplateColumn>
+                    }
+                    @if (ColumnVisible("highValue.score"))
+                    {
+                        <TemplateColumn Title="Score" Context="finding" SortBy="@SortHighValueScore">@Display(Text(finding, "importanceScore", "ImportanceScore", "confidence", "Confidence"))</TemplateColumn>
+                    }
+                    @if (ColumnVisible("highValue.seen"))
+                    {
+                        <TemplateColumn Title="Seen" Context="finding" SortBy="@SortHighValueSeen">@FormatTime(Text(finding, "findingDiscoveredAtUtc", "FindingDiscoveredAtUtc", "discoveredAtUtc", "DiscoveredAtUtc"))</TemplateColumn>
+                    }
+                </ChildContent>
+            </ArgusDataGrid>
 
-            <div class="cc-grid cc-grid-technology" role="table" aria-label="Technology observations">
-                @GridDebug(TechnologyRows, _technology, _technologyRefreshedUtc)
-                <div class="cc-row cc-header" role="row">
-                    <span>Technology</span><span>Version</span><span>Evidence</span><span>Seen</span>
-                </div>
-                <Virtualize Items="TechnologyRows" Context="technology" ItemSize="46" OverscanCount="8">
-                    <ItemContent>
-                        <div class="cc-row" role="row" @key="RowKey(technology)">
-                            <span class="cc-main-cell">@Display(Text(technology, "technologyName", "TechnologyName", "name", "Name", "technology", "Technology"))</span>
-                            <span>@Display(Text(technology, "version", "Version"))</span>
-                            <span>@Display(Text(technology, "evidence", "Evidence", "source", "Source", "category", "Category"))</span>
-                            <span>@FormatTime(Text(technology, "lastSeenUtc", "LastSeenUtc", "observedAtUtc", "ObservedAtUtc"))</span>
-                        </div>
-                    </ItemContent>
-                    <Placeholder>
-                        <div class="cc-row cc-placeholder"><span>Loading technology...</span><span></span><span></span><span></span></div>
-                    </Placeholder>
-                </Virtualize>
-            </div>
+            <ArgusDataGrid TGridItem="JsonElement"
+                           Items="@TechnologyRows.AsQueryable()"
+                           RowMatches="@JsonRowMatches"
+                           SearchText="@_technologySearch"
+                           SearchTextChanged="@((string value) => _technologySearch = value)"
+                           SearchPlaceholder="Search technologies..."
+                           IsLoading="@_technologyLoading"
+                           EmptyText="No technology observations match the current filters."
+                           PersistKey="command-center-technologies"
+                           EnableCsvExport="true"
+                           ExportFileName="technologies.csv"
+                           VirtualizedHeightPixels="420"
+                           ItemKey="@RowKeyObject">
+                <ConfigurationTemplate>
+                    @ColumnPicker(TechnologyGridColumns)
+                </ConfigurationTemplate>
+                <ChildContent>
+                    @if (ColumnVisible("technology.name"))
+                    {
+                        <TemplateColumn Title="Technology" Context="technology" SortBy="@SortTechnologyName" Class="wide-col">
+                            <span class="argus-dg-clip" title="@Text(technology, "technologyName", "TechnologyName", "name", "Name", "technology", "Technology")">@Display(Text(technology, "technologyName", "TechnologyName", "name", "Name", "technology", "Technology"))</span>
+                        </TemplateColumn>
+                    }
+                    @if (ColumnVisible("technology.version"))
+                    {
+                        <TemplateColumn Title="Version" Context="technology" SortBy="@SortTechnologyVersion">@Display(Text(technology, "version", "Version"))</TemplateColumn>
+                    }
+                    @if (ColumnVisible("technology.evidence"))
+                    {
+                        <TemplateColumn Title="Evidence" Context="technology" SortBy="@SortTechnologyEvidence">@Display(Text(technology, "evidence", "Evidence", "source", "Source", "category", "Category"))</TemplateColumn>
+                    }
+                    @if (ColumnVisible("technology.seen"))
+                    {
+                        <TemplateColumn Title="Seen" Context="technology" SortBy="@SortTechnologySeen">@FormatTime(Text(technology, "lastSeenUtc", "LastSeenUtc", "observedAtUtc", "ObservedAtUtc"))</TemplateColumn>
+                    }
+                </ChildContent>
+            </ArgusDataGrid>
         </section>
     }
 
@@ -261,53 +354,88 @@
                     <p class="cc-muted">Loaded from the worker-control API in a bounded refresh cycle.</p>
                 </div>
                 <div class="cc-toolbar">
-                    <input class="cc-input" placeholder="Filter workers" @bind="_workerSearch" @bind:event="oninput" />
                     <button class="cc-btn" @onclick="ReloadWorkersAsync" disabled="@_workersLoading">Reload</button>
                     <button class="cc-btn" @onclick="ReloadCloudWorkersAsync" disabled="@_workersLoading">Refresh cloud</button>
                 </div>
             </div>
 
             <h3>Local worker controls</h3>
-            <div class="cc-grid cc-grid-workers" role="table" aria-label="Local workers">
-                @GridDebug(WorkerRows, _workers, _workersRefreshedUtc)
-                <div class="cc-row cc-header" role="row">
-                    <span>Worker</span><span>State</span><span>Running</span><span>Total</span>
-                </div>
-                <Virtualize Items="WorkerRows" Context="worker" ItemSize="46" OverscanCount="8">
-                    <ItemContent>
-                        <div class="cc-row" role="row" @key="RowKey(worker)">
-                            <span class="cc-main-cell">@Display(Text(worker, "displayName", "DisplayName", "serviceName", "ServiceName", "name", "Name", "id", "Id"))</span>
-                            <span><span class="cc-pill">@Display(Text(worker, "overallState", "OverallState", "status", "Status", "state", "State"))</span></span>
-                            <span>@Display(Text(worker, "runningCount", "RunningCount"))</span>
-                            <span>@Display(Text(worker, "totalCount", "TotalCount"))</span>
-                        </div>
-                    </ItemContent>
-                    <Placeholder>
-                        <div class="cc-row cc-placeholder"><span>Loading worker...</span><span></span><span></span><span></span></div>
-                    </Placeholder>
-                </Virtualize>
-            </div>
+            <ArgusDataGrid TGridItem="JsonElement"
+                           Items="@WorkerRows.AsQueryable()"
+                           RowMatches="@JsonRowMatches"
+                           SearchText="@_workerSearch"
+                           SearchTextChanged="@((string value) => _workerSearch = value)"
+                           SearchPlaceholder="Search workers..."
+                           IsLoading="@_workersLoading"
+                           EmptyText="No local workers found."
+                           PersistKey="command-center-workers"
+                           EnableCsvExport="true"
+                           ExportFileName="workers.csv"
+                           VirtualizedHeightPixels="420"
+                           ItemKey="@RowKeyObject">
+                <ConfigurationTemplate>
+                    @ColumnPicker(WorkerGridColumns)
+                </ConfigurationTemplate>
+                <ChildContent>
+                    @if (ColumnVisible("workers.name"))
+                    {
+                        <TemplateColumn Title="Worker" Context="worker" SortBy="@SortWorkerName" Class="wide-col">
+                            <span class="argus-dg-clip" title="@Text(worker, "displayName", "DisplayName", "serviceName", "ServiceName", "name", "Name", "id", "Id")">@Display(Text(worker, "displayName", "DisplayName", "serviceName", "ServiceName", "name", "Name", "id", "Id"))</span>
+                        </TemplateColumn>
+                    }
+                    @if (ColumnVisible("workers.state"))
+                    {
+                        <TemplateColumn Title="State" Context="worker" SortBy="@SortWorkerState"><span class="cc-pill">@Display(Text(worker, "overallState", "OverallState", "status", "Status", "state", "State"))</span></TemplateColumn>
+                    }
+                    @if (ColumnVisible("workers.running"))
+                    {
+                        <TemplateColumn Title="Running" Context="worker" SortBy="@SortWorkerRunning">@Display(Text(worker, "runningCount", "RunningCount"))</TemplateColumn>
+                    }
+                    @if (ColumnVisible("workers.total"))
+                    {
+                        <TemplateColumn Title="Total" Context="worker" SortBy="@SortWorkerTotal">@Display(Text(worker, "totalCount", "TotalCount"))</TemplateColumn>
+                    }
+                </ChildContent>
+            </ArgusDataGrid>
 
             <h3>Cloud worker controls</h3>
-            <div class="cc-grid cc-grid-workers" role="table" aria-label="Cloud workers">
-                @GridDebug(CloudWorkerRows, _cloudWorkers, _cloudWorkersRefreshedUtc)
-                <div class="cc-row cc-header" role="row">
-                    <span>Service</span><span>Status</span><span>Running</span><span>Desired</span>
-                </div>
-                <Virtualize Items="CloudWorkerRows" Context="worker" ItemSize="46" OverscanCount="8">
-                    <ItemContent>
-                        <div class="cc-row" role="row" @key="RowKey(worker)">
-                            <span class="cc-main-cell">@Display(Text(worker, "serviceName", "ServiceName", "scaleKey", "ScaleKey"))</span>
-                            <span><span class="cc-pill">@Display(Text(worker, "status", "Status", "deploymentStatus", "DeploymentStatus"))</span></span>
-                            <span>@Display(Text(worker, "runningCount", "RunningCount"))</span>
-                            <span>@Display(Text(worker, "desiredCount", "DesiredCount"))</span>
-                        </div>
-                    </ItemContent>
-                    <Placeholder>
-                        <div class="cc-row cc-placeholder"><span>Loading cloud worker...</span><span></span><span></span><span></span></div>
-                    </Placeholder>
-                </Virtualize>
-            </div>
+            <ArgusDataGrid TGridItem="JsonElement"
+                           Items="@CloudWorkerRows.AsQueryable()"
+                           RowMatches="@JsonRowMatches"
+                           SearchText="@_cloudWorkerSearch"
+                           SearchTextChanged="@((string value) => _cloudWorkerSearch = value)"
+                           SearchPlaceholder="Search cloud workers..."
+                           IsLoading="@_workersLoading"
+                           EmptyText="No cloud workers found."
+                           PersistKey="command-center-cloud-workers"
+                           EnableCsvExport="true"
+                           ExportFileName="cloud-workers.csv"
+                           VirtualizedHeightPixels="420"
+                           ItemKey="@RowKeyObject">
+                <ConfigurationTemplate>
+                    @ColumnPicker(CloudWorkerGridColumns)
+                </ConfigurationTemplate>
+                <ChildContent>
+                    @if (ColumnVisible("cloudWorkers.service"))
+                    {
+                        <TemplateColumn Title="Service" Context="worker" SortBy="@SortCloudWorkerService" Class="wide-col">
+                            <span class="argus-dg-clip" title="@Text(worker, "serviceName", "ServiceName", "scaleKey", "ScaleKey")">@Display(Text(worker, "serviceName", "ServiceName", "scaleKey", "ScaleKey"))</span>
+                        </TemplateColumn>
+                    }
+                    @if (ColumnVisible("cloudWorkers.status"))
+                    {
+                        <TemplateColumn Title="Status" Context="worker" SortBy="@SortCloudWorkerStatus"><span class="cc-pill">@Display(Text(worker, "status", "Status", "deploymentStatus", "DeploymentStatus"))</span></TemplateColumn>
+                    }
+                    @if (ColumnVisible("cloudWorkers.running"))
+                    {
+                        <TemplateColumn Title="Running" Context="worker" SortBy="@SortCloudWorkerRunning">@Display(Text(worker, "runningCount", "RunningCount"))</TemplateColumn>
+                    }
+                    @if (ColumnVisible("cloudWorkers.desired"))
+                    {
+                        <TemplateColumn Title="Desired" Context="worker" SortBy="@SortCloudWorkerDesired">@Display(Text(worker, "desiredCount", "DesiredCount"))</TemplateColumn>
+                    }
+                </ChildContent>
+            </ArgusDataGrid>
         </section>
     }
 </div>
@@ -333,13 +461,11 @@
     private readonly HashSet<string> _selectedTargetIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _selectedAssetIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _selectedHttpIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _hiddenGridColumns = new(StringComparer.OrdinalIgnoreCase);
 
     private CommandTab _activeTab = CommandTab.Targets;
     private PeriodicTimer? _summaryTimer;
-    private PeriodicTimer? _debugClockTimer;
     private Task? _summaryPollingTask;
-    private Task? _debugClockTask;
-    private DateTimeOffset _debugNowUtc = DateTimeOffset.UtcNow;
     private DateTimeOffset? _targetsRefreshedUtc;
     private DateTimeOffset? _subdomainsRefreshedUtc;
     private DateTimeOffset? _assetsRefreshedUtc;
@@ -350,6 +476,7 @@
     private string? _errorMessage;
     private string? _statusMessage;
     private string? _targetSearch;
+    private string? _subdomainSearch;
     private string? _assetSearch;
     private string? _assetKindFilter;
     private string _httpSearch = string.Empty;
@@ -357,6 +484,7 @@
     private string? _highValueSearch;
     private string? _technologySearch;
     private string? _workerSearch;
+    private string? _cloudWorkerSearch;
     private string? _newTargetRootDomain;
     private int _newTargetDepth = 2;
     private bool _overviewLoading;
@@ -396,7 +524,7 @@
         .ToArray();
 
     private JsonElement[] SubdomainRows => _subdomains
-        .Where(row => Matches(row, _targetSearch, "subdomain", "Subdomain", "rootDomain", "RootDomain", "target", "Target"))
+        .Where(row => Matches(row, _subdomainSearch, "subdomain", "Subdomain", "rootDomain", "RootDomain", "target", "Target"))
         .ToArray();
 
     private JsonElement[] HttpRows => _httpQueue
@@ -418,8 +546,96 @@
         .ToArray();
 
     private JsonElement[] CloudWorkerRows => _cloudWorkers
-        .Where(row => Matches(row, _workerSearch, "serviceName", "ServiceName", "scaleKey", "ScaleKey", "status", "Status", "deploymentStatus", "DeploymentStatus"))
+        .Where(row => Matches(row, _cloudWorkerSearch, "serviceName", "ServiceName", "scaleKey", "ScaleKey", "status", "Status", "deploymentStatus", "DeploymentStatus"))
         .ToArray();
+
+    private static readonly GridColumnChoice[] TargetGridColumns =
+    [
+        new("targets.select", "Select"),
+        new("targets.root", "Root domain"),
+        new("targets.status", "Status"),
+        new("targets.depth", "Depth"),
+        new("targets.created", "Created")
+    ];
+
+    private static readonly GridColumnChoice[] SubdomainGridColumns =
+    [
+        new("subdomains.target", "Target"),
+        new("subdomains.name", "Subdomain"),
+        new("subdomains.technologies", "Technologies"),
+        new("subdomains.lastSeen", "Last seen")
+    ];
+
+    private static readonly GridColumnChoice[] AssetGridColumns =
+    [
+        new("assets.kind", "Kind"),
+        new("assets.asset", "Asset"),
+        new("assets.category", "Category"),
+        new("assets.seen", "Seen")
+    ];
+
+    private static readonly GridColumnChoice[] HighValueGridColumns =
+    [
+        new("highValue.severity", "Severity"),
+        new("highValue.asset", "Asset"),
+        new("highValue.finding", "Finding"),
+        new("highValue.score", "Score"),
+        new("highValue.seen", "Seen")
+    ];
+
+    private static readonly GridColumnChoice[] TechnologyGridColumns =
+    [
+        new("technology.name", "Technology"),
+        new("technology.version", "Version"),
+        new("technology.evidence", "Evidence"),
+        new("technology.seen", "Seen")
+    ];
+
+    private static readonly GridColumnChoice[] WorkerGridColumns =
+    [
+        new("workers.name", "Worker"),
+        new("workers.state", "State"),
+        new("workers.running", "Running"),
+        new("workers.total", "Total")
+    ];
+
+    private static readonly GridColumnChoice[] CloudWorkerGridColumns =
+    [
+        new("cloudWorkers.service", "Service"),
+        new("cloudWorkers.status", "Status"),
+        new("cloudWorkers.running", "Running"),
+        new("cloudWorkers.desired", "Desired")
+    ];
+
+    private static readonly GridSort<JsonElement> SortTargetRoot = GridSort<JsonElement>.ByAscending(row => Text(row, "rootDomain", "RootDomain", "domain", "Domain"));
+    private static readonly GridSort<JsonElement> SortTargetStatus = GridSort<JsonElement>.ByAscending(row => Text(row, "status", "Status", "state", "State"));
+    private static readonly GridSort<JsonElement> SortTargetDepth = GridSort<JsonElement>.ByAscending(row => Long(row, "globalMaxDepth", "GlobalMaxDepth", "maxDepth", "MaxDepth"));
+    private static readonly GridSort<JsonElement> SortTargetCreated = GridSort<JsonElement>.ByDescending(row => SortableTime(row, "createdAtUtc", "CreatedAtUtc", "createdAt", "CreatedAt"));
+    private static readonly GridSort<JsonElement> SortSubdomainTarget = GridSort<JsonElement>.ByAscending(row => Text(row, "rootDomain", "RootDomain", "target", "Target"));
+    private static readonly GridSort<JsonElement> SortSubdomainName = GridSort<JsonElement>.ByAscending(row => Text(row, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue"));
+    private static readonly GridSort<JsonElement> SortSubdomainTechnologyCount = GridSort<JsonElement>.ByAscending(row => Long(row, "technologyCount", "TechnologyCount"));
+    private static readonly GridSort<JsonElement> SortSubdomainLastSeen = GridSort<JsonElement>.ByDescending(row => SortableTime(row, "lastSeenUtc", "LastSeenUtc", "lastSeenAtUtc", "LastSeenAtUtc"));
+    private static readonly GridSort<JsonElement> SortAssetKind = GridSort<JsonElement>.ByAscending(row => Text(row, "kind", "Kind"));
+    private static readonly GridSort<JsonElement> SortAssetText = GridSort<JsonElement>.ByAscending(row => Text(row, "displayName", "DisplayName", "canonicalKey", "CanonicalKey", "rawValue", "RawValue", "finalUrl", "FinalUrl"));
+    private static readonly GridSort<JsonElement> SortAssetCategory = GridSort<JsonElement>.ByAscending(row => Text(row, "category", "Category"));
+    private static readonly GridSort<JsonElement> SortAssetSeen = GridSort<JsonElement>.ByDescending(row => SortableTime(row, "lastSeenAtUtc", "LastSeenAtUtc", "discoveredAtUtc", "DiscoveredAtUtc"));
+    private static readonly GridSort<JsonElement> SortHighValueSeverity = GridSort<JsonElement>.ByAscending(row => Text(row, "severity", "Severity"));
+    private static readonly GridSort<JsonElement> SortHighValueAsset = GridSort<JsonElement>.ByAscending(row => Text(row, "displayName", "DisplayName", "canonicalKey", "CanonicalKey", "rawValue", "RawValue"));
+    private static readonly GridSort<JsonElement> SortHighValueFinding = GridSort<JsonElement>.ByAscending(row => Text(row, "findingType", "FindingType", "patternName", "PatternName"));
+    private static readonly GridSort<JsonElement> SortHighValueScore = GridSort<JsonElement>.ByDescending(row => Long(row, "importanceScore", "ImportanceScore", "confidence", "Confidence"));
+    private static readonly GridSort<JsonElement> SortHighValueSeen = GridSort<JsonElement>.ByDescending(row => SortableTime(row, "findingDiscoveredAtUtc", "FindingDiscoveredAtUtc", "discoveredAtUtc", "DiscoveredAtUtc"));
+    private static readonly GridSort<JsonElement> SortTechnologyName = GridSort<JsonElement>.ByAscending(row => Text(row, "technologyName", "TechnologyName", "name", "Name", "technology", "Technology"));
+    private static readonly GridSort<JsonElement> SortTechnologyVersion = GridSort<JsonElement>.ByAscending(row => Text(row, "version", "Version"));
+    private static readonly GridSort<JsonElement> SortTechnologyEvidence = GridSort<JsonElement>.ByAscending(row => Text(row, "evidence", "Evidence", "source", "Source", "category", "Category"));
+    private static readonly GridSort<JsonElement> SortTechnologySeen = GridSort<JsonElement>.ByDescending(row => SortableTime(row, "lastSeenUtc", "LastSeenUtc", "observedAtUtc", "ObservedAtUtc"));
+    private static readonly GridSort<JsonElement> SortWorkerName = GridSort<JsonElement>.ByAscending(row => Text(row, "displayName", "DisplayName", "serviceName", "ServiceName", "name", "Name", "id", "Id"));
+    private static readonly GridSort<JsonElement> SortWorkerState = GridSort<JsonElement>.ByAscending(row => Text(row, "overallState", "OverallState", "status", "Status", "state", "State"));
+    private static readonly GridSort<JsonElement> SortWorkerRunning = GridSort<JsonElement>.ByAscending(row => Long(row, "runningCount", "RunningCount"));
+    private static readonly GridSort<JsonElement> SortWorkerTotal = GridSort<JsonElement>.ByAscending(row => Long(row, "totalCount", "TotalCount"));
+    private static readonly GridSort<JsonElement> SortCloudWorkerService = GridSort<JsonElement>.ByAscending(row => Text(row, "serviceName", "ServiceName", "scaleKey", "ScaleKey"));
+    private static readonly GridSort<JsonElement> SortCloudWorkerStatus = GridSort<JsonElement>.ByAscending(row => Text(row, "status", "Status", "deploymentStatus", "DeploymentStatus"));
+    private static readonly GridSort<JsonElement> SortCloudWorkerRunning = GridSort<JsonElement>.ByAscending(row => Long(row, "runningCount", "RunningCount"));
+    private static readonly GridSort<JsonElement> SortCloudWorkerDesired = GridSort<JsonElement>.ByAscending(row => Long(row, "desiredCount", "DesiredCount"));
 
     private string[] AssetKinds => _assets
         .Select(row => Text(row, "kind", "Kind"))
@@ -440,9 +656,7 @@
         await LoadInitialWorkspaceAsync().ConfigureAwait(false);
 
         _summaryTimer = new PeriodicTimer(TimeSpan.FromSeconds(15));
-        _debugClockTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
         _summaryPollingTask = PollSummaryAsync();
-        _debugClockTask = PollDebugClockAsync();
     }
 
     private async Task LoadInitialWorkspaceAsync()
@@ -476,27 +690,6 @@
             {
                 await ReloadOverviewAsync(showLoading: false).ConfigureAwait(false);
 
-                await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected during component disposal.
-        }
-    }
-
-    private async Task PollDebugClockAsync()
-    {
-        if (_debugClockTimer is null)
-        {
-            return;
-        }
-
-        try
-        {
-            while (await _debugClockTimer.WaitForNextTickAsync(_disposeCts.Token).ConfigureAwait(false))
-            {
-                _debugNowUtc = DateTimeOffset.UtcNow;
                 await InvokeAsync(StateHasChanged).ConfigureAwait(false);
             }
         }
@@ -919,6 +1112,55 @@
         return Text(row, "id", "Id", "assetId", "AssetId", "findingId", "FindingId", "targetId", "TargetId", "queueId", "QueueId");
     }
 
+    private static object RowKeyObject(JsonElement row) => RowKey(row);
+
+    private static bool JsonRowMatches(JsonElement row, string search)
+    {
+        return string.IsNullOrWhiteSpace(search)
+            || row.GetRawText().Contains(search.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool ColumnVisible(string key) => !_hiddenGridColumns.Contains(key);
+
+    private void ToggleColumn(string key, ChangeEventArgs args)
+    {
+        var visible = args.Value is bool boolValue
+            ? boolValue
+            : bool.TryParse(args.Value?.ToString(), out var parsed) && parsed;
+
+        if (visible)
+        {
+            _hiddenGridColumns.Remove(key);
+        }
+        else
+        {
+            _hiddenGridColumns.Add(key);
+        }
+    }
+
+    private RenderFragment ColumnPicker(IReadOnlyList<GridColumnChoice> columns) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "cc-column-picker");
+
+        var sequence = 2;
+        foreach (var column in columns)
+        {
+            builder.OpenElement(sequence++, "label");
+            builder.OpenElement(sequence++, "input");
+            builder.AddAttribute(sequence++, "type", "checkbox");
+            builder.AddAttribute(sequence++, "checked", ColumnVisible(column.Key));
+            builder.AddAttribute(sequence++, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, args => ToggleColumn(column.Key, args)));
+            builder.CloseElement();
+            builder.OpenElement(sequence++, "span");
+            builder.AddContent(sequence++, column.Label);
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
     private static bool Matches(JsonElement row, string? query, params string[] fields)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -996,50 +1238,12 @@
         };
     }
 
-    private RenderFragment GridDebug(IReadOnlyCollection<JsonElement> visibleRows, IReadOnlyCollection<JsonElement> sourceRows, DateTimeOffset? refreshedUtc) => builder =>
+    private static DateTimeOffset SortableTime(JsonElement row, params string[] names)
     {
-        builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "class", "cc-grid-debug");
-        builder.AddAttribute(2, "aria-live", "polite");
-
-        builder.OpenElement(3, "span");
-        builder.AddContent(4, FormatGridRowCount(visibleRows.Count, sourceRows.Count));
-        builder.CloseElement();
-
-        builder.OpenElement(5, "span");
-        builder.AddContent(6, $"{FormatDataSizeMb(sourceRows)} MB");
-        builder.CloseElement();
-
-        builder.OpenElement(7, "span");
-        builder.AddContent(8, FormatRefreshAge(refreshedUtc));
-        builder.CloseElement();
-
-        builder.CloseElement();
-    };
-
-    private static string FormatGridRowCount(int visibleCount, int sourceCount)
-    {
-        return visibleCount == sourceCount
-            ? $"{visibleCount.ToString("N0", CultureInfo.InvariantCulture)} rows"
-            : $"{visibleCount.ToString("N0", CultureInfo.InvariantCulture)} of {sourceCount.ToString("N0", CultureInfo.InvariantCulture)} rows";
-    }
-
-    private static string FormatDataSizeMb(IReadOnlyCollection<JsonElement> rows)
-    {
-        var bytes = rows.Sum(row => Encoding.UTF8.GetByteCount(row.GetRawText()));
-        var megabytes = bytes / 1024d / 1024d;
-        return megabytes.ToString("0.000", CultureInfo.InvariantCulture);
-    }
-
-    private string FormatRefreshAge(DateTimeOffset? refreshedUtc)
-    {
-        if (refreshedUtc is null)
-        {
-            return "not refreshed yet";
-        }
-
-        var seconds = Math.Max(0, (int)Math.Floor((_debugNowUtc - refreshedUtc.Value).TotalSeconds));
-        return $"refreshed {seconds.ToString("N0", CultureInfo.InvariantCulture)}s ago";
+        var value = Text(row, names);
+        return DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var timestamp)
+            ? timestamp
+            : DateTimeOffset.MinValue;
     }
 
     private static string FormatNumber(long value)
@@ -1145,7 +1349,6 @@
     {
         _disposeCts.Cancel();
         _summaryTimer?.Dispose();
-        _debugClockTimer?.Dispose();
         _disposeCts.Dispose();
     }
 
@@ -1155,4 +1358,6 @@
         Discovery,
         Workers
     }
+
+    private sealed record GridColumnChoice(string Key, string Label);
 }

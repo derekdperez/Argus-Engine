@@ -1,0 +1,159 @@
+name: Auto Deploy Environment
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    branches:
+      - main
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment to deploy through.
+        required: true
+        default: production
+      ref:
+        description: Branch or remote ref to deploy from the target host.
+        required: true
+        default: main
+      services:
+        description: Space-separated services to deploy, or "all" for the normal incremental plan.
+        required: false
+        default: all
+      deploy_flags:
+        description: Optional flags for ./deploy all-in-1, for example "--no-github-artifacts".
+        required: false
+        default: ""
+      smoke:
+        description: Run ./deploy smoke after deployment.
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-deploy-${{ github.event_name == 'workflow_dispatch' && inputs.environment || vars.AUTO_DEPLOY_ENVIRONMENT || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy latest successful build
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || vars.AUTO_DEPLOY_ENVIRONMENT || 'production' }}
+
+    env:
+      TARGET_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.workflow_run.head_branch }}
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+      TARGET_SERVICES: ${{ github.event_name == 'workflow_dispatch' && inputs.services || 'all' }}
+      DEPLOY_FLAGS: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_flags || '' }}
+      RUN_SMOKE: ${{ github.event_name == 'workflow_dispatch' && inputs.smoke || 'true' }}
+
+    steps:
+      - name: Validate deployment secrets
+        env:
+          ARGUS_DEPLOY_HOST: ${{ secrets.ARGUS_DEPLOY_HOST }}
+          ARGUS_DEPLOY_USER: ${{ secrets.ARGUS_DEPLOY_USER }}
+          ARGUS_DEPLOY_SSH_KEY: ${{ secrets.ARGUS_DEPLOY_SSH_KEY }}
+          ARGUS_DEPLOY_PATH: ${{ secrets.ARGUS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+
+          test -n "$ARGUS_DEPLOY_HOST" || { echo "Missing ARGUS_DEPLOY_HOST secret."; exit 1; }
+          test -n "$ARGUS_DEPLOY_USER" || { echo "Missing ARGUS_DEPLOY_USER secret."; exit 1; }
+          test -n "$ARGUS_DEPLOY_SSH_KEY" || { echo "Missing ARGUS_DEPLOY_SSH_KEY secret."; exit 1; }
+          test -n "$ARGUS_DEPLOY_PATH" || { echo "Missing ARGUS_DEPLOY_PATH secret."; exit 1; }
+
+      - name: Configure SSH
+        env:
+          ARGUS_DEPLOY_HOST: ${{ secrets.ARGUS_DEPLOY_HOST }}
+          ARGUS_DEPLOY_PORT: ${{ secrets.ARGUS_DEPLOY_PORT }}
+          ARGUS_DEPLOY_SSH_KEY: ${{ secrets.ARGUS_DEPLOY_SSH_KEY }}
+          ARGUS_DEPLOY_KNOWN_HOSTS: ${{ secrets.ARGUS_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          port="${ARGUS_DEPLOY_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$ARGUS_DEPLOY_SSH_KEY" > ~/.ssh/argus_deploy_key
+          chmod 600 ~/.ssh/argus_deploy_key
+
+          if [ -n "${ARGUS_DEPLOY_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$ARGUS_DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$port" "$ARGUS_DEPLOY_HOST" > ~/.ssh/known_hosts
+          fi
+
+      - name: Deploy on target host
+        env:
+          ARGUS_DEPLOY_HOST: ${{ secrets.ARGUS_DEPLOY_HOST }}
+          ARGUS_DEPLOY_USER: ${{ secrets.ARGUS_DEPLOY_USER }}
+          ARGUS_DEPLOY_PORT: ${{ secrets.ARGUS_DEPLOY_PORT }}
+          ARGUS_DEPLOY_PATH: ${{ secrets.ARGUS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+
+          port="${ARGUS_DEPLOY_PORT:-22}"
+          deploy_ref="${TARGET_SHA:-$TARGET_REF}"
+          if [[ "$deploy_ref" != origin/* && ! "$deploy_ref" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            deploy_ref="origin/$deploy_ref"
+          fi
+
+          printf 'Deploying %s (%s) to %s as %s\n' "$deploy_ref" "$TARGET_SHA" "$ARGUS_DEPLOY_HOST" "$ARGUS_DEPLOY_USER"
+
+          remote_env=$(
+            printf 'ARGUS_DEPLOY_PATH=%q ARGUS_DEPLOY_REF=%q ARGUS_DEPLOY_SHA=%q ARGUS_DEPLOY_SERVICES=%q ARGUS_DEPLOY_FLAGS=%q ARGUS_DEPLOY_RUN_SMOKE=%q' \
+              "$ARGUS_DEPLOY_PATH" \
+              "$deploy_ref" \
+              "$TARGET_SHA" \
+              "$TARGET_SERVICES" \
+              "$DEPLOY_FLAGS" \
+              "$RUN_SMOKE"
+          )
+
+          ssh \
+            -i ~/.ssh/argus_deploy_key \
+            -p "$port" \
+            -o IdentitiesOnly=yes \
+            "$ARGUS_DEPLOY_USER@$ARGUS_DEPLOY_HOST" \
+            "$remote_env bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd "$ARGUS_DEPLOY_PATH"
+
+          git fetch --prune origin
+          if [ -n "$ARGUS_DEPLOY_SHA" ]; then
+            git cat-file -e "$ARGUS_DEPLOY_SHA^{commit}"
+          fi
+
+          read -r -a service_args <<< "${ARGUS_DEPLOY_SERVICES:-all}"
+          if [ "${ARGUS_DEPLOY_SERVICES:-all}" = "all" ]; then
+            service_args=()
+          fi
+
+          read -r -a deploy_flags <<< "${ARGUS_DEPLOY_FLAGS:-}"
+
+          export ARGUS_DEPLOY_REF
+          ./deploy all-in-1 "${deploy_flags[@]}" "${service_args[@]}"
+
+          if [ "${ARGUS_DEPLOY_RUN_SMOKE:-true}" = "true" ]; then
+            ./deploy smoke
+          fi
+          REMOTE
+
+  skipped:
+    name: Skip failed build
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain skip
+        run: |
+          echo "CI concluded with '${{ github.event.workflow_run.conclusion }}'; deployment was skipped."

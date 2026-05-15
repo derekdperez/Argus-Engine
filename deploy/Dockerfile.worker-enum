@@ -15,7 +15,8 @@ ARG APP_DLL=ArgusEngine.Workers.Enumeration.dll
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 ARG PROJECT_DIR
-ARG COMPONENT_VERSION=2.6.3
+
+.6.2
 
 WORKDIR /src
 
@@ -50,8 +51,10 @@ RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,shar
       -c Release -o /app/publish /p:UseAppHost=false \
       -p:maxcpucount -p:ParallelizePublish=true \
       /p:Version="${COMPONENT_VERSION}" \
-      /p:AssemblyVersion="2.6.3.0" \
-      /p:FileVersion="2.6.3.0" \
+      
+.6.2.0" \
+      
+.6.2.0" \
       /p:InformationalVersion="${COMPONENT_VERSION}" \
     && test -s "/app/publish/${APP_DLL}"
 
@@ -60,7 +63,8 @@ FROM argus-engine-base:local AS final
 ARG APP_DLL
 ARG BUILD_SOURCE_STAMP=unknown
 ARG BUILD_TIME_UTC=unknown
-ARG COMPONENT_VERSION=2.6.3
+
+.6.2
 ARG SUBFINDER_VERSION=2.14.0
 ARG AMASS_VERSION=5.1.1
 

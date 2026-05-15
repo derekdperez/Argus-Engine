@@ -248,6 +248,19 @@ source "$DEPLOY_DIR/lib-argus-compose.sh"
 # shellcheck source=deploy/lib-install-deps.sh
 source "$DEPLOY_DIR/lib-install-deps.sh"
 
+argus_sync_version_metadata() {
+  if [[ "${ARGUS_SKIP_VERSION_SYNC:-0}" == "1" ]]; then
+    echo "Skipping version metadata sync because ARGUS_SKIP_VERSION_SYNC=1."
+    return 0
+  fi
+  if [[ ! -x "$ROOT/scripts/update-version.sh" ]]; then
+    echo "WARN: scripts/update-version.sh is missing; skipping version metadata sync."
+    return 0
+  fi
+  echo "Synchronizing version metadata..."
+  bash "$ROOT/scripts/update-version.sh"
+}
+
 argus_verify_command_center_blazor_static_assets() {
   if [[ "${argus_SKIP_BLAZOR_ASSET_VERIFY:-0}" == "1" ]]; then
     echo "Skipping Blazor static asset verification because argus_SKIP_BLAZOR_ASSET_VERIFY=1."
@@ -448,6 +461,7 @@ if [[ "$argus_GCP_WORKERS" == "1" ]]; then
 fi
 
 argus_maybe_git_pull "$ROOT"
+argus_sync_version_metadata
 echo "Computing build stamp and component versions…"
 argus_export_build_stamp "$ROOT"
 argus_export_version_and_build_time "$ROOT"

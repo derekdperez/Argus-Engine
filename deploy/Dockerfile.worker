@@ -8,7 +8,8 @@ ARG PROJECT_DIR=ArgusEngine.Gatekeeper
 ARG APP_DLL=ArgusEngine.Gatekeeper.dll
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-ARG COMPONENT_VERSION=2.6.1
+
+.6.2
 ARG PROJECT_DIR
 
 WORKDIR /src
@@ -44,15 +45,18 @@ RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,shar
       -c Release -o /app/publish /p:UseAppHost=false \
       -p:maxcpucount -p:ParallelizePublish=true \
       /p:Version="${COMPONENT_VERSION}" \
-      /p:AssemblyVersion="2.6.1.0" \
-      /p:FileVersion="2.6.1.0" \
+      
+.6.2.0" \
+      
+.6.2.0" \
       /p:InformationalVersion="${COMPONENT_VERSION}"
 
 FROM argus-engine-base:local AS final
 ARG APP_DLL
 ARG BUILD_SOURCE_STAMP=unknown
 ARG BUILD_TIME_UTC=unknown
-ARG COMPONENT_VERSION=2.6.1
+
+.6.2
 
 WORKDIR /app
 

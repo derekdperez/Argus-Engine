@@ -8,12 +8,18 @@
       Directory.Build.targets is imported after project files, so these values
       intentionally override stale per-project <Version> metadata.
     -->
-    <ArgusEngineDeploymentVersion>2.6.1</ArgusEngineDeploymentVersion>
-    <Version>2.6.2</Version>
-    <PackageVersion>2.6.2</PackageVersion>
-    <AssemblyVersion>2.6.2.0</AssemblyVersion>
-    <FileVersion>2.6.2.0</FileVersion>
-    <InformationalVersion>2.6.2</InformationalVersion>
+    
+.6.2</ArgusEngineDeploymentVersion>
+    
+.6.2</Version>
+    
+.6.2</PackageVersion>
+    
+.6.2.0</AssemblyVersion>
+    
+.6.2.0</FileVersion>
+    
+.6.2</InformationalVersion>
   </PropertyGroup>
 
   <Target Name="ValidateArgusEngineDeploymentVersion" BeforeTargets="GenerateAssemblyInfo">

@@ -29,6 +29,11 @@ if [[ -f "$DEPLOY_DIR/lib-fast-hot-swap.sh" ]]; then
   source "$DEPLOY_DIR/lib-fast-hot-swap.sh"
 fi
 
+if [[ "${ARGUS_SKIP_VERSION_SYNC:-0}" != "1" && -x "$ROOT/scripts/update-version.sh" ]]; then
+  echo "Synchronizing version metadata..."
+  bash "$ROOT/scripts/update-version.sh"
+fi
+
 argus_quick_read_file_value() {
   local file="$1"
   [[ -f "$file" ]] || return 0

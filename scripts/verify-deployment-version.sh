@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-expected="${1:-2.6.1}"
+expected="2.6.2"
 fail=0
 
 check_file() {

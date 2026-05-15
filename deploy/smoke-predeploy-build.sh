@@ -7,8 +7,10 @@ cd "$ROOT"
 PROJECT="src/ArgusEngine.CommandCenter.Web/ArgusEngine.CommandCenter.Web.csproj"
 OUT_DIR="$ROOT/deploy/.smoke-predeploy/command-center-web"
 VERSION="${ARGUS_ENGINE_VERSION:-local-smoke}"
-ASSEMBLY_VERSION="${ARGUS_ASSEMBLY_VERSION:-2.6.3.0}"
-FILE_VERSION="${ARGUS_FILE_VERSION:-2.6.3.0}"
+ASSEMBLY_VERSION="${
+.6.2.0}"
+FILE_VERSION="${
+.6.2.0}"
 
 echo "Running predeploy smoke publish for Command Center Web..."
 rm -rf "$OUT_DIR"

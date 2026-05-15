@@ -155,12 +155,25 @@
     private void LoadVersionMetadata()
     {
         var assembly = typeof(CommandCenterAssemblyMarker).Assembly;
-        var releaseVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        var releaseVersion = Environment.GetEnvironmentVariable("ARGUS_COMPONENT_VERSION")
+            ?? Environment.GetEnvironmentVariable("ARGUS_ENGINE_VERSION")
+            ?? assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
             ?? assembly.GetName().Version?.ToString()
             ?? "unknown";
         releaseVersion = releaseVersion.Split('+', 2)[0];
 
         DateTimeOffset? buildTimeUtc = null;
+
+        var buildTimeFromEnv = Environment.GetEnvironmentVariable("ARGUS_BUILD_TIME_UTC");
+        if (!string.IsNullOrWhiteSpace(buildTimeFromEnv) &&
+            DateTimeOffset.TryParse(
+                buildTimeFromEnv,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsedFromEnv))
+        {
+            buildTimeUtc = parsedFromEnv;
+        }
 
         try
         {

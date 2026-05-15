@@ -21,12 +21,14 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -168,6 +170,33 @@ GLOBAL_INVALIDATORS = {
     "deploy/Dockerfile.commandcenter-host",
     "deploy/Dockerfile.worker",
     "deploy/Dockerfile.worker-enum",
+}
+
+GCP_WORKER_SERVICES = [
+    "worker-spider",
+    "worker-http-requester",
+    "worker-enum",
+    "worker-portscan",
+    "worker-highvalue",
+    "worker-techid",
+]
+
+GCP_SERVICE_PROJECT_DIR = {
+    "worker-spider": "ArgusEngine.Workers.Spider",
+    "worker-http-requester": "ArgusEngine.Workers.HttpRequester",
+    "worker-enum": "ArgusEngine.Workers.Enumeration",
+    "worker-portscan": "ArgusEngine.Workers.PortScan",
+    "worker-highvalue": "ArgusEngine.Workers.HighValue",
+    "worker-techid": "ArgusEngine.Workers.TechnologyIdentification",
+}
+
+GCP_SERVICE_APP_DLL = {
+    "worker-spider": "ArgusEngine.Workers.Spider.dll",
+    "worker-http-requester": "ArgusEngine.Workers.HttpRequester.dll",
+    "worker-enum": "ArgusEngine.Workers.Enumeration.dll",
+    "worker-portscan": "ArgusEngine.Workers.PortScan.dll",
+    "worker-highvalue": "ArgusEngine.Workers.HighValue.dll",
+    "worker-techid": "ArgusEngine.Workers.TechnologyIdentification.dll",
 }
 
 
@@ -410,6 +439,7 @@ def load_environment(paths: Paths) -> dict[str, str]:
     for path in [
         paths.deploy_dir / ".env",
         paths.deploy_dir / ".env.local",
+        paths.deploy_dir / "gcp" / ".env",
         paths.aws_dir / ".env",
         paths.aws_dir / ".env.generated",
     ]:
@@ -489,6 +519,8 @@ class ArgusDeployConsole:
             return self.deploy_sh(["--fresh", *rest])
         if command in {"--ecs-workers"}:
             return self.deploy_sh(["--ecs-workers", *rest])
+        if command in {"--gcp-workers", "--google-workers"}:
+            return self.gcp_from_args(["release", *rest])
         if command in {"--hot", "-hot"}:
             return self.deploy_sh(["--hot", *rest])
         if command in {"--image", "-image"}:
@@ -512,6 +544,8 @@ class ArgusDeployConsole:
             return self.clean()
         if command in {"ecs", "aws", "cloud"}:
             return self.ecs_from_args(rest)
+        if command in {"gcp", "google"}:
+            return self.gcp_from_args(rest)
         if command in {"services", "components"}:
             self.show_services()
             return 0
@@ -543,6 +577,7 @@ class ArgusDeployConsole:
                     "Monitor health, status, logs, queues, and worker counts",
                     "Operate services: restart, stop, smoke test, clean",
                     "AWS ECS / ECR deployment and monitoring",
+                    "Google Cloud Run worker deployment and scaling",
                     "Show changed/affected services",
                     "Open a command shell from the repo root",
                     "Exit",
@@ -560,9 +595,11 @@ class ArgusDeployConsole:
             elif choice == 4:
                 code = self.ecs_menu()
             elif choice == 5:
+                code = self.gcp_menu()
+            elif choice == 6:
                 self.show_changed_services()
                 code = 0
-            elif choice == 6:
+            elif choice == 7:
                 code = self.custom_shell()
             else:
                 return 0
@@ -774,6 +811,54 @@ class ArgusDeployConsole:
             return self.ecs_status()
         return 0
 
+    def gcp_menu(self) -> int:
+        choice = self.ui.choose(
+            "Google Cloud Run",
+            [
+                "Provision GCP APIs and Artifact Registry",
+                "Build and push worker images",
+                "Deploy/update worker services (default min=2, max=2)",
+                "Build, push, and deploy workers",
+                "Scale workers with autoscaling ranges",
+                "Set explicit manual worker counts",
+                "Show worker status",
+                "Teardown worker services",
+                "Back",
+            ],
+        )
+        if choice == 0:
+            return self.gcp_from_args(["provision"])
+        if choice == 1:
+            workers = self.select_services(include_infra=False, default="workers")
+            return self.gcp_from_args(["build", *workers])
+        if choice == 2:
+            workers = self.select_services(include_infra=False, default="workers")
+            return self.gcp_from_args(["deploy", *workers])
+        if choice == 3:
+            workers = self.select_services(include_infra=False, default="workers")
+            return self.gcp_from_args(["release", *workers])
+        if choice == 4:
+            workers = [w for w in self.worker_services() if w in GCP_WORKER_SERVICES] or list(GCP_WORKER_SERVICES)
+            specs: list[str] = []
+            for worker in workers:
+                min_count = self.ui.prompt_int(f"{worker} min", 2, minimum=0, maximum=100)
+                max_count = self.ui.prompt_int(f"{worker} max", max(min_count, 2), minimum=min_count, maximum=100)
+                specs.append(f"{worker}={min_count}:{max_count}")
+            return self.gcp_from_args(["scale", *specs])
+        if choice == 5:
+            workers = [w for w in self.worker_services() if w in GCP_WORKER_SERVICES] or list(GCP_WORKER_SERVICES)
+            specs = []
+            for worker in workers:
+                desired = self.ui.prompt_int(f"{worker} count", 2, minimum=0, maximum=100)
+                specs.append(f"{worker}={desired}")
+            return self.gcp_from_args(["scale", *specs])
+        if choice == 6:
+            return self.gcp_from_args(["status"])
+        if choice == 7:
+            workers = self.select_services(include_infra=False, default="workers")
+            return self.gcp_from_args(["teardown", *workers])
+        return 0
+
     # ---------- direct commands ----------
 
     def deploy_from_args(self, args: Sequence[str]) -> int:
@@ -782,6 +867,9 @@ class ArgusDeployConsole:
 
         if "--ecs-workers" in remaining:
             code = self.deploy_sh(["--ecs-workers", *[a for a in remaining if a != "--ecs-workers"]])
+        elif "--gcp-workers" in remaining or "--google-workers" in remaining:
+            args = [a for a in remaining if a not in {"--gcp-workers", "--google-workers"}]
+            code = self.gcp_from_args(["release", *args])
         elif "--fresh" in remaining or "-fresh" in remaining:
             code = self.deploy_sh(["--fresh", *[a for a in remaining if a not in {"--fresh", "-fresh"}]])
         elif "--image" in remaining or "-image" in remaining:
@@ -812,6 +900,8 @@ class ArgusDeployConsole:
         if target in {"ecs", "aws"}:
             counts = self.parse_count_pairs(args[1:])
             return self.apply_ecs_worker_scale(counts)
+        if target in {"gcp", "google"}:
+            return self.gcp_from_args(["scale", *args[1:]])
         if target in {"autoscale", "auto"}:
             return self.run_aws_script("autoscale-ecs-workers.sh", args[1:])
 
@@ -878,6 +968,549 @@ class ArgusDeployConsole:
 
         self.ui.error(f"Unknown ECS action: {action}")
         return 2
+
+    def gcp_from_args(self, args: Sequence[str]) -> int:
+        args = list(args)
+        if not args:
+            return self.gcp_menu()
+
+        action = args[0].lower()
+        rest = list(args[1:])
+
+        if action in {"help", "-h", "--help"}:
+            self.print_gcp_help()
+            return 0
+        if action in {"init", "configure"}:
+            return self.gcp_ensure_config()
+        if action in {"provision", "bootstrap"}:
+            ensure = self.gcp_ensure_config()
+            if ensure != 0:
+                return ensure
+            return self.gcp_provision()
+        if action in {"build", "push"}:
+            return self.gcp_build(rest)
+        if action == "deploy":
+            return self.gcp_deploy(rest)
+        if action == "release":
+            code = self.gcp_provision()
+            if code != 0:
+                return code
+            code = self.gcp_build(rest)
+            if code != 0:
+                return code
+            return self.gcp_deploy(rest)
+        if action == "scale":
+            return self.gcp_scale(rest)
+        if action == "status":
+            return self.gcp_status(rest)
+        if action in {"teardown", "destroy", "delete"}:
+            return self.gcp_teardown(rest)
+
+        self.ui.error(f"Unknown GCP action: {action}")
+        self.print_gcp_help()
+        return 2
+
+    def gcp_ensure_config(self) -> int:
+        gcp_dir = self.paths.deploy_dir / "gcp"
+        gcp_dir.mkdir(parents=True, exist_ok=True)
+
+        env_file = gcp_dir / ".env"
+        env_example = gcp_dir / ".env.example"
+        if not env_file.exists() and env_example.exists():
+            if self.options.dry_run:
+                self.ui.info(f"Would create {self.paths.rel(env_file)} from {self.paths.rel(env_example)}")
+            else:
+                shutil.copyfile(env_example, env_file)
+                self.ui.ok(f"Created {self.paths.rel(env_file)}")
+
+        service_env = Path(self.get_env("SERVICE_ENV_FILE", "deploy/gcp/service-env"))
+        if not service_env.is_absolute():
+            service_env = self.paths.repo_root / service_env
+        service_example = gcp_dir / "service-env.example"
+        if not service_env.exists() and service_example.exists():
+            service_env.parent.mkdir(parents=True, exist_ok=True)
+            if self.options.dry_run:
+                self.ui.info(f"Would create {self.paths.rel(service_env)} from {self.paths.rel(service_example)}")
+            else:
+                shutil.copyfile(service_example, service_env)
+                self.ui.ok(f"Created {self.paths.rel(service_env)}")
+
+        issues = self.gcp_missing_config()
+        if issues:
+            self.ui.warn("GCP configuration is incomplete:")
+            for issue in issues:
+                self.ui.warn(f"  - {issue}")
+            self.ui.info(f"Update {self.paths.rel(env_file)} and rerun.")
+            return 2
+        return 0
+
+    def gcp_missing_config(self) -> list[str]:
+        required = ["GCP_PROJECT_ID", "GCP_REGION", "GCP_ARTIFACT_REPOSITORY", "GCP_IMAGE_PREFIX"]
+        issues: list[str] = []
+        for key in required:
+            value = self.get_env(key, "").strip()
+            if not value or "replace" in value.lower():
+                issues.append(f"{key} is missing or still a placeholder")
+        service_env = Path(self.get_env("SERVICE_ENV_FILE", "deploy/gcp/service-env"))
+        if not service_env.is_absolute():
+            service_env = self.paths.repo_root / service_env
+        if not service_env.exists():
+            issues.append(f"SERVICE_ENV_FILE does not exist: {self.paths.rel(service_env)}")
+        return issues
+
+    def gcp_selected_workers(self, args: Sequence[str]) -> list[str]:
+        if not args:
+            return list(GCP_WORKER_SERVICES)
+        selected: list[str] = []
+        for raw in args:
+            worker = self.normalize_worker_name(raw)
+            if worker not in GCP_WORKER_SERVICES:
+                raise SystemExit(f"{raw} is not supported for GCP worker deployment.")
+            if worker not in selected:
+                selected.append(worker)
+        return selected
+
+    def gcp_tag(self) -> str:
+        tag = self.get_env("IMAGE_TAG", "").strip()
+        if tag and tag.lower() != "latest":
+            return tag
+        code, sha, _ = self.runner.capture(["git", "rev-parse", "--short=12", "HEAD"])
+        if code == 0 and sha.strip():
+            return sha.strip()
+        return time.strftime("%Y%m%d%H%M%S", time.gmtime())
+
+    def gcp_registry(self) -> str:
+        region = self.get_env("GCP_REGION", "us-central1")
+        project = self.get_env("GCP_PROJECT_ID")
+        repo = self.get_env("GCP_ARTIFACT_REPOSITORY", "argus-engine")
+        return f"{region}-docker.pkg.dev/{project}/{repo}"
+
+    def gcp_image_uri(self, worker: str, tag: str) -> str:
+        prefix = self.get_env("GCP_IMAGE_PREFIX", "argus-engine").strip("/")
+        return f"{self.gcp_registry()}/{prefix}/{worker}:{tag}"
+
+    def gcp_require_tools(self, *, for_build: bool = False) -> int:
+        missing: list[str] = []
+        for cmd in ["gcloud"]:
+            if which(cmd) is None:
+                missing.append(cmd)
+        if for_build and which("docker") is None:
+            missing.append("docker")
+        if missing:
+            self.ui.error(f"Missing required commands: {', '.join(missing)}")
+            return 127
+        return 0
+
+    def gcp_login_and_project(self) -> int:
+        project = self.get_env("GCP_PROJECT_ID")
+        code = self.runner.run(["gcloud", "auth", "list", "--filter=status:ACTIVE", "--format=value(account)"])
+        if code != 0:
+            return code
+        return self.runner.run(["gcloud", "config", "set", "project", project])
+
+    def gcp_provision(self) -> int:
+        ensure = self.gcp_ensure_config()
+        if ensure != 0:
+            return ensure
+        req = self.gcp_require_tools(for_build=False)
+        if req != 0:
+            return req
+        login = self.gcp_login_and_project()
+        if login != 0:
+            return login
+
+        project = self.get_env("GCP_PROJECT_ID")
+        region = self.get_env("GCP_REGION", "us-central1")
+        repo = self.get_env("GCP_ARTIFACT_REPOSITORY", "argus-engine")
+
+        code = self.runner.run(
+            [
+                "gcloud",
+                "services",
+                "enable",
+                "run.googleapis.com",
+                "artifactregistry.googleapis.com",
+                "iam.googleapis.com",
+                "--project",
+                project,
+            ]
+        )
+        if code != 0:
+            return code
+
+        describe = self.runner.run(
+            [
+                "gcloud",
+                "artifacts",
+                "repositories",
+                "describe",
+                repo,
+                "--project",
+                project,
+                "--location",
+                region,
+            ]
+        )
+        if describe != 0:
+            code = self.runner.run(
+                [
+                    "gcloud",
+                    "artifacts",
+                    "repositories",
+                    "create",
+                    repo,
+                    "--project",
+                    project,
+                    "--location",
+                    region,
+                    "--repository-format",
+                    "docker",
+                    "--description",
+                    "Argus Engine worker images",
+                ]
+            )
+            if code != 0:
+                return code
+
+        return self.runner.run(["gcloud", "auth", "configure-docker", f"{region}-docker.pkg.dev", "--quiet"])
+
+    def gcp_build_base_images(self) -> int:
+        code = self.runner.run(
+            [
+                "docker",
+                "build",
+                "-t",
+                "argus-engine-base:local",
+                "-f",
+                str(self.paths.deploy_dir / "Dockerfile.base-runtime"),
+                str(self.paths.deploy_dir),
+            ]
+        )
+        if code != 0:
+            return code
+        return self.runner.run(
+            [
+                "docker",
+                "build",
+                "-t",
+                "argus-recon-base:local",
+                "-f",
+                str(self.paths.deploy_dir / "Dockerfile.base-recon"),
+                str(self.paths.deploy_dir),
+            ]
+        )
+
+    def gcp_build(self, worker_args: Sequence[str]) -> int:
+        ensure = self.gcp_ensure_config()
+        if ensure != 0:
+            return ensure
+        req = self.gcp_require_tools(for_build=True)
+        if req != 0:
+            return req
+        login = self.gcp_login_and_project()
+        if login != 0:
+            return login
+        workers = self.gcp_selected_workers(worker_args)
+        tag = self.gcp_tag()
+
+        code = self.runner.run(["gcloud", "auth", "configure-docker", f"{self.get_env('GCP_REGION', 'us-central1')}-docker.pkg.dev", "--quiet"])
+        if code != 0:
+            return code
+
+        code = self.gcp_build_base_images()
+        if code != 0:
+            return code
+
+        for worker in workers:
+            dockerfile = self.paths.deploy_dir / ("Dockerfile.worker-enum" if worker == "worker-enum" else "Dockerfile.worker")
+            image = self.gcp_image_uri(worker, tag)
+            args = [
+                "docker",
+                "build",
+                "-f",
+                str(dockerfile),
+                "--build-arg",
+                f"PROJECT_DIR={GCP_SERVICE_PROJECT_DIR[worker]}",
+                "--build-arg",
+                f"APP_DLL={GCP_SERVICE_APP_DLL[worker]}",
+                "--build-arg",
+                f"BUILD_SOURCE_STAMP={tag}",
+                "--build-arg",
+                f"COMPONENT_VERSION={self.version() or '2.6.2'}",
+                "-t",
+                image,
+                str(self.paths.repo_root),
+            ]
+            if worker == "worker-enum":
+                args.extend(
+                    [
+                        "--build-arg",
+                        f"SUBFINDER_VERSION={self.get_env('SUBFINDER_VERSION', '2.14.0')}",
+                        "--build-arg",
+                        f"AMASS_VERSION={self.get_env('AMASS_VERSION', '5.1.1')}",
+                    ]
+                )
+            code = self.runner.run(args)
+            if code != 0:
+                return code
+            code = self.runner.run(["docker", "push", image])
+            if code != 0:
+                return code
+            self.ui.ok(f"Pushed {image}")
+        return 0
+
+    def gcp_worker_slug(self, worker: str) -> str:
+        return worker.removeprefix("worker-")
+
+    def gcp_service_name(self, worker: str) -> str:
+        return f"argus-worker-{self.gcp_worker_slug(worker)}"
+
+    def gcp_service_default_min(self, worker: str) -> int:
+        override = self.get_env(f"GCP_MIN_INSTANCES_{worker.upper().replace('-', '_')}", "")
+        if override:
+            try:
+                return max(0, int(override))
+            except ValueError:
+                pass
+        return 2
+
+    def gcp_service_default_max(self, worker: str) -> int:
+        override = self.get_env(f"GCP_MAX_INSTANCES_{worker.upper().replace('-', '_')}", "")
+        if override:
+            try:
+                return max(self.gcp_service_default_min(worker), int(override))
+            except ValueError:
+                pass
+        return max(2, self.gcp_service_default_min(worker))
+
+    def gcp_service_cpu(self, worker: str) -> str:
+        return self.get_env(f"GCP_CPU_{worker.upper().replace('-', '_')}", self.get_env("GCP_CPU", "1"))
+
+    def gcp_service_memory(self, worker: str) -> str:
+        return self.get_env(f"GCP_MEMORY_{worker.upper().replace('-', '_')}", self.get_env("GCP_MEMORY", "1Gi"))
+
+    def gcp_service_env_file(self) -> Path:
+        env_file = Path(self.get_env("SERVICE_ENV_FILE", "deploy/gcp/service-env"))
+        if not env_file.is_absolute():
+            env_file = self.paths.repo_root / env_file
+        return env_file
+
+    def gcp_create_env_vars_file(self) -> Path:
+        source = self.gcp_service_env_file()
+        values = parse_env_file(source)
+        values.setdefault("Argus__SkipStartupDatabase", "true")
+        values.setdefault("ARGUS_SKIP_STARTUP_DATABASE", "1")
+
+        temp = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".yaml", delete=False)
+        with temp as out:
+            for key, value in values.items():
+                out.write(f"{key}: {json.dumps(value)}\n")
+        return Path(temp.name)
+
+    def gcp_deploy(self, worker_args: Sequence[str]) -> int:
+        ensure = self.gcp_ensure_config()
+        if ensure != 0:
+            return ensure
+        req = self.gcp_require_tools(for_build=False)
+        if req != 0:
+            return req
+        login = self.gcp_login_and_project()
+        if login != 0:
+            return login
+
+        workers = self.gcp_selected_workers(worker_args)
+        tag = self.gcp_tag()
+        env_file = self.gcp_create_env_vars_file()
+        try:
+            for worker in workers:
+                image = self.gcp_image_uri(worker, tag)
+                service = self.gcp_service_name(worker)
+                min_instances = self.gcp_service_default_min(worker)
+                max_instances = self.gcp_service_default_max(worker)
+                args = [
+                    "gcloud",
+                    "run",
+                    "deploy",
+                    service,
+                    "--project",
+                    self.get_env("GCP_PROJECT_ID"),
+                    "--region",
+                    self.get_env("GCP_REGION", "us-central1"),
+                    "--image",
+                    image,
+                    "--min-instances",
+                    str(min_instances),
+                    "--max-instances",
+                    str(max_instances),
+                    "--cpu",
+                    self.gcp_service_cpu(worker),
+                    "--memory",
+                    self.gcp_service_memory(worker),
+                    "--concurrency",
+                    self.get_env("GCP_WORKER_CONCURRENCY", "4"),
+                    "--env-vars-file",
+                    str(env_file),
+                    "--ingress",
+                    "internal-and-cloud-load-balancing",
+                    "--quiet",
+                ]
+                service_account = self.get_env("GCP_SERVICE_ACCOUNT", "").strip()
+                if service_account:
+                    args.extend(["--service-account", service_account])
+                vpc_connector = self.get_env("GCP_VPC_CONNECTOR", "").strip()
+                if vpc_connector:
+                    args.extend(["--vpc-connector", vpc_connector])
+                vpc_egress = self.get_env("GCP_VPC_EGRESS", "").strip()
+                if vpc_egress:
+                    args.extend(["--vpc-egress", vpc_egress])
+                code = self.runner.run(args)
+                if code != 0:
+                    return code
+                self.ui.ok(f"Deployed {service} min={min_instances} max={max_instances}")
+        finally:
+            if env_file.exists() and not self.options.dry_run:
+                env_file.unlink(missing_ok=True)
+        return 0
+
+    def parse_gcp_scale_specs(self, tokens: Sequence[str]) -> dict[str, tuple[int, int]]:
+        specs: dict[str, tuple[int, int]] = {}
+        for token in tokens:
+            if "=" not in token:
+                self.ui.warn(f"Ignoring invalid scale token: {token}")
+                continue
+            raw_worker, raw_value = token.split("=", 1)
+            worker = self.normalize_worker_name(raw_worker)
+            if worker not in GCP_WORKER_SERVICES:
+                raise SystemExit(f"{raw_worker} is not a GCP worker service.")
+            if ":" in raw_value:
+                raw_min, raw_max = raw_value.split(":", 1)
+                min_instances = self.parse_count(raw_min)
+                max_instances = max(min_instances, self.parse_count(raw_max))
+            else:
+                explicit = self.parse_count(raw_value)
+                min_instances = explicit
+                max_instances = explicit
+            specs[worker] = (min_instances, max_instances)
+        return specs
+
+    def gcp_scale(self, tokens: Sequence[str]) -> int:
+        ensure = self.gcp_ensure_config()
+        if ensure != 0:
+            return ensure
+        req = self.gcp_require_tools(for_build=False)
+        if req != 0:
+            return req
+        login = self.gcp_login_and_project()
+        if login != 0:
+            return login
+
+        specs = self.parse_gcp_scale_specs(tokens)
+        if not specs:
+            for worker in GCP_WORKER_SERVICES:
+                specs[worker] = (2, 2)
+
+        for worker, (min_instances, max_instances) in specs.items():
+            code = self.runner.run(
+                [
+                    "gcloud",
+                    "run",
+                    "services",
+                    "update",
+                    self.gcp_service_name(worker),
+                    "--project",
+                    self.get_env("GCP_PROJECT_ID"),
+                    "--region",
+                    self.get_env("GCP_REGION", "us-central1"),
+                    "--min-instances",
+                    str(min_instances),
+                    "--max-instances",
+                    str(max_instances),
+                    "--quiet",
+                ]
+            )
+            if code != 0:
+                return code
+            self.ui.ok(f"Scaled {worker} min={min_instances} max={max_instances}")
+        return 0
+
+    def gcp_status(self, worker_args: Sequence[str]) -> int:
+        ensure = self.gcp_ensure_config()
+        if ensure != 0:
+            return ensure
+        req = self.gcp_require_tools(for_build=False)
+        if req != 0:
+            return req
+        login = self.gcp_login_and_project()
+        if login != 0:
+            return login
+
+        workers = self.gcp_selected_workers(worker_args)
+        exit_code = 0
+        for worker in workers:
+            code = self.runner.run(
+                [
+                    "gcloud",
+                    "run",
+                    "services",
+                    "describe",
+                    self.gcp_service_name(worker),
+                    "--project",
+                    self.get_env("GCP_PROJECT_ID"),
+                    "--region",
+                    self.get_env("GCP_REGION", "us-central1"),
+                    "--format",
+                    "yaml(metadata.name,status.url,spec.template.metadata.annotations,spec.template.spec.containerConcurrency)",
+                ]
+            )
+            if code != 0:
+                exit_code = code
+        return exit_code
+
+    def gcp_teardown(self, worker_args: Sequence[str]) -> int:
+        ensure = self.gcp_ensure_config()
+        if ensure != 0:
+            return ensure
+        req = self.gcp_require_tools(for_build=False)
+        if req != 0:
+            return req
+        login = self.gcp_login_and_project()
+        if login != 0:
+            return login
+
+        workers = self.gcp_selected_workers(worker_args)
+        for worker in workers:
+            code = self.runner.run(
+                [
+                    "gcloud",
+                    "run",
+                    "services",
+                    "delete",
+                    self.gcp_service_name(worker),
+                    "--project",
+                    self.get_env("GCP_PROJECT_ID"),
+                    "--region",
+                    self.get_env("GCP_REGION", "us-central1"),
+                    "--quiet",
+                ]
+            )
+            if code != 0:
+                return code
+        return 0
+
+    def print_gcp_help(self) -> None:
+        print(
+            """
+GCP commands:
+  deploy/deploy.py gcp configure
+  deploy/deploy.py gcp provision
+  deploy/deploy.py gcp build [worker...]
+  deploy/deploy.py gcp deploy [worker...]
+  deploy/deploy.py gcp release [worker...]
+  deploy/deploy.py gcp scale [worker=min:max|worker=count ...]
+  deploy/deploy.py gcp status [worker...]
+  deploy/deploy.py gcp teardown [worker...]
+""".strip()
+        )
 
     # ---------- action helpers ----------
 
@@ -1522,10 +2155,12 @@ Deploy/update:
   deploy/deploy.py deploy --image [service...]
   deploy/deploy.py deploy --fresh
   deploy/deploy.py deploy --ecs-workers
+  deploy/deploy.py deploy --gcp-workers
 
 Scaling:
   deploy/deploy.py scale local worker-spider=4 worker-enum=2 worker-http-requester=2
   deploy/deploy.py scale ecs worker-spider=6 worker-techid=1
+  deploy/deploy.py scale gcp worker-spider=2:10 worker-enum=2
   deploy/deploy.py scale autoscale
 
 Monitoring:
@@ -1546,6 +2181,16 @@ AWS/ECS:
   deploy/deploy.py ecs replace [worker-service...]
   deploy/deploy.py ecs status
 
+Google Cloud Run:
+  deploy/deploy.py gcp configure
+  deploy/deploy.py gcp provision
+  deploy/deploy.py gcp build [worker...]
+  deploy/deploy.py gcp deploy [worker...]
+  deploy/deploy.py gcp release [worker...]
+  deploy/deploy.py gcp scale [worker=min:max|worker=count ...]
+  deploy/deploy.py gcp status [worker...]
+  deploy/deploy.py gcp teardown [worker...]
+
 Global options:
   --dry-run, -n       Print commands without executing them
   --yes, -y          Assume yes for destructive confirmations
@@ -1555,7 +2200,7 @@ Global options:
 
 Compatibility:
   deploy.py still accepts deploy.sh handoff-style arguments such as:
-  up, --fresh, -fresh, --ecs-workers, --hot, --image, logs, status, restart, down, smoke.
+  up, --fresh, -fresh, --ecs-workers, --gcp-workers, --hot, --image, logs, status, restart, down, smoke.
 """.strip()
         )
 
@@ -1570,6 +2215,7 @@ Compatibility:
             ("Git", "git"),
             ("Bash", "bash"),
             ("AWS CLI", "aws"),
+            ("gcloud", "gcloud"),
         ]
 
         for name, exe in checks:

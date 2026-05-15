@@ -425,8 +425,7 @@
     private void SetDesiredMax(WorkerType worker, int value) =>
         _desiredMax[worker] = Math.Clamp(Math.Max(value, DesiredMin(worker)), 0, 100);
 
-    private static int DefaultMin(WorkerType worker) =>
-        worker is WorkerType.Spider or WorkerType.Enumeration or WorkerType.HttpRequester ? 8 : 2;
+    private static int DefaultMin(WorkerType worker) => 2;
 
     private void LogResult(BulkDeployResult result)
     {

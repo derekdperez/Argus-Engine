@@ -609,10 +609,9 @@ argus_cloud_service_dockerfile() {
 }
 
 argus_cloud_service_default_instances() {
-  # Operation Google Deploy starts with heavier front-door discovery capacity:
-  # spider, enum, and HTTP requester get 8 instances; all other worker pools get 2.
+  # Start all worker services at two instances by default.
   case "$1" in
-    worker-spider|worker-http-requester|worker-enum) echo "8" ;;
+    worker-spider|worker-http-requester|worker-enum|worker-portscan|worker-highvalue|worker-techid) echo "2" ;;
     *) echo "2" ;;
   esac
 }

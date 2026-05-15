@@ -320,7 +320,5 @@ internal sealed class CloudRunWorkerManager : IAsyncDisposable
     };
 
     private int InitialMinInstances(WorkerType worker) =>
-        worker is WorkerType.Spider or WorkerType.Enumeration or WorkerType.HttpRequester
-            ? Math.Max(8, _opts.WorkerMinInstances)
-            : Math.Max(2, _opts.WorkerMinInstances);
+        Math.Max(2, _opts.WorkerMinInstances);
 }

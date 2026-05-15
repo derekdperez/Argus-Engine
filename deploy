@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ "$(id -u)" -eq 0 ]; then
+  echo "Argus deploy must run as a regular user, not root." >&2
+  exit 1
+fi
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec python3 "$SCRIPT_DIR/deploy.py" "$@"

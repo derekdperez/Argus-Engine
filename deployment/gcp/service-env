@@ -1,12 +1,12 @@
-ConnectionStrings__Postgres=Host=10.142.0.3;Port=5432;Database=argus_engine;Username=argus;Password=argus
-ConnectionStrings__FileStore=Host=10.142.0.3;Port=5432;Database=argus_engine_files;Username=argus;Password=argus
-ConnectionStrings__Redis=10.142.0.3:6379
+ConnectionStrings__Postgres=Host=34.148.132.67;Port=5432;Database=argus_engine;Username=argus;Password=argus
+ConnectionStrings__FileStore=Host=34.148.132.67;Port=5432;Database=argus_engine_files;Username=argus;Password=argus
+ConnectionStrings__Redis=34.148.132.67:6379
 
-RabbitMq__Host=10.142.0.3
+RabbitMq__Host=34.148.132.67
 RabbitMq__Username=argus
 RabbitMq__Password=argus
 RabbitMq__VirtualHost=/
-RabbitMq__ManagementUrl=http://10.142.0.3:15672
+RabbitMq__ManagementUrl=http://34.148.132.67:15672
 
 Argus__SkipStartupDatabase=true
 ARGUS_SKIP_STARTUP_DATABASE=1

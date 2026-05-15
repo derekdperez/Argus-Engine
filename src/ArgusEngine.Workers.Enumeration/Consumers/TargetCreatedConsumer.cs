@@ -1,36 +1,33 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using MassTransit;
-using ArgusEngine.Application.Events;
+using ArgusEngine.Application.Orchestration;
 using ArgusEngine.Application.Workers;
-using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 
 namespace ArgusEngine.Workers.Enumeration.Consumers;
 
 public sealed class TargetCreatedConsumer(
     IWorkerToggleReader toggles,
-    IEventOutbox outbox,
-    IOptions<SubdomainEnumerationOptions> options,
+    IReconOrchestrator reconOrchestrator,
     ILogger<TargetCreatedConsumer> logger) : IConsumer<TargetCreated>
 {
-    private static readonly Action<ILogger, string, Guid, Exception?> LogTriggeringProvider =
-        LoggerMessage.Define<string, Guid>(
+    private static readonly Action<ILogger, Guid, string, Exception?> LogAttaching =
+        LoggerMessage.Define<Guid, string>(
             LogLevel.Information,
-            new EventId(1, nameof(LogTriggeringProvider)),
-            "TargetCreated: triggering {Provider} enumeration for target {TargetId}");
+            new EventId(1, nameof(LogAttaching)),
+            "TargetCreated: attaching ReconOrchestrator to target {TargetId} ({RootDomain}).");
 
-    private static readonly Action<ILogger, Guid, Exception?> LogNoProviders =
-        LoggerMessage.Define<Guid>(
+    private static readonly Action<ILogger, Guid, bool, int, int, int, int, bool, Exception?> LogTickCompleted =
+        LoggerMessage.Define<Guid, bool, int, int, int, int, bool>(
             LogLevel.Information,
-            new EventId(2, nameof(LogNoProviders)),
-            "TargetCreated: no enumeration providers enabled for target {TargetId}");
+            new EventId(2, nameof(LogTickCompleted)),
+            "TargetCreated: ReconOrchestrator tick finished for target {TargetId}. Claimed={Claimed}, ProvidersQueued={ProvidersQueued}, SubdomainsChecked={SubdomainsChecked}, SeedsQueued={SeedsQueued}, IncompleteSubdomains={IncompleteSubdomains}, Completed={Completed}");
 
     private static readonly Action<ILogger, Guid, Exception?> LogEnumerationDisabled =
         LoggerMessage.Define<Guid>(
             LogLevel.Information,
             new EventId(3, nameof(LogEnumerationDisabled)),
-            "TargetCreated: enumeration worker disabled; skipping target {TargetId}");
+            "TargetCreated: enumeration worker disabled; skipping ReconOrchestrator attach for target {TargetId}.");
 
     public async Task Consume(ConsumeContext<TargetCreated> context)
     {
@@ -41,53 +38,26 @@ public sealed class TargetCreatedConsumer(
         }
 
         var m = context.Message;
-        var cfg = options.Value;
-        if (!cfg.Enabled)
-            return;
+        LogAttaching(logger, m.TargetId, m.RootDomain, null);
 
-        var correlation = m.CorrelationId == Guid.Empty ? NewId.NextGuid() : m.CorrelationId;
-        var causation = m.EventId == Guid.Empty ? correlation : m.EventId;
-        var triggeredCount = 0;
+        await reconOrchestrator.AttachToTargetAsync(m.TargetId, "target-created", context.CancellationToken)
+            .ConfigureAwait(false);
 
-        if (cfg.Subfinder.Enabled)
-        {
-            LogTriggeringProvider(logger, "subfinder", m.TargetId, null);
-            await outbox.EnqueueAsync(
-                new SubdomainEnumerationRequested(
-                    m.TargetId,
-                    m.RootDomain,
-                    "subfinder",
-                    "target-created",
-                    DateTimeOffset.UtcNow,
-                    correlation,
-                    EventId: NewId.NextGuid(),
-                    CausationId: causation,
-                    Producer: "worker-enum"),
-                context.CancellationToken).ConfigureAwait(false);
-            triggeredCount++;
-        }
+        var result = await reconOrchestrator.TickTargetAsync(
+                m.TargetId,
+                $"target-created-{Environment.MachineName}",
+                context.CancellationToken)
+            .ConfigureAwait(false);
 
-        if (cfg.Amass.Enabled)
-        {
-            LogTriggeringProvider(logger, "amass", m.TargetId, null);
-            await outbox.EnqueueAsync(
-                new SubdomainEnumerationRequested(
-                    m.TargetId,
-                    m.RootDomain,
-                    "amass",
-                    "target-created",
-                    DateTimeOffset.UtcNow,
-                    correlation,
-                    EventId: NewId.NextGuid(),
-                    CausationId: causation,
-                    Producer: "worker-enum"),
-                context.CancellationToken).ConfigureAwait(false);
-            triggeredCount++;
-        }
-
-        if (triggeredCount == 0)
-        {
-            LogNoProviders(logger, m.TargetId, null);
-        }
+        LogTickCompleted(
+            logger,
+            m.TargetId,
+            result.Claimed,
+            result.ProvidersQueued,
+            result.SubdomainsChecked,
+            result.SubdomainSeedsQueued,
+            result.IncompleteSubdomains,
+            result.Completed,
+            null);
     }
 }

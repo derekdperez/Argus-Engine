@@ -9,6 +9,7 @@ using ArgusEngine.Infrastructure.Configuration;
 using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Messaging;
 using ArgusEngine.Infrastructure.Observability;
+using ArgusEngine.Infrastructure.Orchestration;
 using ArgusEngine.Workers.Enumeration.Consumers;
 using ArgusEngine.Workers.Enumeration;
 
@@ -21,6 +22,7 @@ try
     builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
     builder.Services.AddArgusWorkerHeartbeat(WorkerKeys.Enumeration);
     builder.Services.AddScoped<IWorkerHealthCheck, EnumWorkerHealthCheck>();
+    builder.Services.AddHostedService<ReconOrchestratorHostedService>();
 
     builder.Services.AddArgusRabbitMq(
         builder.Configuration,

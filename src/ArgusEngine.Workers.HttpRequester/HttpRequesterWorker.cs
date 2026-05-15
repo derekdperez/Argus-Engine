@@ -1,8 +1,10 @@
 using System.Net.Http.Headers;
 using System.Net.Sockets;
+using System.Text.Json;
 using ArgusEngine.Application.Assets;
 using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Application.Http;
+using ArgusEngine.Application.Orchestration;
 using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Assets;
 using ArgusEngine.Contracts.Events;
@@ -27,9 +29,15 @@ public sealed class HttpRequesterWorker(
     AdaptiveConcurrencyController concurrency,
     IHttpRateLimiter rateLimiter,
     ProxyHttpClientProvider proxyHttpClientProvider,
+    IReconProfileAssignmentService reconProfiles,
     IPublishEndpoint publishEndpoint,
     ILogger<HttpRequesterWorker> logger) : BackgroundService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = false
+    };
+
     private HttpRequestQueueSettings? _currentSettings;
     private DateTimeOffset _lastSettingsFetch = DateTimeOffset.MinValue;
 
@@ -175,8 +183,14 @@ public sealed class HttpRequesterWorker(
                 LogProxySelected(logger, string.IsNullOrWhiteSpace(proxy.Id) ? proxy.CacheKey : proxy.Id, item.DomainKey, null);
             }
 
+            var reconProfile = await ResolveReconProfileAsync(settings, item, proxy, cancellationToken).ConfigureAwait(false);
+            if (reconProfile is not null)
+            {
+                await ApplyReconDelayAsync(reconProfile, cancellationToken).ConfigureAwait(false);
+            }
+
             using var request = new HttpRequestMessage(new HttpMethod(item.Method), item.RequestUrl);
-            ApplyStandardHeaders(request, opt);
+            ApplyStandardHeaders(request, opt, reconProfile);
 
             using var response = await client.SendAsync(
                     request,
@@ -257,15 +271,96 @@ public sealed class HttpRequesterWorker(
         }
     }
 
-    private static void ApplyStandardHeaders(HttpRequestMessage request, HttpRequesterOptions options)
+    private async Task<ReconHeaderProfile?> ResolveReconProfileAsync(
+        HttpRequestQueueSettings? settings,
+        HttpRequestQueueItem item,
+        ProxyServerConfiguration? proxy,
+        CancellationToken cancellationToken)
+    {
+        if (settings is null || !settings.Enabled)
+        {
+            return null;
+        }
+
+        var subdomainKey = ProxyRouting.NormalizeAssignmentKey(item.DomainKey, item.RequestUrl);
+        if (string.IsNullOrWhiteSpace(subdomainKey))
+        {
+            return null;
+        }
+
+        var request = new ReconProfileAssignmentRequest(
+            item.TargetId,
+            subdomainKey,
+            BuildMachineKey(proxy),
+            proxy?.Name ?? Environment.MachineName,
+            string.IsNullOrWhiteSpace(proxy?.PublicIpAddress) ? null : proxy.PublicIpAddress,
+            DateTimeOffset.UtcNow);
+
+        return await reconProfiles.GetOrCreateProfileAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string BuildMachineKey(ProxyServerConfiguration? proxy)
+    {
+        if (!string.IsNullOrWhiteSpace(proxy?.PublicIpAddress))
+        {
+            return $"ip:{proxy.PublicIpAddress.Trim().ToLowerInvariant()}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(proxy?.Id))
+        {
+            return $"proxy:{proxy.Id.Trim().ToLowerInvariant()}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(proxy?.Host) && proxy.Port > 0)
+        {
+            return $"proxy:{proxy.Host.Trim().ToLowerInvariant()}:{proxy.Port}";
+        }
+
+        return $"host:{Environment.MachineName.Trim().ToLowerInvariant()}";
+    }
+
+    private static async Task ApplyReconDelayAsync(ReconHeaderProfile profile, CancellationToken cancellationToken)
+    {
+        var min = Math.Clamp(profile.RandomDelayMinMs, 0, 60_000);
+        var max = Math.Clamp(profile.RandomDelayMaxMs, min, 120_000);
+        var randomDelay = profile.RandomDelayEnabled ? Random.Shared.Next(min, max + 1) : 0;
+        var rateDelay = profile.RequestsPerMinutePerSubdomain > 0
+            ? (int)Math.Ceiling(60_000.0 / profile.RequestsPerMinutePerSubdomain)
+            : 0;
+        var delayMs = Math.Max(randomDelay, rateDelay);
+
+        if (delayMs > 0)
+        {
+            await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static void ApplyStandardHeaders(
+        HttpRequestMessage request,
+        HttpRequesterOptions options,
+        ReconHeaderProfile? reconProfile)
     {
         request.Headers.UserAgent.Clear();
+        request.Headers.Accept.Clear();
+
+        if (reconProfile is not null && reconProfile.Headers.Count > 0)
+        {
+            foreach (var header in reconProfile.Headers)
+            {
+                if (!string.IsNullOrWhiteSpace(header.Key) && !string.IsNullOrWhiteSpace(header.Value))
+                {
+                    request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+            }
+
+            return;
+        }
+
         if (!string.IsNullOrWhiteSpace(options.UserAgent))
         {
             request.Headers.TryAddWithoutValidation("User-Agent", options.UserAgent);
         }
 
-        request.Headers.Accept.Clear();
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
     }
 
@@ -318,7 +413,16 @@ public sealed class HttpRequesterWorker(
                     .SetProperty(q => q.LockedUntilUtc, (DateTimeOffset?)null)
                     .SetProperty(q => q.LastHttpStatus, snapshot.StatusCode)
                     .SetProperty(q => q.DurationMs, (long)snapshot.DurationMs)
-                    .SetProperty(q => q.ResponseBodyPreview, Truncate(snapshot.ResponseBody ?? string.Empty, 4096)),
+                    .SetProperty(q => q.RequestHeadersJson, JsonSerializer.Serialize(snapshot.RequestHeaders, JsonOptions))
+                    .SetProperty(q => q.ResponseHeadersJson, JsonSerializer.Serialize(snapshot.ResponseHeaders, JsonOptions))
+                    .SetProperty(q => q.ResponseBody, snapshot.ResponseBody)
+                    .SetProperty(q => q.ResponseContentType, snapshot.ContentType)
+                    .SetProperty(q => q.ResponseContentLength, snapshot.ResponseSizeBytes)
+                    .SetProperty(q => q.FinalUrl, snapshot.FinalUrl)
+                    .SetProperty(q => q.RedirectCount, snapshot.RedirectCount)
+                    .SetProperty(q => q.RedirectChainJson, JsonSerializer.Serialize(snapshot.RedirectChain, JsonOptions))
+                    .SetProperty(q => q.ResponseBodyPreview, Truncate(snapshot.ResponseBody ?? string.Empty, 4096))
+                    .SetProperty(q => q.ResponseBodyTruncated, false),
                 cancellationToken)
             .ConfigureAwait(false);
     }

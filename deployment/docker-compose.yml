@@ -350,6 +350,37 @@ services:
       command-center-bootstrapper:
         condition: service_completed_successfully
 
+  command-center-cloud-deploy-api:
+    image: argus-engine/command-center-cloud-deploy-api:${ARGUS_ENGINE_VERSION:-2.6.3}
+    restart: unless-stopped
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.commandcenter-host
+      args:
+        <<: *dotnet-build-args
+        PROJECT_DIR: ArgusEngine.CommandCenter.CloudDeploy.Api
+        APP_DLL: ArgusEngine.CommandCenter.CloudDeploy.Api.dll
+    environment:
+      <<: *common-env
+      ASPNETCORE_URLS: http://+:8080
+    ports:
+      - "8089:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      command-center-bootstrapper:
+        condition: service_completed_successfully
+
   command-center-bootstrapper:
     image: argus-engine/command-center-bootstrapper:${ARGUS_ENGINE_VERSION:-2.6.3}
     build:

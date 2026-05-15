@@ -357,127 +357,82 @@
             <div class="cc-panel-header">
                 <div>
                     <h2>Workers</h2>
-                    <p class="cc-muted">Loaded from the worker-control API in a bounded refresh cycle.</p>
+                    <p class="cc-muted">All workers across all providers. Provider-level autoscale controls at the top.</p>
                 </div>
                 <div class="cc-toolbar">
                     <button class="cc-btn" @onclick="ReloadWorkersAsync" disabled="@_workersLoading">Reload</button>
-                    <button class="cc-btn" @onclick="ReloadCloudWorkersAsync" disabled="@_workersLoading">Refresh cloud</button>
+                    <button class="cc-btn" @onclick="ApplyScaleAllAsync" disabled="@_workersLoading">Apply Scale All</button>
                 </div>
             </div>
 
-            <h3>Local worker controls</h3>
-            <ArgusDataGrid TGridItem="JsonElement"
-                           Items="@WorkerRows.AsQueryable()"
-                           RowMatches="@JsonRowMatches"
-                           SearchText="@_workerSearch"
-                           SearchTextChanged="@((string value) => _workerSearch = value)"
-                           SearchPlaceholder="Search workers..."
-                           IsLoading="@_workersLoading"
-                           EmptyText="No local workers found."
-                           PersistKey="command-center-workers"
-                           EnableCsvExport="true"
-                           ExportFileName="workers.csv"
-                           VirtualizedHeightPixels="420"
-                           ItemKey="@RowKeyObject">
-                <ConfigurationTemplate>
-                    @ColumnPicker(WorkerGridColumns)
-                </ConfigurationTemplate>
-                <ChildContent>
-                    @if (ColumnVisible("workers.name"))
-                    {
-                        <TemplateColumn Title="Worker" Context="worker" SortBy="@SortWorkerName" Class="wide-col">
-                            <span class="argus-dg-clip" title="@Text(worker, "displayName", "DisplayName", "serviceName", "ServiceName", "name", "Name", "id", "Id")">@Display(Text(worker, "displayName", "DisplayName", "serviceName", "ServiceName", "name", "Name", "id", "Id"))</span>
-                        </TemplateColumn>
-                    }
-                    @if (ColumnVisible("workers.state"))
-                    {
-                        <TemplateColumn Title="State" Context="worker" SortBy="@SortWorkerState"><span class="cc-pill">@Display(Text(worker, "overallState", "OverallState", "status", "Status", "state", "State"))</span></TemplateColumn>
-                    }
-                    @if (ColumnVisible("workers.running"))
-                    {
-                        <TemplateColumn Title="Running" Context="worker" SortBy="@SortWorkerRunning">@Display(Text(worker, "runningCount", "RunningCount"))</TemplateColumn>
-                    }
-                    @if (ColumnVisible("workers.total"))
-                    {
-                        <TemplateColumn Title="Total" Context="worker" SortBy="@SortWorkerTotal">@Display(Text(worker, "totalCount", "TotalCount"))</TemplateColumn>
-                    }
-                </ChildContent>
-            </ArgusDataGrid>
-
-            <h3>Google Cloud workers</h3>
-            <div class="cc-panel-header">
-                <div></div>
-                <div class="cc-toolbar">
-                    <label class="cc-inline-label">
-                        Min
-                        <input class="cc-input cc-depth-input" type="number" min="0" max="20" @bind="_gcpMinInstances" />
-                    </label>
-                    <label class="cc-inline-label">
-                        Max
-                        <input class="cc-input cc-depth-input" type="number" min="0" max="20" @bind="_gcpMaxInstances" />
-                    </label>
-                    <button class="cc-btn cc-btn-primary" @onclick="DeployGcpWorkerAsync" disabled="@(!_gcpConfigured || _gcpActionLoading)">Create Worker</button>
-                    <button class="cc-btn" @onclick="ScaleGcpWorkersAsync" disabled="@(!_gcpConfigured || _gcpActionLoading)">Scale All</button>
-                    <button class="cc-btn" @onclick="ReloadCloudWorkersAsync" disabled="@_workersLoading">Refresh</button>
-                </div>
+            @* Provider autoscale controls *@
+            <div class="ww-provider-controls">
+                @foreach (var kvp in _providerSettings)
+                {
+                    var prov = kvp.Key;
+                    var ps = kvp.Value;
+                    <div class="ww-provider-card">
+                        <div class="ww-provider-header">
+                            <span class="ww-provider-name">@prov</span>
+                            <span class="ww-provider-count">@_allWorkerRows.Count(r => r.Provider == prov) workers</span>
+                        </div>
+                        <div class="ww-provider-controls-row">
+                            <label>Min <input class="cc-input cc-depth-input" type="number" min="0" max="50" @bind="ps.Min" /></label>
+                            <label>Max <input class="cc-input cc-depth-input" type="number" min="0" max="50" @bind="ps.Max" /></label>
+                            <button class="cc-btn cc-btn-small" @onclick="() => ApplyScaleProviderAsync(prov)">Apply</button>
+                        </div>
+                    </div>
+                }
             </div>
-            @if (_gcpLoading)
+
+            @* Unified worker grid *@
+            @if (_allWorkerRows.Count == 0 && !_workersLoading)
             {
-                <p class="cc-muted">Loading Google Cloud workers...</p>
-            }
-            else if (!_gcpConfigured)
-            {
-                <p class="cc-muted">Google Cloud workers are managed via gcloud CLI on the host. Configure GcpDeploy settings to enable API-based management.</p>
-            }
-            else if (_cloudWorkers.Count == 0)
-            {
-                <p class="cc-muted">No Google Cloud workers found. Click "Create Worker" to deploy one.</p>
+                <p class="cc-muted">No workers found. Check your provider connections.</p>
             }
             else
             {
-                <ArgusDataGrid TGridItem="JsonElement"
-                               Items="@CloudWorkerRows.AsQueryable()"
-                               RowMatches="@JsonRowMatches"
-                               SearchText="@_cloudWorkerSearch"
-                               SearchTextChanged="@((string value) => _cloudWorkerSearch = value)"
-                               SearchPlaceholder="Search cloud workers..."
-                               IsLoading="@_workersLoading"
-                               EmptyText="No cloud workers found."
-                               PersistKey="command-center-cloud-workers"
-                               EnableCsvExport="true"
-                               ExportFileName="cloud-workers.csv"
-                               VirtualizedHeightPixels="320"
-                               ItemKey="@RowKeyObject">
-                    <ConfigurationTemplate>
-                        @ColumnPicker(CloudWorkerGridColumns)
-                    </ConfigurationTemplate>
-                    <ChildContent>
-                        @if (ColumnVisible("cloudWorkers.service"))
-                        {
-                            <TemplateColumn Title="Service" Context="worker" SortBy="@SortCloudWorkerService" Class="wide-col">
-                                <span class="argus-dg-clip" title="@Text(worker, "name", "Name", "serviceName", "ServiceName")">@Display(Text(worker, "name", "Name", "serviceName", "ServiceName"))</span>
-                            </TemplateColumn>
-                        }
-                        @if (ColumnVisible("cloudWorkers.status"))
-                        {
-                            <TemplateColumn Title="Status" Context="worker" SortBy="@SortCloudWorkerStatus"><span class="cc-pill">@Display(Text(worker, "status", "Status", "deploymentStatus", "DeploymentStatus"))</span></TemplateColumn>
-                        }
-                        @if (ColumnVisible("cloudWorkers.running"))
-                        {
-                            <TemplateColumn Title="Min" Context="worker" SortBy="@SortCloudWorkerRunning">@Display(Text(worker, "minInstances", "MinInstances"))</TemplateColumn>
-                        }
-                        @if (ColumnVisible("cloudWorkers.desired"))
-                        {
-                            <TemplateColumn Title="Max" Context="worker" SortBy="@SortCloudWorkerDesired">@Display(Text(worker, "maxInstances", "MaxInstances"))</TemplateColumn>
-                        }
-                        @if (ColumnVisible("cloudWorkers.url"))
-                        {
-                            <TemplateColumn Title="URL" Context="worker" SortBy="@SortCloudWorkerService">
-                                <a href="@Text(worker, "url", "Url", "uri", "Uri")" target="_blank" rel="noopener noreferrer">@Display(Text(worker, "url", "Url", "uri", "Uri"))</a>
-                            </TemplateColumn>
-                        }
-                    </ChildContent>
-                </ArgusDataGrid>
+                <div class="ww-grid-wrap">
+                    <table class="ww-table">
+                        <thead>
+                            <tr>
+                                <th class="ww-col-provider">Provider</th>
+                                <th class="ww-col-name">Worker</th>
+                                <th class="ww-col-status">Status</th>
+                                <th class="ww-col-min">Min</th>
+                                <th class="ww-col-max">Max</th>
+                                <th class="ww-col-url">URL</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                string? lastProvider = null;
+                            }
+                            @foreach (var row in _allWorkerRows)
+                            {
+                                @* Group header *@
+                                @if (row.Provider != lastProvider)
+                                {
+                                    lastProvider = row.Provider;
+                                    <tr class="ww-group-header">
+                                        <td colspan="6">
+                                            <span class="ww-group-dot" style="background:@(row.Provider switch { "Google" => "#4285F4", "Local" => "#22c55e", "AWS" => "#FF9900", "Azure" => "#0078D4", _ => "#94a3b8" })"></span>
+                                            @row.Provider
+                                        </td>
+                                    </tr>
+                                }
+                                <tr class="ww-row">
+                                    <td class="ww-col-provider">@row.Provider</td>
+                                    <td class="ww-col-name">@row.Name</td>
+                                    <td class="ww-col-status"><span class="cc-pill">@row.Status</span></td>
+                                    <td class="ww-col-min">@row.MinInstances</td>
+                                    <td class="ww-col-max">@row.MaxInstances</td>
+                                    <td class="ww-col-url">@if (!string.IsNullOrWhiteSpace(row.Url)) { <a href="@row.Url" target="_blank" rel="noopener noreferrer">@TruncateUrl(row.Url)</a> }</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
             }
         </section>
     }
@@ -499,8 +454,6 @@
     private readonly List<JsonElement> _httpQueue = [];
     private readonly List<JsonElement> _highValue = [];
     private readonly List<JsonElement> _technology = [];
-    private readonly List<JsonElement> _workers = [];
-    private readonly List<JsonElement> _cloudWorkers = [];
     private readonly HashSet<string> _selectedTargetIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _selectedAssetIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _selectedHttpIds = new(StringComparer.OrdinalIgnoreCase);
@@ -515,7 +468,6 @@
     private DateTimeOffset? _highValueRefreshedUtc;
     private DateTimeOffset? _technologyRefreshedUtc;
     private DateTimeOffset? _workersRefreshedUtc;
-    private DateTimeOffset? _cloudWorkersRefreshedUtc;
     private string? _errorMessage;
     private string? _statusMessage;
     private string? _targetSearch;
@@ -526,13 +478,7 @@
     private string _httpStateFilter = string.Empty;
     private string? _highValueSearch;
     private string? _technologySearch;
-    private string? _workerSearch;
-    private string? _cloudWorkerSearch;
-    private int _gcpMinInstances = 1;
-    private int _gcpMaxInstances = 2;
     private bool _gcpConfigured;
-    private bool _gcpActionLoading;
-    private bool _gcpLoading;
     private string? _newTargetRootDomain;
     private int _newTargetDepth = 2;
     private bool _overviewLoading;
@@ -589,13 +535,26 @@
         .Where(row => Matches(row, _technologySearch, "technologyName", "TechnologyName", "name", "Name", "technology", "Technology", "version", "Version", "evidence", "Evidence", "category", "Category"))
         .ToArray();
 
-    private JsonElement[] WorkerRows => _workers
-        .Where(row => Matches(row, _workerSearch, "name", "Name", "workerName", "WorkerName", "id", "Id", "status", "Status", "state", "State", "type", "Type", "kind", "Kind"))
-        .ToArray();
+    private List<WorkerRow> _allWorkerRows = [];
 
-    private JsonElement[] CloudWorkerRows => _cloudWorkers
-        .Where(row => Matches(row, _cloudWorkerSearch, "serviceName", "ServiceName", "scaleKey", "ScaleKey", "status", "Status", "deploymentStatus", "DeploymentStatus"))
-        .ToArray();
+    private sealed record WorkerRow(string Provider, string Name, string Status, int MinInstances, int MaxInstances, string? Url);
+
+    private sealed class ProviderScale
+    {
+        public int Min { get; set; } = 0;
+        public int Max { get; set; } = 10;
+        public bool Expanded { get; set; }
+
+        public ProviderScale(int min, int max) { Min = min; Max = max; }
+    }
+
+    private readonly Dictionary<string, ProviderScale> _providerSettings = new()
+    {
+        ["Local"] = new(0, 2),
+        ["Google"] = new(1, 10),
+        ["AWS"] = new(0, 2),
+        ["Azure"] = new(0, 2),
+    };
 
     private static readonly GridColumnChoice[] TargetGridColumns =
     [
@@ -639,23 +598,6 @@
         new("technology.seen", "Seen")
     ];
 
-    private static readonly GridColumnChoice[] WorkerGridColumns =
-    [
-        new("workers.name", "Worker"),
-        new("workers.state", "State"),
-        new("workers.running", "Running"),
-        new("workers.total", "Total")
-    ];
-
-    private static readonly GridColumnChoice[] CloudWorkerGridColumns =
-    [
-        new("cloudWorkers.service", "Service"),
-        new("cloudWorkers.status", "Status"),
-        new("cloudWorkers.running", "Running"),
-        new("cloudWorkers.desired", "Desired"),
-        new("cloudWorkers.url", "URL")
-    ];
-
     private static readonly GridSort<JsonElement> SortTargetRoot = GridSort<JsonElement>.ByAscending(row => Text(row, "rootDomain", "RootDomain", "domain", "Domain"));
     private static readonly GridSort<JsonElement> SortTargetStatus = GridSort<JsonElement>.ByAscending(row => Text(row, "status", "Status", "state", "State"));
     private static readonly GridSort<JsonElement> SortTargetDepth = GridSort<JsonElement>.ByAscending(row => Long(row, "globalMaxDepth", "GlobalMaxDepth", "maxDepth", "MaxDepth"));
@@ -677,14 +619,6 @@
     private static readonly GridSort<JsonElement> SortTechnologyVersion = GridSort<JsonElement>.ByAscending(row => Text(row, "version", "Version"));
     private static readonly GridSort<JsonElement> SortTechnologyEvidence = GridSort<JsonElement>.ByAscending(row => Text(row, "evidence", "Evidence", "source", "Source", "category", "Category"));
     private static readonly GridSort<JsonElement> SortTechnologySeen = GridSort<JsonElement>.ByDescending(row => SortableTime(row, "lastSeenUtc", "LastSeenUtc", "observedAtUtc", "ObservedAtUtc"));
-    private static readonly GridSort<JsonElement> SortWorkerName = GridSort<JsonElement>.ByAscending(row => Text(row, "displayName", "DisplayName", "serviceName", "ServiceName", "name", "Name", "id", "Id"));
-    private static readonly GridSort<JsonElement> SortWorkerState = GridSort<JsonElement>.ByAscending(row => Text(row, "overallState", "OverallState", "status", "Status", "state", "State"));
-    private static readonly GridSort<JsonElement> SortWorkerRunning = GridSort<JsonElement>.ByAscending(row => Long(row, "runningCount", "RunningCount"));
-    private static readonly GridSort<JsonElement> SortWorkerTotal = GridSort<JsonElement>.ByAscending(row => Long(row, "totalCount", "TotalCount"));
-    private static readonly GridSort<JsonElement> SortCloudWorkerService = GridSort<JsonElement>.ByAscending(row => Text(row, "name", "Name", "serviceName", "ServiceName", "scaleKey", "ScaleKey"));
-    private static readonly GridSort<JsonElement> SortCloudWorkerStatus = GridSort<JsonElement>.ByAscending(row => Text(row, "status", "Status", "deploymentStatus", "DeploymentStatus"));
-    private static readonly GridSort<JsonElement> SortCloudWorkerRunning = GridSort<JsonElement>.ByAscending(row => Long(row, "minInstances", "MinInstances", "runningCount", "RunningCount"));
-    private static readonly GridSort<JsonElement> SortCloudWorkerDesired = GridSort<JsonElement>.ByAscending(row => Long(row, "maxInstances", "MaxInstances", "desiredCount", "DesiredCount"));
 
     private string[] AssetKinds => _assets
         .Select(row => Text(row, "kind", "Kind"))
@@ -761,8 +695,8 @@
                 await ReloadHighValueAsync().ConfigureAwait(false);
                 await ReloadTechnologyAsync().ConfigureAwait(false);
                 break;
-            case CommandTab.Workers when _workers.Count == 0:
-                await Task.WhenAll(ReloadWorkersAsync(), ReloadCloudWorkersAsync()).ConfigureAwait(false);
+            case CommandTab.Workers when _allWorkerRows.Count == 0:
+                await ReloadWorkersAsync().ConfigureAwait(false);
                 break;
         }
     }
@@ -778,7 +712,7 @@
                 await Task.WhenAll(ReloadHighValueAsync(), ReloadTechnologyAsync()).ConfigureAwait(false);
                 break;
             case CommandTab.Workers:
-                await Task.WhenAll(ReloadWorkersAsync(), ReloadCloudWorkersAsync()).ConfigureAwait(false);
+                await ReloadWorkersAsync().ConfigureAwait(false);
                 break;
         }
 
@@ -916,7 +850,61 @@
         _workersLoading = true;
         try
         {
-            Replace(_workers, await GetArrayAsync("/api/ops/docker-status").ConfigureAwait(false));
+            var rows = new List<WorkerRow>();
+
+            // Local workers
+            try
+            {
+                var local = await Http.GetFromJsonAsync<List<JsonElement>>("/api/workers");
+                if (local is not null)
+                {
+                    foreach (var w in local)
+                    {
+                        var name = Text(w, "name", "Name", "displayName", "DisplayName", "id", "Id") ?? "unknown";
+                        var status = Text(w, "overallState", "OverallState", "status", "Status", "state", "State") ?? "unknown";
+                        rows.Add(new WorkerRow("Local", name, status, 0, 0, null));
+                    }
+                }
+            }
+            catch { }
+
+            // Google Cloud workers
+            try
+            {
+                var gcpJson = await Http.GetFromJsonAsync<JsonElement>("/api/gcp-workers/status");
+                _gcpConfigured = gcpJson.TryGetProperty("configured", out var cfg) && cfg.GetBoolean();
+                if (_gcpConfigured && gcpJson.TryGetProperty("workers", out var w))
+                {
+                    foreach (var gw in w.EnumerateArray())
+                    {
+                        var name = Text(gw, "name", "Name") ?? "unknown";
+                        var status = Text(gw, "status", "Status") ?? "inactive";
+                        var min = Int(gw, "minInstances", "MinInstances");
+                        var max = Int(gw, "maxInstances", "MaxInstances");
+                        var url = Text(gw, "url", "Url");
+                        rows.Add(new WorkerRow("Google", name, status, min, max, url));
+                    }
+                }
+            }
+            catch { _gcpConfigured = false; }
+
+            // AWS workers (static entries)
+            rows.Add(new WorkerRow("AWS", "worker-spider", "not configured", 0, 0, null));
+            rows.Add(new WorkerRow("AWS", "worker-enum", "not configured", 0, 0, null));
+            rows.Add(new WorkerRow("AWS", "worker-http-requester", "not configured", 0, 0, null));
+            rows.Add(new WorkerRow("AWS", "worker-portscan", "not configured", 0, 0, null));
+            rows.Add(new WorkerRow("AWS", "worker-highvalue", "not configured", 0, 0, null));
+            rows.Add(new WorkerRow("AWS", "worker-techid", "not configured", 0, 0, null));
+
+            // Azure workers (static entries)
+            rows.Add(new WorkerRow("Azure", "worker-spider", "not configured", 0, 0, null));
+            rows.Add(new WorkerRow("Azure", "worker-enum", "not configured", 0, 0, null));
+            rows.Add(new WorkerRow("Azure", "worker-http-requester", "not configured", 0, 0, null));
+            rows.Add(new WorkerRow("Azure", "worker-portscan", "not configured", 0, 0, null));
+            rows.Add(new WorkerRow("Azure", "worker-highvalue", "not configured", 0, 0, null));
+            rows.Add(new WorkerRow("Azure", "worker-techid", "not configured", 0, 0, null));
+
+            _allWorkerRows = rows;
             _workersRefreshedUtc = DateTimeOffset.UtcNow;
         }
         finally
@@ -925,60 +913,34 @@
         }
     }
 
-    private async Task ReloadCloudWorkersAsync()
+    private async Task ApplyScaleProviderAsync(string provider)
     {
-        _gcpLoading = true;
-        try
+        if (!_providerSettings.TryGetValue(provider, out var ps)) return;
+
+        if (provider == "Google" && _gcpConfigured)
         {
-            var json = await Http.GetFromJsonAsync<JsonElement>("/api/gcp-workers/status");
-            _gcpConfigured = json.TryGetProperty("configured", out var cfg) && cfg.GetBoolean();
-            if (_gcpConfigured && json.TryGetProperty("workers", out var w))
+            try
             {
-                Replace(_cloudWorkers, w.EnumerateArray().Select(w => w.Clone()).ToList());
+                await Http.PutAsJsonAsync("/api/gcp-workers/scale",
+                    new { minInstances = ps.Min, maxInstances = ps.Max });
+                await ReloadWorkersAsync();
             }
-            _cloudWorkersRefreshedUtc = DateTimeOffset.UtcNow;
-        }
-        catch
-        {
-            _gcpConfigured = false;
-        }
-        finally
-        {
-            _gcpLoading = false;
+            catch { }
         }
     }
 
-    private async Task DeployGcpWorkerAsync()
+    private async Task ApplyScaleAllAsync()
     {
-        _gcpActionLoading = true;
-        try
+        foreach (var kvp in _providerSettings)
         {
-            var slug = _gcpMinInstances == 1 && _gcpMaxInstances == 2 ? "spider" : _cloudWorkers.Count > 0 ? "" : "spider";
-            var response = await Http.PostAsJsonAsync("/api/gcp-workers/deploy",
-                new { slug, minInstances = _gcpMinInstances, maxInstances = _gcpMaxInstances });
-            if (response.IsSuccessStatusCode)
-                await ReloadCloudWorkersAsync();
-        }
-        finally
-        {
-            _gcpActionLoading = false;
+            await ApplyScaleProviderAsync(kvp.Key);
         }
     }
 
-    private async Task ScaleGcpWorkersAsync()
+    private static string TruncateUrl(string? url)
     {
-        _gcpActionLoading = true;
-        try
-        {
-            var response = await Http.PutAsJsonAsync("/api/gcp-workers/scale",
-                new { minInstances = _gcpMinInstances, maxInstances = _gcpMaxInstances });
-            if (response.IsSuccessStatusCode)
-                await ReloadCloudWorkersAsync();
-        }
-        finally
-        {
-            _gcpActionLoading = false;
-        }
+        if (string.IsNullOrWhiteSpace(url)) return "-";
+        return url.Length > 60 ? url[..60] + "..." : url;
     }
 
     private async Task CreateTargetAsync()
@@ -1296,6 +1258,20 @@
             }
         }
 
+        return 0;
+    }
+
+    private static int Int(JsonElement row, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!row.TryGetProperty(name, out var value))
+                continue;
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intVal))
+                return intVal;
+            if (int.TryParse(ValueToString(value), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                return parsed;
+        }
         return 0;
     }
 

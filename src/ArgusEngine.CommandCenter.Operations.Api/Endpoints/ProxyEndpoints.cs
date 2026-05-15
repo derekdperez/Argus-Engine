@@ -43,6 +43,12 @@ public static class ProxyEndpoints
                     settings.ProxyAssignmentSalt = string.IsNullOrWhiteSpace(input.ProxyAssignmentSalt)
                         ? "argus-proxy-v1"
                         : input.ProxyAssignmentSalt.Trim();
+                    settings.ProxyFingerprintingEnabled = input.ProxyFingerprintingEnabled;
+                    settings.ProxyFingerprintMinDelayMs = Math.Clamp(input.ProxyFingerprintMinDelayMs, 0, 60_000);
+                    settings.ProxyFingerprintMaxDelayMs = Math.Clamp(
+                        input.ProxyFingerprintMaxDelayMs,
+                        settings.ProxyFingerprintMinDelayMs,
+                        120_000);
                     settings.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
                     await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -158,6 +164,58 @@ public static class ProxyEndpoints
                 })
             .WithName("CheckProxyServer");
 
+        group.MapGet(
+                "/fingerprints",
+                async (ArgusDbContext db, string? proxyId, string? target, int? take, CancellationToken cancellationToken) =>
+                {
+                    await EnsureProxyColumnsAsync(db, cancellationToken).ConfigureAwait(false);
+
+                    var query = db.ProxyTargetFingerprintProfiles.AsNoTracking().AsQueryable();
+                    if (!string.IsNullOrWhiteSpace(proxyId))
+                    {
+                        var proxyIdValue = proxyId.Trim();
+                        query = query.Where(row => row.ProxyId == proxyIdValue);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(target))
+                    {
+                        var targetValue = target.Trim().ToLowerInvariant();
+                        query = query.Where(row => row.TargetKey.Contains(targetValue));
+                    }
+
+                    var rows = await query
+                        .OrderByDescending(row => row.LastUsedAtUtc ?? row.UpdatedAtUtc)
+                        .Take(Math.Clamp(take ?? 200, 1, 2_000))
+                        .Select(
+                            row => new ProxyFingerprintAuditRowDto(
+                                row.Id,
+                                row.ProxyId,
+                                row.ProxyName,
+                                row.ProxyPublicIp,
+                                row.TargetKey,
+                                row.BrowserFamily,
+                                row.BrowserVersion,
+                                row.Platform,
+                                row.AcceptLanguage,
+                                row.ViewportWidth,
+                                row.ViewportHeight,
+                                row.UserAgent,
+                                row.RefererTemplate,
+                                row.DelayMinMs,
+                                row.DelayMaxMs,
+                                row.RequestCount,
+                                row.CreatedAtUtc,
+                                row.UpdatedAtUtc,
+                                row.LastUsedAtUtc,
+                                row.LastRequestUrl,
+                                row.HeaderProfileJson))
+                        .ToListAsync(cancellationToken)
+                        .ConfigureAwait(false);
+
+                    return Results.Ok(rows);
+                })
+            .WithName("ListProxyFingerprintAudits");
+
         return app;
     }
 
@@ -169,7 +227,39 @@ public static class ProxyEndpoints
                 ADD COLUMN IF NOT EXISTS proxy_routing_enabled boolean NOT NULL DEFAULT false,
                 ADD COLUMN IF NOT EXISTS proxy_sticky_subdomains_enabled boolean NOT NULL DEFAULT true,
                 ADD COLUMN IF NOT EXISTS proxy_assignment_salt text NULL DEFAULT 'argus-proxy-v1',
-                ADD COLUMN IF NOT EXISTS proxy_servers_json text NULL DEFAULT '[]';
+                ADD COLUMN IF NOT EXISTS proxy_servers_json text NULL DEFAULT '[]',
+                ADD COLUMN IF NOT EXISTS proxy_fingerprinting_enabled boolean NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS proxy_fingerprint_min_delay_ms integer NOT NULL DEFAULT 150,
+                ADD COLUMN IF NOT EXISTS proxy_fingerprint_max_delay_ms integer NOT NULL DEFAULT 1400;
+
+            CREATE TABLE IF NOT EXISTS proxy_target_fingerprint_profiles (
+                id uuid NOT NULL PRIMARY KEY,
+                proxy_id character varying(128) NOT NULL,
+                proxy_name character varying(256) NOT NULL,
+                proxy_public_ip character varying(64) NULL,
+                target_key character varying(253) NOT NULL,
+                browser_family character varying(64) NOT NULL,
+                browser_version character varying(64) NOT NULL,
+                platform character varying(64) NOT NULL,
+                accept_language character varying(128) NOT NULL,
+                viewport_width integer NOT NULL,
+                viewport_height integer NOT NULL,
+                user_agent character varying(512) NOT NULL,
+                referer_template character varying(256) NOT NULL,
+                header_profile_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+                delay_min_ms integer NOT NULL DEFAULT 150,
+                delay_max_ms integer NOT NULL DEFAULT 1400,
+                request_count bigint NOT NULL DEFAULT 0,
+                created_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                updated_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                last_used_at_utc timestamp with time zone NULL,
+                last_request_url character varying(4096) NULL
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS ix_proxy_target_fingerprint_profiles_proxy_target
+                ON proxy_target_fingerprint_profiles (proxy_id, target_key);
+            CREATE INDEX IF NOT EXISTS ix_proxy_target_fingerprint_profiles_last_used
+                ON proxy_target_fingerprint_profiles (last_used_at_utc);
             """,
             cancellationToken)
             .ConfigureAwait(false);
@@ -205,6 +295,9 @@ public static class ProxyEndpoints
                 settings.ProxyRoutingEnabled,
                 settings.ProxyStickySubdomainsEnabled,
                 settings.ProxyAssignmentSalt ?? "argus-proxy-v1",
+                settings.ProxyFingerprintingEnabled,
+                settings.ProxyFingerprintMinDelayMs,
+                settings.ProxyFingerprintMaxDelayMs,
                 settings.UpdatedAtUtc),
             servers,
             servers.Count(server => server.Enabled));
@@ -343,7 +436,33 @@ public sealed record ProxyRoutingSettingsDto(
     bool ProxyRoutingEnabled,
     bool ProxyStickySubdomainsEnabled,
     string? ProxyAssignmentSalt,
+    bool ProxyFingerprintingEnabled,
+    int ProxyFingerprintMinDelayMs,
+    int ProxyFingerprintMaxDelayMs,
     DateTimeOffset UpdatedAtUtc);
+
+public sealed record ProxyFingerprintAuditRowDto(
+    Guid Id,
+    string ProxyId,
+    string ProxyName,
+    string? ProxyPublicIp,
+    string TargetKey,
+    string BrowserFamily,
+    string BrowserVersion,
+    string Platform,
+    string AcceptLanguage,
+    int ViewportWidth,
+    int ViewportHeight,
+    string UserAgent,
+    string RefererTemplate,
+    int DelayMinMs,
+    int DelayMaxMs,
+    long RequestCount,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc,
+    DateTimeOffset? LastUsedAtUtc,
+    string? LastRequestUrl,
+    string HeaderProfileJson);
 
 public sealed record ProxyServerDto(
     string? Id,

@@ -65,7 +65,7 @@ internal static class ProxyRouting
         }
     }
 
-    private static string NormalizeAssignmentKey(string? domainKey, string requestUrl)
+    internal static string NormalizeAssignmentKey(string? domainKey, string requestUrl)
     {
         if (!string.IsNullOrWhiteSpace(domainKey))
         {

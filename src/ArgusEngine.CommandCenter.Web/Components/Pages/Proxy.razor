@@ -64,6 +64,23 @@
                 <input class="input" @bind="_settings.ProxyAssignmentSalt" />
             </label>
 
+            <label class="check-row">
+                <input type="checkbox" @bind="_settings.ProxyFingerprintingEnabled" />
+                <span>Enable per-target browser fingerprint profiles for proxy traffic</span>
+            </label>
+
+            @if (_settings.ProxyFingerprintingEnabled)
+            {
+                <label>
+                    Human-like delay range (ms)
+                    <div class="range-inputs">
+                        <input class="input" type="number" min="0" max="60000" @bind="_settings.ProxyFingerprintMinDelayMs" />
+                        <span>to</span>
+                        <input class="input" type="number" min="@_settings.ProxyFingerprintMinDelayMs" max="120000" @bind="_settings.ProxyFingerprintMaxDelayMs" />
+                    </div>
+                </label>
+            }
+
             <div class="actions">
                 <button class="primary" disabled="@_saving" @onclick="SaveSettingsAsync">Save settings</button>
             </div>
@@ -123,6 +140,66 @@
                                         <button @onclick="() => CheckAsync(proxy.Id)">Check</button>
                                         <button @onclick="() => Edit(proxy)">Edit</button>
                                         <button class="danger" @onclick="() => DeleteAsync(proxy.Id)">Delete</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <div class="section-title">
+                <h2>Fingerprint audit</h2>
+                <span>@_fingerprints.Count profiles</span>
+            </div>
+
+            @if (_fingerprintLoading)
+            {
+                <p class="empty">Loading fingerprint profiles...</p>
+            }
+            else if (_fingerprints.Count == 0)
+            {
+                <p class="empty">No proxy-target fingerprint profiles have been generated yet.</p>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Proxy</th>
+                                <th>Target</th>
+                                <th>Browser</th>
+                                <th>Viewport</th>
+                                <th>Language</th>
+                                <th>Delay</th>
+                                <th>Requests</th>
+                                <th>Last used</th>
+                                <th>Headers</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _fingerprints)
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@row.ProxyName</strong>
+                                        <small>@Display(row.ProxyPublicIp)</small>
+                                    </td>
+                                    <td>@row.TargetKey</td>
+                                    <td title="@row.UserAgent">@row.BrowserFamily @row.BrowserVersion (@row.Platform)</td>
+                                    <td>@row.ViewportWidth x @row.ViewportHeight</td>
+                                    <td>@row.AcceptLanguage</td>
+                                    <td>@row.DelayMinMs - @row.DelayMaxMs ms</td>
+                                    <td>@row.RequestCount</td>
+                                    <td>@AppTimeFormat.Format(row.LastUsedAtUtc)</td>
+                                    <td>
+                                        <details>
+                                            <summary>View</summary>
+                                            <pre>@row.HeaderProfileJson</pre>
+                                        </details>
                                     </td>
                                 </tr>
                             }
@@ -204,11 +281,13 @@
 @code {
     private ProxyRoutingOverview? _model;
     private ProxyRoutingSettings _settings = new();
+    private List<ProxyFingerprintAuditRow> _fingerprints = [];
     private ProxyServer _draft = NewProxyDraft();
     private string? _editingId;
     private string? _error;
     private bool _loading;
     private bool _saving;
+    private bool _fingerprintLoading;
 
     protected override async Task OnInitializedAsync()
     {
@@ -224,6 +303,8 @@
         {
             _model = await Http.GetFromJsonAsync<ProxyRoutingOverview>("api/proxy-routing");
             _settings = _model?.Settings ?? new ProxyRoutingSettings();
+            _fingerprintLoading = true;
+            _fingerprints = await Http.GetFromJsonAsync<List<ProxyFingerprintAuditRow>>("api/proxy-routing/fingerprints?take=250") ?? [];
         }
         catch (Exception ex)
         {
@@ -232,6 +313,7 @@
         finally
         {
             _loading = false;
+            _fingerprintLoading = false;
         }
     }
 
@@ -361,7 +443,11 @@
     private async Task ShowFailureAsync(HttpResponseMessage response, string title)
     {
         var details = await response.Content.ReadAsStringAsync();
-        Notifications.Notify(NotificationSeverity.Error, title, string.IsNullOrWhiteSpace(details) ? response.ReasonPhrase : details, 6000);
+        Notifications.Notify(
+            NotificationSeverity.Error,
+            title,
+            string.IsNullOrWhiteSpace(details) ? (response.ReasonPhrase ?? "Request failed.") : details,
+            6000);
     }
 
     private void NotifySuccess(string message)
@@ -408,7 +494,34 @@
 
         public string? ProxyAssignmentSalt { get; set; } = "argus-proxy-v1";
 
+        public bool ProxyFingerprintingEnabled { get; set; } = true;
+
+        public int ProxyFingerprintMinDelayMs { get; set; } = 150;
+
+        public int ProxyFingerprintMaxDelayMs { get; set; } = 1400;
+
         public DateTimeOffset UpdatedAtUtc { get; set; }
+    }
+
+    private sealed record ProxyFingerprintAuditRow
+    {
+        public Guid Id { get; set; }
+        public string ProxyId { get; set; } = string.Empty;
+        public string ProxyName { get; set; } = string.Empty;
+        public string? ProxyPublicIp { get; set; }
+        public string TargetKey { get; set; } = string.Empty;
+        public string BrowserFamily { get; set; } = string.Empty;
+        public string BrowserVersion { get; set; } = string.Empty;
+        public string Platform { get; set; } = string.Empty;
+        public string AcceptLanguage { get; set; } = string.Empty;
+        public int ViewportWidth { get; set; }
+        public int ViewportHeight { get; set; }
+        public string UserAgent { get; set; } = string.Empty;
+        public int DelayMinMs { get; set; }
+        public int DelayMaxMs { get; set; }
+        public long RequestCount { get; set; }
+        public DateTimeOffset? LastUsedAtUtc { get; set; }
+        public string HeaderProfileJson { get; set; } = "{}";
     }
 
     private sealed record ProxyServer

@@ -160,12 +160,19 @@ public sealed class HttpRequesterWorker(
 
         try
         {
-            var settings = await GetSettingsAsync(cancellationToken).ConfigureAwait(false);
+            var settings = await GetSettingsAsync(cancellationToken).ConfigureAwait(false) ?? new HttpRequestQueueSettings();
 
             await rateLimiter.WaitAsync(item.DomainKey, cancellationToken).ConfigureAwait(false);
 
             var opt = options.Value;
             var proxy = ProxyRouting.SelectProxy(settings, item);
+            ProxyTargetFingerprintProfile? proxyFingerprintProfile = null;
+            if (proxy is not null && settings.ProxyFingerprintingEnabled)
+            {
+                proxyFingerprintProfile = await GetOrCreateProxyFingerprintProfileAsync(settings, item, proxy, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             var client = proxy is null
                 ? httpClientFactory.CreateClient("requester")
                 : proxyHttpClientProvider.GetClient(proxy, opt);
@@ -175,8 +182,19 @@ public sealed class HttpRequesterWorker(
                 LogProxySelected(logger, string.IsNullOrWhiteSpace(proxy.Id) ? proxy.CacheKey : proxy.Id, item.DomainKey, null);
             }
 
+            var delayMs = ProxyFingerprinting.GetDelayMs(settings, proxyFingerprintProfile);
+            if (delayMs > 0)
+            {
+                await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
+            }
+
             using var request = new HttpRequestMessage(new HttpMethod(item.Method), item.RequestUrl);
-            ApplyStandardHeaders(request, opt);
+            ApplyRequestHeaders(request, opt, settings, proxyFingerprintProfile);
+            if (proxyFingerprintProfile is not null)
+            {
+                await RecordProxyFingerprintUseAsync(proxyFingerprintProfile.Id, item.RequestUrl, cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             using var response = await client.SendAsync(
                     request,
@@ -257,16 +275,43 @@ public sealed class HttpRequesterWorker(
         }
     }
 
-    private static void ApplyStandardHeaders(HttpRequestMessage request, HttpRequesterOptions options)
+    private static void ApplyRequestHeaders(
+        HttpRequestMessage request,
+        HttpRequesterOptions options,
+        HttpRequestQueueSettings settings,
+        ProxyTargetFingerprintProfile? proxyFingerprintProfile)
     {
-        request.Headers.UserAgent.Clear();
-        if (!string.IsNullOrWhiteSpace(options.UserAgent))
+        IReadOnlyList<KeyValuePair<string, string>> headers;
+        if (proxyFingerprintProfile is not null)
         {
-            request.Headers.TryAddWithoutValidation("User-Agent", options.UserAgent);
+            headers = ProxyFingerprinting.BuildHeaders(proxyFingerprintProfile, settings);
+        }
+        else
+        {
+            headers =
+            [
+                new KeyValuePair<string, string>("User-Agent", string.IsNullOrWhiteSpace(options.UserAgent) ? "ArgusEngine.HttpRequester/1.0" : options.UserAgent),
+                new KeyValuePair<string, string>("Accept", "*/*")
+            ];
         }
 
         request.Headers.Accept.Clear();
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
+        request.Headers.UserAgent.Clear();
+
+        foreach (var (key, value) in headers)
+        {
+            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            request.Headers.TryAddWithoutValidation(key, value);
+        }
+
+        if (request.Headers.Accept.Count == 0)
+        {
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
+        }
     }
 
     private static async Task<UrlFetchSnapshot> CreateSnapshotAsync(
@@ -394,6 +439,68 @@ public sealed class HttpRequesterWorker(
             .ConfigureAwait(false);
     }
 
+    private async Task<ProxyTargetFingerprintProfile> GetOrCreateProxyFingerprintProfileAsync(
+        HttpRequestQueueSettings settings,
+        HttpRequestQueueItem item,
+        ProxyServerConfiguration proxy,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureProxyColumnsAsync(db, cancellationToken).ConfigureAwait(false);
+
+        var proxyId = string.IsNullOrWhiteSpace(proxy.Id) ? proxy.CacheKey : proxy.Id;
+        var targetKey = ProxyRouting.NormalizeAssignmentKey(item.DomainKey, item.RequestUrl);
+
+        var existing = await db.ProxyTargetFingerprintProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                row => row.ProxyId == proxyId && row.TargetKey == targetKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var created = ProxyFingerprinting.CreateProfile(settings, item, proxy);
+        created.ProxyId = proxyId;
+        created.TargetKey = targetKey;
+
+        db.ProxyTargetFingerprintProfiles.Add(created);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return created;
+        }
+        catch (DbUpdateException)
+        {
+            // Concurrent workers may race to create the same profile. Read the winner.
+            var winner = await db.ProxyTargetFingerprintProfiles
+                .AsNoTracking()
+                .FirstAsync(
+                    row => row.ProxyId == proxyId && row.TargetKey == targetKey,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return winner;
+        }
+    }
+
+    private async Task RecordProxyFingerprintUseAsync(Guid profileId, string requestUrl, CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
+        await db.ProxyTargetFingerprintProfiles
+            .Where(row => row.Id == profileId)
+            .ExecuteUpdateAsync(
+                update => update
+                    .SetProperty(row => row.RequestCount, row => row.RequestCount + 1)
+                    .SetProperty(row => row.UpdatedAtUtc, now)
+                    .SetProperty(row => row.LastUsedAtUtc, now)
+                    .SetProperty(row => row.LastRequestUrl, requestUrl),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private async Task<HttpRequestQueueSettings?> GetSettingsAsync(CancellationToken cancellationToken)
     {
         if (_currentSettings is not null && DateTimeOffset.UtcNow - _lastSettingsFetch < TimeSpan.FromMinutes(1))
@@ -432,7 +539,39 @@ public sealed class HttpRequesterWorker(
                 ADD COLUMN IF NOT EXISTS proxy_routing_enabled boolean NOT NULL DEFAULT false,
                 ADD COLUMN IF NOT EXISTS proxy_sticky_subdomains_enabled boolean NOT NULL DEFAULT true,
                 ADD COLUMN IF NOT EXISTS proxy_assignment_salt text NULL DEFAULT 'argus-proxy-v1',
-                ADD COLUMN IF NOT EXISTS proxy_servers_json text NULL DEFAULT '[]';
+                ADD COLUMN IF NOT EXISTS proxy_servers_json text NULL DEFAULT '[]',
+                ADD COLUMN IF NOT EXISTS proxy_fingerprinting_enabled boolean NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS proxy_fingerprint_min_delay_ms integer NOT NULL DEFAULT 150,
+                ADD COLUMN IF NOT EXISTS proxy_fingerprint_max_delay_ms integer NOT NULL DEFAULT 1400;
+
+            CREATE TABLE IF NOT EXISTS proxy_target_fingerprint_profiles (
+                id uuid NOT NULL PRIMARY KEY,
+                proxy_id character varying(128) NOT NULL,
+                proxy_name character varying(256) NOT NULL,
+                proxy_public_ip character varying(64) NULL,
+                target_key character varying(253) NOT NULL,
+                browser_family character varying(64) NOT NULL,
+                browser_version character varying(64) NOT NULL,
+                platform character varying(64) NOT NULL,
+                accept_language character varying(128) NOT NULL,
+                viewport_width integer NOT NULL,
+                viewport_height integer NOT NULL,
+                user_agent character varying(512) NOT NULL,
+                referer_template character varying(256) NOT NULL,
+                header_profile_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+                delay_min_ms integer NOT NULL DEFAULT 150,
+                delay_max_ms integer NOT NULL DEFAULT 1400,
+                request_count bigint NOT NULL DEFAULT 0,
+                created_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                updated_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                last_used_at_utc timestamp with time zone NULL,
+                last_request_url character varying(4096) NULL
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS ix_proxy_target_fingerprint_profiles_proxy_target
+                ON proxy_target_fingerprint_profiles (proxy_id, target_key);
+            CREATE INDEX IF NOT EXISTS ix_proxy_target_fingerprint_profiles_last_used
+                ON proxy_target_fingerprint_profiles (last_used_at_utc);
             """,
             cancellationToken)
             .ConfigureAwait(false);

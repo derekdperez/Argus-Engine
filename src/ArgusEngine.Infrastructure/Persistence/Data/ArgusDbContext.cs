@@ -14,6 +14,7 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
     public DbSet<HighValueFinding> HighValueFindings => Set<HighValueFinding>();
     public DbSet<HttpRequestQueueItem> HttpRequestQueue => Set<HttpRequestQueueItem>();
     public DbSet<HttpRequestQueueSettings> HttpRequestQueueSettings => Set<HttpRequestQueueSettings>();
+    public DbSet<ProxyTargetFingerprintProfile> ProxyTargetFingerprintProfiles => Set<ProxyTargetFingerprintProfile>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
     public DbSet<Tag> Tags => Set<Tag>();
@@ -416,7 +417,43 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.Property(x => x.MaxJitterMs).HasColumnName("max_jitter_ms");
             e.Property(x => x.SpoofReferer).HasColumnName("spoof_referer");
             e.Property(x => x.CustomHeadersJson).HasColumnName("custom_headers_json").HasColumnType("jsonb");
+            e.Property(x => x.ProxyRoutingEnabled).HasColumnName("proxy_routing_enabled");
+            e.Property(x => x.ProxyStickySubdomainsEnabled).HasColumnName("proxy_sticky_subdomains_enabled");
+            e.Property(x => x.ProxyAssignmentSalt).HasColumnName("proxy_assignment_salt");
+            e.Property(x => x.ProxyServersJson).HasColumnName("proxy_servers_json");
+            e.Property(x => x.ProxyFingerprintingEnabled).HasColumnName("proxy_fingerprinting_enabled");
+            e.Property(x => x.ProxyFingerprintMinDelayMs).HasColumnName("proxy_fingerprint_min_delay_ms");
+            e.Property(x => x.ProxyFingerprintMaxDelayMs).HasColumnName("proxy_fingerprint_max_delay_ms");
             e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+        });
+
+        modelBuilder.Entity<ProxyTargetFingerprintProfile>(e =>
+        {
+            e.ToTable("proxy_target_fingerprint_profiles");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ProxyId).HasColumnName("proxy_id").HasMaxLength(128).IsRequired();
+            e.Property(x => x.ProxyName).HasColumnName("proxy_name").HasMaxLength(256).IsRequired();
+            e.Property(x => x.ProxyPublicIp).HasColumnName("proxy_public_ip").HasMaxLength(64);
+            e.Property(x => x.TargetKey).HasColumnName("target_key").HasMaxLength(253).IsRequired();
+            e.Property(x => x.BrowserFamily).HasColumnName("browser_family").HasMaxLength(64).IsRequired();
+            e.Property(x => x.BrowserVersion).HasColumnName("browser_version").HasMaxLength(64).IsRequired();
+            e.Property(x => x.Platform).HasColumnName("platform").HasMaxLength(64).IsRequired();
+            e.Property(x => x.AcceptLanguage).HasColumnName("accept_language").HasMaxLength(128).IsRequired();
+            e.Property(x => x.ViewportWidth).HasColumnName("viewport_width");
+            e.Property(x => x.ViewportHeight).HasColumnName("viewport_height");
+            e.Property(x => x.UserAgent).HasColumnName("user_agent").HasMaxLength(512).IsRequired();
+            e.Property(x => x.RefererTemplate).HasColumnName("referer_template").HasMaxLength(256).IsRequired();
+            e.Property(x => x.HeaderProfileJson).HasColumnName("header_profile_json").HasColumnType("jsonb");
+            e.Property(x => x.DelayMinMs).HasColumnName("delay_min_ms");
+            e.Property(x => x.DelayMaxMs).HasColumnName("delay_max_ms");
+            e.Property(x => x.RequestCount).HasColumnName("request_count");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.Property(x => x.LastUsedAtUtc).HasColumnName("last_used_at_utc");
+            e.Property(x => x.LastRequestUrl).HasColumnName("last_request_url").HasMaxLength(4096);
+            e.HasIndex(x => new { x.ProxyId, x.TargetKey }).IsUnique();
+            e.HasIndex(x => x.LastUsedAtUtc);
         });
 
         modelBuilder.Entity<HighValueFinding>(e =>

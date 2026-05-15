@@ -57,6 +57,18 @@ public static class HttpRequestQueueEndpoints
                     row.MaxJitterMs = Math.Clamp(body.MaxJitterMs, row.MinJitterMs, 60_000);
                     row.SpoofReferer = body.SpoofReferer;
                     row.CustomHeadersJson = body.CustomHeadersJson;
+                    row.ProxyRoutingEnabled = body.ProxyRoutingEnabled;
+                    row.ProxyStickySubdomainsEnabled = body.ProxyStickySubdomainsEnabled;
+                    row.ProxyAssignmentSalt = string.IsNullOrWhiteSpace(body.ProxyAssignmentSalt)
+                        ? "argus-proxy-v1"
+                        : body.ProxyAssignmentSalt.Trim();
+                    row.ProxyServersJson = body.ProxyServersJson;
+                    row.ProxyFingerprintingEnabled = body.ProxyFingerprintingEnabled;
+                    row.ProxyFingerprintMinDelayMs = Math.Clamp(body.ProxyFingerprintMinDelayMs, 0, 60_000);
+                    row.ProxyFingerprintMaxDelayMs = Math.Clamp(
+                        body.ProxyFingerprintMaxDelayMs,
+                        row.ProxyFingerprintMinDelayMs,
+                        120_000);
                     row.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);
@@ -294,7 +306,6 @@ public static class HttpRequestQueueEndpoints
 
     public static void Map(WebApplication app) => app.MapHttpRequestQueueEndpoints();
 }
-
 
 
 

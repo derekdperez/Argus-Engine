@@ -102,6 +102,14 @@ code {
     white-space: nowrap;
 }
 
+td pre {
+    margin: .35rem 0 0;
+    max-width: 26rem;
+    max-height: 12rem;
+    overflow: auto;
+    font-size: .78rem;
+}
+
 .form-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -127,6 +135,12 @@ label {
     display: flex;
     align-items: center;
     gap: .65rem;
+}
+
+.range-inputs {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
 }
 
 .wide {

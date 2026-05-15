@@ -824,9 +824,45 @@ public static partial class ArgusDbSchemaPatches
                     min_jitter_ms integer NOT NULL DEFAULT 0,
                     max_jitter_ms integer NOT NULL DEFAULT 1000,
                     spoof_referer boolean NOT NULL DEFAULT false,
+                    proxy_routing_enabled boolean NOT NULL DEFAULT false,
+                    proxy_sticky_subdomains_enabled boolean NOT NULL DEFAULT true,
+                    proxy_assignment_salt text NULL DEFAULT 'argus-proxy-v1',
+                    proxy_servers_json text NULL DEFAULT '[]',
+                    proxy_fingerprinting_enabled boolean NOT NULL DEFAULT true,
+                    proxy_fingerprint_min_delay_ms integer NOT NULL DEFAULT 150,
+                    proxy_fingerprint_max_delay_ms integer NOT NULL DEFAULT 1400,
                     custom_headers_json jsonb NULL,
                     updated_at_utc timestamp with time zone NOT NULL DEFAULT now()
                 );
+
+                CREATE TABLE IF NOT EXISTS proxy_target_fingerprint_profiles (
+                    id uuid NOT NULL PRIMARY KEY,
+                    proxy_id character varying(128) NOT NULL,
+                    proxy_name character varying(256) NOT NULL,
+                    proxy_public_ip character varying(64) NULL,
+                    target_key character varying(253) NOT NULL,
+                    browser_family character varying(64) NOT NULL,
+                    browser_version character varying(64) NOT NULL,
+                    platform character varying(64) NOT NULL,
+                    accept_language character varying(128) NOT NULL,
+                    viewport_width integer NOT NULL,
+                    viewport_height integer NOT NULL,
+                    user_agent character varying(512) NOT NULL,
+                    referer_template character varying(256) NOT NULL,
+                    header_profile_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+                    delay_min_ms integer NOT NULL DEFAULT 150,
+                    delay_max_ms integer NOT NULL DEFAULT 1400,
+                    request_count bigint NOT NULL DEFAULT 0,
+                    created_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    updated_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    last_used_at_utc timestamp with time zone NULL,
+                    last_request_url character varying(4096) NULL
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_proxy_target_fingerprint_profiles_proxy_target
+                    ON proxy_target_fingerprint_profiles (proxy_id, target_key);
+                CREATE INDEX IF NOT EXISTS ix_proxy_target_fingerprint_profiles_last_used
+                    ON proxy_target_fingerprint_profiles (last_used_at_utc);
 
                 CREATE TABLE IF NOT EXISTS worker_heartbeats (
                     "HostName" character varying(256) NOT NULL,
@@ -1001,6 +1037,44 @@ public static partial class ArgusDbSchemaPatches
                     ALTER COLUMN max_attempts SET DEFAULT 3,
                     ALTER COLUMN redirect_count SET DEFAULT 0,
                     ALTER COLUMN response_body_truncated SET DEFAULT false;
+
+                ALTER TABLE http_request_queue_settings
+                    ADD COLUMN IF NOT EXISTS proxy_routing_enabled boolean NOT NULL DEFAULT false,
+                    ADD COLUMN IF NOT EXISTS proxy_sticky_subdomains_enabled boolean NOT NULL DEFAULT true,
+                    ADD COLUMN IF NOT EXISTS proxy_assignment_salt text NULL DEFAULT 'argus-proxy-v1',
+                    ADD COLUMN IF NOT EXISTS proxy_servers_json text NULL DEFAULT '[]',
+                    ADD COLUMN IF NOT EXISTS proxy_fingerprinting_enabled boolean NOT NULL DEFAULT true,
+                    ADD COLUMN IF NOT EXISTS proxy_fingerprint_min_delay_ms integer NOT NULL DEFAULT 150,
+                    ADD COLUMN IF NOT EXISTS proxy_fingerprint_max_delay_ms integer NOT NULL DEFAULT 1400;
+
+                CREATE TABLE IF NOT EXISTS proxy_target_fingerprint_profiles (
+                    id uuid NOT NULL PRIMARY KEY,
+                    proxy_id character varying(128) NOT NULL,
+                    proxy_name character varying(256) NOT NULL,
+                    proxy_public_ip character varying(64) NULL,
+                    target_key character varying(253) NOT NULL,
+                    browser_family character varying(64) NOT NULL,
+                    browser_version character varying(64) NOT NULL,
+                    platform character varying(64) NOT NULL,
+                    accept_language character varying(128) NOT NULL,
+                    viewport_width integer NOT NULL,
+                    viewport_height integer NOT NULL,
+                    user_agent character varying(512) NOT NULL,
+                    referer_template character varying(256) NOT NULL,
+                    header_profile_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+                    delay_min_ms integer NOT NULL DEFAULT 150,
+                    delay_max_ms integer NOT NULL DEFAULT 1400,
+                    request_count bigint NOT NULL DEFAULT 0,
+                    created_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    updated_at_utc timestamp with time zone NOT NULL DEFAULT now(),
+                    last_used_at_utc timestamp with time zone NULL,
+                    last_request_url character varying(4096) NULL
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_proxy_target_fingerprint_profiles_proxy_target
+                    ON proxy_target_fingerprint_profiles (proxy_id, target_key);
+                CREATE INDEX IF NOT EXISTS ix_proxy_target_fingerprint_profiles_last_used
+                    ON proxy_target_fingerprint_profiles (last_used_at_utc);
 
                 UPDATE http_request_queue
                 SET

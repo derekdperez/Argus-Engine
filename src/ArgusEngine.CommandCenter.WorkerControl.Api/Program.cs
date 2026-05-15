@@ -15,6 +15,8 @@ builder.Services.AddSingleton<WorkerScaleDefinitionProvider>();
 builder.Services.AddSingleton<AwsRegionResolver>();
 builder.Services.AddSingleton<EcsServiceNameResolver>();
 builder.Services.AddSingleton<EcsWorkerServiceManager>();
+builder.Services.AddSingleton<GcpCloudRunClient>();
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<RootSpiderSeedService>();
 builder.Services.AddOptions<CoverageAutomationOptions>()
     .Bind(builder.Configuration.GetSection("Argus:CoverageAutomation"))
@@ -53,5 +55,6 @@ app.MapEc2WorkerEndpoints();
 app.MapToolRestartEndpoints();
 app.MapWorkerEndpoints();
 app.MapDockerWorkerEndpoints();
+app.MapGcpWorkerEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

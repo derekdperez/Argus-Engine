@@ -229,6 +229,10 @@ services:
       <<: *common-env
       ASPNETCORE_URLS: http://+:8080
       Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_CONTROL_API_POSTGRES_MAX_POOL_SIZE:-4}
+      GcpDeploy__ProjectId: "gen-lang-client-0221281588"
+      GcpDeploy__Region: "us-east1"
+      GCP_PROJECT_ID: "gen-lang-client-0221281588"
+      GCP_REGION: "us-east1"
       Argus__Autoscaler__Enabled: ${ARGUS_AUTOSCALER_ENABLED:-false}
       Argus__Autoscaler__RepoRoot: /workspace
       Argus__Autoscaler__DockerComposePath: /workspace/deployment/docker-compose.yml

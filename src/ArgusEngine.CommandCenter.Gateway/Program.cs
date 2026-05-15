@@ -187,7 +187,8 @@ static string? SelectClientName(PathString path)
         return GatewayServiceRoutes.CloudDeployClientName;
     }
 
-    if (path.StartsWithSegments("/api/workers", StringComparison.OrdinalIgnoreCase)
+    if (path.StartsWithSegments("/api/gcp-workers", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/workers", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/ec2-workers", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/ops/ecs-status", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/ops/spider/restart", StringComparison.OrdinalIgnoreCase)

@@ -706,36 +706,58 @@ h1:focus {
 }
 
 .recon-action-panel {
-    margin: 0 0 1rem;
-    border: 1px solid rgba(148, 163, 184, 0.24);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, 0.04);
-    padding: 0.85rem;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.06);
+    margin-bottom: 1rem;
+    overflow: hidden;
 }
 
 .recon-action-panel-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 0.65rem;
+    padding: 6px 12px;
+    cursor: pointer;
 }
 
-.recon-action-panel-header h2 {
-    margin: 0;
-    font-size: 0.95rem;
-    font-weight: 750;
+.recon-action-summary-area {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: #94a3b8;
 }
 
-.recon-action-panel-header p {
-    margin: 0.15rem 0 0;
-    color: var(--muted);
-    font-size: 0.78rem;
+.recon-action-icon {
+    font-size: 0.7rem;
+    transition: transform 0.15s;
+}
+
+.recon-action-header-btns {
+    display: flex;
+    gap: 6px;
 }
 
 .recon-action-list {
     display: grid;
-    gap: 0.55rem;
+    gap: 4px;
+    padding: 0 12px 8px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.recon-action-collapsed .recon-action-list {
+    display: none;
+    padding: 0;
+}
+
+.recon-action-collapsed .recon-action-icon {
+    transform: rotate(0deg);
+}
+
+.recon-action-expanded .recon-action-icon {
+    transform: rotate(90deg);
 }
 
 .recon-action-entry {

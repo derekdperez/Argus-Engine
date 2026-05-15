@@ -1,10 +1,10 @@
 using System.Text.Json;
-using ArgusEngine.Application.Events;
 using ArgusEngine.Application.Orchestration;
 using ArgusEngine.Contracts;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
+using ArgusEngine.Infrastructure.Messaging;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -14,7 +14,6 @@ namespace ArgusEngine.Infrastructure.Orchestration;
 
 public sealed class EfReconOrchestrator(
     IDbContextFactory<ArgusDbContext> dbFactory,
-    IEventOutbox outbox,
     IOptions<ReconOrchestratorOptions> options,
     ILogger<EfReconOrchestrator> logger) : IReconOrchestrator
 {
@@ -29,6 +28,7 @@ public sealed class EfReconOrchestrator(
     public async Task<ReconOrchestratorSnapshot> AttachToTargetAsync(
         Guid targetId,
         string attachedBy,
+        ReconOrchestratorConfiguration? configuration = null,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
@@ -43,11 +43,12 @@ public sealed class EfReconOrchestrator(
             throw new InvalidOperationException($"Target {targetId} was not found.");
         }
 
-        var config = ReconOrchestratorConfiguration.FromOptions(options.Value);
+        var config = ReconOrchestratorConfiguration.Sanitize(configuration, options.Value);
         var now = DateTimeOffset.UtcNow;
         var configJson = JsonSerializer.Serialize(config, JsonOptions);
         var stateJson = BuildInitialStateJson(target, config, now);
 
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await ReconDbCommands.ExecuteAsync(
             db,
             """
@@ -56,12 +57,12 @@ public sealed class EfReconOrchestrator(
             VALUES
                 (@target_id, 'ReconOrchestrator', 'active', CAST(@config_json AS jsonb), CAST(@state_json AS jsonb), @attached_by, @now, @now, @now)
             ON CONFLICT (target_id) DO UPDATE SET
-                status = CASE
-                    WHEN recon_orchestrator_states.status = 'completed' THEN 'active'
-                    ELSE recon_orchestrator_states.status
-                END,
+                status = 'active',
                 config_json = EXCLUDED.config_json,
                 state_json = recon_orchestrator_states.state_json || EXCLUDED.state_json,
+                lease_owner = NULL,
+                lease_until_utc = NULL,
+                completed_at_utc = NULL,
                 attached_by = EXCLUDED.attached_by,
                 updated_at_utc = EXCLUDED.updated_at_utc;
             """,
@@ -74,8 +75,45 @@ public sealed class EfReconOrchestrator(
                 ["now"] = now
             },
             cancellationToken).ConfigureAwait(false);
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return new ReconOrchestratorSnapshot(target.Id, target.RootDomain, "active", config, now, now);
+    }
+
+    public async Task<ReconOrchestratorSnapshot?> GetSnapshotAsync(
+        Guid targetId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        await ReconOrchestratorSql.EnsureSchemaAsync(db, cancellationToken).ConfigureAwait(false);
+
+        var rows = await ReconDbCommands.QueryAsync(
+            db,
+            """
+            SELECT s.target_id, t."RootDomain", s.status, s.config_json::text AS config_json, s.attached_at_utc, s.updated_at_utc
+            FROM recon_orchestrator_states s
+            JOIN recon_targets t ON t."Id" = s.target_id
+            WHERE s.target_id = @target_id
+            LIMIT 1;
+            """,
+            new Dictionary<string, object?> { ["target_id"] = targetId },
+            reader =>
+            {
+                var json = reader.GetString(reader.GetOrdinal("config_json"));
+                var config = JsonSerializer.Deserialize<ReconOrchestratorConfiguration>(json, JsonOptions)
+                    ?? ReconOrchestratorConfiguration.FromOptions(options.Value);
+
+                return new ReconOrchestratorSnapshot(
+                    reader.GetGuid(reader.GetOrdinal("target_id")),
+                    reader.GetString(reader.GetOrdinal("RootDomain")),
+                    reader.GetString(reader.GetOrdinal("status")),
+                    config,
+                    reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("attached_at_utc")),
+                    reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at_utc")));
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        return rows.FirstOrDefault();
     }
 
     public async Task<IReadOnlyList<Guid>> GetActiveTargetIdsAsync(CancellationToken cancellationToken = default)
@@ -89,9 +127,13 @@ public sealed class EfReconOrchestrator(
             SELECT target_id
             FROM recon_orchestrator_states
             WHERE status = 'active'
-            ORDER BY updated_at_utc ASC;
+            ORDER BY updated_at_utc ASC
+            LIMIT @limit;
             """,
-            new Dictionary<string, object?>(),
+            new Dictionary<string, object?>
+            {
+                ["limit"] = Math.Clamp(options.Value.MaxTargetsPerTick, 1, 10_000)
+            },
             reader => reader.GetGuid(reader.GetOrdinal("target_id")),
             cancellationToken).ConfigureAwait(false);
     }
@@ -131,11 +173,20 @@ public sealed class EfReconOrchestrator(
             }
 
             var config = await LoadConfigurationAsync(db, targetId, cancellationToken).ConfigureAwait(false);
-            var providersQueued = await EnsureProviderRunsAsync(db, target, cancellationToken).ConfigureAwait(false);
-            var subdomainResult = await ReconcileSubdomainsAsync(db, target, config, cancellationToken).ConfigureAwait(false);
+            var providersQueued = await MaintainProviderRunsAsync(db, target, cancellationToken).ConfigureAwait(false);
+            providersQueued += await EnsureProviderRunsAsync(db, target, cancellationToken).ConfigureAwait(false);
+
+            await MarkPersistedProviderDiscoveriesAsync(db, target.Id, cancellationToken).ConfigureAwait(false);
+            await CompleteProvidersWhoseDiscoveriesPersistedAsync(db, target.Id, cancellationToken).ConfigureAwait(false);
+
             var providerStatuses = await LoadProviderStatusesAsync(db, targetId, cancellationToken).ConfigureAwait(false);
             var allProvidersFinished = Providers.All(provider => providerStatuses.TryGetValue(provider, out var status)
-                && status is "completed" or "failed");
+                && status is "completed" or "failed" or "skipped");
+
+            var subdomainResult = allProvidersFinished
+                ? await ReconcileSubdomainsAsync(db, target, config, cancellationToken).ConfigureAwait(false)
+                : new SubdomainReconcileResult(0, 0, 1);
+
             var completed = allProvidersFinished && subdomainResult.IncompleteSubdomains == 0;
 
             await UpdateStateAsync(
@@ -193,6 +244,136 @@ public sealed class EfReconOrchestrator(
         return rows > 0;
     }
 
+    private async Task<int> MaintainProviderRunsAsync(
+        ArgusDbContext db,
+        ReconTarget target,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var runningCutoff = now.AddSeconds(-Math.Clamp(options.Value.ProviderRunTimeoutSeconds, 60, 86_400));
+        var requestedCutoff = now.AddSeconds(-Math.Clamp(options.Value.RequestedRunRetryDelaySeconds, 15, 86_400));
+        var maxRetries = Math.Clamp(options.Value.MaxRequestedRunRetries, 0, 100);
+        var queued = 0;
+
+        await ReconDbCommands.ExecuteAsync(
+            db,
+            """
+            UPDATE recon_orchestrator_provider_runs
+            SET status = 'failed',
+                timeout_at_utc = @now,
+                completed_at_utc = @now,
+                status_reason = 'tool_execution_timeout',
+                last_error = 'Provider exceeded configured execution timeout.',
+                updated_at_utc = @now
+            WHERE target_id = @target_id
+              AND status = 'running'
+              AND started_at_utc IS NOT NULL
+              AND started_at_utc <= @running_cutoff;
+            """,
+            new Dictionary<string, object?>
+            {
+                ["target_id"] = target.Id,
+                ["now"] = now,
+                ["running_cutoff"] = runningCutoff
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        await ReconDbCommands.ExecuteAsync(
+            db,
+            """
+            UPDATE recon_orchestrator_provider_runs
+            SET status = 'failed',
+                completed_at_utc = @now,
+                status_reason = 'requested_retry_limit_exceeded',
+                last_error = 'Provider request was not claimed before retry limit was reached.',
+                updated_at_utc = @now
+            WHERE target_id = @target_id
+              AND status = 'requested'
+              AND updated_at_utc <= @requested_cutoff
+              AND retry_count >= @max_retries;
+            """,
+            new Dictionary<string, object?>
+            {
+                ["target_id"] = target.Id,
+                ["now"] = now,
+                ["requested_cutoff"] = requestedCutoff,
+                ["max_retries"] = maxRetries
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        var staleRequested = await ReconDbCommands.QueryAsync(
+            db,
+            """
+            SELECT provider, retry_count
+            FROM recon_orchestrator_provider_runs
+            WHERE target_id = @target_id
+              AND status = 'requested'
+              AND updated_at_utc <= @requested_cutoff
+              AND retry_count < @max_retries
+            ORDER BY updated_at_utc ASC;
+            """,
+            new Dictionary<string, object?>
+            {
+                ["target_id"] = target.Id,
+                ["requested_cutoff"] = requestedCutoff,
+                ["max_retries"] = maxRetries
+            },
+            reader => new ProviderRetryCandidate(
+                reader.GetString(reader.GetOrdinal("provider")),
+                reader.GetInt32(reader.GetOrdinal("retry_count"))),
+            cancellationToken).ConfigureAwait(false);
+
+        foreach (var stale in staleRequested)
+        {
+            var correlation = NewId.NextGuid();
+            var eventId = NewId.NextGuid();
+
+            await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await ReconDbCommands.ExecuteAsync(
+                db,
+                """
+                UPDATE recon_orchestrator_provider_runs
+                SET retry_count = retry_count + 1,
+                    last_retried_at_utc = @now,
+                    updated_at_utc = @now,
+                    correlation_id = @correlation_id,
+                    event_id = @event_id,
+                    status_reason = 'requested_retry'
+                WHERE target_id = @target_id
+                  AND provider = @provider
+                  AND status = 'requested';
+                """,
+                new Dictionary<string, object?>
+                {
+                    ["target_id"] = target.Id,
+                    ["provider"] = stale.Provider,
+                    ["correlation_id"] = correlation,
+                    ["event_id"] = eventId,
+                    ["now"] = DateTimeOffset.UtcNow
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            EnqueueOutbox(
+                db,
+                new SubdomainEnumerationRequested(
+                    target.Id,
+                    target.RootDomain,
+                    stale.Provider,
+                    "recon-orchestrator",
+                    DateTimeOffset.UtcNow,
+                    correlation,
+                    EventId: eventId,
+                    CausationId: correlation,
+                    Producer: "recon-orchestrator"));
+
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            queued++;
+        }
+
+        return queued;
+    }
+
     private async Task<int> EnsureProviderRunsAsync(
         ArgusDbContext db,
         ReconTarget target,
@@ -210,7 +391,8 @@ public sealed class EfReconOrchestrator(
             var eventId = NewId.NextGuid();
             var now = DateTimeOffset.UtcNow;
 
-            await ReconDbCommands.ExecuteAsync(
+            await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            var inserted = await ReconDbCommands.ExecuteAsync(
                 db,
                 """
                 INSERT INTO recon_orchestrator_provider_runs
@@ -230,20 +412,26 @@ public sealed class EfReconOrchestrator(
                 },
                 cancellationToken).ConfigureAwait(false);
 
-            await outbox.EnqueueAsync(
-                new SubdomainEnumerationRequested(
-                    target.Id,
-                    target.RootDomain,
-                    provider,
-                    "recon-orchestrator",
-                    now,
-                    correlation,
-                    EventId: eventId,
-                    CausationId: correlation,
-                    Producer: "recon-orchestrator"),
-                cancellationToken).ConfigureAwait(false);
+            if (inserted > 0)
+            {
+                EnqueueOutbox(
+                    db,
+                    new SubdomainEnumerationRequested(
+                        target.Id,
+                        target.RootDomain,
+                        provider,
+                        "recon-orchestrator",
+                        now,
+                        correlation,
+                        EventId: eventId,
+                        CausationId: correlation,
+                        Producer: "recon-orchestrator"));
 
-            queued++;
+                await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                queued++;
+            }
+
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         return queued;
@@ -292,9 +480,9 @@ public sealed class EfReconOrchestrator(
             db,
             """
             INSERT INTO recon_orchestrator_provider_runs
-                (id, target_id, provider, status, requested_at_utc, started_at_utc, completed_at_utc, updated_at_utc)
+                (id, target_id, provider, status, requested_at_utc, started_at_utc, completed_at_utc, status_reason, updated_at_utc)
             VALUES
-                (@id, @target_id, @provider, 'completed', @now, @now, @now, @now)
+                (@id, @target_id, @provider, 'completed', @now, @now, @now, 'preexisting_provider_assets', @now)
             ON CONFLICT (target_id, provider) DO NOTHING;
             """,
             new Dictionary<string, object?>
@@ -309,40 +497,202 @@ public sealed class EfReconOrchestrator(
         return true;
     }
 
+    private async Task MarkPersistedProviderDiscoveriesAsync(
+        ArgusDbContext db,
+        Guid targetId,
+        CancellationToken cancellationToken)
+    {
+        var pendingKeys = await ReconDbCommands.QueryAsync(
+            db,
+            """
+            SELECT provider, subdomain_key
+            FROM recon_orchestrator_provider_discoveries
+            WHERE target_id = @target_id
+              AND status = 'awaiting_persistence';
+            """,
+            new Dictionary<string, object?> { ["target_id"] = targetId },
+            reader => new ProviderDiscoveryKey(
+                reader.GetString(reader.GetOrdinal("provider")),
+                reader.GetString(reader.GetOrdinal("subdomain_key"))),
+            cancellationToken).ConfigureAwait(false);
+
+        if (pendingKeys.Count == 0)
+        {
+            return;
+        }
+
+        var normalizedKeys = pendingKeys.Select(k => k.SubdomainKey).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var persisted = await db.Assets.AsNoTracking()
+            .Where(a => a.TargetId == targetId
+                && a.Kind == AssetKind.Subdomain
+                && a.LifecycleStatus == AssetLifecycleStatus.Confirmed)
+            .Select(a => new { a.Id, a.RawValue, a.CanonicalKey })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var persistedByKey = persisted
+            .SelectMany(a => new[]
+            {
+                new { Key = NormalizeHost(a.RawValue), a.Id },
+                new { Key = NormalizeHost(a.CanonicalKey), a.Id }
+            })
+            .Where(x => !string.IsNullOrWhiteSpace(x.Key) && normalizedKeys.Contains(x.Key, StringComparer.OrdinalIgnoreCase))
+            .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var pending in pendingKeys)
+        {
+            if (!persistedByKey.TryGetValue(pending.SubdomainKey, out var assetId))
+            {
+                continue;
+            }
+
+            await ReconDbCommands.ExecuteAsync(
+                db,
+                """
+                UPDATE recon_orchestrator_provider_discoveries
+                SET status = 'persisted',
+                    persisted_asset_id = @asset_id,
+                    persisted_at_utc = @now,
+                    updated_at_utc = @now
+                WHERE target_id = @target_id
+                  AND provider = @provider
+                  AND subdomain_key = @subdomain_key
+                  AND status = 'awaiting_persistence';
+                """,
+                new Dictionary<string, object?>
+                {
+                    ["target_id"] = targetId,
+                    ["provider"] = pending.Provider,
+                    ["subdomain_key"] = pending.SubdomainKey,
+                    ["asset_id"] = assetId,
+                    ["now"] = DateTimeOffset.UtcNow
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task CompleteProvidersWhoseDiscoveriesPersistedAsync(
+        ArgusDbContext db,
+        Guid targetId,
+        CancellationToken cancellationToken)
+    {
+        var providers = await ReconDbCommands.QueryAsync(
+            db,
+            """
+            SELECT provider
+            FROM recon_orchestrator_provider_runs
+            WHERE target_id = @target_id
+              AND status = 'awaiting_asset_persistence';
+            """,
+            new Dictionary<string, object?> { ["target_id"] = targetId },
+            reader => reader.GetString(reader.GetOrdinal("provider")),
+            cancellationToken).ConfigureAwait(false);
+
+        foreach (var provider in providers)
+        {
+            var pending = await ReconDbCommands.ScalarAsync<long>(
+                db,
+                """
+                SELECT COUNT(*)
+                FROM recon_orchestrator_provider_discoveries
+                WHERE target_id = @target_id
+                  AND provider = @provider
+                  AND status <> 'persisted';
+                """,
+                new Dictionary<string, object?>
+                {
+                    ["target_id"] = targetId,
+                    ["provider"] = provider
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            if (pending > 0)
+            {
+                continue;
+            }
+
+            var emitted = await ReconDbCommands.ScalarAsync<long>(
+                db,
+                """
+                SELECT COUNT(*)
+                FROM recon_orchestrator_provider_discoveries
+                WHERE target_id = @target_id
+                  AND provider = @provider;
+                """,
+                new Dictionary<string, object?>
+                {
+                    ["target_id"] = targetId,
+                    ["provider"] = provider
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            await ReconDbCommands.ExecuteAsync(
+                db,
+                """
+                UPDATE recon_orchestrator_provider_runs
+                SET status = 'completed',
+                    completed_at_utc = @now,
+                    emitted_subdomain_count = @emitted_subdomain_count,
+                    status_reason = 'subdomain_assets_persisted',
+                    last_error = NULL,
+                    updated_at_utc = @now
+                WHERE target_id = @target_id
+                  AND provider = @provider;
+                """,
+                new Dictionary<string, object?>
+                {
+                    ["target_id"] = targetId,
+                    ["provider"] = provider,
+                    ["emitted_subdomain_count"] = (int)Math.Min(int.MaxValue, emitted),
+                    ["now"] = DateTimeOffset.UtcNow
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private async Task<SubdomainReconcileResult> ReconcileSubdomainsAsync(
         ArgusDbContext db,
         ReconTarget target,
         ReconOrchestratorConfiguration config,
         CancellationToken cancellationToken)
     {
+        var maxSubdomains = Math.Clamp(options.Value.MaxSubdomainsPerTick, 1, 100_000);
         var subdomains = await db.Assets.AsNoTracking()
             .Where(a => a.TargetId == target.Id
                 && a.Kind == AssetKind.Subdomain
                 && a.LifecycleStatus == AssetLifecycleStatus.Confirmed)
+            .OrderBy(a => a.RawValue)
             .Select(a => new SubdomainAsset(a.Id, a.RawValue, a.CanonicalKey))
+            .Take(maxSubdomains)
             .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var normalized = subdomains
+            .Select(s => new SubdomainAsset(s.Id, NormalizeHost(string.IsNullOrWhiteSpace(s.RawValue) ? s.CanonicalKey : s.RawValue), s.CanonicalKey))
+            .Where(s => !string.IsNullOrWhiteSpace(s.RawValue))
+            .ToArray();
+
+        var queueStatsByKey = await LoadQueueStatsForSubdomainsAsync(db, target.Id, normalized.Select(s => s.RawValue), cancellationToken)
             .ConfigureAwait(false);
 
         var checkedCount = 0;
         var incompleteCount = 0;
         var seedsQueued = 0;
 
-        foreach (var subdomain in subdomains)
+        foreach (var subdomain in normalized)
         {
-            var subdomainKey = NormalizeHost(string.IsNullOrWhiteSpace(subdomain.RawValue) ? subdomain.CanonicalKey : subdomain.RawValue);
-            if (string.IsNullOrWhiteSpace(subdomainKey))
-            {
-                continue;
-            }
-
+            var subdomainKey = subdomain.RawValue;
             var urlStats = await LoadUrlStatsAsync(db, target.Id, subdomainKey, cancellationToken).ConfigureAwait(false);
-            var queueStats = await LoadQueueStatsAsync(db, target.Id, subdomainKey, cancellationToken).ConfigureAwait(false);
+            queueStatsByKey.TryGetValue(subdomainKey, out var queueStats);
+            queueStats ??= new QueueStats(0, 0, 0, 0);
+
             var hasAnyUrlEvidence = urlStats.Total > 0 || queueStats.Total > 0;
             var status = ResolveSubdomainStatus(urlStats, queueStats, hasAnyUrlEvidence);
 
             if (!hasAnyUrlEvidence)
             {
-                seedsQueued += await QueueSubdomainSeedsAsync(target, subdomain.Id, subdomainKey, cancellationToken).ConfigureAwait(false);
+                seedsQueued += await QueueSubdomainSeedsAsync(db, target, subdomain.Id, subdomainKey, cancellationToken).ConfigureAwait(false);
                 status = "queued";
                 incompleteCount++;
             }
@@ -361,6 +711,7 @@ public sealed class EfReconOrchestrator(
     }
 
     private async Task<int> QueueSubdomainSeedsAsync(
+        ArgusDbContext db,
         ReconTarget target,
         Guid subdomainAssetId,
         string subdomainKey,
@@ -368,9 +719,42 @@ public sealed class EfReconOrchestrator(
     {
         var queued = 0;
         var correlation = NewId.NextGuid();
-        foreach (var rootUrl in RootUrls(subdomainKey))
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var (scheme, rootUrl) in RootUrls(subdomainKey))
         {
-            await outbox.EnqueueAsync(
+            var eventId = NewId.NextGuid();
+            var now = DateTimeOffset.UtcNow;
+            var inserted = await ReconDbCommands.ExecuteAsync(
+                db,
+                """
+                INSERT INTO recon_orchestrator_subdomain_seed_requests
+                    (id, target_id, subdomain_asset_id, subdomain_key, scheme, seed_url, status, event_id, correlation_id, requested_at_utc, updated_at_utc)
+                VALUES
+                    (@id, @target_id, @subdomain_asset_id, @subdomain_key, @scheme, @seed_url, 'requested', @event_id, @correlation_id, @now, @now)
+                ON CONFLICT (target_id, subdomain_key, scheme) DO NOTHING;
+                """,
+                new Dictionary<string, object?>
+                {
+                    ["id"] = Guid.NewGuid(),
+                    ["target_id"] = target.Id,
+                    ["subdomain_asset_id"] = subdomainAssetId,
+                    ["subdomain_key"] = subdomainKey,
+                    ["scheme"] = scheme,
+                    ["seed_url"] = rootUrl,
+                    ["event_id"] = eventId,
+                    ["correlation_id"] = correlation,
+                    ["now"] = now
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            if (inserted <= 0)
+            {
+                continue;
+            }
+
+            EnqueueOutbox(
+                db,
                 new AssetDiscovered(
                     target.Id,
                     target.RootDomain,
@@ -379,7 +763,7 @@ public sealed class EfReconOrchestrator(
                     Kind: AssetKind.Url,
                     RawValue: rootUrl,
                     DiscoveredBy: "recon-orchestrator",
-                    OccurredAt: DateTimeOffset.UtcNow,
+                    OccurredAt: now,
                     CorrelationId: correlation,
                     AdmissionStage: AssetAdmissionStage.Raw,
                     AssetId: null,
@@ -387,13 +771,39 @@ public sealed class EfReconOrchestrator(
                     ParentAssetId: subdomainAssetId,
                     RelationshipType: AssetRelationshipType.Contains,
                     IsPrimaryRelationship: true,
-                    EventId: NewId.NextGuid(),
+                    EventId: eventId,
                     CausationId: correlation,
-                    Producer: "recon-orchestrator"),
+                    Producer: "recon-orchestrator"));
+
+            await ReconDbCommands.ExecuteAsync(
+                db,
+                """
+                UPDATE recon_orchestrator_subdomain_seed_requests
+                SET status = 'dispatched',
+                    dispatched_at_utc = @now,
+                    updated_at_utc = @now
+                WHERE target_id = @target_id
+                  AND subdomain_key = @subdomain_key
+                  AND scheme = @scheme;
+                """,
+                new Dictionary<string, object?>
+                {
+                    ["target_id"] = target.Id,
+                    ["subdomain_key"] = subdomainKey,
+                    ["scheme"] = scheme,
+                    ["now"] = now
+                },
                 cancellationToken).ConfigureAwait(false);
+
             queued++;
         }
 
+        if (queued > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         return queued;
     }
 
@@ -477,16 +887,23 @@ public sealed class EfReconOrchestrator(
         return new UrlStats(total, confirmed, Math.Max(0, total - confirmed));
     }
 
-    private static async Task<QueueStats> LoadQueueStatsAsync(
+    private static async Task<IReadOnlyDictionary<string, QueueStats>> LoadQueueStatsForSubdomainsAsync(
         ArgusDbContext db,
         Guid targetId,
-        string subdomainKey,
+        IEnumerable<string> subdomainKeys,
         CancellationToken cancellationToken)
     {
+        var keys = subdomainKeys.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (keys.Length == 0)
+        {
+            return new Dictionary<string, QueueStats>(StringComparer.OrdinalIgnoreCase);
+        }
+
         var rows = await db.HttpRequestQueue.AsNoTracking()
-            .Where(q => q.TargetId == targetId && q.DomainKey == subdomainKey)
-            .GroupBy(_ => 1)
-            .Select(g => new QueueStats(
+            .Where(q => q.TargetId == targetId && keys.Contains(q.DomainKey))
+            .GroupBy(q => q.DomainKey)
+            .Select(g => new QueueStatsRow(
+                g.Key,
                 g.LongCount(),
                 g.LongCount(q => q.State == HttpRequestQueueState.Queued || q.State == HttpRequestQueueState.Retry),
                 g.LongCount(q => q.State == HttpRequestQueueState.InFlight),
@@ -494,7 +911,10 @@ public sealed class EfReconOrchestrator(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return rows.FirstOrDefault() ?? new QueueStats(0, 0, 0, 0);
+        return rows.ToDictionary(
+            row => row.SubdomainKey,
+            row => new QueueStats(row.Total, row.Pending, row.InFlight, row.Failed),
+            StringComparer.OrdinalIgnoreCase);
     }
 
     private static string ResolveSubdomainStatus(UrlStats urlStats, QueueStats queueStats, bool hasAnyUrlEvidence)
@@ -583,8 +1003,9 @@ public sealed class EfReconOrchestrator(
         {
             try
             {
-                return JsonSerializer.Deserialize<ReconOrchestratorConfiguration>(json, JsonOptions)
-                    ?? ReconOrchestratorConfiguration.FromOptions(options.Value);
+                return ReconOrchestratorConfiguration.Sanitize(
+                    JsonSerializer.Deserialize<ReconOrchestratorConfiguration>(json, JsonOptions),
+                    options.Value);
             }
             catch (JsonException ex)
             {
@@ -745,14 +1166,48 @@ public sealed class EfReconOrchestrator(
             JsonOptions);
     }
 
-    private static IEnumerable<string> RootUrls(string host)
+    private static IEnumerable<(string Scheme, string Url)> RootUrls(string host)
     {
-        yield return $"https://{host}/";
-        yield return $"http://{host}/";
+        yield return ("https", $"https://{host}/");
+        yield return ("http", $"http://{host}/");
     }
 
-    private static string NormalizeHost(string value)
+    private static void EnqueueOutbox<TEvent>(ArgusDbContext db, TEvent message)
+        where TEvent : class, IEventEnvelope
     {
+        var now = DateTimeOffset.UtcNow;
+        var resolvedEventId = message.EventId == Guid.Empty ? Guid.NewGuid() : message.EventId;
+        var resolvedCorrelation = message.CorrelationId == Guid.Empty ? Guid.NewGuid() : message.CorrelationId;
+        var resolvedCausation = message.CausationId == Guid.Empty ? resolvedCorrelation : message.CausationId;
+        var resolvedOccurredAt = message.OccurredAtUtc == default ? now : message.OccurredAtUtc;
+        var messageClrType = message.GetType();
+
+        db.OutboxMessages.Add(
+            new OutboxMessage
+            {
+                Id = Guid.NewGuid(),
+                MessageType = OutboxMessageTypeRegistry.GetMessageKey(messageClrType),
+                PayloadJson = JsonSerializer.Serialize(message, messageClrType, JsonOptions),
+                EventId = resolvedEventId,
+                CorrelationId = resolvedCorrelation,
+                CausationId = resolvedCausation,
+                OccurredAtUtc = resolvedOccurredAt,
+                Producer = string.IsNullOrWhiteSpace(message.Producer) ? "recon-orchestrator" : message.Producer,
+                State = OutboxMessageState.Pending,
+                AttemptCount = 0,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+                NextAttemptAtUtc = now,
+            });
+    }
+
+    private static string NormalizeHost(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
         var host = value.Trim().TrimEnd('.').ToLowerInvariant();
         if (Uri.TryCreate(host, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.IdnHost))
         {
@@ -762,11 +1217,17 @@ public sealed class EfReconOrchestrator(
         return host;
     }
 
+    private sealed record ProviderRetryCandidate(string Provider, int RetryCount);
+
+    private sealed record ProviderDiscoveryKey(string Provider, string SubdomainKey);
+
     private sealed record SubdomainAsset(Guid Id, string RawValue, string CanonicalKey);
 
     private sealed record UrlStats(long Total, long Confirmed, long Unconfirmed);
 
     private sealed record QueueStats(long Total, long Pending, long InFlight, long Failed);
+
+    private sealed record QueueStatsRow(string SubdomainKey, long Total, long Pending, long InFlight, long Failed);
 
     private sealed record SubdomainReconcileResult(int SubdomainsChecked, int SeedsQueued, int IncompleteSubdomains);
 }

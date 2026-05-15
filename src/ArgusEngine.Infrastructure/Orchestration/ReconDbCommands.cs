@@ -1,6 +1,7 @@
 using System.Data.Common;
 using ArgusEngine.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace ArgusEngine.Infrastructure.Orchestration;
 
@@ -15,6 +16,7 @@ internal static class ReconDbCommands
         await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText = sql;
+        ApplyCurrentTransaction(db, command);
         AddParameters(command, parameters);
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -28,6 +30,7 @@ internal static class ReconDbCommands
         await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText = sql;
+        ApplyCurrentTransaction(db, command);
         AddParameters(command, parameters);
         var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         if (value is null || value is DBNull)
@@ -48,6 +51,7 @@ internal static class ReconDbCommands
         await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText = sql;
+        ApplyCurrentTransaction(db, command);
         AddParameters(command, parameters);
 
         var rows = new List<T>();
@@ -58,6 +62,15 @@ internal static class ReconDbCommands
         }
 
         return rows;
+    }
+
+    private static void ApplyCurrentTransaction(ArgusDbContext db, DbCommand command)
+    {
+        var currentTransaction = db.Database.CurrentTransaction;
+        if (currentTransaction is not null)
+        {
+            command.Transaction = currentTransaction.GetDbTransaction();
+        }
     }
 
     private static void AddParameters(DbCommand command, IReadOnlyDictionary<string, object?> parameters)

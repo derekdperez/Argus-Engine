@@ -9,10 +9,22 @@ public interface IReconProviderRunRecorder
         Guid eventId,
         CancellationToken cancellationToken = default);
 
+    Task MarkProviderAwaitingAssetPersistenceAsync(
+        Guid targetId,
+        string provider,
+        IReadOnlyCollection<string> emittedSubdomainKeys,
+        CancellationToken cancellationToken = default);
+
     Task MarkProviderCompletedAsync(
         Guid targetId,
         string provider,
         int emittedSubdomainCount,
+        CancellationToken cancellationToken = default);
+
+    Task MarkProviderSkippedAsync(
+        Guid targetId,
+        string provider,
+        string reason,
         CancellationToken cancellationToken = default);
 
     Task MarkProviderFailedAsync(

@@ -150,6 +150,12 @@ public static class DependencyInjection
             .ValidateOnStart();
         services.AddOptions<ReconOrchestratorOptions>()
             .Bind(configuration.GetArgusSection("ReconOrchestrator"))
+            .Validate(o => o.MaxTargetsPerTick is >= 1 and <= 10_000)
+            .Validate(o => o.MaxSubdomainsPerTick is >= 1 and <= 100_000)
+            .Validate(o => o.ProviderRunTimeoutSeconds is >= 60 and <= 86_400)
+            .Validate(o => o.RequestedRunRetryDelaySeconds is >= 15 and <= 86_400)
+            .Validate(o => o.MaxRequestedRunRetries is >= 0 and <= 100)
+            .Validate(o => o.MaxHttpWorkersPerSubdomain is >= 1 and <= 128)
             .Validate(o => o.ReconProfilesPerTarget is >= 1 and <= 128)
             .Validate(o => o.ReconProfilesPerSubdomain is >= 1 and <= 64)
             .Validate(o => o.RequestsPerMinutePerSubdomain is >= 1 and <= 60_000)

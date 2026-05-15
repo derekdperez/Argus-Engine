@@ -65,27 +65,50 @@ public sealed class SubdomainEnumerationRequestedConsumer(
 
     public async Task Consume(ConsumeContext<SubdomainEnumerationRequested> context)
     {
+        var message = context.Message;
+
         if (!await toggles.IsWorkerEnabledAsync(WorkerKeys.Enumeration, context.CancellationToken).ConfigureAwait(false))
         {
-            LogEnumerationDisabled(logger, context.Message.Provider, context.Message.RootDomain, null);
+            LogEnumerationDisabled(logger, message.Provider, message.RootDomain, null);
+            await reconRecorder.MarkProviderSkippedAsync(
+                message.TargetId,
+                message.Provider,
+                "enumeration_worker_toggle_disabled",
+                context.CancellationToken).ConfigureAwait(false);
             return;
         }
 
-        var message = context.Message;
         var cfg = options.Value;
         if (!cfg.Enabled)
+        {
+            await reconRecorder.MarkProviderSkippedAsync(
+                message.TargetId,
+                message.Provider,
+                "subdomain_enumeration_disabled",
+                context.CancellationToken).ConfigureAwait(false);
             return;
+        }
 
         var target = await targetLookup.FindAsync(message.TargetId, context.CancellationToken).ConfigureAwait(false);
         if (target is null)
         {
             LogTargetMissing(logger, message.Provider, message.TargetId, message.RootDomain, null);
+            await reconRecorder.MarkProviderFailedAsync(
+                message.TargetId,
+                message.Provider,
+                "target_missing",
+                context.CancellationToken).ConfigureAwait(false);
             return;
         }
 
         if (!string.Equals(target.RootDomain, message.RootDomain, StringComparison.OrdinalIgnoreCase))
         {
             LogDomainMismatch(logger, message.Provider, message.TargetId, message.RootDomain, target.RootDomain, null);
+            await reconRecorder.MarkProviderFailedAsync(
+                message.TargetId,
+                message.Provider,
+                "root_domain_mismatch",
+                context.CancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -94,6 +117,11 @@ public sealed class SubdomainEnumerationRequestedConsumer(
         if (provider is null)
         {
             LogNoProvider(logger, message.Provider, null);
+            await reconRecorder.MarkProviderFailedAsync(
+                message.TargetId,
+                message.Provider,
+                "provider_not_registered",
+                context.CancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -130,6 +158,7 @@ public sealed class SubdomainEnumerationRequestedConsumer(
         var rejectedNormalizationCount = 0;
         var rejectedScopeCount = 0;
         var dedupe = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var emittedSubdomainKeys = new List<string>();
         var maxPerJob = Math.Clamp(cfg.MaxSubdomainsPerJob, 1, 1_000_000);
         var rootAsset = await graph.GetRootAssetAsync(message.TargetId, context.CancellationToken).ConfigureAwait(false);
 
@@ -172,7 +201,8 @@ public sealed class SubdomainEnumerationRequestedConsumer(
                     EventId: NewId.NextGuid(),
                     CausationId: causation,
                     Producer: "worker-enum"));
-            
+
+            emittedSubdomainKeys.Add(normalized);
             emittedCount++;
             if (emittedCount >= maxPerJob)
                 break;
@@ -181,14 +211,22 @@ public sealed class SubdomainEnumerationRequestedConsumer(
         if (assetsToEnqueue.Count > 0)
         {
             await outbox.EnqueueBatchAsync(assetsToEnqueue, context.CancellationToken).ConfigureAwait(false);
+            await reconRecorder.MarkProviderAwaitingAssetPersistenceAsync(
+                    message.TargetId,
+                    message.Provider,
+                    emittedSubdomainKeys,
+                    context.CancellationToken)
+                .ConfigureAwait(false);
         }
-
-        await reconRecorder.MarkProviderCompletedAsync(
-                message.TargetId,
-                message.Provider,
-                emittedCount,
-                context.CancellationToken)
-            .ConfigureAwait(false);
+        else
+        {
+            await reconRecorder.MarkProviderCompletedAsync(
+                    message.TargetId,
+                    message.Provider,
+                    0,
+                    context.CancellationToken)
+                .ConfigureAwait(false);
+        }
 
         LogEnumerationCompleted(
             logger,

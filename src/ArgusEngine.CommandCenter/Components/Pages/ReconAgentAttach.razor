@@ -1,0 +1,170 @@
+@page "/recon-agent/attach"
+@page "/targets/{TargetId:guid}/recon-agent/attach"
+@rendermode InteractiveServer
+@using ArgusEngine.Application.Orchestration
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.Extensions.Options
+@inject IReconOrchestrator ReconOrchestrator
+@inject IOptions<ReconOrchestratorOptions> ReconOptions
+
+<PageTitle>Attach Recon Agent · Argus</PageTitle>
+
+<h1>Attach Recon Agent</h1>
+
+<p class="text-muted">
+    Attach a recon agent to an existing target, create the tracking rows, and dispatch the first provider workers.
+</p>
+
+<EditForm Model="_form" OnValidSubmit="AttachAsync">
+    <DataAnnotationsValidator />
+
+    <div class="mb-3">
+        <label class="form-label" for="targetId">Target ID</label>
+        <InputText id="targetId" class="form-control" @bind-Value="_form.TargetIdText" />
+    </div>
+
+    <div class="row">
+        <div class="col-md-4 mb-3">
+            <label class="form-label" for="profilesPerTarget">Recon profiles per target</label>
+            <InputNumber id="profilesPerTarget" class="form-control" @bind-Value="_form.ReconProfilesPerTarget" />
+        </div>
+        <div class="col-md-4 mb-3">
+            <label class="form-label" for="profilesPerSubdomain">Recon profiles per subdomain</label>
+            <InputNumber id="profilesPerSubdomain" class="form-control" @bind-Value="_form.ReconProfilesPerSubdomain" />
+        </div>
+        <div class="col-md-4 mb-3">
+            <label class="form-label" for="rpm">Requests/min/subdomain</label>
+            <InputNumber id="rpm" class="form-control" @bind-Value="_form.RequestsPerMinutePerSubdomain" />
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-4 mb-3">
+            <label class="form-label" for="delayMin">Random delay min seconds</label>
+            <InputNumber id="delayMin" class="form-control" @bind-Value="_form.RandomDelayMin" />
+        </div>
+        <div class="col-md-4 mb-3">
+            <label class="form-label" for="delayMax">Random delay max seconds</label>
+            <InputNumber id="delayMax" class="form-control" @bind-Value="_form.RandomDelayMax" />
+        </div>
+        <div class="col-md-4 mb-3">
+            <label class="form-label" for="hardwareAge">Max profile hardware age</label>
+            <InputNumber id="hardwareAge" class="form-control" @bind-Value="_form.ReconProfileHardwareAge" />
+        </div>
+    </div>
+
+    <div class="form-check mb-2">
+        <InputCheckbox id="randomDelay" class="form-check-input" @bind-Value="_form.RandomDelayEnabled" />
+        <label class="form-check-label" for="randomDelay">Enable random delay</label>
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox id="headerOrder" class="form-check-input" @bind-Value="_form.RandomizeHeaderOrderEnabled" />
+        <label class="form-check-label" for="headerOrder">Randomize header order</label>
+    </div>
+
+    <button class="btn btn-primary" type="submit" disabled="@_busy">
+        @(_busy ? "Attaching..." : "Attach Recon Agent")
+    </button>
+</EditForm>
+
+@if (!string.IsNullOrWhiteSpace(_status))
+{
+    <div class="alert alert-info mt-3">@_status</div>
+}
+
+@code {
+    [Parameter]
+    public Guid? TargetId { get; set; }
+
+    private readonly ReconAgentAttachForm _form = new();
+    private bool _busy;
+    private string? _status;
+
+    protected override void OnInitialized()
+    {
+        var defaults = ReconOptions.Value;
+        _form.TargetIdText = TargetId?.ToString("D") ?? string.Empty;
+        _form.ReconProfilesPerTarget = defaults.ReconProfilesPerTarget;
+        _form.ReconProfilesPerSubdomain = defaults.ReconProfilesPerSubdomain;
+        _form.RequestsPerMinutePerSubdomain = defaults.RequestsPerMinutePerSubdomain;
+        _form.RandomDelayMin = defaults.RandomDelayMin;
+        _form.RandomDelayMax = defaults.RandomDelayMax;
+        _form.RandomDelayEnabled = defaults.RandomDelayEnabled;
+        _form.RandomizeHeaderOrderEnabled = defaults.RandomizeHeaderOrderEnabled;
+        _form.ReconProfileDeviceTypes = defaults.ReconProfileDeviceTypes;
+        _form.ReconProfileBrowsers = defaults.ReconProfileBrowsers;
+        _form.ReconProfileOs = defaults.ReconProfileOs;
+        _form.ReconProfileHardwareAge = defaults.ReconProfileHardwareAge;
+        _form.MaxHttpWorkersPerSubdomain = defaults.MaxHttpWorkersPerSubdomain;
+    }
+
+    private async Task AttachAsync()
+    {
+        _status = null;
+
+        if (!Guid.TryParse(_form.TargetIdText, out var parsedTargetId) || parsedTargetId == Guid.Empty)
+        {
+            _status = "Enter a valid target ID.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var configuration = new ReconOrchestratorConfiguration
+            {
+                ReconProfilesPerTarget = _form.ReconProfilesPerTarget,
+                ReconProfilesPerSubdomain = _form.ReconProfilesPerSubdomain,
+                RequestsPerMinutePerSubdomain = _form.RequestsPerMinutePerSubdomain,
+                RandomDelayMin = _form.RandomDelayMin,
+                RandomDelayMax = _form.RandomDelayMax,
+                RandomDelayEnabled = _form.RandomDelayEnabled,
+                RandomizeHeaderOrderEnabled = _form.RandomizeHeaderOrderEnabled,
+                ReconProfileDeviceTypes = _form.ReconProfileDeviceTypes,
+                ReconProfileBrowsers = _form.ReconProfileBrowsers,
+                ReconProfileOs = _form.ReconProfileOs,
+                ReconProfileHardwareAge = _form.ReconProfileHardwareAge,
+                MaxHttpWorkersPerSubdomain = _form.MaxHttpWorkersPerSubdomain
+            };
+
+            var snapshot = await ReconOrchestrator.AttachToTargetAsync(
+                    parsedTargetId,
+                    "command-center",
+                    configuration,
+                    CancellationToken.None);
+
+            var tick = await ReconOrchestrator.TickTargetAsync(
+                    parsedTargetId,
+                    $"command-center-{Environment.MachineName}",
+                    CancellationToken.None);
+
+            _status = $"Recon agent attached to {snapshot.RootDomain}. Providers queued: {tick.ProvidersQueued}.";
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed class ReconAgentAttachForm
+    {
+        public string TargetIdText { get; set; } = string.Empty;
+        public int ReconProfilesPerTarget { get; set; } = 8;
+        public int ReconProfilesPerSubdomain { get; set; } = 2;
+        public int RequestsPerMinutePerSubdomain { get; set; } = 120;
+        public double RandomDelayMin { get; set; } = 0.25;
+        public double RandomDelayMax { get; set; } = 2.5;
+        public bool RandomDelayEnabled { get; set; } = true;
+        public bool RandomizeHeaderOrderEnabled { get; set; } = true;
+        public string[] ReconProfileDeviceTypes { get; set; } = ["mobile", "desktop", "tablet"];
+        public string[] ReconProfileBrowsers { get; set; } = ["firefox", "chrome", "safari"];
+        public string[] ReconProfileOs { get; set; } = ["windows", "ios", "android", "chrome"];
+        public int ReconProfileHardwareAge { get; set; } = 12;
+        public int MaxHttpWorkersPerSubdomain { get; set; } = 1;
+    }
+}

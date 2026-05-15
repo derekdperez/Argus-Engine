@@ -4,9 +4,24 @@ public sealed class ReconOrchestratorOptions
 {
     public bool Enabled { get; set; } = true;
 
+    // New targets are not attached automatically unless this is explicitly enabled.
+    public bool AutoAttachNewTargets { get; set; } = false;
+
     public int PollIntervalSeconds { get; set; } = 15;
 
     public int ClaimTimeoutSeconds { get; set; } = 120;
+
+    public int MaxTargetsPerTick { get; set; } = 25;
+
+    public int MaxSubdomainsPerTick { get; set; } = 250;
+
+    public int ProviderRunTimeoutSeconds { get; set; } = 3600;
+
+    public int RequestedRunRetryDelaySeconds { get; set; } = 300;
+
+    public int MaxRequestedRunRetries { get; set; } = 3;
+
+    public int MaxHttpWorkersPerSubdomain { get; set; } = 1;
 
     public int ReconProfilesPerTarget { get; set; } = 8;
 
@@ -55,6 +70,8 @@ public sealed record ReconOrchestratorConfiguration
 
     public int ReconProfileHardwareAge { get; init; } = 12;
 
+    public int MaxHttpWorkersPerSubdomain { get; init; } = 1;
+
     public static ReconOrchestratorConfiguration FromOptions(ReconOrchestratorOptions options) =>
         new()
         {
@@ -68,8 +85,30 @@ public sealed record ReconOrchestratorConfiguration
             ReconProfileDeviceTypes = Clean(options.ReconProfileDeviceTypes, ["mobile", "desktop", "tablet"]),
             ReconProfileBrowsers = Clean(options.ReconProfileBrowsers, ["firefox", "chrome", "safari"]),
             ReconProfileOs = Clean(options.ReconProfileOs, ["windows", "ios", "android", "chrome"]),
-            ReconProfileHardwareAge = Math.Clamp(options.ReconProfileHardwareAge, 0, 25)
+            ReconProfileHardwareAge = Math.Clamp(options.ReconProfileHardwareAge, 0, 25),
+            MaxHttpWorkersPerSubdomain = Math.Clamp(options.MaxHttpWorkersPerSubdomain, 1, 128)
         };
+
+    public static ReconOrchestratorConfiguration Sanitize(ReconOrchestratorConfiguration? configuration, ReconOrchestratorOptions fallback)
+    {
+        var source = configuration ?? FromOptions(fallback);
+
+        return new ReconOrchestratorConfiguration
+        {
+            ReconProfilesPerTarget = Math.Clamp(source.ReconProfilesPerTarget, 1, 128),
+            ReconProfilesPerSubdomain = Math.Clamp(source.ReconProfilesPerSubdomain, 1, 64),
+            RequestsPerMinutePerSubdomain = Math.Clamp(source.RequestsPerMinutePerSubdomain, 1, 60_000),
+            RandomDelayMin = Math.Max(0, source.RandomDelayMin),
+            RandomDelayMax = Math.Max(Math.Max(0, source.RandomDelayMin), source.RandomDelayMax),
+            RandomDelayEnabled = source.RandomDelayEnabled,
+            RandomizeHeaderOrderEnabled = source.RandomizeHeaderOrderEnabled,
+            ReconProfileDeviceTypes = Clean(source.ReconProfileDeviceTypes, ["mobile", "desktop", "tablet"]),
+            ReconProfileBrowsers = Clean(source.ReconProfileBrowsers, ["firefox", "chrome", "safari"]),
+            ReconProfileOs = Clean(source.ReconProfileOs, ["windows", "ios", "android", "chrome"]),
+            ReconProfileHardwareAge = Math.Clamp(source.ReconProfileHardwareAge, 0, 25),
+            MaxHttpWorkersPerSubdomain = Math.Clamp(source.MaxHttpWorkersPerSubdomain, 1, 128)
+        };
+    }
 
     private static string[] Clean(string[]? values, string[] fallback)
     {

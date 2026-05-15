@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using MassTransit;
 using ArgusEngine.Application.Orchestration;
 using ArgusEngine.Application.Workers;
@@ -9,6 +10,7 @@ namespace ArgusEngine.Workers.Enumeration.Consumers;
 public sealed class TargetCreatedConsumer(
     IWorkerToggleReader toggles,
     IReconOrchestrator reconOrchestrator,
+    IOptions<ReconOrchestratorOptions> options,
     ILogger<TargetCreatedConsumer> logger) : IConsumer<TargetCreated>
 {
     private static readonly Action<ILogger, Guid, string, Exception?> LogAttaching =
@@ -29,8 +31,20 @@ public sealed class TargetCreatedConsumer(
             new EventId(3, nameof(LogEnumerationDisabled)),
             "TargetCreated: enumeration worker disabled; skipping ReconOrchestrator attach for target {TargetId}.");
 
+    private static readonly Action<ILogger, Guid, Exception?> LogAutoAttachDisabled =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Information,
+            new EventId(4, nameof(LogAutoAttachDisabled)),
+            "TargetCreated: ReconOrchestrator auto-attach disabled; target {TargetId} will wait for manual Attach Recon Agent.");
+
     public async Task Consume(ConsumeContext<TargetCreated> context)
     {
+        if (!options.Value.AutoAttachNewTargets)
+        {
+            LogAutoAttachDisabled(logger, context.Message.TargetId, null);
+            return;
+        }
+
         if (!await toggles.IsWorkerEnabledAsync(WorkerKeys.Enumeration, context.CancellationToken).ConfigureAwait(false))
         {
             LogEnumerationDisabled(logger, context.Message.TargetId, null);
@@ -40,7 +54,7 @@ public sealed class TargetCreatedConsumer(
         var m = context.Message;
         LogAttaching(logger, m.TargetId, m.RootDomain, null);
 
-        await reconOrchestrator.AttachToTargetAsync(m.TargetId, "target-created", context.CancellationToken)
+        await reconOrchestrator.AttachToTargetAsync(m.TargetId, "target-created", configuration: null, cancellationToken: context.CancellationToken)
             .ConfigureAwait(false);
 
         var result = await reconOrchestrator.TickTargetAsync(

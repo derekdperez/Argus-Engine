@@ -234,7 +234,7 @@ class Paths:
             start = start.parent
 
         for candidate in [start, *start.parents]:
-            deploy_dir = candidate / "deploy"
+            deploy_dir = candidate / "deployment"
             compose_file = deploy_dir / "docker-compose.yml"
             if deploy_dir.is_dir() and compose_file.exists():
                 return Paths(
@@ -2380,54 +2380,54 @@ LIMIT 50;
 Argus deployment console
 
 Usage:
-  deploy.py [global options] [command]
+  ./deploy [global options] [command]
 
 Interactive:
-  deploy.py
-  deploy.py menu
+  ./deploy
+  ./deploy menu
 
 Deploy/update:
-  deploy.py deploy --hot [service...]
-  deploy.py deploy --image [service...]
-  deploy.py deploy --fresh
-  deploy.py deploy --ecs-workers
-  deploy.py deploy --gcp-workers
+  ./deploy deploy --hot [service...]
+  ./deploy deploy --image [service...]
+  ./deploy deploy --fresh
+  ./deploy deploy --ecs-workers
+  ./deploy deploy --gcp-workers
 
 Scaling:
-  deploy.py scale local worker-spider=4 worker-enum=2 worker-http-requester=2
-  deploy.py scale ecs worker-spider=6 worker-techid=1
-  deploy.py scale gcp worker-spider=2:10 worker-enum=2
-  deploy.py scale autoscale
+  ./deploy scale local worker-spider=4 worker-enum=2 worker-http-requester=2
+  ./deploy scale ecs worker-spider=6 worker-techid=1
+  ./deploy scale gcp worker-spider=2:10 worker-enum=2
+  ./deploy scale autoscale
 
 Monitoring:
-  deploy.py preflight
-  deploy.py monitor
-  deploy.py status [service...]
-  deploy.py logs [--follow] [service...]
-  deploy.py logs --errors [service...]
-  deploy.py health
-  deploy.py changed
-  deploy.py services
-  deploy.py validate [--ci]
+  ./deploy preflight
+  ./deploy monitor
+  ./deploy status [service...]
+  ./deploy logs [--follow] [service...]
+  ./deploy logs --errors [service...]
+  ./deploy health
+  ./deploy changed
+  ./deploy services
+  ./deploy validate [--ci]
 
 AWS/ECS:
-  deploy.py ecs hybrid
-  deploy.py ecs repos
-  deploy.py ecs build [service...]
-  deploy.py ecs deploy [service...]
-  deploy.py ecs release [service...]
-  deploy.py ecs replace [worker-service...]
-  deploy.py ecs status
+  ./deploy ecs hybrid
+  ./deploy ecs repos
+  ./deploy ecs build [service...]
+  ./deploy ecs deploy [service...]
+  ./deploy ecs release [service...]
+  ./deploy ecs replace [worker-service...]
+  ./deploy ecs status
 
 Google Cloud Run:
-  deploy.py gcp configure
-  deploy.py gcp provision
-  deploy.py gcp build [worker...]
-  deploy.py gcp deploy [worker...]
-  deploy.py gcp release [worker...]
-  deploy.py gcp scale [worker=min:max|worker=count ...]
-  deploy.py gcp status [worker...]
-  deploy.py gcp teardown [worker...]
+  ./deploy gcp configure
+  ./deploy gcp provision
+  ./deploy gcp build [worker...]
+  ./deploy gcp deploy [worker...]
+  ./deploy gcp release [worker...]
+  ./deploy gcp scale [worker=min:max|worker=count ...]
+  ./deploy gcp status [worker...]
+  ./deploy gcp teardown [worker...]
 
 Global options:
   --dry-run, -n       Print commands without executing them

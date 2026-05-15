@@ -70,6 +70,9 @@ while IFS= read -r csproj; do
   sed -E -i "s#<Version>[^<]+</Version>#<Version>${VERSION_VALUE}</Version>#g" "$csproj"
 done < <(find "$ROOT/src" -type f -name '*.csproj' | sort)
 
+sed -E -i "s#Version = \"[0-9]+\\.[0-9]+\\.[0-9]+\"#Version = \"${VERSION_VALUE}\"#g" \
+  "$ROOT/src/ArgusEngine.Infrastructure/Messaging/OutboxDispatcherWorker.cs"
+
 for file in \
   "$ROOT/deploy/Dockerfile.web" \
   "$ROOT/deploy/Dockerfile.worker" \
@@ -99,7 +102,7 @@ sed -E -i \
   "$ROOT/deploy/.env.version.example"
 
 sed -E -i "s#^expected=\"[^\"]+\"#expected=\"${VERSION_VALUE}\"#" "$ROOT/scripts/verify-deployment-version.sh"
-sed -E -i "s#^[[:space:]]*\\[string\\]\\$ExpectedVersion = \"[^\"]+\"#[string]\\$ExpectedVersion = \"${VERSION_VALUE}\"#" "$ROOT/scripts/verify-deployment-version.ps1"
+sed -E -i 's#^[[:space:]]*\[string\]\$ExpectedVersion = "[^"]+"#[string]$ExpectedVersion = "'"${VERSION_VALUE}"'"#' "$ROOT/scripts/verify-deployment-version.ps1"
 
 if [[ "$STAMP" == "1" ]]; then
   cat > "$ROOT/version.json" <<JSON

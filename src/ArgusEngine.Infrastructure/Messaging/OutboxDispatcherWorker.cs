@@ -126,7 +126,7 @@ public sealed class OutboxDispatcherWorker(
                     IsHealthy = true,
                     HealthMessage = "Dispatcher active",
                     ProcessId = Environment.ProcessId,
-                    Version = "2.6.1"
+                    Version = "2.6.2"
                 };
                 db.WorkerHeartbeats.Add(heartbeat);
             }

@@ -167,6 +167,25 @@ jobs:
           cache-from: type=gha,scope=argus-${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=argus-${{ matrix.service }}
 
+      - name: Export image artifact
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/argus-image-artifacts
+          image_ref="argus-engine/${{ matrix.service }}:ci"
+          out="/tmp/argus-image-artifacts/${{ matrix.service }}-${GITHUB_SHA}.tar.gz"
+          docker save "${image_ref}" | gzip -1 > "${out}"
+          ls -lh "${out}"
+
+      - name: Upload image artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: argus-image-${{ matrix.service }}-${{ github.sha }}
+          path: /tmp/argus-image-artifacts/${{ matrix.service }}-${{ github.sha }}.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
   compose-startup-smoke:
     name: Compose startup smoke
     runs-on: ubuntu-latest

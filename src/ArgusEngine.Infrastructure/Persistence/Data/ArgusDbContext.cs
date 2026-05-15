@@ -416,6 +416,12 @@ public sealed class ArgusDbContext(DbContextOptions<ArgusDbContext> options) : D
             e.Property(x => x.MaxJitterMs).HasColumnName("max_jitter_ms");
             e.Property(x => x.SpoofReferer).HasColumnName("spoof_referer");
             e.Property(x => x.CustomHeadersJson).HasColumnName("custom_headers_json").HasColumnType("jsonb");
+            e.Property(x => x.ProxyFingerprintMinDelayMs).HasColumnName("proxy_fingerprint_min_delay_ms");
+            e.Property(x => x.ProxyFingerprintMaxDelayMs).HasColumnName("proxy_fingerprint_max_delay_ms");
+            e.Property(x => x.ProxyRoutingEnabled).HasColumnName("proxy_routing_enabled");
+            e.Property(x => x.ProxyStickySubdomainsEnabled).HasColumnName("proxy_sticky_subdomains_enabled");
+            e.Property(x => x.ProxyAssignmentSalt).HasColumnName("proxy_assignment_salt");
+            e.Property(x => x.ProxyServersJson).HasColumnName("proxy_servers_json");
             e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
         });
 

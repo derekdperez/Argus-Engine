@@ -44,9 +44,9 @@ public sealed class DataRetentionOptions
 
     public int CloudUsageRetentionDays { get; set; } = 90;
 
-    // Larger batches reduce high-volume event tables quickly while remaining
-    // inside the existing AddArgusInfrastructure validation bounds.
-    public int BatchSize { get; set; } = 5000;
-    public int DelayBetweenBatchesMs { get; set; } = 50;
-    public int MaxBatchesPerRun { get; set; } = 500;
+    // Keep batch work moderate by default to avoid monopolizing database I/O
+    // on busy deployments. Operators can override this per environment.
+    public int BatchSize { get; set; } = 1000;
+    public int DelayBetweenBatchesMs { get; set; } = 100;
+    public int MaxBatchesPerRun { get; set; } = 200;
 }

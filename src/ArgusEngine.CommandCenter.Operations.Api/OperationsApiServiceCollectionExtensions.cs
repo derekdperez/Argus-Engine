@@ -1,4 +1,5 @@
 using ArgusEngine.Infrastructure.Data;
+using ArgusEngine.Infrastructure.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using StackExchange.Redis;
@@ -16,9 +17,41 @@ internal static class OperationsApiServiceCollectionExtensions
             ResolveConnectionString(configuration, "FileStore", postgres),
             configuration["Argus:FileStore:MaxPoolSize"] ?? configuration["Nightmare:FileStore:MaxPoolSize"] ?? "4");
         var redis = ResolveConnectionString(configuration, "Redis", "localhost:6379");
+        var postgresCommandTimeoutSeconds = Math.Clamp(configuration.GetArgusValue("Postgres:CommandTimeoutSeconds", 45), 5, 600);
+        var postgresRetryCount = Math.Clamp(configuration.GetArgusValue("Postgres:RetryCount", 3), 0, 10);
+        var postgresRetryDelaySeconds = Math.Clamp(configuration.GetArgusValue("Postgres:RetryMaxDelaySeconds", 5), 1, 120);
+        var fileStoreCommandTimeoutSeconds = Math.Clamp(configuration.GetArgusValue("FileStore:CommandTimeoutSeconds", 45), 5, 600);
+        var fileStoreRetryCount = Math.Clamp(configuration.GetArgusValue("FileStore:RetryCount", 3), 0, 10);
+        var fileStoreRetryDelaySeconds = Math.Clamp(configuration.GetArgusValue("FileStore:RetryMaxDelaySeconds", 5), 1, 120);
 
-        services.AddDbContextFactory<ArgusDbContext>(options => options.UseNpgsql(postgres));
-        services.AddDbContextFactory<FileStoreDbContext>(options => options.UseNpgsql(fileStore));
+        services.AddDbContextFactory<ArgusDbContext>(
+            options => options.UseNpgsql(
+                postgres,
+                npgsql =>
+                {
+                    npgsql.CommandTimeout(postgresCommandTimeoutSeconds);
+                    if (postgresRetryCount > 0)
+                    {
+                        npgsql.EnableRetryOnFailure(
+                            postgresRetryCount,
+                            TimeSpan.FromSeconds(postgresRetryDelaySeconds),
+                            errorCodesToAdd: null);
+                    }
+                }));
+        services.AddDbContextFactory<FileStoreDbContext>(
+            options => options.UseNpgsql(
+                fileStore,
+                npgsql =>
+                {
+                    npgsql.CommandTimeout(fileStoreCommandTimeoutSeconds);
+                    if (fileStoreRetryCount > 0)
+                    {
+                        npgsql.EnableRetryOnFailure(
+                            fileStoreRetryCount,
+                            TimeSpan.FromSeconds(fileStoreRetryDelaySeconds),
+                            errorCodesToAdd: null);
+                    }
+                }));
         services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<ArgusDbContext>>().CreateDbContext());
         services.AddSingleton<IConnectionMultiplexer>(_ =>
         {

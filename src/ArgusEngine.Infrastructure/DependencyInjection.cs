@@ -84,6 +84,12 @@ public static class DependencyInjection
 
         pgConn = ApplyDefaultMaxPoolSize(pgConn, configuration.GetArgusValue("Postgres:MaxPoolSize", 8));
         fileStoreConn = ApplyDefaultMaxPoolSize(fileStoreConn, configuration.GetArgusValue("FileStore:MaxPoolSize", 4));
+        var postgresCommandTimeoutSeconds = Math.Clamp(configuration.GetArgusValue("Postgres:CommandTimeoutSeconds", 45), 5, 600);
+        var postgresRetryCount = Math.Clamp(configuration.GetArgusValue("Postgres:RetryCount", 3), 0, 10);
+        var postgresRetryDelaySeconds = Math.Clamp(configuration.GetArgusValue("Postgres:RetryMaxDelaySeconds", 5), 1, 120);
+        var fileStoreCommandTimeoutSeconds = Math.Clamp(configuration.GetArgusValue("FileStore:CommandTimeoutSeconds", 45), 5, 600);
+        var fileStoreRetryCount = Math.Clamp(configuration.GetArgusValue("FileStore:RetryCount", 3), 0, 10);
+        var fileStoreRetryDelaySeconds = Math.Clamp(configuration.GetArgusValue("FileStore:RetryMaxDelaySeconds", 5), 1, 120);
 
         services.AddHealthChecks()
             .AddCheck(
@@ -114,11 +120,37 @@ public static class DependencyInjection
         services.AddSingleton<DistributedScanLock>();
         services.AddTransient(sp => new BulkAssetImporter(pgConn));
 
-        void ConfigureNpgsql(DbContextOptionsBuilder options) => options.UseNpgsql(pgConn);
+        void ConfigureNpgsql(DbContextOptionsBuilder options) =>
+            options.UseNpgsql(
+                pgConn,
+                npgsql =>
+                {
+                    npgsql.CommandTimeout(postgresCommandTimeoutSeconds);
+                    if (postgresRetryCount > 0)
+                    {
+                        npgsql.EnableRetryOnFailure(
+                            postgresRetryCount,
+                            TimeSpan.FromSeconds(postgresRetryDelaySeconds),
+                            errorCodesToAdd: null);
+                    }
+                });
         services.AddDbContextFactory<ArgusDbContext>(ConfigureNpgsql);
         services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<ArgusDbContext>>().CreateDbContext());
 
-        void ConfigureFileStore(DbContextOptionsBuilder options) => options.UseNpgsql(fileStoreConn);
+        void ConfigureFileStore(DbContextOptionsBuilder options) =>
+            options.UseNpgsql(
+                fileStoreConn,
+                npgsql =>
+                {
+                    npgsql.CommandTimeout(fileStoreCommandTimeoutSeconds);
+                    if (fileStoreRetryCount > 0)
+                    {
+                        npgsql.EnableRetryOnFailure(
+                            fileStoreRetryCount,
+                            TimeSpan.FromSeconds(fileStoreRetryDelaySeconds),
+                            errorCodesToAdd: null);
+                    }
+                });
         services.AddDbContextFactory<FileStoreDbContext>(ConfigureFileStore);
         services.AddSingleton<IFileStore, EfFileStore>();
         services.AddOptions<HttpArtifactOptions>()

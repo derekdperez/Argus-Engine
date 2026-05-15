@@ -1,22 +1,21 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using MassTransit;
 using ArgusEngine.Application.Assets;
 using ArgusEngine.Application.Gatekeeping;
-using ArgusEngine.Contracts.Assets;
 using ArgusEngine.Application.Http;
 using ArgusEngine.Contracts;
+using ArgusEngine.Contracts.Assets;
 using ArgusEngine.Contracts.Events;
 using ArgusEngine.Domain.Entities;
 using ArgusEngine.Infrastructure.Data;
 using ArgusEngine.Infrastructure.Observability;
 using ArgusEngine.Workers.Spider;
+using MassTransit;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace ArgusEngine.Workers.HttpRequester;
 
@@ -27,43 +26,38 @@ public sealed class HttpRequesterWorker(
     IOptions<HttpRequesterOptions> options,
     AdaptiveConcurrencyController concurrency,
     IHttpRateLimiter rateLimiter,
+    ProxyHttpClientProvider proxyHttpClientProvider,
     IPublishEndpoint publishEndpoint,
     ILogger<HttpRequesterWorker> logger) : BackgroundService
 {
     private HttpRequestQueueSettings? _currentSettings;
     private DateTimeOffset _lastSettingsFetch = DateTimeOffset.MinValue;
-    private static readonly string[] DefaultUserAgents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:125.0) Gecko/20100101 Firefox/125.0",
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1"
-    ];
 
-    private static readonly Action<ILogger, Exception?> LogWorkerStarted =
-        LoggerMessage.Define(
-            LogLevel.Information,
-            new EventId(1, nameof(ExecuteAsync)),
-            "HttpRequesterWorker started.");
+    private static readonly Action<ILogger, Exception?> LogWorkerStarted = LoggerMessage.Define(
+        LogLevel.Information,
+        new EventId(1, nameof(ExecuteAsync)),
+        "HttpRequesterWorker started.");
 
-    private static readonly Action<ILogger, Exception?> LogLoopFailed =
-        LoggerMessage.Define(
-            LogLevel.Error,
-            new EventId(2, nameof(ExecuteAsync)),
-            "HTTP requester worker loop failed.");
+    private static readonly Action<ILogger, Exception?> LogLoopFailed = LoggerMessage.Define(
+        LogLevel.Error,
+        new EventId(2, nameof(ExecuteAsync)),
+        "HTTP requester worker loop failed.");
 
-    private static readonly Action<ILogger, Guid, Guid, Exception?> LogAssetNotFound =
-        LoggerMessage.Define<Guid, Guid>(
-            LogLevel.Warning,
-            new EventId(5, nameof(ProcessItemAsync)),
-            "Skipping HTTP request: asset {AssetId} not found for queue item {QueueItemId}.");
+    private static readonly Action<ILogger, Guid, Guid, Exception?> LogAssetNotFound = LoggerMessage.Define<Guid, Guid>(
+        LogLevel.Warning,
+        new EventId(5, nameof(ProcessItemAsync)),
+        "Skipping HTTP request: asset {AssetId} not found for queue item {QueueItemId}.");
 
-    private static readonly Action<ILogger, Exception?> LogPermanentFailure =
-        LoggerMessage.Define(
-            LogLevel.Warning,
-            new EventId(4, nameof(ProcessItemAsync)),
-            "Permanent failure for HTTP request queue item.");
+    private static readonly Action<ILogger, Exception?> LogPermanentFailure = LoggerMessage.Define(
+        LogLevel.Warning,
+        new EventId(4, nameof(ProcessItemAsync)),
+        "Permanent failure for HTTP request queue item.");
+
+    private static readonly Action<ILogger, string, string, Exception?> LogProxySelected =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Debug,
+            new EventId(6, nameof(ProcessItemAsync)),
+            "Routing HTTP request through proxy {ProxyId} for domain {DomainKey}.");
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -75,7 +69,9 @@ public sealed class HttpRequesterWorker(
             {
                 var opt = options.Value;
                 var effectiveConcurrency = concurrency.ResolveEffectiveConcurrency(opt.MaxConcurrency);
-                var items = await LeaseWorkAsync(effectiveConcurrency, opt.VisibilityTimeoutSeconds, stoppingToken).ConfigureAwait(false);
+
+                var items = await LeaseWorkAsync(effectiveConcurrency, opt.VisibilityTimeoutSeconds, stoppingToken)
+                    .ConfigureAwait(false);
 
                 if (items.Count == 0)
                 {
@@ -103,9 +99,13 @@ public sealed class HttpRequesterWorker(
         }
     }
 
-    private async Task<List<HttpRequestQueueItem>> LeaseWorkAsync(int limit, int visibilitySeconds, CancellationToken ct)
+    private async Task<IReadOnlyList<HttpRequestQueueItem>> LeaseWorkAsync(
+        int limit,
+        int visibilitySeconds,
+        CancellationToken cancellationToken)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+
         var now = DateTimeOffset.UtcNow;
         var lockedUntil = now.AddSeconds(visibilitySeconds);
         var lockId = $"requester-{Environment.MachineName}-{Guid.NewGuid():N}";
@@ -141,118 +141,157 @@ public sealed class HttpRequesterWorker(
                 RETURNING http_request_queue.*;
                 """)
             .AsNoTracking()
-            .ToListAsync(ct)
+            .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
         return leased;
     }
 
-    private async Task ProcessItemAsync(HttpRequestQueueItem item, CancellationToken ct)
+    private async Task ProcessItemAsync(HttpRequestQueueItem item, CancellationToken cancellationToken)
     {
         using var logScope = logger.BeginScope(new Dictionary<string, object?>
         {
             ["QueueItemId"] = item.Id,
             ["Url"] = item.RequestUrl,
-            ["DomainKey"] = item.DomainKey,
+            ["DomainKey"] = item.DomainKey
         });
 
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         try
         {
-            var settings = await GetSettingsAsync(ct).ConfigureAwait(false);
+            var settings = await GetSettingsAsync(cancellationToken).ConfigureAwait(false);
 
-            // Apply per-domain rate limiting
-            await rateLimiter.WaitAsync(item.DomainKey, ct).ConfigureAwait(false);
+            await rateLimiter.WaitAsync(item.DomainKey, cancellationToken).ConfigureAwait(false);
 
-            // Apply Jitter
-            if (settings?.UseRandomJitter == true && settings.MaxJitterMs > settings.MinJitterMs)
+            var opt = options.Value;
+            var proxy = ProxyRouting.SelectProxy(settings, item);
+            var client = proxy is null
+                ? httpClientFactory.CreateClient("requester")
+                : proxyHttpClientProvider.GetClient(proxy, opt);
+
+            if (proxy is not null)
             {
-                var jitter = Random.Shared.Next(settings.MinJitterMs, settings.MaxJitterMs);
-                await Task.Delay(jitter, ct).ConfigureAwait(false);
+                LogProxySelected(logger, string.IsNullOrWhiteSpace(proxy.Id) ? proxy.CacheKey : proxy.Id, item.DomainKey, null);
             }
 
-            using var client = httpClientFactory.CreateClient("requester");
             using var request = new HttpRequestMessage(new HttpMethod(item.Method), item.RequestUrl);
+            ApplyStandardHeaders(request, opt);
 
-            // Apply Detection Evasion
-            ApplyEvasion(request, settings);
+            using var response = await client.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             stopwatch.Stop();
 
-            var snapshot = await CreateSnapshotAsync(item, response, stopwatch.Elapsed, ct).ConfigureAwait(false);
+            var snapshot = await CreateSnapshotAsync(item, request, response, stopwatch.Elapsed, cancellationToken)
+                .ConfigureAwait(false);
 
-            StoredAsset? asset = null;
+            StoredAsset? asset;
             var correlationId = NewId.NextGuid();
+
             using (var scope = scopeFactory.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<ArgusDbContext>();
-                asset = await db.Assets.Include(a => a.Target).FirstOrDefaultAsync(a => a.Id == item.AssetId, ct).ConfigureAwait(false);
-                
-                if (asset == null)
+                asset = await db.Assets
+                    .Include(a => a.Target)
+                    .FirstOrDefaultAsync(a => a.Id == item.AssetId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (asset is null)
                 {
                     LogAssetNotFound(logger, item.AssetId, item.Id, null);
-                    await MarkFailedAsync(item.Id, "Asset not found", terminal: true, ct).ConfigureAwait(false);
+                    await MarkFailedAsync(item.Id, "Asset not found", terminal: true, cancellationToken)
+                        .ConfigureAwait(false);
                     return;
                 }
 
                 var persistence = scope.ServiceProvider.GetRequiredService<IAssetPersistence>();
-                await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, correlationId, ct).ConfigureAwait(false);
+                await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, correlationId, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
-            await MarkSucceededAsync(item.Id, snapshot, ct).ConfigureAwait(false);
-            
-            // Record rate limit success
+            await MarkSucceededAsync(item.Id, snapshot, cancellationToken).ConfigureAwait(false);
+
             rateLimiter.RecordCompletion(item.DomainKey, true, stopwatch.Elapsed);
             concurrency.ReportResult(true);
 
-            // Publish event for spidering and other processing
-            await publishEndpoint.Publish(new HttpResponseDownloaded(
-                item.TargetId,
-                asset.Target?.RootDomain ?? string.Empty,
-                asset.Target?.GlobalMaxDepth ?? asset.Depth + 10,
-                item.AssetId,
-                asset.Depth,
-                item.AssetKind,
-                snapshot,
-                DateTimeOffset.UtcNow,
-                correlationId,
-                EventId: NewId.NextGuid(),
-                CausationId: item.Id,
-                Producer: "worker-http-requester"), ct).ConfigureAwait(false);
+            await publishEndpoint.Publish(
+                    new HttpResponseDownloaded(
+                        item.TargetId,
+                        asset.Target?.RootDomain ?? string.Empty,
+                        asset.Target?.GlobalMaxDepth ?? asset.Depth + 10,
+                        item.AssetId,
+                        asset.Depth,
+                        item.AssetKind,
+                        snapshot,
+                        DateTimeOffset.UtcNow,
+                        correlationId,
+                        EventId: NewId.NextGuid(),
+                        CausationId: item.Id,
+                        Producer: "worker-http-requester"),
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (HttpRequestException ex) when (IsNameResolutionFailure(ex))
         {
             concurrency.ReportResult(false);
             rateLimiter.RecordCompletion(item.DomainKey, false, stopwatch.Elapsed);
-            await HandleRetryOrFailureAsync(item, DnsFailureMessage(item.RequestUrl), terminal: true, ct).ConfigureAwait(false);
+            await HandleRetryOrFailureAsync(item, DnsFailureMessage(item.RequestUrl), terminal: true, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (IsHttpTransient(ex))
         {
             concurrency.ReportResult(false);
             rateLimiter.RecordCompletion(item.DomainKey, false, stopwatch.Elapsed);
-            await HandleRetryOrFailureAsync(item, ex.Message, terminal: false, ct).ConfigureAwait(false);
+            await HandleRetryOrFailureAsync(item, ex.Message, terminal: false, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             concurrency.ReportResult(false);
             rateLimiter.RecordCompletion(item.DomainKey, false, stopwatch.Elapsed);
             LogPermanentFailure(logger, ex);
-            await HandleRetryOrFailureAsync(item, ex.Message, terminal: true, ct).ConfigureAwait(false);
+            await HandleRetryOrFailureAsync(item, ex.Message, terminal: true, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private static async Task<UrlFetchSnapshot> CreateSnapshotAsync(HttpRequestQueueItem item, HttpResponseMessage response, TimeSpan duration, CancellationToken ct)
+    private static void ApplyStandardHeaders(HttpRequestMessage request, HttpRequesterOptions options)
     {
-        var body = await BoundedHttpContentReader.ReadAsStringAsync(response.Content, 1024 * 512, ct).ConfigureAwait(false);
+        request.Headers.UserAgent.Clear();
+        if (!string.IsNullOrWhiteSpace(options.UserAgent))
+        {
+            request.Headers.TryAddWithoutValidation("User-Agent", options.UserAgent);
+        }
+
+        request.Headers.Accept.Clear();
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
+    }
+
+    private static async Task<UrlFetchSnapshot> CreateSnapshotAsync(
+        HttpRequestQueueItem item,
+        HttpRequestMessage request,
+        HttpResponseMessage response,
+        TimeSpan duration,
+        CancellationToken cancellationToken)
+    {
+        var body = await BoundedHttpContentReader
+            .ReadAsStringAsync(response.Content, 1024 * 512, cancellationToken)
+            .ConfigureAwait(false);
+
+        var responseHeaders = HeadersToDict(response.Headers);
+        foreach (var header in response.Content.Headers)
+        {
+            responseHeaders[header.Key] = string.Join(", ", header.Value);
+        }
 
         return new UrlFetchSnapshot(
             RequestMethod: item.Method,
-            RequestHeaders: [],
+            RequestHeaders: HeadersToDict(request.Headers),
             RequestBody: null,
             StatusCode: (int)response.StatusCode,
-            ResponseHeaders: HeadersToDict(response.Headers),
+            ResponseHeaders: responseHeaders,
             ResponseBody: body,
             ResponseSizeBytes: response.Content.Headers.ContentLength,
             DurationMs: duration.TotalMilliseconds,
@@ -264,9 +303,9 @@ public sealed class HttpRequesterWorker(
             ResponseBodyPreview: Truncate(body, 4096));
     }
 
-    private async Task MarkSucceededAsync(Guid queueItemId, UrlFetchSnapshot snapshot, CancellationToken ct)
+    private async Task MarkSucceededAsync(Guid queueItemId, UrlFetchSnapshot snapshot, CancellationToken cancellationToken)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         await db.HttpRequestQueue
             .Where(q => q.Id == queueItemId)
@@ -280,11 +319,15 @@ public sealed class HttpRequesterWorker(
                     .SetProperty(q => q.LastHttpStatus, snapshot.StatusCode)
                     .SetProperty(q => q.DurationMs, (long)snapshot.DurationMs)
                     .SetProperty(q => q.ResponseBodyPreview, Truncate(snapshot.ResponseBody ?? string.Empty, 4096)),
-                ct)
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private async Task HandleRetryOrFailureAsync(HttpRequestQueueItem item, string error, bool terminal, CancellationToken ct)
+    private async Task HandleRetryOrFailureAsync(
+        HttpRequestQueueItem item,
+        string error,
+        bool terminal,
+        CancellationToken cancellationToken)
     {
         if (terminal || item.AttemptCount >= item.MaxAttempts)
         {
@@ -307,16 +350,17 @@ public sealed class HttpRequesterWorker(
             using (var scope = scopeFactory.CreateScope())
             {
                 var persistence = scope.ServiceProvider.GetRequiredService<IAssetPersistence>();
-                await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, NewId.NextGuid(), ct).ConfigureAwait(false);
+                await persistence.ConfirmUrlAssetAsync(item.AssetId, snapshot, NewId.NextGuid(), cancellationToken)
+                    .ConfigureAwait(false);
             }
 
-            await MarkFailedAsync(item.Id, error, terminal: true, ct).ConfigureAwait(false);
+            await MarkFailedAsync(item.Id, error, terminal: true, cancellationToken).ConfigureAwait(false);
             return;
         }
 
         var delay = TimeSpan.FromSeconds(Math.Min(300, Math.Pow(2, Math.Max(0, item.AttemptCount)) * 5));
 
-        await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         await db.HttpRequestQueue
             .Where(q => q.Id == item.Id)
@@ -328,13 +372,13 @@ public sealed class HttpRequesterWorker(
                     .SetProperty(q => q.LockedBy, (string?)null)
                     .SetProperty(q => q.LockedUntilUtc, (DateTimeOffset?)null)
                     .SetProperty(q => q.LastError, Truncate(error, 2048)),
-                ct)
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private async Task MarkFailedAsync(Guid queueItemId, string error, bool terminal, CancellationToken ct)
+    private async Task MarkFailedAsync(Guid queueItemId, string error, bool terminal, CancellationToken cancellationToken)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         await db.HttpRequestQueue
             .Where(q => q.Id == queueItemId)
@@ -346,13 +390,13 @@ public sealed class HttpRequesterWorker(
                     .SetProperty(q => q.LockedBy, (string?)null)
                     .SetProperty(q => q.LockedUntilUtc, (DateTimeOffset?)null)
                     .SetProperty(q => q.LastError, Truncate(error, 2048)),
-                ct)
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private async Task<HttpRequestQueueSettings?> GetSettingsAsync(CancellationToken ct)
+    private async Task<HttpRequestQueueSettings?> GetSettingsAsync(CancellationToken cancellationToken)
     {
-        if (_currentSettings != null && DateTimeOffset.UtcNow - _lastSettingsFetch < TimeSpan.FromMinutes(1))
+        if (_currentSettings is not null && DateTimeOffset.UtcNow - _lastSettingsFetch < TimeSpan.FromMinutes(1))
         {
             return _currentSettings;
         }
@@ -361,78 +405,43 @@ public sealed class HttpRequesterWorker(
         {
             using var scope = scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ArgusDbContext>();
-            _currentSettings = await db.HttpRequestQueueSettings.AsNoTracking().FirstOrDefaultAsync(ct).ConfigureAwait(false);
+
+            await EnsureProxyColumnsAsync(db, cancellationToken).ConfigureAwait(false);
+
+            _currentSettings = await db.HttpRequestQueueSettings
+                .AsNoTracking()
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+
             _lastSettingsFetch = DateTimeOffset.UtcNow;
+
             return _currentSettings;
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to refresh HTTP request queue settings. Using cached or default.");
+            logger.LogWarning(ex, "Failed to refresh HTTP request queue settings. Using cached or default settings.");
             return _currentSettings;
         }
     }
 
-    private void ApplyEvasion(HttpRequestMessage request, HttpRequestQueueSettings? settings)
+    private static async Task EnsureProxyColumnsAsync(ArgusDbContext db, CancellationToken cancellationToken)
     {
-        if (settings == null) return;
-
-        // User Agent Rotation
-        if (settings.RotateUserAgents)
-        {
-            string ua = DefaultUserAgents[Random.Shared.Next(DefaultUserAgents.Length)];
-            
-            if (!string.IsNullOrWhiteSpace(settings.CustomUserAgentsJson))
-            {
-                try
-                {
-                    var customUas = System.Text.Json.JsonSerializer.Deserialize<string[]>(settings.CustomUserAgentsJson);
-                    if (customUas != null && customUas.Length > 0)
-                    {
-                        ua = customUas[Random.Shared.Next(customUas.Length)];
-                    }
-                }
-                catch { /* Ignore invalid JSON */ }
-            }
-
-            request.Headers.UserAgent.Clear();
-            request.Headers.TryAddWithoutValidation("User-Agent", ua);
-        }
-
-        // Spoof Referer
-        if (settings.SpoofReferer)
-        {
-            string[] referers = [
-                "https://www.google.com/",
-                "https://www.bing.com/",
-                "https://duckduckgo.com/",
-                request.RequestUri!.GetLeftPart(UriPartial.Authority) + "/"
-            ];
-            request.Headers.Referrer = new Uri(referers[Random.Shared.Next(referers.Length)]);
-        }
-
-        // Custom Headers
-        if (!string.IsNullOrWhiteSpace(settings.CustomHeadersJson))
-        {
-            try
-            {
-                var customHeaders = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(settings.CustomHeadersJson);
-                if (customHeaders != null)
-                {
-                    foreach (var kvp in customHeaders)
-                    {
-                        request.Headers.TryAddWithoutValidation(kvp.Key, kvp.Value);
-                    }
-                }
-            }
-            catch { /* Ignore invalid JSON */ }
-        }
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            ALTER TABLE http_request_queue_settings
+                ADD COLUMN IF NOT EXISTS proxy_routing_enabled boolean NOT NULL DEFAULT false,
+                ADD COLUMN IF NOT EXISTS proxy_sticky_subdomains_enabled boolean NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS proxy_assignment_salt text NULL DEFAULT 'argus-proxy-v1',
+                ADD COLUMN IF NOT EXISTS proxy_servers_json text NULL DEFAULT '[]';
+            """,
+            cancellationToken)
+            .ConfigureAwait(false);
     }
 
-    private static Dictionary<string, string> HeadersToDict(HttpResponseHeaders headers) =>
-        headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value));
+    private static Dictionary<string, string> HeadersToDict(HttpHeaders headers) =>
+        headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value), StringComparer.OrdinalIgnoreCase);
 
-    private static string Truncate(string? value, int max) =>
-        value?.Length > max ? value[..max] : (value ?? string.Empty);
+    private static string Truncate(string? value, int max) => value?.Length > max ? value[..max] : value ?? string.Empty;
 
     private static bool IsHttpTransient(Exception ex) =>
         ex is HttpRequestException or IOException or TaskCanceledException or OperationCanceledException;

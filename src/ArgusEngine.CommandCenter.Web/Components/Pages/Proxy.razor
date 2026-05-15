@@ -1,0 +1,425 @@
+@page "/proxy"
+@rendermode InteractiveServer
+
+@inject HttpClient Http
+@inject NotificationService Notifications
+
+<PageTitle>Proxy Routing</PageTitle>
+
+<section class="proxy-page">
+    <header class="proxy-header">
+        <div>
+            <p class="eyebrow">Network</p>
+            <h1>Proxy routing</h1>
+            <p class="lede">
+                Configure the proxy servers used by HTTP requester workers. When enabled, each request is assigned to a proxy
+                with a deterministic subdomain mapping so traffic for the same subdomain stays on the same proxy while the
+                proxy list and salt remain unchanged.
+            </p>
+        </div>
+
+        <button class="primary" disabled="@_loading" @onclick="LoadAsync">Refresh</button>
+    </header>
+
+    @if (_loading && _model is null)
+    {
+        <div class="panel">Loading proxy routing settings...</div>
+    }
+    else if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="alert">@_error</div>
+    }
+    else if (_model is not null)
+    {
+        <div class="status-grid">
+            <div class="stat">
+                <span>Routing</span>
+                <strong>@(_settings.ProxyRoutingEnabled ? "Enabled" : "Disabled")</strong>
+            </div>
+            <div class="stat">
+                <span>Enabled proxies</span>
+                <strong>@_model.EnabledServerCount</strong>
+            </div>
+            <div class="stat">
+                <span>Sticky subdomains</span>
+                <strong>@(_settings.ProxyStickySubdomainsEnabled ? "On" : "Off")</strong>
+            </div>
+        </div>
+
+        <section class="panel settings">
+            <h2>Routing controls</h2>
+
+            <label class="check-row">
+                <input type="checkbox" @bind="_settings.ProxyRoutingEnabled" />
+                <span>Route HTTP requester traffic through configured proxies</span>
+            </label>
+
+            <label class="check-row">
+                <input type="checkbox" @bind="_settings.ProxyStickySubdomainsEnabled" />
+                <span>Keep the same proxy assigned to the same subdomain</span>
+            </label>
+
+            <label>
+                Assignment salt
+                <input class="input" @bind="_settings.ProxyAssignmentSalt" />
+            </label>
+
+            <div class="actions">
+                <button class="primary" disabled="@_saving" @onclick="SaveSettingsAsync">Save settings</button>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="section-title">
+                <h2>Running proxy servers</h2>
+                <span>@_model.Servers.Count configured</span>
+            </div>
+
+            @if (_model.Servers.Count == 0)
+            {
+                <p class="empty">No proxy servers are configured yet.</p>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Proxy</th>
+                                <th>Public IP</th>
+                                <th>Region</th>
+                                <th>Status</th>
+                                <th>Enabled</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var proxy in _model.Servers)
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@proxy.Name</strong>
+                                        @if (!string.IsNullOrWhiteSpace(proxy.Notes))
+                                        {
+                                            <small>@proxy.Notes</small>
+                                        }
+                                    </td>
+                                    <td><code>@proxy.ProxyUri</code></td>
+                                    <td>@Display(proxy.PublicIpAddress)</td>
+                                    <td>@Display(proxy.Region)</td>
+                                    <td>@Display(proxy.LastStatus)</td>
+                                    <td>@(proxy.Enabled ? "Yes" : "No")</td>
+                                    <td class="row-actions">
+                                        <button @onclick="() => CheckAsync(proxy.Id)">Check</button>
+                                        <button @onclick="() => Edit(proxy)">Edit</button>
+                                        <button class="danger" @onclick="() => DeleteAsync(proxy.Id)">Delete</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <h2>@(_editingId is null ? "Add proxy" : "Edit proxy")</h2>
+
+            <div class="form-grid">
+                <label>
+                    Name
+                    <input class="input" @bind="_draft.Name" />
+                </label>
+
+                <label>
+                    Scheme
+                    <select class="input" @bind="_draft.Scheme">
+                        <option value="http">http</option>
+                        <option value="https">https</option>
+                    </select>
+                </label>
+
+                <label>
+                    Host
+                    <input class="input" @bind="_draft.Host" />
+                </label>
+
+                <label>
+                    Port
+                    <input class="input" type="number" min="1" max="65535" @bind="_draft.Port" />
+                </label>
+
+                <label>
+                    Public IP
+                    <input class="input" @bind="_draft.PublicIpAddress" />
+                </label>
+
+                <label>
+                    Region
+                    <input class="input" @bind="_draft.Region" />
+                </label>
+
+                <label>
+                    Username
+                    <input class="input" @bind="_draft.Username" />
+                </label>
+
+                <label>
+                    Password
+                    <input class="input" type="password" @bind="_draft.Password" />
+                </label>
+
+                <label class="wide">
+                    Notes
+                    <input class="input" @bind="_draft.Notes" />
+                </label>
+
+                <label class="check-row wide">
+                    <input type="checkbox" @bind="_draft.Enabled" />
+                    <span>Proxy is available for routing</span>
+                </label>
+            </div>
+
+            <div class="actions">
+                <button class="primary" disabled="@_saving" @onclick="SaveProxyAsync">@(_editingId is null ? "Add proxy" : "Save proxy")</button>
+                @if (_editingId is not null)
+                {
+                    <button @onclick="ResetDraft">Cancel</button>
+                }
+            </div>
+        </section>
+    }
+</section>
+
+@code {
+    private ProxyRoutingOverview? _model;
+    private ProxyRoutingSettings _settings = new();
+    private ProxyServer _draft = NewProxyDraft();
+    private string? _editingId;
+    private string? _error;
+    private bool _loading;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            _model = await Http.GetFromJsonAsync<ProxyRoutingOverview>("api/proxy-routing");
+            _settings = _model?.Settings ?? new ProxyRoutingSettings();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unable to load proxy routing settings: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        _saving = true;
+
+        try
+        {
+            var response = await Http.PutAsJsonAsync("api/proxy-routing/settings", _settings);
+            if (!response.IsSuccessStatusCode)
+            {
+                await ShowFailureAsync(response, "Unable to save proxy routing settings");
+                return;
+            }
+
+            _model = await response.Content.ReadFromJsonAsync<ProxyRoutingOverview>();
+            _settings = _model?.Settings ?? _settings;
+            NotifySuccess("Proxy routing settings saved.");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task SaveProxyAsync()
+    {
+        _saving = true;
+
+        try
+        {
+            HttpResponseMessage response;
+            if (_editingId is null)
+            {
+                response = await Http.PostAsJsonAsync("api/proxy-routing/servers", _draft);
+            }
+            else
+            {
+                response = await Http.PutAsJsonAsync($"api/proxy-routing/servers/{Uri.EscapeDataString(_editingId)}", _draft);
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                await ShowFailureAsync(response, "Unable to save proxy server");
+                return;
+            }
+
+            _model = await response.Content.ReadFromJsonAsync<ProxyRoutingOverview>();
+            _settings = _model?.Settings ?? _settings;
+            ResetDraft();
+            NotifySuccess("Proxy server saved.");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task CheckAsync(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return;
+        }
+
+        _saving = true;
+
+        try
+        {
+            var response = await Http.PostAsync($"api/proxy-routing/servers/{Uri.EscapeDataString(id)}/check", content: null);
+            if (!response.IsSuccessStatusCode)
+            {
+                await ShowFailureAsync(response, "Unable to check proxy server");
+                return;
+            }
+
+            _model = await response.Content.ReadFromJsonAsync<ProxyRoutingOverview>();
+            _settings = _model?.Settings ?? _settings;
+            NotifySuccess("Proxy server check completed.");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteAsync(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return;
+        }
+
+        _saving = true;
+
+        try
+        {
+            var response = await Http.DeleteAsync($"api/proxy-routing/servers/{Uri.EscapeDataString(id)}");
+            if (!response.IsSuccessStatusCode)
+            {
+                await ShowFailureAsync(response, "Unable to delete proxy server");
+                return;
+            }
+
+            await LoadAsync();
+            NotifySuccess("Proxy server deleted.");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Edit(ProxyServer proxy)
+    {
+        _editingId = proxy.Id;
+        _draft = proxy with { Password = null };
+    }
+
+    private void ResetDraft()
+    {
+        _editingId = null;
+        _draft = NewProxyDraft();
+    }
+
+    private async Task ShowFailureAsync(HttpResponseMessage response, string title)
+    {
+        var details = await response.Content.ReadAsStringAsync();
+        Notifications.Notify(NotificationSeverity.Error, title, string.IsNullOrWhiteSpace(details) ? response.ReasonPhrase : details, 6000);
+    }
+
+    private void NotifySuccess(string message)
+    {
+        Notifications.Notify(NotificationSeverity.Success, "Proxy routing", message, 3500);
+    }
+
+    private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+
+    private static ProxyServer NewProxyDraft() =>
+        new()
+        {
+            Scheme = "http",
+            Port = 8080,
+            Enabled = true
+        };
+
+    private sealed record ProxyRoutingOverview
+    {
+        public ProxyRoutingSettings Settings { get; init; } = new();
+
+        public List<ProxyServer> Servers { get; init; } = [];
+
+        public int EnabledServerCount { get; init; }
+    }
+
+    private sealed record ProxyRoutingSettings
+    {
+        public bool ProxyRoutingEnabled { get; set; }
+
+        public bool ProxyStickySubdomainsEnabled { get; set; } = true;
+
+        public string? ProxyAssignmentSalt { get; set; } = "argus-proxy-v1";
+
+        public DateTimeOffset UpdatedAtUtc { get; set; }
+    }
+
+    private sealed record ProxyServer
+    {
+        public string? Id { get; set; }
+
+        public string? Name { get; set; }
+
+        public string? Scheme { get; set; } = "http";
+
+        public string? Host { get; set; }
+
+        public int Port { get; set; }
+
+        public string? Username { get; set; }
+
+        public string? Password { get; set; }
+
+        public bool Enabled { get; set; } = true;
+
+        public string? PublicIpAddress { get; set; }
+
+        public string? Region { get; set; }
+
+        public string? Notes { get; set; }
+
+        public string? ProxyUri { get; set; }
+
+        public DateTimeOffset? LastCheckedAtUtc { get; set; }
+
+        public string? LastStatus { get; set; }
+
+        public string? LastError { get; set; }
+    }
+}

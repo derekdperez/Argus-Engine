@@ -16,12 +16,13 @@ using Microsoft.Extensions.Options;
 try
 {
     var builder = Host.CreateApplicationBuilder(args);
-    builder.Logging.AddFilter("System.Net.Http.HttpClient.requester", LogLevel.Warning);
 
+    builder.Logging.AddFilter("System.Net.Http.HttpClient.requester", LogLevel.Warning);
     builder.Services.AddArgusObservability(builder.Configuration, "argus-worker-http-requester");
     builder.Services.AddArgusDatabaseLogging("worker-http-requester");
 
-    builder.Services.AddOptions<HttpRequesterOptions>()
+    builder.Services
+        .AddOptions<HttpRequesterOptions>()
         .Bind(builder.Configuration.GetSection("HttpRequester"))
         .Validate(options => options.MaxConcurrency > 0, "HttpRequester:MaxConcurrency must be greater than zero.")
         .Validate(options => options.VisibilityTimeoutSeconds > 0, "HttpRequester:VisibilityTimeoutSeconds must be greater than zero.")
@@ -29,14 +30,15 @@ try
         .ValidateOnStart();
 
     builder.Services.AddSingleton<AdaptiveConcurrencyController>();
+    builder.Services.AddSingleton<ProxyHttpClientProvider>();
     builder.Services.AddHostedService<HttpRequesterWorker>();
 
     builder.Services.AddArgusInfrastructure(builder.Configuration, enableOutboxDispatcher: false);
-    builder.Services.AddArgusWorkerHeartbeat(ArgusEngine.Application.Workers.WorkerKeys.HttpRequester);
-
+    builder.Services.AddArgusWorkerHeartbeat(WorkerKeys.HttpRequester);
     builder.Services.AddArgusRabbitMq(builder.Configuration, _ => { });
 
-    builder.Services.AddHttpClient("requester")
+    builder.Services
+        .AddHttpClient("requester")
         .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<HttpRequesterOptions>>().Value;
@@ -46,19 +48,20 @@ try
                 AllowAutoRedirect = true,
                 MaxAutomaticRedirections = 10,
                 AutomaticDecompression = DecompressionMethods.All,
-                CheckCertificateRevocationList = false,
+                CheckCertificateRevocationList = false
             };
 
             if (options.AllowInsecureSsl)
             {
 #pragma warning disable CA5359
-                handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                handler.ServerCertificateCustomValidationCallback =
+                    HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
 #pragma warning restore CA5359
             }
 
             return handler;
         })
-        .AddPolicyHandler(HttpRetryPolicies.SpiderRetryPolicy()); // We can rename this later too.
+        .AddPolicyHandler(HttpRetryPolicies.SpiderRetryPolicy());
 
     var host = builder.Build();
 
@@ -67,11 +70,11 @@ try
     if (!ShouldSkipStartupDatabase(host.Services.GetRequiredService<IConfiguration>()))
     {
         await ArgusDbBootstrap.InitializeAsync(
-            host.Services,
-            host.Services.GetRequiredService<IConfiguration>(),
-            startupLog,
-            includeFileStore: true,
-            host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping)
+                host.Services,
+                host.Services.GetRequiredService<IConfiguration>(),
+                startupLog,
+                includeFileStore: true,
+                host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping)
             .ConfigureAwait(false);
     }
 #pragma warning restore CA1848
@@ -80,10 +83,10 @@ try
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"CRITICAL: HTTP Requester worker failed to start. {ex}");
+    Console.Error.WriteLine($"CRITICAL: HTTP Requester worker failed to start.{Environment.NewLine}{ex}");
     throw;
 }
 
 static bool ShouldSkipStartupDatabase(IConfiguration configuration) =>
-    configuration.GetArgusValue("SkipStartupDatabase", false)
-    || string.Equals(Environment.GetEnvironmentVariable("ARGUS_SKIP_STARTUP_DATABASE"), "1", StringComparison.OrdinalIgnoreCase);
+    configuration.GetArgusValue("SkipStartupDatabase", false) ||
+    string.Equals(Environment.GetEnvironmentVariable("ARGUS_SKIP_STARTUP_DATABASE"), "1", StringComparison.OrdinalIgnoreCase);

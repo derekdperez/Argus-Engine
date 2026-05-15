@@ -547,6 +547,8 @@ class ArgusDeployConsole:
             return self.compose_action(["--hot", *rest])
         if command in {"--image", "-image"}:
             return self.compose_action(["--image", *rest])
+        if command in {"--fast", "-fast"}:
+            return self.all_in_one_deploy(rest)
 
         if command in {"deploy", "update"}:
             return self.deploy_from_args(rest)
@@ -3035,6 +3037,7 @@ Deploy/update:
   ./deploy all-in-1 --no-remote-images       Disable pulling prebuilt images from remote registry
   ./deploy deploy --hot [service...]
   ./deploy deploy --image [service...]
+  ./deploy -fast, --fast [service...]        Non-interactive: runs all-in-1 deploy without showing the menu
   ./deploy deploy --fresh
   ./deploy deploy --ecs-workers
   ./deploy deploy --gcp-workers

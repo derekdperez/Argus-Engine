@@ -6,9 +6,7 @@
 @using System.Globalization
 @using System.Net
 @using System.Net.Http.Json
-@using System.Text
 @using System.Text.Json
-@using Microsoft.AspNetCore.Components.Web.Virtualization
 @implements IDisposable
 @inject HttpClient Http
 @inject ILogger<CommandCenter> Logger
@@ -467,10 +465,7 @@
 
     private CommandTab _activeTab = CommandTab.Targets;
     private PeriodicTimer? _summaryTimer;
-    private PeriodicTimer? _debugClockTimer;
     private Task? _summaryPollingTask;
-    private Task? _debugClockTask;
-    private DateTimeOffset _debugNowUtc = DateTimeOffset.UtcNow;
     private DateTimeOffset? _targetsRefreshedUtc;
     private DateTimeOffset? _subdomainsRefreshedUtc;
     private DateTimeOffset? _assetsRefreshedUtc;
@@ -661,9 +656,7 @@
         await LoadInitialWorkspaceAsync().ConfigureAwait(false);
 
         _summaryTimer = new PeriodicTimer(TimeSpan.FromSeconds(15));
-        _debugClockTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
         _summaryPollingTask = PollSummaryAsync();
-        _debugClockTask = PollDebugClockAsync();
     }
 
     private async Task LoadInitialWorkspaceAsync()
@@ -697,27 +690,6 @@
             {
                 await ReloadOverviewAsync(showLoading: false).ConfigureAwait(false);
 
-                await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected during component disposal.
-        }
-    }
-
-    private async Task PollDebugClockAsync()
-    {
-        if (_debugClockTimer is null)
-        {
-            return;
-        }
-
-        try
-        {
-            while (await _debugClockTimer.WaitForNextTickAsync(_disposeCts.Token).ConfigureAwait(false))
-            {
-                _debugNowUtc = DateTimeOffset.UtcNow;
                 await InvokeAsync(StateHasChanged).ConfigureAwait(false);
             }
         }
@@ -1274,52 +1246,6 @@
             : DateTimeOffset.MinValue;
     }
 
-    private RenderFragment GridDebug(IReadOnlyCollection<JsonElement> visibleRows, IReadOnlyCollection<JsonElement> sourceRows, DateTimeOffset? refreshedUtc) => builder =>
-    {
-        builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "class", "cc-grid-debug");
-        builder.AddAttribute(2, "aria-live", "polite");
-
-        builder.OpenElement(3, "span");
-        builder.AddContent(4, FormatGridRowCount(visibleRows.Count, sourceRows.Count));
-        builder.CloseElement();
-
-        builder.OpenElement(5, "span");
-        builder.AddContent(6, $"{FormatDataSizeMb(sourceRows)} MB");
-        builder.CloseElement();
-
-        builder.OpenElement(7, "span");
-        builder.AddContent(8, FormatRefreshAge(refreshedUtc));
-        builder.CloseElement();
-
-        builder.CloseElement();
-    };
-
-    private static string FormatGridRowCount(int visibleCount, int sourceCount)
-    {
-        return visibleCount == sourceCount
-            ? $"{visibleCount.ToString("N0", CultureInfo.InvariantCulture)} rows"
-            : $"{visibleCount.ToString("N0", CultureInfo.InvariantCulture)} of {sourceCount.ToString("N0", CultureInfo.InvariantCulture)} rows";
-    }
-
-    private static string FormatDataSizeMb(IReadOnlyCollection<JsonElement> rows)
-    {
-        var bytes = rows.Sum(row => Encoding.UTF8.GetByteCount(row.GetRawText()));
-        var megabytes = bytes / 1024d / 1024d;
-        return megabytes.ToString("0.000", CultureInfo.InvariantCulture);
-    }
-
-    private string FormatRefreshAge(DateTimeOffset? refreshedUtc)
-    {
-        if (refreshedUtc is null)
-        {
-            return "not refreshed yet";
-        }
-
-        var seconds = Math.Max(0, (int)Math.Floor((_debugNowUtc - refreshedUtc.Value).TotalSeconds));
-        return $"refreshed {seconds.ToString("N0", CultureInfo.InvariantCulture)}s ago";
-    }
-
     private static string FormatNumber(long value)
     {
         return value.ToString("N0", CultureInfo.InvariantCulture);
@@ -1423,7 +1349,6 @@
     {
         _disposeCts.Cancel();
         _summaryTimer?.Dispose();
-        _debugClockTimer?.Dispose();
         _disposeCts.Dispose();
     }
 

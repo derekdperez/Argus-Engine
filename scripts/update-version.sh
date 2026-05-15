@@ -83,8 +83,8 @@ for file in \
 done
 
 sed -E -i \
-  -e "s#(ARGUS_ASSEMBLY_VERSION:-)[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+#\\1${ASSEMBLY_VERSION}#g" \
-  -e "s#(ARGUS_FILE_VERSION:-)[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+#\\1${ASSEMBLY_VERSION}#g" \
+  -e "s#ARGUS_ASSEMBLY_VERSION:-[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+#ARGUS_ASSEMBLY_VERSION:-${ASSEMBLY_VERSION}#g" \
+  -e "s#ARGUS_FILE_VERSION:-[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+#ARGUS_FILE_VERSION:-${ASSEMBLY_VERSION}#g" \
   "$ROOT/deploy/smoke-predeploy-build.sh"
 
 sed -E -i "s#\$\{ARGUS_ENGINE_VERSION:-[^}]+\}#\$\{ARGUS_ENGINE_VERSION:-${VERSION_VALUE}\}#g" "$ROOT/deploy/docker-compose.yml"
@@ -99,7 +99,7 @@ sed -E -i \
   "$ROOT/deploy/.env.version.example"
 
 sed -E -i "s#^expected=\"[^\"]+\"#expected=\"${VERSION_VALUE}\"#" "$ROOT/scripts/verify-deployment-version.sh"
-sed -E -i "s#^\s*\[string\]\$ExpectedVersion = \"[^\"]+\"#[string]\$ExpectedVersion = \"${VERSION_VALUE}\"#" "$ROOT/scripts/verify-deployment-version.ps1"
+sed -E -i "s#^[[:space:]]*\\[string\\]\\$ExpectedVersion = \"[^\"]+\"#[string]\\$ExpectedVersion = \"${VERSION_VALUE}\"#" "$ROOT/scripts/verify-deployment-version.ps1"
 
 if [[ "$STAMP" == "1" ]]; then
   cat > "$ROOT/version.json" <<JSON

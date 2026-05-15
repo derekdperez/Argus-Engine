@@ -7,7 +7,7 @@ ARG APP_DLL=ArgusEngine.CommandCenter.Gateway.dll
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
-.6.2
+ARG COMPONENT_VERSION=2.6.2
 ARG PROJECT_DIR
 ARG APP_DLL
 
@@ -35,10 +35,8 @@ RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,shar
       -c Release -o /app/publish /p:UseAppHost=false \
       -p:maxcpucount -p:ParallelizePublish=true \
       /p:Version="${COMPONENT_VERSION}" \
-      
-.6.2.0" \
-      
-.6.2.0" \
+      /p:AssemblyVersion="2.6.2.0" \
+      /p:FileVersion="2.6.2.0" \
       /p:InformationalVersion="${COMPONENT_VERSION}" \
     && test -s "/app/publish/${APP_DLL}"
 
@@ -47,7 +45,7 @@ ARG APP_DLL
 ARG BUILD_SOURCE_STAMP=unknown
 ARG BUILD_TIME_UTC=unknown
 
-.6.2
+ARG COMPONENT_VERSION=2.6.2
 
 WORKDIR /app
 

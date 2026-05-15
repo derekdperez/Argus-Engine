@@ -217,8 +217,7 @@ argus_cloud_build_service_image() {
     --build-arg "PROJECT_DIR=$project_dir"
     --build-arg "APP_DLL=$app_dll"
     --build-arg "BUILD_SOURCE_STAMP=${BUILD_SOURCE_STAMP:-unknown}"
-    --build-arg "
-.6.2}"
+    --build-arg "COMPONENT_VERSION=${ARGUS_ENGINE_VERSION:-2.6.2}"
   )
 
   if [[ "$service" == "worker-enum" ]]; then

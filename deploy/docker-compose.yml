@@ -12,8 +12,7 @@
 
 name: argus-engine
 
-x-component-version: &component-version 
-.6.2}
+x-component-version: &component-version ${ARGUS_ENGINE_VERSION:-2.6.2}
 
 x-dotnet-build-args: &dotnet-build-args
   BUILD_SOURCE_STAMP: ${BUILD_SOURCE_STAMP:-unknown}
@@ -114,8 +113,7 @@ services:
       start_period: 30s
 
   command-center-gateway:
-    image: argus-engine/command-center-gateway:
-.6.2}
+    image: argus-engine/command-center-gateway:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -143,8 +141,7 @@ services:
         condition: service_healthy
 
   command-center-operations-api:
-    image: argus-engine/command-center-operations-api:
-.6.2}
+    image: argus-engine/command-center-operations-api:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -176,8 +173,7 @@ services:
         condition: service_completed_successfully
 
   command-center-discovery-api:
-    image: argus-engine/command-center-discovery-api:
-.6.2}
+    image: argus-engine/command-center-discovery-api:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -209,8 +205,7 @@ services:
         condition: service_completed_successfully
 
   command-center-worker-control-api:
-    image: argus-engine/command-center-worker-control-api:
-.6.2}
+    image: argus-engine/command-center-worker-control-api:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -251,8 +246,7 @@ services:
         condition: service_completed_successfully
 
   command-center-maintenance-api:
-    image: argus-engine/command-center-maintenance-api:
-.6.2}
+    image: argus-engine/command-center-maintenance-api:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -284,8 +278,7 @@ services:
         condition: service_completed_successfully
 
   command-center-updates-api:
-    image: argus-engine/command-center-updates-api:
-.6.2}
+    image: argus-engine/command-center-updates-api:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -316,8 +309,7 @@ services:
         condition: service_completed_successfully
 
   command-center-realtime:
-    image: argus-engine/command-center-realtime:
-.6.2}
+    image: argus-engine/command-center-realtime:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -348,8 +340,7 @@ services:
         condition: service_completed_successfully
 
   command-center-bootstrapper:
-    image: argus-engine/command-center-bootstrapper:
-.6.2}
+    image: argus-engine/command-center-bootstrapper:${ARGUS_ENGINE_VERSION:-2.6.2}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -371,8 +362,7 @@ services:
         condition: service_healthy
 
   command-center-spider-dispatcher:
-    image: argus-engine/command-center-spider-dispatcher:
-.6.2}
+    image: argus-engine/command-center-spider-dispatcher:${ARGUS_ENGINE_VERSION:-2.6.2}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.worker
@@ -395,8 +385,7 @@ services:
         condition: service_completed_successfully
 
   command-center-web:
-    image: argus-engine/command-center-web:
-.6.2}
+    image: argus-engine/command-center-web:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -419,8 +408,7 @@ services:
       start_period: 30s
 
   gatekeeper:
-    image: argus-engine/gatekeeper:
-.6.2}
+    image: argus-engine/gatekeeper:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -445,8 +433,7 @@ services:
         condition: service_healthy
 
   worker-spider:
-    image: argus-engine/worker-spider:
-.6.2}
+    image: argus-engine/worker-spider:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -473,8 +460,7 @@ services:
       replicas: ${ARGUS_WORKER_SPIDER_REPLICAS:-2}
 
   worker-http-requester:
-    image: argus-engine/worker-http-requester:
-.6.2}
+    image: argus-engine/worker-http-requester:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -504,8 +490,7 @@ services:
       replicas: ${ARGUS_WORKER_HTTP_REQUESTER_REPLICAS:-2}
 
   worker-enum:
-    image: argus-engine/worker-enum:
-.6.2}
+    image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -545,8 +530,7 @@ services:
       replicas: ${ARGUS_WORKER_ENUM_REPLICAS:-2}
 
   worker-portscan:
-    image: argus-engine/worker-portscan:
-.6.2}
+    image: argus-engine/worker-portscan:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -573,8 +557,7 @@ services:
       replicas: ${ARGUS_WORKER_PORTSCAN_REPLICAS:-2}
 
   worker-highvalue:
-    image: argus-engine/worker-highvalue:
-.6.2}
+    image: argus-engine/worker-highvalue:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..
@@ -601,8 +584,7 @@ services:
       replicas: ${ARGUS_WORKER_HIGHVALUE_REPLICAS:-2}
 
   worker-techid:
-    image: argus-engine/worker-techid:
-.6.2}
+    image: argus-engine/worker-techid:${ARGUS_ENGINE_VERSION:-2.6.2}
     restart: unless-stopped
     build:
       context: ..

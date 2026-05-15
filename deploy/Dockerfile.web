@@ -22,17 +22,15 @@ COPY src/ src/
 COPY src/Resources/ src/Resources/
 
 
-.6.2
+ARG COMPONENT_VERSION=2.6.2
 
 RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "src/ArgusEngine.CommandCenter/ArgusEngine.CommandCenter.csproj" \
       -c Release -o /app/publish /p:UseAppHost=false \
       -p:maxcpucount -p:ParallelizePublish=true \
       /p:Version="${COMPONENT_VERSION}" \
-      
-.6.2.0" \
-      
-.6.2.0" \
+      /p:AssemblyVersion="2.6.2.0" \
+      /p:FileVersion="2.6.2.0" \
       /p:InformationalVersion="${COMPONENT_VERSION}" \
     && test -s /app/publish/ArgusEngine.CommandCenter.dll
 
@@ -40,7 +38,7 @@ FROM argus-engine-base:local AS final
 ARG BUILD_SOURCE_STAMP=unknown
 ARG BUILD_TIME_UTC=unknown
 
-.6.2
+ARG COMPONENT_VERSION=2.6.2
 
 WORKDIR /app
 

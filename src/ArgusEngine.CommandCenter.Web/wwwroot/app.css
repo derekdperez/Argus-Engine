@@ -959,6 +959,18 @@ h1:focus {
 .ww-table a { color: #60a5fa; text-decoration: none; }
 .ww-table a:hover { text-decoration: underline; }
 
+.rmq-summary {
+    display: flex;
+    gap: 16px;
+    padding: 6px 0;
+    font-size: 0.82rem;
+    color: #94a3b8;
+}
+
+.rmq-stat strong {
+    color: #e2e8f0;
+}
+
 .ww-group-header td {
     padding: 8px 10px 4px;
     font-weight: 700;

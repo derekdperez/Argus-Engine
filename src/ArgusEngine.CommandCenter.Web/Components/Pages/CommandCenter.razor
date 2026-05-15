@@ -435,6 +435,64 @@
                 </div>
             }
         </section>
+
+        @* RabbitMQ status section *@
+        <section class="cc-panel" style="margin-top:16px">
+            <div class="cc-panel-header">
+                <div>
+                    <h2>RabbitMQ</h2>
+                    <p class="cc-muted">Queue depths, consumers, and message rates.</p>
+                </div>
+                <div class="cc-toolbar">
+                    <button class="cc-btn" @onclick="ReloadRabbitMqAsync" disabled="@_rmqLoading">Refresh</button>
+                </div>
+            </div>
+            @if (_rmqError is not null)
+            {
+                <p class="cc-muted">@_rmqError</p>
+            }
+            else if (_rmqQueues.Count > 0)
+            {
+                <div class="rmq-summary">
+                    <span class="rmq-stat"><strong>@_rmqQueues.Count</strong> queues</span>
+                    <span class="rmq-stat"><strong>@_rmqConsumerGroups</strong> consumer groups</span>
+                    <span class="rmq-stat"><strong>@_rmqTotalMessages</strong> total messages</span>
+                    <span class="rmq-stat">v@_rmqVersion</span>
+                </div>
+                <div class="ww-grid-wrap" style="margin-top:8px">
+                    <table class="ww-table">
+                        <thead>
+                            <tr>
+                                <th>Queue</th>
+                                <th style="text-align:center">Messages</th>
+                                <th style="text-align:center">Ready</th>
+                                <th style="text-align:center">Unacked</th>
+                                <th style="text-align:center">Consumers</th>
+                                <th>Consumer Tags</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var q in _rmqQueues)
+                            {
+                                <tr>
+                                    <td>@q.Name</td>
+                                    <td style="text-align:center">@q.Messages</td>
+                                    <td style="text-align:center">@q.Ready</td>
+                                    <td style="text-align:center">@q.Unacked</td>
+                                    <td style="text-align:center">@q.Consumers</td>
+                                    <td style="font-size:0.75rem;color:#94a3b8">
+                                        @if (_rmqConsumerTags.TryGetValue(q.Name, out var tags))
+                                        {
+                                            @string.Join(", ", tags)
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
     }
 </div>
 
@@ -479,6 +537,13 @@
     private string? _highValueSearch;
     private string? _technologySearch;
     private bool _gcpConfigured;
+    private List<RmqQueueInfo> _rmqQueues = [];
+    private Dictionary<string, List<string>> _rmqConsumerTags = new();
+    private int _rmqConsumerGroups;
+    private long _rmqTotalMessages;
+    private string _rmqVersion = "";
+    private string? _rmqError;
+    private bool _rmqLoading;
     private string? _newTargetRootDomain;
     private int _newTargetDepth = 2;
     private bool _overviewLoading;
@@ -941,6 +1006,69 @@
     {
         if (string.IsNullOrWhiteSpace(url)) return "-";
         return url.Length > 60 ? url[..60] + "..." : url;
+    }
+
+    private sealed record RmqQueueInfo(string Name, long Messages, long Ready, long Unacked, int Consumers);
+
+    private async Task ReloadRabbitMqAsync()
+    {
+        _rmqLoading = true;
+        _rmqError = null;
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<JsonElement>("/api/rabbitmq/status");
+            if (resp.TryGetProperty("error", out var err))
+            {
+                _rmqError = err.GetString();
+                return;
+            }
+            _rmqVersion = resp.TryGetProperty("version", out var v) ? v.GetString() ?? "" : "";
+            _rmqTotalMessages = resp.TryGetProperty("totalMessages", out var tm) ? tm.GetInt64() : 0;
+            _rmqConsumerGroups = resp.TryGetProperty("consumerCount", out var cc) ? cc.GetInt32() : 0;
+
+            var queues = new List<RmqQueueInfo>();
+            if (resp.TryGetProperty("queues", out var qList))
+            {
+                foreach (var q in qList.EnumerateArray())
+                {
+                    queues.Add(new RmqQueueInfo(
+                        q.GetProperty("name").GetString() ?? "?",
+                        q.TryGetProperty("messages", out var m) ? m.GetInt64() : 0,
+                        q.TryGetProperty("ready", out var r) ? r.GetInt64() : 0,
+                        q.TryGetProperty("unacked", out var u) ? u.GetInt64() : 0,
+                        q.TryGetProperty("consumers", out var c) ? c.GetInt32() : 0
+                    ));
+                }
+            }
+            _rmqQueues = queues;
+
+            _rmqConsumerTags.Clear();
+            if (resp.TryGetProperty("consumers", out var cList))
+            {
+                foreach (var cg in cList.EnumerateArray())
+                {
+                    var qName = cg.TryGetProperty("queue", out var qn) ? qn.GetString() ?? "" : "";
+                    var consumerList = cg.TryGetProperty("consumers", out var cl) ? cl : default;
+                    if (!string.IsNullOrWhiteSpace(qName) && consumerList.ValueKind == JsonValueKind.Array)
+                    {
+                        var tags = consumerList.EnumerateArray()
+                            .Select(ce => ce.TryGetProperty("tag", out var tag) ? tag.GetString() ?? "" : "")
+                            .Where(t => !string.IsNullOrWhiteSpace(t))
+                            .ToList();
+                        if (tags.Count > 0)
+                            _rmqConsumerTags[qName] = tags;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _rmqError = $"Failed to load RabbitMQ status: {ex.Message}";
+        }
+        finally
+        {
+            _rmqLoading = false;
+        }
     }
 
     private async Task CreateTargetAsync()

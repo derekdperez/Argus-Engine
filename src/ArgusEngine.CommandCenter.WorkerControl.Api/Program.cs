@@ -56,5 +56,6 @@ app.MapToolRestartEndpoints();
 app.MapWorkerEndpoints();
 app.MapDockerWorkerEndpoints();
 app.MapGcpWorkerEndpoints();
+app.MapRabbitMqStatusEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

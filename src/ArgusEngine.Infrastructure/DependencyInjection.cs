@@ -12,6 +12,7 @@ using ArgusEngine.Application.Events;
 using ArgusEngine.Application.FileStore;
 using ArgusEngine.Application.Gatekeeping;
 using ArgusEngine.Application.HighValue;
+using ArgusEngine.Application.Orchestration;
 using ArgusEngine.Application.TechnologyIdentification;
 using ArgusEngine.Application.Http;
 using ArgusEngine.Application.Workers;
@@ -24,6 +25,7 @@ using ArgusEngine.Infrastructure.Gatekeeping;
 using ArgusEngine.Infrastructure.Health;
 using ArgusEngine.Infrastructure.HighValue;
 using ArgusEngine.Infrastructure.Messaging;
+using ArgusEngine.Infrastructure.Orchestration;
 using ArgusEngine.Infrastructure.Persistence;
 using ArgusEngine.Infrastructure.TechnologyIdentification;
 using ArgusEngine.Infrastructure.Http;
@@ -146,6 +148,19 @@ public static class DependencyInjection
             .Bind(configuration.GetArgusSection("TechnologyIdentificationScan"))
             .Validate(o => o.MaxResponseBodyScanBytes is >= 1024 and <= 10_000_000)
             .ValidateOnStart();
+        services.AddOptions<ReconOrchestratorOptions>()
+            .Bind(configuration.GetArgusSection("ReconOrchestrator"))
+            .Validate(o => o.ReconProfilesPerTarget is >= 1 and <= 128)
+            .Validate(o => o.ReconProfilesPerSubdomain is >= 1 and <= 64)
+            .Validate(o => o.RequestsPerMinutePerSubdomain is >= 1 and <= 60_000)
+            .Validate(o => o.RandomDelayMin >= 0)
+            .Validate(o => o.RandomDelayMax >= o.RandomDelayMin)
+            .Validate(o => o.ReconProfileHardwareAge is >= 0 and <= 25)
+            .ValidateOnStart();
+        services.AddHostedService<ReconOrchestratorSchemaInitializer>();
+        services.AddScoped<IReconOrchestrator, EfReconOrchestrator>();
+        services.AddScoped<IReconProviderRunRecorder, EfReconProviderRunRecorder>();
+        services.AddScoped<IReconProfileAssignmentService, EfReconProfileAssignmentService>();
         services.AddScoped<IHighValueFindingWriter, EfHighValueFindingWriter>();
         services.AddScoped<IAssetTagService, EfAssetTagService>();
         services.AddScoped<IWorkerToggleReader, EfWorkerToggleReader>();

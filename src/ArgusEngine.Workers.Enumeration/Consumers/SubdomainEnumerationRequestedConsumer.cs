@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MassTransit;
 using ArgusEngine.Application.Assets;
+using ArgusEngine.Application.Orchestration;
 using ArgusEngine.Contracts.Assets;
 using ArgusEngine.Application.Events;
 using ArgusEngine.Application.Workers;
@@ -17,6 +18,7 @@ public sealed class SubdomainEnumerationRequestedConsumer(
     IEventOutbox outbox,
     ITargetLookup targetLookup,
     IAssetGraphService graph,
+    IReconProviderRunRecorder reconRecorder,
     IOptions<SubdomainEnumerationOptions> options) : IConsumer<SubdomainEnumerationRequested>
 {
     private static readonly Action<ILogger, string, string, Exception?> LogEnumerationDisabled =
@@ -95,7 +97,17 @@ public sealed class SubdomainEnumerationRequestedConsumer(
             return;
         }
 
+        var correlation = message.CorrelationId == Guid.Empty ? NewId.NextGuid() : message.CorrelationId;
+        var causation = message.EventId == Guid.Empty ? correlation : message.EventId;
+
         LogEnumerationStarted(logger, message.Provider, message.TargetId, message.RootDomain, null);
+        await reconRecorder.MarkProviderStartedAsync(
+                message.TargetId,
+                message.Provider,
+                correlation,
+                causation,
+                context.CancellationToken)
+            .ConfigureAwait(false);
 
         IReadOnlyCollection<SubdomainEnumerationResult> rawResults;
         try
@@ -105,6 +117,12 @@ public sealed class SubdomainEnumerationRequestedConsumer(
         catch (Exception ex)
         {
             LogProviderFailed(logger, message.Provider, message.RootDomain, ex);
+            await reconRecorder.MarkProviderFailedAsync(
+                    message.TargetId,
+                    message.Provider,
+                    ex.Message,
+                    context.CancellationToken)
+                .ConfigureAwait(false);
             return;
         }
 
@@ -113,8 +131,6 @@ public sealed class SubdomainEnumerationRequestedConsumer(
         var rejectedScopeCount = 0;
         var dedupe = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var maxPerJob = Math.Clamp(cfg.MaxSubdomainsPerJob, 1, 1_000_000);
-        var correlation = message.CorrelationId == Guid.Empty ? NewId.NextGuid() : message.CorrelationId;
-        var causation = message.EventId == Guid.Empty ? correlation : message.EventId;
         var rootAsset = await graph.GetRootAssetAsync(message.TargetId, context.CancellationToken).ConfigureAwait(false);
 
         var assetsToEnqueue = new List<AssetDiscovered>();
@@ -166,6 +182,13 @@ public sealed class SubdomainEnumerationRequestedConsumer(
         {
             await outbox.EnqueueBatchAsync(assetsToEnqueue, context.CancellationToken).ConfigureAwait(false);
         }
+
+        await reconRecorder.MarkProviderCompletedAsync(
+                message.TargetId,
+                message.Provider,
+                emittedCount,
+                context.CancellationToken)
+            .ConfigureAwait(false);
 
         LogEnumerationCompleted(
             logger,

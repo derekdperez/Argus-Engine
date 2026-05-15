@@ -1,0 +1,91 @@
+using System.Data.Common;
+using ArgusEngine.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+
+namespace ArgusEngine.Infrastructure.Orchestration;
+
+internal static class ReconDbCommands
+{
+    public static async Task<int> ExecuteAsync(
+        ArgusDbContext db,
+        string sql,
+        IReadOnlyDictionary<string, object?> parameters,
+        CancellationToken cancellationToken)
+    {
+        await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = sql;
+        AddParameters(command, parameters);
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public static async Task<T?> ScalarAsync<T>(
+        ArgusDbContext db,
+        string sql,
+        IReadOnlyDictionary<string, object?> parameters,
+        CancellationToken cancellationToken)
+    {
+        await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = sql;
+        AddParameters(command, parameters);
+        var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (value is null || value is DBNull)
+        {
+            return default;
+        }
+
+        return (T)Convert.ChangeType(value, typeof(T), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public static async Task<IReadOnlyList<T>> QueryAsync<T>(
+        ArgusDbContext db,
+        string sql,
+        IReadOnlyDictionary<string, object?> parameters,
+        Func<DbDataReader, T> map,
+        CancellationToken cancellationToken)
+    {
+        await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = sql;
+        AddParameters(command, parameters);
+
+        var rows = new List<T>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            rows.Add(map(reader));
+        }
+
+        return rows;
+    }
+
+    private static void AddParameters(DbCommand command, IReadOnlyDictionary<string, object?> parameters)
+    {
+        foreach (var (name, value) in parameters)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value ?? DBNull.Value;
+            command.Parameters.Add(parameter);
+        }
+    }
+
+    public static string? GetNullableString(this DbDataReader reader, string name)
+    {
+        var ordinal = reader.GetOrdinal(name);
+        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    public static DateTimeOffset GetDateTimeOffset(this DbDataReader reader, string name)
+    {
+        var ordinal = reader.GetOrdinal(name);
+        return reader.GetFieldValue<DateTimeOffset>(ordinal);
+    }
+
+    public static DateTimeOffset? GetNullableDateTimeOffset(this DbDataReader reader, string name)
+    {
+        var ordinal = reader.GetOrdinal(name);
+        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateTimeOffset>(ordinal);
+    }
+}

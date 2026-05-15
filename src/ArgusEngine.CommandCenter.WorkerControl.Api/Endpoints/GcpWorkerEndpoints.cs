@@ -1,4 +1,5 @@
 using ArgusEngine.CommandCenter.WorkerControl.Api.Services;
+using Microsoft.Extensions.Logging;
 
 namespace ArgusEngine.CommandCenter.WorkerControl.Api.Endpoints;
 
@@ -25,8 +26,9 @@ public static class GcpWorkerEndpoints
             return result is null ? Results.Problem("Failed to deploy worker") : Results.Ok(result);
         });
 
-        group.MapPost("/deploy-all", async (GcpCloudRunClient gcp, ILogger<GcpWorkerEndpoints> logger, CancellationToken ct) =>
+        group.MapPost("/deploy-all", async (GcpCloudRunClient gcp, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("GcpWorkerEndpoints");
             var results = new List<object>();
             foreach (var slug in DefaultSlugs)
             {

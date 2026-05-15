@@ -51,7 +51,7 @@ public sealed class GcpCloudRunClient(IHttpClientFactory httpFactory, IConfigura
             }
             catch (Exception ex) when (metadataUrl != metadataUrls.Last())
             {
-                _logger.LogDebug("Metadata server at {Url} failed: {Msg}; trying next endpoint", metadataUrl, ex.Message);
+                logger.LogDebug("Metadata server at {Url} failed: {Msg}; trying next endpoint", metadataUrl, ex.Message);
             }
         }
 
@@ -74,7 +74,7 @@ public sealed class GcpCloudRunClient(IHttpClientFactory httpFactory, IConfigura
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to use GOOGLE_APPLICATION_CREDENTIALS");
+                logger.LogWarning(ex, "Failed to use GOOGLE_APPLICATION_CREDENTIALS");
             }
         }
 
@@ -175,17 +175,34 @@ public sealed class GcpCloudRunClient(IHttpClientFactory httpFactory, IConfigura
                     var name = s.TryGetProperty("name", out var n) ? n.GetString()?.Split('/').Last() ?? "" : "";
                     var uid = s.TryGetProperty("uid", out var u) ? u.GetString() ?? "" : name;
                     var url = s.TryGetProperty("uri", out var uri) ? uri.GetString() : null;
-                    var template = s.TryGetProperty("template", out var t) ? t : default;
-                    var annotations = template.ValueKind == JsonValueKind.Object && template.TryGetProperty("annotations", out var a) ? a : default;
-                    var minStr = annotations.ValueKind == JsonValueKind.Object && annotations.TryGetProperty("autoscaling.knative.dev/minScale", out var minEl) ? minEl.GetString() : "0";
-                    var maxStr = annotations.ValueKind == JsonValueKind.Object && annotations.TryGetProperty("autoscaling.knative.dev/maxScale", out var maxEl) ? maxEl.GetString() : "0";
-                    var status = s.TryGetProperty("status", out var st) ? st : default;
-                    var conditions = status.ValueKind == JsonValueKind.Object && status.TryGetProperty("conditions", out var conds) ? conds : default;
-                    var ready = conditions.ValueKind == JsonValueKind.Array && conditions.EnumerateArray().Any(c =>
-                        c.TryGetProperty("type", out var tpe) && tpe.GetString() == "Ready" &&
-                        c.TryGetProperty("status", out var rdy) && rdy.GetString() == "True");
 
-                    result.Add(new GcpWorkerStatus(name, url ?? "", ready ? "active" : "inactive", int.TryParse(minStr, out var mn) ? mn : 1, int.TryParse(maxStr, out var mx) ? mx : 1) { Id = uid });
+                    // Cloud Run v2 API: scaling is in template.scaling
+                    var template = s.TryGetProperty("template", out var t) ? t : default;
+                    var scaling = template.ValueKind == JsonValueKind.Object && template.TryGetProperty("scaling", out var sc) ? sc : default;
+                    var minInstances = scaling.ValueKind == JsonValueKind.Object && scaling.TryGetProperty("minInstanceCount", out var minEl)
+                        ? minEl.GetInt32()
+                        : 1;
+                    var maxInstances = scaling.ValueKind == JsonValueKind.Object && scaling.TryGetProperty("maxInstanceCount", out var maxEl)
+                        ? maxEl.GetInt32()
+                        : 1;
+
+                    // Cloud Run v2 API: conditions are at the top level.
+                    // Service is active when RoutesReady AND ConfigurationsReady are CONDITION_SUCCEEDED.
+                    var conditions = s.TryGetProperty("conditions", out var conds) ? conds : default;
+                    var ready = false;
+                    if (conditions.ValueKind == JsonValueKind.Array)
+                    {
+                        var condList = conditions.EnumerateArray().ToList();
+                        var routesReady = condList.Any(c =>
+                            c.TryGetProperty("type", out var t1) && t1.GetString() == "RoutesReady" &&
+                            c.TryGetProperty("state", out var s1) && s1.GetString() == "CONDITION_SUCCEEDED");
+                        var configsReady = condList.Any(c =>
+                            c.TryGetProperty("type", out var t2) && t2.GetString() == "ConfigurationsReady" &&
+                            c.TryGetProperty("state", out var s2) && s2.GetString() == "CONDITION_SUCCEEDED");
+                        ready = routesReady && configsReady;
+                    }
+
+                    result.Add(new GcpWorkerStatus(name, url ?? "", ready ? "active" : "inactive", minInstances, maxInstances) { Id = uid });
                 }
             }
         }

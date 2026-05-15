@@ -7,33 +7,23 @@
 @using System.Net
 @using System.Net.Http.Json
 @using System.Text.Json
+@using Microsoft.JSInterop
 @implements IDisposable
 @inject HttpClient Http
 @inject ILogger<CommandCenter> Logger
+@inject IJSRuntime JS
 
 <PageTitle>Command Center - Argus Engine</PageTitle>
 
 <div class="cc-page">
     <header class="cc-hero">
         <div>
-            <p class="cc-eyebrow">Argus Engine</p>
             <h1>Command Center</h1>
         </div>
-    </header>
-
-    @if (!string.IsNullOrWhiteSpace(_statusMessage))
-    {
-        <div class="cc-status">@_statusMessage</div>
-    }
-
-    @if (!string.IsNullOrWhiteSpace(_errorMessage))
-    {
-        <div class="cc-error">
-            <strong>Command Center request failed.</strong>
-            <span>@_errorMessage</span>
-            <button class="cc-btn cc-btn-small" @onclick="ClearError">Dismiss</button>
+        <div class="cc-status-bar">
+            <StatusDashboard Http="Http" />
         </div>
-    }
+    </header>
 
     <section class="cc-summary-grid" aria-label="Command Center summary">
         <article class="cc-card">
@@ -124,7 +114,7 @@
                         @if (ColumnVisible("targets.root"))
                         {
                             <TemplateColumn Title="Root domain" Context="target" SortBy="@SortTargetRoot" Class="wide-col">
-                                <span class="argus-dg-clip" title="@Text(target, "rootDomain", "RootDomain", "domain", "Domain")">@Display(Text(target, "rootDomain", "RootDomain", "domain", "Domain"))</span>
+                                <span data-target-id="@RowKey(target)" class="argus-dg-clip" title="@Text(target, "rootDomain", "RootDomain", "domain", "Domain")">@Display(Text(target, "rootDomain", "RootDomain", "domain", "Domain"))</span>
                             </TemplateColumn>
                         }
                         @if (ColumnVisible("targets.status"))
@@ -168,7 +158,9 @@
                         @if (ColumnVisible("subdomains.name"))
                         {
                             <TemplateColumn Title="Subdomain" Context="subdomain" SortBy="@SortSubdomainName" Class="wide-col">
-                                <span class="argus-dg-clip" title="@Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue")">@Display(Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue"))</span>
+                                <span data-target-id="@RowKey(subdomain)" data-subdomain-key="@Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue")" class="argus-dg-clip" title="@Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue")">
+                                    @Display(Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue"))
+                                </span>
                             </TemplateColumn>
                         }
                         @if (ColumnVisible("subdomains.technologies"))
@@ -1331,7 +1323,7 @@
 
     private string TabClass(CommandTab tab)
     {
-        return _activeTab == tab ? "cc-tab cc-tab-active" : "cc-tab";
+        return _activeTab == tab ? "cc-tab-active" : "";
     }
 
     private void SetError(Exception ex, string message)
@@ -1343,6 +1335,14 @@
     private void ClearError()
     {
         _errorMessage = null;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("ReconContextMenu.init");
+        }
     }
 
     public void Dispose()

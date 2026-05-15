@@ -13,23 +13,11 @@
         </a>
 
         <nav class="nav-menu" aria-label="Primary navigation">
-            <NavLink class="nav-link" href="/" Match="NavLinkMatch.All">Operations</NavLink>
-            <NavLink class="nav-link" href="/ops">Operations Console</NavLink>
-            <NavLink class="nav-link" href="/targets">Targets</NavLink>
-            <NavLink class="nav-link" href="/asset-graph">Asset Graph</NavLink>
-            <NavLink class="nav-link" href="/proxy">Proxy</NavLink>
-            <NavLink class="nav-link" href="/cloud-deploy">Google Cloud</NavLink>
-            <NavLink class="nav-link" href="/development">Development</NavLink>
         </nav>
     </aside>
 
     <main class="main-content">
         @Body
-
-        @if (IsOperationsRoute)
-        {
-            <OpsBottomPanels />
-        }
     </main>
 </div>
 
@@ -41,14 +29,4 @@
     <a class="dismiss">x</a>
 </div>
 
-@code {
-    private bool IsOperationsRoute
-    {
-        get
-        {
-            var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/');
 
-            return string.IsNullOrWhiteSpace(path) || path.Equals("ops", StringComparison.OrdinalIgnoreCase);
-        }
-    }
-}

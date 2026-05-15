@@ -191,7 +191,10 @@ static string? SelectClientName(PathString path)
         || path.StartsWithSegments("/api/ec2-workers", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/ops/ecs-status", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/ops/spider/restart", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/api/ops/subdomain-enum/restart", StringComparison.OrdinalIgnoreCase))
+        || path.StartsWithSegments("/api/ops/spider/continuous", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/ops/spider/subdomains/restart", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/ops/subdomain-enum/restart", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/ops/subdomain-enum/continuous", StringComparison.OrdinalIgnoreCase))
     {
         return GatewayServiceRoutes.WorkerControlClientName;
     }
@@ -214,7 +217,8 @@ static string? SelectClientName(PathString path)
         || path.StartsWithSegments("/api/http-request-queue", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/filestore", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/events", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/api/discovery", StringComparison.OrdinalIgnoreCase))
+        || path.StartsWithSegments("/api/discovery", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/recon-agent", StringComparison.OrdinalIgnoreCase))
     {
         return GatewayServiceRoutes.DiscoveryClientName;
     }

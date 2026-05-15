@@ -1,0 +1,127 @@
+@using System.Net.Http.Json
+@implements IDisposable
+
+<div class="sd-container">
+    <div class="sd-item sd-green">
+        <span class="sd-dot"></span>
+        <span class="sd-label">Command Center</span>
+        <span class="sd-value">@_healthyCount/@_totalCount</span>
+    </div>
+    <div class="sd-item @(_postgresOk ? "sd-green" : "sd-red")">
+        <span class="sd-dot"></span>
+        <span class="sd-label">Postgres</span>
+    </div>
+    <div class="sd-item @(_redisOk ? "sd-green" : "sd-red")">
+        <span class="sd-dot"></span>
+        <span class="sd-label">Redis</span>
+    </div>
+    <div class="sd-item @(_rabbitOk ? "sd-green" : "sd-red")">
+        <span class="sd-dot"></span>
+        <span class="sd-label">RabbitMQ</span>
+    </div>
+    <div class="sd-item @(_gcpOk ? "sd-green" : "sd-red")">
+        <span class="sd-dot"></span>
+        <span class="sd-label">Google Cloud</span>
+        <span class="sd-value">@_gcpWorkerCount workers</span>
+    </div>
+    <div class="sd-item @(_workersOk ? "sd-green" : "sd-red")">
+        <span class="sd-dot"></span>
+        <span class="sd-label">Local Workers</span>
+        <span class="sd-value">@_localWorkerCount running</span>
+    </div>
+</div>
+
+@code {
+    private int _healthyCount;
+    private int _totalCount;
+    private bool _postgresOk;
+    private bool _redisOk;
+    private bool _rabbitOk;
+    private bool _gcpOk;
+    private bool _workersOk;
+    private int _gcpWorkerCount;
+    private int _localWorkerCount;
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource _cts = new();
+
+    [Parameter]
+    public HttpClient Http { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+        _ = PollAsync();
+    }
+
+    private async Task PollAsync()
+    {
+        while (await _timer!.WaitForNextTickAsync(_cts.Token))
+        {
+            await RefreshAsync();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            var health = await Http.GetFromJsonAsync<HealthResponse>("/health/ready");
+            if (health?.Dependencies is not null)
+            {
+                _totalCount = health.Dependencies.Count;
+                _healthyCount = health.Dependencies.Count(d => d.Healthy);
+                foreach (var dep in health.Dependencies)
+                {
+                    if (dep.Service.Contains("postgres", StringComparison.OrdinalIgnoreCase)
+                        || dep.Service.Contains("database", StringComparison.OrdinalIgnoreCase))
+                        _postgresOk = dep.Healthy;
+                    else if (dep.Service.Contains("redis", StringComparison.OrdinalIgnoreCase))
+                        _redisOk = dep.Healthy;
+                    else if (dep.Service.Contains("rabbit", StringComparison.OrdinalIgnoreCase))
+                        _rabbitOk = dep.Healthy;
+                }
+            }
+        }
+        catch
+        {
+            _totalCount = 1;
+            _healthyCount = 0;
+            _postgresOk = false;
+            _redisOk = false;
+            _rabbitOk = false;
+        }
+
+        try
+        {
+            var workers = await Http.GetFromJsonAsync<List<JsonElement>>("/api/workers?all=true");
+            if (workers is not null)
+            {
+                _localWorkerCount = workers.Count;
+                _workersOk = workers.Count > 0;
+            }
+        }
+        catch { _workersOk = false; }
+
+        try
+        {
+            var cloud = await Http.GetFromJsonAsync<List<JsonElement>>("/api/ec2-workers?all=true");
+            if (cloud is not null)
+            {
+                _gcpWorkerCount = cloud.Count;
+                _gcpOk = cloud.Count > 0;
+            }
+        }
+        catch { _gcpOk = false; }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
+    private sealed record HealthResponse(string Status, List<HealthDep> Dependencies);
+    private sealed record HealthDep(string Service, Uri BaseAddress, bool Healthy, int? StatusCode, string Detail);
+}

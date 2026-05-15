@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 
 namespace ArgusEngine.CloudDeploy;
 
@@ -183,7 +184,7 @@ public sealed class GcpDeployOptions
             var version = ReadVersion(repoRoot);
             var sha = ReadGitShortSha(repoRoot)
                 ?? ReadEnvironmentSha()
-                ?? DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss");
+                ?? DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
 
             return Sanitize($"{version}-{sha}");
         }

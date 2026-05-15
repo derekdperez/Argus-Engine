@@ -361,7 +361,10 @@
     private async Task ShowFailureAsync(HttpResponseMessage response, string title)
     {
         var details = await response.Content.ReadAsStringAsync();
-        Notifications.Notify(NotificationSeverity.Error, title, string.IsNullOrWhiteSpace(details) ? response.ReasonPhrase : details, 6000);
+        var message = string.IsNullOrWhiteSpace(details)
+            ? (response.ReasonPhrase ?? "Request failed.")
+            : details;
+        Notifications.Notify(NotificationSeverity.Error, title, message, 6000);
     }
 
     private void NotifySuccess(string message)

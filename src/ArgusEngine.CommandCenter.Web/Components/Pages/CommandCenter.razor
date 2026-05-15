@@ -4,6 +4,7 @@
 @using System.Globalization
 @using System.Net
 @using System.Net.Http.Json
+@using System.Text
 @using System.Text.Json
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @implements IDisposable
@@ -98,6 +99,7 @@
             </div>
             <div class="cc-two-column">
                 <div class="cc-grid cc-grid-targets" role="table" aria-label="Targets">
+                    @GridDebug(TargetRows, _targets, _targetsRefreshedUtc)
                     <div class="cc-row cc-header" role="row">
                         <span></span><span>Root domain</span><span>Status</span><span>Depth</span><span>Created</span>
                     </div>
@@ -118,6 +120,7 @@
                 </div>
 
                 <div class="cc-grid cc-grid-subdomains" role="table" aria-label="Subdomains">
+                    @GridDebug(SubdomainRows, _subdomains, _subdomainsRefreshedUtc)
                     <div class="cc-row cc-header" role="row">
                         <span>Target</span><span>Subdomain</span><span>Technologies</span><span>Last seen</span>
                     </div>
@@ -155,6 +158,7 @@
                 </div>
             </div>
             <div class="cc-grid cc-grid-assets" role="table" aria-label="Assets">
+                @GridDebug(AssetRows, _assets, _assetsRefreshedUtc)
                 <div class="cc-row cc-header" role="row">
                     <span>Kind</span><span>Asset</span><span>Category</span><span>Seen</span>
                 </div>
@@ -204,6 +208,7 @@
                 </div>
             </div>
             <div class="cc-grid cc-grid-high-value" role="table" aria-label="High-value assets">
+                @GridDebug(HighValueRows, _highValue, _highValueRefreshedUtc)
                 <div class="cc-row cc-header" role="row">
                     <span>Severity</span><span>Asset</span><span>Finding</span><span>Score</span><span>Seen</span>
                 </div>
@@ -224,6 +229,7 @@
             </div>
 
             <div class="cc-grid cc-grid-technology" role="table" aria-label="Technology observations">
+                @GridDebug(TechnologyRows, _technology, _technologyRefreshedUtc)
                 <div class="cc-row cc-header" role="row">
                     <span>Technology</span><span>Version</span><span>Evidence</span><span>Seen</span>
                 </div>
@@ -261,6 +267,7 @@
 
             <h3>Local worker controls</h3>
             <div class="cc-grid cc-grid-workers" role="table" aria-label="Local workers">
+                @GridDebug(WorkerRows, _workers, _workersRefreshedUtc)
                 <div class="cc-row cc-header" role="row">
                     <span>Worker</span><span>State</span><span>Running</span><span>Total</span>
                 </div>
@@ -281,6 +288,7 @@
 
             <h3>Cloud worker controls</h3>
             <div class="cc-grid cc-grid-workers" role="table" aria-label="Cloud workers">
+                @GridDebug(CloudWorkerRows, _cloudWorkers, _cloudWorkersRefreshedUtc)
                 <div class="cc-row cc-header" role="row">
                     <span>Service</span><span>Status</span><span>Running</span><span>Desired</span>
                 </div>
@@ -326,7 +334,17 @@
 
     private CommandTab _activeTab = CommandTab.Targets;
     private PeriodicTimer? _summaryTimer;
+    private PeriodicTimer? _debugClockTimer;
     private Task? _summaryPollingTask;
+    private Task? _debugClockTask;
+    private DateTimeOffset _debugNowUtc = DateTimeOffset.UtcNow;
+    private DateTimeOffset? _targetsRefreshedUtc;
+    private DateTimeOffset? _subdomainsRefreshedUtc;
+    private DateTimeOffset? _assetsRefreshedUtc;
+    private DateTimeOffset? _highValueRefreshedUtc;
+    private DateTimeOffset? _technologyRefreshedUtc;
+    private DateTimeOffset? _workersRefreshedUtc;
+    private DateTimeOffset? _cloudWorkersRefreshedUtc;
     private string? _errorMessage;
     private string? _statusMessage;
     private string? _targetSearch;
@@ -420,7 +438,9 @@
         await LoadInitialWorkspaceAsync().ConfigureAwait(false);
 
         _summaryTimer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+        _debugClockTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
         _summaryPollingTask = PollSummaryAsync();
+        _debugClockTask = PollDebugClockAsync();
     }
 
     private async Task LoadInitialWorkspaceAsync()
@@ -454,6 +474,27 @@
             {
                 await ReloadOverviewAsync(showLoading: false).ConfigureAwait(false);
 
+                await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected during component disposal.
+        }
+    }
+
+    private async Task PollDebugClockAsync()
+    {
+        if (_debugClockTimer is null)
+        {
+            return;
+        }
+
+        try
+        {
+            while (await _debugClockTimer.WaitForNextTickAsync(_disposeCts.Token).ConfigureAwait(false))
+            {
+                _debugNowUtc = DateTimeOffset.UtcNow;
                 await InvokeAsync(StateHasChanged).ConfigureAwait(false);
             }
         }
@@ -536,6 +577,7 @@
         try
         {
             Replace(_targets, await GetArrayAsync("/api/targets").ConfigureAwait(false));
+            _targetsRefreshedUtc = DateTimeOffset.UtcNow;
             PruneSelection(_selectedTargetIds, _targets);
         }
         finally
@@ -550,6 +592,7 @@
         try
         {
             Replace(_subdomains, await GetArrayAsync("/api/technology-identification/subdomains").ConfigureAwait(false));
+            _subdomainsRefreshedUtc = DateTimeOffset.UtcNow;
         }
         finally
         {
@@ -563,6 +606,7 @@
         try
         {
             Replace(_assets, await GetArrayAsync($"/api/assets?take={AssetTake}").ConfigureAwait(false));
+            _assetsRefreshedUtc = DateTimeOffset.UtcNow;
         }
         finally
         {
@@ -601,6 +645,7 @@
         try
         {
             Replace(_highValue, await GetArrayAsync($"/api/high-value-assets?includeResolved=false&take={HighValueTake}").ConfigureAwait(false));
+            _highValueRefreshedUtc = DateTimeOffset.UtcNow;
         }
         finally
         {
@@ -614,6 +659,7 @@
         try
         {
             Replace(_technology, await GetArrayAsync($"/api/technology-identification/technologies?take={TechnologyTake}").ConfigureAwait(false));
+            _technologyRefreshedUtc = DateTimeOffset.UtcNow;
         }
         finally
         {
@@ -627,6 +673,7 @@
         try
         {
             Replace(_workers, await GetArrayAsync("/api/ops/docker-status").ConfigureAwait(false));
+            _workersRefreshedUtc = DateTimeOffset.UtcNow;
         }
         finally
         {
@@ -639,6 +686,7 @@
         try
         {
             Replace(_cloudWorkers, await GetArrayAsync("/api/ops/ecs-status").ConfigureAwait(false));
+            _cloudWorkersRefreshedUtc = DateTimeOffset.UtcNow;
         }
         catch
         {
@@ -946,6 +994,52 @@
         };
     }
 
+    private RenderFragment GridDebug(IReadOnlyCollection<JsonElement> visibleRows, IReadOnlyCollection<JsonElement> sourceRows, DateTimeOffset? refreshedUtc) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "cc-grid-debug");
+        builder.AddAttribute(2, "aria-live", "polite");
+
+        builder.OpenElement(3, "span");
+        builder.AddContent(4, FormatGridRowCount(visibleRows.Count, sourceRows.Count));
+        builder.CloseElement();
+
+        builder.OpenElement(5, "span");
+        builder.AddContent(6, $"{FormatDataSizeMb(sourceRows)} MB");
+        builder.CloseElement();
+
+        builder.OpenElement(7, "span");
+        builder.AddContent(8, FormatRefreshAge(refreshedUtc));
+        builder.CloseElement();
+
+        builder.CloseElement();
+    };
+
+    private static string FormatGridRowCount(int visibleCount, int sourceCount)
+    {
+        return visibleCount == sourceCount
+            ? $"{visibleCount.ToString("N0", CultureInfo.InvariantCulture)} rows"
+            : $"{visibleCount.ToString("N0", CultureInfo.InvariantCulture)} of {sourceCount.ToString("N0", CultureInfo.InvariantCulture)} rows";
+    }
+
+    private static string FormatDataSizeMb(IReadOnlyCollection<JsonElement> rows)
+    {
+        var bytes = rows.Sum(row => Encoding.UTF8.GetByteCount(row.GetRawText()));
+        var megabytes = bytes / 1024d / 1024d;
+        return megabytes.ToString("0.000", CultureInfo.InvariantCulture);
+    }
+
+    private string FormatRefreshAge(DateTimeOffset? refreshedUtc)
+    {
+        if (refreshedUtc is null)
+        {
+            return "not refreshed yet";
+        }
+
+        var seconds = Math.Max(0, (int)Math.Floor((_debugNowUtc - refreshedUtc.Value).TotalSeconds));
+        return $"refreshed {seconds.ToString("N0", CultureInfo.InvariantCulture)}s ago";
+    }
+
     private static string FormatNumber(long value)
     {
         return value.ToString("N0", CultureInfo.InvariantCulture);
@@ -1049,6 +1143,7 @@
     {
         _disposeCts.Cancel();
         _summaryTimer?.Dispose();
+        _debugClockTimer?.Dispose();
         _disposeCts.Dispose();
     }
 

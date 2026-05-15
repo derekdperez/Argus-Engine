@@ -1,0 +1,290 @@
+name: Deploy Prebuilt Artifacts
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    branches:
+      - main
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment to deploy through.
+        required: true
+        default: production
+      ref:
+        description: Branch or SHA to deploy.
+        required: true
+        default: main
+      services:
+        description: Space-separated services to deploy, or "all" for all prebuilt images.
+        required: false
+        default: all
+      smoke:
+        description: Run ./deploy smoke after deployment.
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-artifacts-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+env:
+  CI_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && '' || github.event.workflow_run.id }}
+  TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
+  TARGET_SERVICES: ${{ github.event_name == 'workflow_dispatch' && inputs.services || 'all' }}
+  TARGET_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.workflow_run.head_branch }}
+  RUN_SMOKE: ${{ github.event_name == 'workflow_dispatch' && inputs.smoke || 'true' }}
+
+jobs:
+  resolve-ci-run:
+    name: Resolve CI run
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      run_id: ${{ steps.resolve.outputs.run_id }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Resolve CI run for target SHA
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "${{ env.CI_RUN_ID }}" ]; then
+            echo "run_id=${{ env.CI_RUN_ID }}" >> "$GITHUB_OUTPUT"
+            echo "sha=${{ env.TARGET_SHA }}" >> "$GITHUB_OUTPUT"
+          else
+            sha="${{ env.TARGET_SHA }}"
+            run_id=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=$sha&status=success&per_page=1" \
+              --jq '.workflow_runs[0].id // empty')
+            if [ -z "$run_id" ]; then
+              echo "No successful CI run found for SHA $sha" >&2
+              exit 1
+            fi
+            echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+            echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    name: Deploy prebuilt images
+    needs: resolve-ci-run
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || vars.AUTO_DEPLOY_ENVIRONMENT || 'production' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - command-center-gateway
+          - command-center-web
+          - command-center-operations-api
+          - command-center-discovery-api
+          - command-center-worker-control-api
+          - command-center-maintenance-api
+          - command-center-updates-api
+          - command-center-realtime
+          - command-center-bootstrapper
+          - command-center-spider-dispatcher
+          - gatekeeper
+          - worker-spider
+          - worker-http-requester
+          - worker-enum
+          - worker-portscan
+          - worker-highvalue
+          - worker-techid
+
+    steps:
+      - name: Filter services
+        id: filter
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: |
+          if [ "${{ env.TARGET_SERVICES }}" = "all" ]; then
+            echo "include=true" >> "$GITHUB_OUTPUT"
+          else
+            included=false
+            for s in ${{ env.TARGET_SERVICES }}; do
+              if [ "$s" = "$SERVICE" ]; then
+                included=true
+                break
+              fi
+            done
+            echo "include=$included" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.filter.outputs.include == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TARGET_REF }}
+          fetch-depth: 1
+
+      - name: Download prebuilt image artifact
+        if: steps.filter.outputs.include == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: argus-image-${{ matrix.service }}-${{ needs.resolve-ci-run.outputs.sha }}
+          path: /tmp/argus-images/
+          run-id: ${{ needs.resolve-ci-run.outputs.run_id }}
+          github-token: ${{ github.token }}
+        continue-on-error: true
+
+      - name: Check artifact availability
+        if: steps.filter.outputs.include == 'true'
+        id: artifact
+        run: |
+          sha="${{ needs.resolve-ci-run.outputs.sha }}"
+          archive="/tmp/argus-images/${{ matrix.service }}-${sha}.tar.gz"
+          if [ -f "$archive" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            ls -lh "$archive"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No prebuilt artifact for ${{ matrix.service }} at ${sha}"
+          fi
+
+      - name: Validate deployment secrets
+        if: steps.filter.outputs.include == 'true' && steps.artifact.outputs.found == 'true'
+        env:
+          ARGUS_DEPLOY_HOST: ${{ secrets.ARGUS_DEPLOY_HOST }}
+          ARGUS_DEPLOY_USER: ${{ secrets.ARGUS_DEPLOY_USER }}
+          ARGUS_DEPLOY_SSH_KEY: ${{ secrets.ARGUS_DEPLOY_SSH_KEY }}
+          ARGUS_DEPLOY_PATH: ${{ secrets.ARGUS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          test -n "$ARGUS_DEPLOY_HOST" || { echo "Missing ARGUS_DEPLOY_HOST secret."; exit 1; }
+          test -n "$ARGUS_DEPLOY_USER" || { echo "Missing ARGUS_DEPLOY_USER secret."; exit 1; }
+          test -n "$ARGUS_DEPLOY_SSH_KEY" || { echo "Missing ARGUS_DEPLOY_SSH_KEY secret."; exit 1; }
+          test -n "$ARGUS_DEPLOY_PATH" || { echo "Missing ARGUS_DEPLOY_PATH secret."; exit 1; }
+
+      - name: Configure SSH
+        if: steps.filter.outputs.include == 'true' && steps.artifact.outputs.found == 'true'
+        env:
+          ARGUS_DEPLOY_HOST: ${{ secrets.ARGUS_DEPLOY_HOST }}
+          ARGUS_DEPLOY_PORT: ${{ secrets.ARGUS_DEPLOY_PORT }}
+          ARGUS_DEPLOY_SSH_KEY: ${{ secrets.ARGUS_DEPLOY_SSH_KEY }}
+          ARGUS_DEPLOY_KNOWN_HOSTS: ${{ secrets.ARGUS_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          port="${ARGUS_DEPLOY_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$ARGUS_DEPLOY_SSH_KEY" > ~/.ssh/argus_deploy_key
+          chmod 600 ~/.ssh/argus_deploy_key
+          if [ -n "${ARGUS_DEPLOY_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$ARGUS_DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$port" "$ARGUS_DEPLOY_HOST" > ~/.ssh/known_hosts
+          fi
+
+      - name: Transfer image to host
+        if: steps.filter.outputs.include == 'true' && steps.artifact.outputs.found == 'true'
+        env:
+          ARGUS_DEPLOY_HOST: ${{ secrets.ARGUS_DEPLOY_HOST }}
+          ARGUS_DEPLOY_USER: ${{ secrets.ARGUS_DEPLOY_USER }}
+          ARGUS_DEPLOY_PORT: ${{ secrets.ARGUS_DEPLOY_PORT }}
+          SHA: ${{ needs.resolve-ci-run.outputs.sha }}
+        run: |
+          set -euo pipefail
+          port="${ARGUS_DEPLOY_PORT:-22}"
+          archive="/tmp/argus-images/${{ matrix.service }}-${SHA}.tar.gz"
+          remote_path="/tmp/argus-artifacts/${{ matrix.service }}-${SHA}.tar.gz"
+          ssh -i ~/.ssh/argus_deploy_key -p "$port" -o IdentitiesOnly=yes \
+            "$ARGUS_DEPLOY_USER@$ARGUS_DEPLOY_HOST" \
+            "mkdir -p /tmp/argus-artifacts"
+          scp -i ~/.ssh/argus_deploy_key -P "$port" -o IdentitiesOnly=yes \
+            "$archive" "$ARGUS_DEPLOY_USER@$ARGUS_DEPLOY_HOST:$remote_path"
+
+      - name: Load and deploy image on host
+        if: steps.filter.outputs.include == 'true' && steps.artifact.outputs.found == 'true'
+        env:
+          ARGUS_DEPLOY_HOST: ${{ secrets.ARGUS_DEPLOY_HOST }}
+          ARGUS_DEPLOY_USER: ${{ secrets.ARGUS_DEPLOY_USER }}
+          ARGUS_DEPLOY_PORT: ${{ secrets.ARGUS_DEPLOY_PORT }}
+          ARGUS_DEPLOY_PATH: ${{ secrets.ARGUS_DEPLOY_PATH }}
+          SERVICE: ${{ matrix.service }}
+          SHA: ${{ needs.resolve-ci-run.outputs.sha }}
+        run: |
+          set -euo pipefail
+          port="${ARGUS_DEPLOY_PORT:-22}"
+          remote_archive="/tmp/argus-artifacts/${SERVICE}-${SHA}.tar.gz"
+          deploy_path="$ARGUS_DEPLOY_PATH"
+          ssh -i ~/.ssh/argus_deploy_key -p "$port" -o IdentitiesOnly=yes \
+            "$ARGUS_DEPLOY_USER@$ARGUS_DEPLOY_HOST" \
+            "cd '${deploy_path}' && \
+             docker load -i '${remote_archive}' && \
+             docker tag 'argus-engine/${SERVICE}:ci' 'argus-engine/${SERVICE}:${SHA}' && \
+             docker compose -f deployment/docker-compose.yml up -d --no-deps '${SERVICE}' && \
+             rm -f '${remote_archive}'" || \
+          echo "Deployment of ${SERVICE} encountered issues."
+
+  smoke:
+    name: Smoke test deployment
+    needs: deploy
+    if: always() && needs.deploy.result != 'cancelled' && env.RUN_SMOKE == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || vars.AUTO_DEPLOY_ENVIRONMENT || 'production' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TARGET_REF }}
+          fetch-depth: 1
+
+      - name: Configure SSH
+        env:
+          ARGUS_DEPLOY_HOST: ${{ secrets.ARGUS_DEPLOY_HOST }}
+          ARGUS_DEPLOY_PORT: ${{ secrets.ARGUS_DEPLOY_PORT }}
+          ARGUS_DEPLOY_SSH_KEY: ${{ secrets.ARGUS_DEPLOY_SSH_KEY }}
+          ARGUS_DEPLOY_KNOWN_HOSTS: ${{ secrets.ARGUS_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          port="${ARGUS_DEPLOY_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$ARGUS_DEPLOY_SSH_KEY" > ~/.ssh/argus_deploy_key
+          chmod 600 ~/.ssh/argus_deploy_key
+          if [ -n "${ARGUS_DEPLOY_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$ARGUS_DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$port" "$ARGUS_DEPLOY_HOST" > ~/.ssh/known_hosts
+          fi
+
+      - name: Run smoke tests on host
+        env:
+          ARGUS_DEPLOY_HOST: ${{ secrets.ARGUS_DEPLOY_HOST }}
+          ARGUS_DEPLOY_USER: ${{ secrets.ARGUS_DEPLOY_USER }}
+          ARGUS_DEPLOY_PORT: ${{ secrets.ARGUS_DEPLOY_PORT }}
+          ARGUS_DEPLOY_PATH: ${{ secrets.ARGUS_DEPLOY_PATH }}
+          ARGUS_DIAGNOSTICS_API_KEY: ${{ secrets.ARGUS_DIAGNOSTICS_API_KEY }}
+          BASE_URL: ${{ vars.BASE_URL || 'http://localhost:8081' }}
+        run: |
+          set -euo pipefail
+          port="${ARGUS_DEPLOY_PORT:-22}"
+          ssh -i ~/.ssh/argus_deploy_key -p "$port" -o IdentitiesOnly=yes \
+            "$ARGUS_DEPLOY_USER@$ARGUS_DEPLOY_HOST" \
+            "cd '$ARGUS_DEPLOY_PATH' && \
+             export ARGUS_DIAGNOSTICS_API_KEY='$ARGUS_DIAGNOSTICS_API_KEY' && \
+             export BASE_URL='$BASE_URL' && \
+             ./deploy smoke"
+
+  skipped:
+    name: Skip failed build
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain skip
+        run: |
+          echo "CI concluded with '${{ github.event.workflow_run.conclusion }}'; deployment was skipped."

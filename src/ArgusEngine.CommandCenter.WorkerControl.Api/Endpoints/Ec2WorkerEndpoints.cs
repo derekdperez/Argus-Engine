@@ -427,9 +427,8 @@ public static class Ec2WorkerEndpoints
         sb.Append(envContent);
         sb.AppendLine("NIGHTMARE_EC2_WORKER_ENV");
         sb.AppendLine("chmod 600 deploy/ec2-worker.env || true");
-        sb.AppendLine("chmod +x deploy/apply-ec2-worker-scale.sh || true");
         sb.AppendLine(FormattableString.Invariant(
-            $"EC2_WORKER_SPIDER={counts.Spider} EC2_WORKER_ENUM={counts.Enum} EC2_WORKER_PORTSCAN={counts.PortScan} EC2_WORKER_HIGHVALUE={counts.HighValue} EC2_WORKER_TECHID={counts.TechnologyIdentification} ./deploy/apply-ec2-worker-scale.sh"));
+            $"python3 deploy/deploy.py scale local worker-spider={counts.Spider} worker-enum={counts.Enum} worker-portscan={counts.PortScan} worker-highvalue={counts.HighValue} worker-techid={counts.TechnologyIdentification}"));
         return sb.ToString();
     }
 
@@ -681,7 +680,6 @@ public static class Ec2WorkerEndpoints
             new LiveUiEventDto("Ec2WorkersChanged", null, null, "workers", message, DateTimeOffset.UtcNow),
             ct);
 }
-
 
 
 

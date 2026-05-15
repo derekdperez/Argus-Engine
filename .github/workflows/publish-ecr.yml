@@ -39,9 +39,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Ensure ECR repositories exist
-        run: |
-          chmod +x deploy/aws/create-ecr-repos.sh
-          deploy/aws/create-ecr-repos.sh
+        run: python3 deploy/deploy.py ecs repos
 
   build-push:
     name: Build and push - ${{ matrix.service }}

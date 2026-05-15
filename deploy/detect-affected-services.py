@@ -25,11 +25,8 @@ GLOBAL_ALL_SERVICE_FILES = {
     "global.json",
     ".dockerignore",
     "deploy/service-catalog.tsv",
-    "deploy/lib-argus-service-catalog.sh",
     "deploy/detect-affected-services.py",
-    "deploy/aws/build-push-ecr.sh",
-    "deploy/aws/create-ecr-repos.sh",
-    "deploy/aws/deploy-ecs-services.sh",
+    "deploy/deploy.py",
     ".github/workflows/release-main.yml",
 }
 

@@ -1,11 +1,11 @@
 # Compose override for the built-in worker autoscaler.
 # Use with:
-#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.autoscaler-fix.yml up -d --build command-center-worker-control-api
+#   docker compose -f deployment/docker-compose.yml -f deployment/docker-compose.autoscaler-fix.yml up -d --build command-center-worker-control-api
 services:
   command-center-worker-control-api:
     environment:
       Argus__Autoscaler__Enabled: "true"
-      Argus__Autoscaler__DockerComposePath: /home/derekdperez_dev/argus-engine/deploy/docker-compose.yml
+      Argus__Autoscaler__DockerComposePath: /home/derekdperez_dev/argus-engine/deployment/docker-compose.yml
       Argus__Autoscaler__DockerComposeProject: argus-engine
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

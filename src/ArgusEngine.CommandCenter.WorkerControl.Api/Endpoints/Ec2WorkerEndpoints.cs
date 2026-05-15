@@ -428,7 +428,7 @@ public static class Ec2WorkerEndpoints
         sb.AppendLine("NIGHTMARE_EC2_WORKER_ENV");
         sb.AppendLine("chmod 600 deploy/ec2-worker.env || true");
         sb.AppendLine(FormattableString.Invariant(
-            $"python3 deploy/deploy.py scale local worker-spider={counts.Spider} worker-enum={counts.Enum} worker-portscan={counts.PortScan} worker-highvalue={counts.HighValue} worker-techid={counts.TechnologyIdentification}"));
+            $"./deploy scale local worker-spider={counts.Spider} worker-enum={counts.Enum} worker-portscan={counts.PortScan} worker-highvalue={counts.HighValue} worker-techid={counts.TechnologyIdentification}"));
         return sb.ToString();
     }
 

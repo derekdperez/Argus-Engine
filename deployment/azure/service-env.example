@@ -1,6 +1,6 @@
 # Runtime environment variables for Argus Engine containers on Azure.
-# This file is copied to deploy/azure/service-env on first run.
-# The scripts prompt for placeholder values and write answers back to deploy/azure/service-env.
+# This file is copied to deployment/azure/service-env on first run.
+# The scripts prompt for placeholder values and write answers back to deployment/azure/service-env.
 #
 # IMPORTANT:
 # Azure Container Apps must be able to reach these endpoints.

@@ -99,7 +99,7 @@ require_one_of_statuses "reliability baseline endpoint" "$reliability_status" 20
 
 if command -v docker >/dev/null 2>&1 && [[ "${ARGUS_RUN_CHAOS:-0}" == "1" ]]; then
   echo "Running opt-in chaos check: restarting rabbitmq container through docker compose"
-  docker compose -f deploy/docker-compose.yml restart rabbitmq
+  docker compose -f deployment/docker-compose.yml restart rabbitmq
   sleep "${ARGUS_CHAOS_SETTLE_SECONDS:-10}"
   post_chaos_health="$(status_of GET "${BASE_URL}/health/ready")"
   require_one_of_statuses "post-chaos ready endpoint remains observable" "$post_chaos_health" 200 503

@@ -10,12 +10,12 @@ It is both:
   2. the single Python source of truth for deployment operations.
 
 Examples:
-    ./deploy/deploy.py
-    ./deploy/deploy.py deploy --hot
-    ./deploy/deploy.py deploy --image command-center-web worker-spider
-    ./deploy/deploy.py scale local worker-spider=4 worker-enum=2
-    ./deploy/deploy.py scale ecs worker-spider=6 worker-techid=1
-    ./deploy/deploy.py monitor
+    ./deploy
+    ./deploy deploy --hot
+    ./deploy deploy --image command-center-web worker-spider
+    ./deploy scale local worker-spider=4 worker-enum=2
+    ./deploy scale ecs worker-spider=6 worker-techid=1
+    ./deploy monitor
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
 
-# Keep this list in sync with deploy/docker-compose.yml. The script will prefer
+# Keep this list in sync with deployment/docker-compose.yml. The script will prefer
 # `docker compose config --services` when Docker is available.
 FALLBACK_SERVICES = [
     "postgres",
@@ -175,12 +175,12 @@ GLOBAL_INVALIDATORS = {
     "Directory.Packages.props",
     "global.json",
     ".dockerignore",
-    "deploy/docker-compose.yml",
-    "deploy/Dockerfile.base-runtime",
-    "deploy/Dockerfile.base-recon",
-    "deploy/Dockerfile.commandcenter-host",
-    "deploy/Dockerfile.worker",
-    "deploy/Dockerfile.worker-enum",
+    "deployment/docker-compose.yml",
+    "deployment/Dockerfile.base-runtime",
+    "deployment/Dockerfile.base-recon",
+    "deployment/Dockerfile.commandcenter-host",
+    "deployment/Dockerfile.worker",
+    "deployment/Dockerfile.worker-enum",
 }
 
 GCP_WORKER_SERVICES = [
@@ -471,7 +471,7 @@ class ArgusDeployConsole:
             self._compose_cmd = ["docker-compose"]
             return list(self._compose_cmd)
 
-        self.ui.error("Docker Compose was not found. Install Docker Compose v2 and rerun deploy/deploy.py.")
+        self.ui.error("Docker Compose was not found. Install Docker Compose v2 and rerun deploy.py.")
         self._compose_cmd = ["docker", "compose"]
         return list(self._compose_cmd)
 
@@ -1150,7 +1150,7 @@ class ArgusDeployConsole:
                 shutil.copyfile(env_example, env_file)
                 self.ui.ok(f"Created {self.paths.rel(env_file)}")
 
-        service_env = Path(self.get_env("SERVICE_ENV_FILE", "deploy/gcp/service-env"))
+        service_env = Path(self.get_env("SERVICE_ENV_FILE", "deployment/gcp/service-env"))
         if not service_env.is_absolute():
             service_env = self.paths.repo_root / service_env
         service_example = gcp_dir / "service-env.example"
@@ -1178,7 +1178,7 @@ class ArgusDeployConsole:
             value = self.get_env(key, "").strip()
             if not value or "replace" in value.lower():
                 issues.append(f"{key} is missing or still a placeholder")
-        service_env = Path(self.get_env("SERVICE_ENV_FILE", "deploy/gcp/service-env"))
+        service_env = Path(self.get_env("SERVICE_ENV_FILE", "deployment/gcp/service-env"))
         if not service_env.is_absolute():
             service_env = self.paths.repo_root / service_env
         if not service_env.exists():
@@ -1417,7 +1417,7 @@ class ArgusDeployConsole:
         return self.get_env(f"GCP_MEMORY_{worker.upper().replace('-', '_')}", self.get_env("GCP_MEMORY", "1Gi"))
 
     def gcp_service_env_file(self) -> Path:
-        env_file = Path(self.get_env("SERVICE_ENV_FILE", "deploy/gcp/service-env"))
+        env_file = Path(self.get_env("SERVICE_ENV_FILE", "deployment/gcp/service-env"))
         if not env_file.is_absolute():
             env_file = self.paths.repo_root / env_file
         return env_file
@@ -1628,14 +1628,14 @@ class ArgusDeployConsole:
         print(
             """
 GCP commands:
-  deploy/deploy.py gcp configure
-  deploy/deploy.py gcp provision
-  deploy/deploy.py gcp build [worker...]
-  deploy/deploy.py gcp deploy [worker...]
-  deploy/deploy.py gcp release [worker...]
-  deploy/deploy.py gcp scale [worker=min:max|worker=count ...]
-  deploy/deploy.py gcp status [worker...]
-  deploy/deploy.py gcp teardown [worker...]
+  deploy.py gcp configure
+  deploy.py gcp provision
+  deploy.py gcp build [worker...]
+  deploy.py gcp deploy [worker...]
+  deploy.py gcp release [worker...]
+  deploy.py gcp scale [worker=min:max|worker=count ...]
+  deploy.py gcp status [worker...]
+  deploy.py gcp teardown [worker...]
 """.strip()
         )
 
@@ -2380,54 +2380,54 @@ LIMIT 50;
 Argus deployment console
 
 Usage:
-  deploy/deploy.py [global options] [command]
+  deploy.py [global options] [command]
 
 Interactive:
-  deploy/deploy.py
-  deploy/deploy.py menu
+  deploy.py
+  deploy.py menu
 
 Deploy/update:
-  deploy/deploy.py deploy --hot [service...]
-  deploy/deploy.py deploy --image [service...]
-  deploy/deploy.py deploy --fresh
-  deploy/deploy.py deploy --ecs-workers
-  deploy/deploy.py deploy --gcp-workers
+  deploy.py deploy --hot [service...]
+  deploy.py deploy --image [service...]
+  deploy.py deploy --fresh
+  deploy.py deploy --ecs-workers
+  deploy.py deploy --gcp-workers
 
 Scaling:
-  deploy/deploy.py scale local worker-spider=4 worker-enum=2 worker-http-requester=2
-  deploy/deploy.py scale ecs worker-spider=6 worker-techid=1
-  deploy/deploy.py scale gcp worker-spider=2:10 worker-enum=2
-  deploy/deploy.py scale autoscale
+  deploy.py scale local worker-spider=4 worker-enum=2 worker-http-requester=2
+  deploy.py scale ecs worker-spider=6 worker-techid=1
+  deploy.py scale gcp worker-spider=2:10 worker-enum=2
+  deploy.py scale autoscale
 
 Monitoring:
-  deploy/deploy.py preflight
-  deploy/deploy.py monitor
-  deploy/deploy.py status [service...]
-  deploy/deploy.py logs [--follow] [service...]
-  deploy/deploy.py logs --errors [service...]
-  deploy/deploy.py health
-  deploy/deploy.py changed
-  deploy/deploy.py services
-  deploy/deploy.py validate [--ci]
+  deploy.py preflight
+  deploy.py monitor
+  deploy.py status [service...]
+  deploy.py logs [--follow] [service...]
+  deploy.py logs --errors [service...]
+  deploy.py health
+  deploy.py changed
+  deploy.py services
+  deploy.py validate [--ci]
 
 AWS/ECS:
-  deploy/deploy.py ecs hybrid
-  deploy/deploy.py ecs repos
-  deploy/deploy.py ecs build [service...]
-  deploy/deploy.py ecs deploy [service...]
-  deploy/deploy.py ecs release [service...]
-  deploy/deploy.py ecs replace [worker-service...]
-  deploy/deploy.py ecs status
+  deploy.py ecs hybrid
+  deploy.py ecs repos
+  deploy.py ecs build [service...]
+  deploy.py ecs deploy [service...]
+  deploy.py ecs release [service...]
+  deploy.py ecs replace [worker-service...]
+  deploy.py ecs status
 
 Google Cloud Run:
-  deploy/deploy.py gcp configure
-  deploy/deploy.py gcp provision
-  deploy/deploy.py gcp build [worker...]
-  deploy/deploy.py gcp deploy [worker...]
-  deploy/deploy.py gcp release [worker...]
-  deploy/deploy.py gcp scale [worker=min:max|worker=count ...]
-  deploy/deploy.py gcp status [worker...]
-  deploy/deploy.py gcp teardown [worker...]
+  deploy.py gcp configure
+  deploy.py gcp provision
+  deploy.py gcp build [worker...]
+  deploy.py gcp deploy [worker...]
+  deploy.py gcp release [worker...]
+  deploy.py gcp scale [worker=min:max|worker=count ...]
+  deploy.py gcp status [worker...]
+  deploy.py gcp teardown [worker...]
 
 Global options:
   --dry-run, -n       Print commands without executing them

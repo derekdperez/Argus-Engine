@@ -26,7 +26,7 @@ services:
     image: nightmare-v2/worker-spider:ec2
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deployment/Dockerfile.worker
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Workers.Spider
@@ -39,7 +39,7 @@ services:
     image: nightmare-v2/worker-enum:ec2
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker-enum
+      dockerfile: deployment/Dockerfile.worker-enum
       args:
         <<: *enum-build-args
         PROJECT_DIR: NightmareV2.Workers.Enum
@@ -64,7 +64,7 @@ services:
     image: nightmare-v2/worker-portscan:ec2
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deployment/Dockerfile.worker
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Workers.PortScan
@@ -76,7 +76,7 @@ services:
     image: nightmare-v2/worker-highvalue:ec2
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deployment/Dockerfile.worker
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Workers.HighValue
@@ -88,7 +88,7 @@ services:
     image: nightmare-v2/worker-techid:ec2
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deployment/Dockerfile.worker
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: NightmareV2.Workers.TechnologyIdentification

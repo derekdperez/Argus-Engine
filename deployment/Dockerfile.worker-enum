@@ -80,7 +80,7 @@ RUN set -eux; \
 
 WORKDIR /app
 
-COPY deploy/wordlists/subdomains.txt /opt/argus/wordlists/subdomains.txt
+COPY deployment/wordlists/subdomains.txt /opt/argus/wordlists/subdomains.txt
 COPY --from=build /app/publish .
 
 LABEL org.opencontainers.image.title="Argus Engine Enum Worker"

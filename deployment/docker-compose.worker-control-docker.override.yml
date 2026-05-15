@@ -1,5 +1,5 @@
 # Optional Compose override for local/EC2 Docker Compose deployments.
-# Use with deploy/docker-compose.yml so command-center-worker-control-api can query Docker
+# Use with deployment/docker-compose.yml so command-center-worker-control-api can query Docker
 # and run docker compose scale commands from inside its container.
 services:
   command-center-worker-control-api:
@@ -8,5 +8,5 @@ services:
       - ${ARGUS_REPO_ROOT:-/home/derekdperez_dev/argus-engine}:${ARGUS_REPO_ROOT:-/home/derekdperez_dev/argus-engine}:ro
     environment:
       Argus__Autoscaler__DockerComposeProject: ${ARGUS_COMPOSE_PROJECT:-argus-engine}
-      Argus__Autoscaler__DockerComposePath: ${ARGUS_REPO_ROOT:-/home/derekdperez_dev/argus-engine}/deploy/docker-compose.yml
+      Argus__Autoscaler__DockerComposePath: ${ARGUS_REPO_ROOT:-/home/derekdperez_dev/argus-engine}/deployment/docker-compose.yml
       Argus__Autoscaler__RepoRoot: ${ARGUS_REPO_ROOT:-/home/derekdperez_dev/argus-engine}

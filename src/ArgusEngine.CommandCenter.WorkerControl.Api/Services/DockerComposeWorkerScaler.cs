@@ -12,7 +12,7 @@ namespace ArgusEngine.CommandCenter.WorkerControl.Api.Services;
 /// </summary>
 internal static class DockerComposeWorkerScaler
 {
-    private const string DefaultComposePath = "/home/derekdperez_dev/argus-engine/deploy/docker-compose.yml";
+    private const string DefaultComposePath = "/home/derekdperez_dev/argus-engine/deployment/docker-compose.yml";
     private const string ContainerRepoRootFallback = "/workspace";
     private const string DefaultProjectName = "argus-engine";
 

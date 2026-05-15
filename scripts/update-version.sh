@@ -74,10 +74,10 @@ sed -E -i "s#Version = \"[0-9]+\\.[0-9]+\\.[0-9]+\"#Version = \"${VERSION_VALUE}
   "$ROOT/src/ArgusEngine.Infrastructure/Messaging/OutboxDispatcherWorker.cs"
 
 for file in \
-  "$ROOT/deploy/Dockerfile.web" \
-  "$ROOT/deploy/Dockerfile.worker" \
-  "$ROOT/deploy/Dockerfile.worker-enum" \
-  "$ROOT/deploy/Dockerfile.commandcenter-host"; do
+  "$ROOT/deployment/Dockerfile.web" \
+  "$ROOT/deployment/Dockerfile.worker" \
+  "$ROOT/deployment/Dockerfile.worker-enum" \
+  "$ROOT/deployment/Dockerfile.commandcenter-host"; do
   sed -E -i \
     -e "s#ARG COMPONENT_VERSION=[0-9]+\.[0-9]+\.[0-9]+#ARG COMPONENT_VERSION=${VERSION_VALUE}#g" \
     -e "s#/p:AssemblyVersion=\"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\"#/p:AssemblyVersion=\"${ASSEMBLY_VERSION}\"#g" \
@@ -85,12 +85,12 @@ for file in \
     "$file"
 done
 
-sed -E -i "s#\$\{ARGUS_ENGINE_VERSION:-[^}]+\}#\$\{ARGUS_ENGINE_VERSION:-${VERSION_VALUE}\}#g" "$ROOT/deploy/docker-compose.yml"
+sed -E -i "s#\$\{ARGUS_ENGINE_VERSION:-[^}]+\}#\$\{ARGUS_ENGINE_VERSION:-${VERSION_VALUE}\}#g" "$ROOT/deployment/docker-compose.yml"
 
 sed -E -i \
   -e "s#^ARGUS_ENGINE_VERSION=.*#ARGUS_ENGINE_VERSION=${VERSION_VALUE}#" \
   -e "s#^BUILD_SOURCE_STAMP=.*#BUILD_SOURCE_STAMP=local-${VERSION_VALUE}#" \
-  "$ROOT/deploy/.env.version.example"
+  "$ROOT/deployment/.env.version.example"
 
 if [[ "$STAMP" == "1" ]]; then
   cat > "$ROOT/version.json" <<JSON

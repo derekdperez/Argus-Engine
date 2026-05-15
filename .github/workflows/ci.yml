@@ -63,7 +63,7 @@ jobs:
           ARGUS_ENGINE_VERSION: ci-${{ github.run_number }}
           BUILD_SOURCE_STAMP: ${{ github.sha }}
           ARGUS_DIAGNOSTICS_API_KEY: ci-smoke-test-key
-        run: python3 deploy/deploy.py validate --ci
+        run: ./deploy validate --ci
 
   docker-build:
     name: Docker build - ${{ matrix.service }}
@@ -77,71 +77,71 @@ jobs:
       matrix:
         include:
           - service: command-center-gateway
-            dockerfile: deploy/Dockerfile.commandcenter-host
+            dockerfile: deployment/Dockerfile.commandcenter-host
             project_dir: ArgusEngine.CommandCenter.Gateway
             app_dll: ArgusEngine.CommandCenter.Gateway.dll
           - service: command-center-web
-            dockerfile: deploy/Dockerfile.commandcenter-host
+            dockerfile: deployment/Dockerfile.commandcenter-host
             project_dir: ArgusEngine.CommandCenter.Web
             app_dll: ArgusEngine.CommandCenter.Web.dll
           - service: command-center-operations-api
-            dockerfile: deploy/Dockerfile.commandcenter-host
+            dockerfile: deployment/Dockerfile.commandcenter-host
             project_dir: ArgusEngine.CommandCenter.Operations.Api
             app_dll: ArgusEngine.CommandCenter.Operations.Api.dll
           - service: command-center-discovery-api
-            dockerfile: deploy/Dockerfile.commandcenter-host
+            dockerfile: deployment/Dockerfile.commandcenter-host
             project_dir: ArgusEngine.CommandCenter.Discovery.Api
             app_dll: ArgusEngine.CommandCenter.Discovery.Api.dll
           - service: command-center-worker-control-api
-            dockerfile: deploy/Dockerfile.commandcenter-host
+            dockerfile: deployment/Dockerfile.commandcenter-host
             project_dir: ArgusEngine.CommandCenter.WorkerControl.Api
             app_dll: ArgusEngine.CommandCenter.WorkerControl.Api.dll
           - service: command-center-maintenance-api
-            dockerfile: deploy/Dockerfile.commandcenter-host
+            dockerfile: deployment/Dockerfile.commandcenter-host
             project_dir: ArgusEngine.CommandCenter.Maintenance.Api
             app_dll: ArgusEngine.CommandCenter.Maintenance.Api.dll
           - service: command-center-updates-api
-            dockerfile: deploy/Dockerfile.commandcenter-host
+            dockerfile: deployment/Dockerfile.commandcenter-host
             project_dir: ArgusEngine.CommandCenter.Updates.Api
             app_dll: ArgusEngine.CommandCenter.Updates.Api.dll
           - service: command-center-realtime
-            dockerfile: deploy/Dockerfile.commandcenter-host
+            dockerfile: deployment/Dockerfile.commandcenter-host
             project_dir: ArgusEngine.CommandCenter.Realtime.Host
             app_dll: ArgusEngine.CommandCenter.Realtime.Host.dll
           - service: command-center-bootstrapper
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.CommandCenter.Bootstrapper
             app_dll: ArgusEngine.CommandCenter.Bootstrapper.dll
           - service: command-center-spider-dispatcher
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.CommandCenter.SpiderDispatcher
             app_dll: ArgusEngine.CommandCenter.SpiderDispatcher.dll
           - service: gatekeeper
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.Gatekeeper
             app_dll: ArgusEngine.Gatekeeper.dll
           - service: worker-spider
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.Workers.Spider
             app_dll: ArgusEngine.Workers.Spider.dll
           - service: worker-http-requester
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.Workers.HttpRequester
             app_dll: ArgusEngine.Workers.HttpRequester.dll
           - service: worker-enum
-            dockerfile: deploy/Dockerfile.worker-enum
+            dockerfile: deployment/Dockerfile.worker-enum
             project_dir: ArgusEngine.Workers.Enumeration
             app_dll: ArgusEngine.Workers.Enumeration.dll
           - service: worker-portscan
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.Workers.PortScan
             app_dll: ArgusEngine.Workers.PortScan.dll
           - service: worker-highvalue
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.Workers.HighValue
             app_dll: ArgusEngine.Workers.HighValue.dll
           - service: worker-techid
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.Workers.TechnologyIdentification
             app_dll: ArgusEngine.Workers.TechnologyIdentification.dll
 
@@ -186,8 +186,8 @@ jobs:
       - name: Start production-like split stack
         run: |
           docker compose \
-            -f deploy/docker-compose.yml \
-            -f deploy/docker-compose.ci.yml \
+            -f deployment/docker-compose.yml \
+            -f deployment/docker-compose.ci.yml \
             up -d --build \
             postgres \
             filestore-db-init \
@@ -213,21 +213,21 @@ jobs:
               exit 0
             fi
 
-            docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml ps
+            docker compose -f deployment/docker-compose.yml -f deployment/docker-compose.ci.yml ps
             sleep 5
           done
 
           echo "Gateway did not become ready."
-          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml logs --tail=300
+          docker compose -f deployment/docker-compose.yml -f deployment/docker-compose.ci.yml logs --tail=300
           exit 1
 
       - name: Run split-service smoke tests
-        run: python3 deploy/deploy.py smoke
+        run: ./deploy smoke
 
       - name: Verify selected background services stayed running
         run: |
           for service in gatekeeper worker-spider worker-http-requester; do
-            container_id="$(docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml ps -q "$service")"
+            container_id="$(docker compose -f deployment/docker-compose.yml -f deployment/docker-compose.ci.yml ps -q "$service")"
             if [ -z "$container_id" ]; then
               echo "No container was created for $service." >&2
               exit 1
@@ -236,7 +236,7 @@ jobs:
             status="$(docker inspect -f '{{.State.Status}}' "$container_id")"
             if [ "$status" != "running" ]; then
               echo "$service is not running; actual status: $status" >&2
-              docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml logs --tail=200 "$service"
+              docker compose -f deployment/docker-compose.yml -f deployment/docker-compose.ci.yml logs --tail=200 "$service"
               exit 1
             fi
           done
@@ -244,9 +244,9 @@ jobs:
       - name: Show container status on failure
         if: failure()
         run: |
-          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml ps
-          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml logs --tail=300
+          docker compose -f deployment/docker-compose.yml -f deployment/docker-compose.ci.yml ps
+          docker compose -f deployment/docker-compose.yml -f deployment/docker-compose.ci.yml logs --tail=300
 
       - name: Cleanup
         if: always()
-        run: docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml down -v --remove-orphans
+        run: docker compose -f deployment/docker-compose.yml -f deployment/docker-compose.ci.yml down -v --remove-orphans

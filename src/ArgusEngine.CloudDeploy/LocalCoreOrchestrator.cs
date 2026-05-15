@@ -28,7 +28,7 @@ internal sealed class LocalCoreOrchestrator(
         {
             return CloudDeployResult.Fail(
                 $"Core compose file not found: {ComposeFilePath}. " +
-                "Ensure deploy/docker-compose.yml exists in the repo.");
+                "Ensure deployment/docker-compose.yml exists in the repo.");
         }
 
         progress?.Report(new(null, "Starting local core services via docker compose..."));

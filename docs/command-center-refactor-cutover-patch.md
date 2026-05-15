@@ -8,7 +8,7 @@ The Command Center has been cut over to split services. The gateway routes direc
 - Removes the Gateway's implicit `legacy-command-center` fallback behavior.
 - Adds `/api/gateway/routes` diagnostics.
 - Adds WebSocket forwarding for `/hubs/discovery`.
-- Makes `deploy/deploy.py` split-first and points local smoke checks at the Gateway on port `8081`.
+- Makes `deploy.py` split-first and points local smoke checks at the Gateway on port `8081`.
 - Ports discovery, maintenance/admin, operations, worker-control, updates, realtime, and web routes into their owning split hosts.
 - Moves realtime UI notifications onto the split realtime host via RabbitMQ `LiveUiEventDto` consumption.
 - Replaces direct Web database access with API clients through the gateway.

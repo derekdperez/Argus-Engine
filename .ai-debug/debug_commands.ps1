@@ -12,16 +12,16 @@
 
 # Harmless workflow validation:
 Get-Location
-if (Test-Path -LiteralPath 'deploy/docker-compose.yml') { 'compose_file_ok' }
+if (Test-Path -LiteralPath 'deployment/docker-compose.yml') { 'compose_file_ok' }
 if (Get-Command dotnet -ErrorAction SilentlyContinue) { dotnet --version } else { 'dotnet_skip: not on PATH (use Docker build images for SDK)' }
 
 # Docker (each line is its own process — set COMPOSE_BAKE per line; non-zero exit if Docker is down):
-$env:COMPOSE_BAKE = 'false'; docker compose -f deploy/docker-compose.yml version
-$env:COMPOSE_BAKE = 'false'; docker compose -f deploy/docker-compose.yml config -q; if ($LASTEXITCODE -eq 0) { 'compose_config_ok' }
+$env:COMPOSE_BAKE = 'false'; docker compose -f deployment/docker-compose.yml version
+$env:COMPOSE_BAKE = 'false'; docker compose -f deployment/docker-compose.yml config -q; if ($LASTEXITCODE -eq 0) { 'compose_config_ok' }
 
 # Examples (commented — uncomment or copy when needed):
 # git status -sb
 # git rev-parse HEAD
 # dotnet --info
-# docker compose -f deploy/docker-compose.yml ps -a
+# docker compose -f deployment/docker-compose.yml ps -a
 # docker logs --tail 80 nightmare-v2-command-center-1 2>&1

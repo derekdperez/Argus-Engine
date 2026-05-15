@@ -103,7 +103,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Validate deploy manifests for release
-        run: python3 deploy/deploy.py validate --ci
+        run: ./deploy validate --ci
 
   deploy-production:
     name: Deploy to ECS production
@@ -131,21 +131,21 @@ jobs:
           ARGUS_ECS_SERVICE_ENV: ${{ secrets.ARGUS_ECS_SERVICE_ENV }}
         run: |
           test -n "$ARGUS_ECS_SERVICE_ENV"
-          printf '%s\n' "$ARGUS_ECS_SERVICE_ENV" > deploy/aws/service-env
+          printf '%s\n' "$ARGUS_ECS_SERVICE_ENV" > deployment/aws/service-env
 
       - name: Ensure ECR repositories
         env:
           AFFECTED_SERVICES: ${{ needs.detect-affected-services.outputs.services }}
         run: |
           read -r -a services <<< "$AFFECTED_SERVICES"
-          python3 deploy/deploy.py ecs repos "${services[@]}"
+          ./deploy ecs repos "${services[@]}"
 
       - name: Build and push production images
         env:
           AFFECTED_SERVICES: ${{ needs.detect-affected-services.outputs.services }}
         run: |
           read -r -a services <<< "$AFFECTED_SERVICES"
-          python3 deploy/deploy.py ecs build "${services[@]}"
+          ./deploy ecs build "${services[@]}"
 
       - name: Deploy ECS services
         env:
@@ -167,12 +167,12 @@ jobs:
           WORKER_HIGHVALUE_SERVICE: ${{ vars.WORKER_HIGHVALUE_SERVICE || 'argus-worker-highvalue' }}
           WORKER_TECHID_SERVICE: ${{ vars.WORKER_TECHID_SERVICE || 'argus-worker-techid' }}
           WORKER_HTTP_REQUESTER_SERVICE: ${{ vars.WORKER_HTTP_REQUESTER_SERVICE || 'argus-worker-http-requester' }}
-          SERVICE_ENV_FILE: deploy/aws/service-env
+          SERVICE_ENV_FILE: deployment/aws/service-env
           UPDATE_DESIRED_COUNTS: ${{ vars.UPDATE_DESIRED_COUNTS || 'false' }}
           ECS_FORCE_NEW_DEPLOYMENT: "false"
         run: |
           read -r -a services <<< "$AFFECTED_SERVICES"
-          python3 deploy/deploy.py ecs deploy "${services[@]}"
+          ./deploy ecs deploy "${services[@]}"
 
   no-production-deploy-needed:
     name: No production deploy needed

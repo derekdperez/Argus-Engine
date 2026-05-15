@@ -7,7 +7,7 @@ Argus Engine emits OpenTelemetry metrics and traces from the Command Center, Gat
 Run the application with the optional observability compose overlay:
 
 ```bash
-docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml up -d --build
+docker compose -f deployment/docker-compose.yml -f deployment/docker-compose.observability.yml up -d --build
 ```
 
 Open:
@@ -20,7 +20,7 @@ Open:
 The dashboard file is provisioned from:
 
 ```text
-deploy/observability/grafana/dashboards/argus-engine-overview.json
+deployment/observability/grafana/dashboards/argus-engine-overview.json
 ```
 
 ## Configuration

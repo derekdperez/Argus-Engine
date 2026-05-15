@@ -8,7 +8,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "${SCRIPT_DIR}/../../.." && pwd)"
-COMPOSE_FILE="${ARGUS_E2E_COMPOSE_FILE:-${ROOT}/deploy/docker-compose.yml}"
+COMPOSE_FILE="${ARGUS_E2E_COMPOSE_FILE:-${ROOT}/deployment/docker-compose.yml}"
 BASE_URL="${ARGUS_BASE_URL:-http://127.0.0.1:8080}"
 MAX_WAIT_SECONDS="${ARGUS_E2E_MAX_WAIT_SECONDS:-180}"
 

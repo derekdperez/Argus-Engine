@@ -39,7 +39,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Ensure ECR repositories exist
-        run: python3 deploy/deploy.py ecs repos
+        run: ./deploy ecs repos
 
   build-push:
     name: Build and push - ${{ matrix.service }}
@@ -51,31 +51,31 @@ jobs:
       matrix:
         include:
           - service: command-center
-            dockerfile: deploy/Dockerfile.web
+            dockerfile: deployment/Dockerfile.web
             project_dir: ArgusEngine.CommandCenter
             app_dll: ArgusEngine.CommandCenter.dll
           - service: gatekeeper
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.Gatekeeper
             app_dll: ArgusEngine.Gatekeeper.dll
           - service: worker-spider
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.Workers.Spider
             app_dll: ArgusEngine.Workers.Spider.dll
           - service: worker-enum
-            dockerfile: deploy/Dockerfile.worker-enum
+            dockerfile: deployment/Dockerfile.worker-enum
             project_dir: ArgusEngine.Workers.Enumeration
             app_dll: ArgusEngine.Workers.Enumeration.dll
           - service: worker-portscan
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.Workers.PortScan
             app_dll: ArgusEngine.Workers.PortScan.dll
           - service: worker-highvalue
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.Workers.HighValue
             app_dll: ArgusEngine.Workers.HighValue.dll
           - service: worker-techid
-            dockerfile: deploy/Dockerfile.worker
+            dockerfile: deployment/Dockerfile.worker
             project_dir: ArgusEngine.Workers.TechnologyIdentification
             app_dll: ArgusEngine.Workers.TechnologyIdentification.dll
 

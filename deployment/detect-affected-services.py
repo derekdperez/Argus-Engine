@@ -24,9 +24,9 @@ GLOBAL_ALL_SERVICE_FILES = {
     "NuGet.config",
     "global.json",
     ".dockerignore",
-    "deploy/service-catalog.tsv",
+    "deployment/service-catalog.tsv",
     "deploy/detect-affected-services.py",
-    "deploy/deploy.py",
+    "deploy.py",
     ".github/workflows/release-main.yml",
 }
 
@@ -34,16 +34,16 @@ GLOBAL_ALL_SERVICE_FILES = {
 # replica behavior. It is still scoped to ECR/ECS-deployable services, not every
 # local-only compose helper.
 RUNTIME_ALL_SERVICE_FILES = {
-    "deploy/docker-compose.yml",
-    "deploy/.env",
+    "deployment/docker-compose.yml",
+    "deployment/.env",
     ".env",
 }
 
 DOCKERFILE_RESOURCE_HINTS = {
-    "deploy/Dockerfile.base-runtime": "all",
-    "deploy/Dockerfile.base-recon": {"worker-enum"},
-    "deploy/wordlists": {"worker-enum"},
-    "deploy/artifacts/recon-tools": {"worker-enum"},
+    "deployment/Dockerfile.base-runtime": "all",
+    "deployment/Dockerfile.base-recon": {"worker-enum"},
+    "deployment/wordlists": {"worker-enum"},
+    "deployment/artifacts/recon-tools": {"worker-enum"},
 }
 
 
@@ -235,7 +235,7 @@ def detect(repo_root: Path, catalog_path: Path, base: str | None, head: str) -> 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", default=".", help="Repository root. Defaults to current directory.")
-    parser.add_argument("--catalog", default="deploy/service-catalog.tsv", help="Path to service catalog TSV.")
+    parser.add_argument("--catalog", default="deployment/service-catalog.tsv", help="Path to service catalog TSV.")
     parser.add_argument("--base", default=None, help="Base Git ref/SHA. Defaults to GITHUB_EVENT_BEFORE or HEAD^.")
     parser.add_argument("--head", default="HEAD", help="Head Git ref/SHA. Defaults to HEAD.")
     parser.add_argument(

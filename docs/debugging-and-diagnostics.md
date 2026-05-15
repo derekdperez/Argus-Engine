@@ -6,9 +6,9 @@ This guide describes the debugging helpers added for local development and deplo
 
 The update adds:
 
-- `deploy/deploy.py validate && deploy/deploy.py smoke` — one command that validates Compose, builds images, starts the stack, runs smoke tests, and prints error-like log lines.
-- `deploy/deploy.py smoke` — checks the Command Center health endpoints, Blazor static assets, and diagnostics APIs.
-- `deploy/deploy.py logs` — focused Compose log helper with error highlighting and service filtering.
+- `deploy.py validate && deploy.py smoke` — one command that validates Compose, builds images, starts the stack, runs smoke tests, and prints error-like log lines.
+- `deploy.py smoke` — checks the Command Center health endpoints, Blazor static assets, and diagnostics APIs.
+- `deploy.py logs` — focused Compose log helper with error highlighting and service filtering.
 - `GET /api/diagnostics/dependencies` — authenticated dependency diagnostics for Postgres, file-store Postgres, Redis, RabbitMQ TCP reachability, and expected static asset paths.
 - Ready health checks now use `/health/ready` instead of `/health` so Docker reports Command Center as healthy only after the database is reachable.
 
@@ -17,19 +17,19 @@ The update adds:
 Start with the full sanity check:
 
 ```bash
-./deploy/deploy.py validate && deploy/deploy.py smoke
+./deploy validate && deploy.py smoke
 ```
 
 Use a clean rebuild when Docker cache or dependency state is suspicious:
 
 ```bash
-./deploy/deploy.py validate && deploy/deploy.py smoke --fresh
+./deploy validate && deploy.py smoke --fresh
 ```
 
 Skip builds when you only want to re-check the running stack:
 
 ```bash
-./deploy/deploy.py validate && deploy/deploy.py smoke --no-build
+./deploy validate && deploy.py smoke --no-build
 ```
 
 ## Smoke-test only
@@ -37,19 +37,19 @@ Skip builds when you only want to re-check the running stack:
 After a deploy or restart:
 
 ```bash
-./deploy/deploy.py smoke
+./deploy smoke
 ```
 
 For a remote host:
 
 ```bash
-BASE_URL=http://YOUR_HOST:8080 ./deploy/deploy.py smoke
+BASE_URL=http://YOUR_HOST:8080 ./deploy smoke
 ```
 
 If you changed the diagnostics key:
 
 ```bash
-NIGHTMARE_DIAGNOSTICS_API_KEY='your-key' ./deploy/deploy.py smoke
+NIGHTMARE_DIAGNOSTICS_API_KEY='your-key' ./deploy smoke
 ```
 
 The script verifies:
@@ -66,25 +66,25 @@ The script verifies:
 Show status, recent logs, and highlighted failures:
 
 ```bash
-./deploy/deploy.py logs
+./deploy logs
 ```
 
 Show only error-like lines:
 
 ```bash
-./deploy/deploy.py logs --errors
+./deploy logs --errors
 ```
 
 Follow selected services:
 
 ```bash
-./deploy/deploy.py logs --follow command-center worker-spider
+./deploy logs --follow command-center worker-spider
 ```
 
 Increase the tail window:
 
 ```bash
-TAIL=500 ./deploy/deploy.py logs --errors
+TAIL=500 ./deploy logs --errors
 ```
 
 ## Diagnostics endpoints
@@ -133,7 +133,7 @@ Expected dependency diagnostics shape:
 Run:
 
 ```bash
-COMPOSE_BAKE=false docker compose -f deploy/docker-compose.yml build worker-enum
+COMPOSE_BAKE=false docker compose -f deployment/docker-compose.yml build worker-enum
 ```
 
 Use this when failures mention `go install`, NuGet restore, Dockerfile stages, or missing files during image creation.
@@ -143,14 +143,14 @@ Use this when failures mention `go install`, NuGet restore, Dockerfile stages, o
 Run one service at a time:
 
 ```bash
-docker compose -f deploy/docker-compose.yml up command-center
-docker compose -f deploy/docker-compose.yml up worker-spider
+docker compose -f deployment/docker-compose.yml up command-center
+docker compose -f deployment/docker-compose.yml up worker-spider
 ```
 
 Then inspect:
 
 ```bash
-./deploy/deploy.py logs --errors command-center worker-spider
+./deploy logs --errors command-center worker-spider
 ```
 
 ### Dependency failures
@@ -158,7 +158,7 @@ Then inspect:
 Run:
 
 ```bash
-./deploy/deploy.py smoke
+./deploy smoke
 ```
 
 Then manually inspect dependency diagnostics if needed:
@@ -184,11 +184,11 @@ If either fails, debug the Command Center image and `App.razor` asset paths firs
 
 | Symptom | Most likely area | First command |
 |---|---|---|
-| Docker build exits before containers start | Dockerfile or external tool version | `docker compose -f deploy/docker-compose.yml build SERVICE` |
-| Container exits immediately | Runtime config or startup exception | `./deploy/deploy.py logs --errors SERVICE` |
-| `/health` passes but `/health/ready` fails | Database dependency | `./deploy/deploy.py smoke` |
+| Docker build exits before containers start | Dockerfile or external tool version | `docker compose -f deployment/docker-compose.yml build SERVICE` |
+| Container exits immediately | Runtime config or startup exception | `./deploy logs --errors SERVICE` |
+| `/health` passes but `/health/ready` fails | Database dependency | `./deploy smoke` |
 | `blazor.web.js` returns 404 or `Unexpected token ':'` | Blazor static asset publishing/pathing; the script may contain `404: Not Found` | `curl -i http://localhost:8080/_framework/blazor.web.js` |
-| Workers run but no work progresses | RabbitMQ, outbox, or worker toggles | `./deploy/deploy.py logs --errors gatekeeper worker-enum worker-spider` |
+| Workers run but no work progresses | RabbitMQ, outbox, or worker toggles | `./deploy logs --errors gatekeeper worker-enum worker-spider` |
 
 ## Security note
 
@@ -196,7 +196,7 @@ Do not expose diagnostics publicly with the default key. For public deployments,
 
 ```bash
 export NIGHTMARE_DIAGNOSTICS_API_KEY='replace-with-a-long-random-secret'
-python3 deploy/deploy.py deploy --hot
+./deploy deploy --hot
 ```
 
 Or disable diagnostics in production by setting:

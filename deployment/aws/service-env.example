@@ -1,4 +1,4 @@
-# Copy to deploy/aws/service-env and replace with production values.
+# Copy to deployment/aws/service-env and replace with production values.
 # Use routable hostnames/IPs that resolve from ECS tasks in your VPC; the compose
 # hostnames below are examples only.
 ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=argus_engine;Username=argus;Password=argus

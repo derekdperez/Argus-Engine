@@ -6,7 +6,7 @@ public sealed class ComponentUpdaterOptions
 
     public string RepositoryPath { get; set; } = "/workspace";
 
-    public string ComposeFilePath { get; set; } = "/workspace/deploy/docker-compose.yml";
+    public string ComposeFilePath { get; set; } = "/workspace/deployment/docker-compose.yml";
 
     public string GitRemote { get; set; } = "origin";
 

@@ -94,9 +94,9 @@ public sealed class GcpDeployOptions
     // ── Local core compose ────────────────────────────────────────────────────
     /// <summary>
     /// Path to the docker-compose file for local core services.
-    /// Defaults to "deploy/docker-compose.yml" relative to RepoRoot.
+    /// Defaults to "deployment/docker-compose.yml" relative to RepoRoot.
     /// </summary>
-    public string CoreComposeFile { get; set; } = "deploy/docker-compose.yml";
+    public string CoreComposeFile { get; set; } = "deployment/docker-compose.yml";
 
     /// <summary>
     /// Absolute path to the repository root. Required for building images and

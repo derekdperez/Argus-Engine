@@ -27,17 +27,17 @@
   - `subfinder` and `amass` run in separate jobs with isolated failure/retry behavior.
   - Job outputs are normalized and scope-filtered before emission, then globally deduped downstream by existing canonical asset/gatekeeper flow.
 - AWS ECS deployment boundary:
-  - `deploy/deploy.py ecs deploy` owns ECS task-definition registration and ECS service create/update from ECR images.
-  - `deploy/aws/deploy.py ecs autoscale` owns queue-driven ECS desired-count updates for spider, enum, port scan, high-value, and technology-id worker services.
-  - `deploy/deploy.py deploy --ecs-workers` is the EC2 self-hosted mode: compose runs Postgres/Redis/RabbitMQ/Command Center/Gatekeeper locally, local worker replicas are scaled to zero, and ECS worker tasks connect back to the EC2 private IP.
+  - `deploy.py ecs deploy` owns ECS task-definition registration and ECS service create/update from ECR images.
+  - `deployment/aws/deploy.py ecs autoscale` owns queue-driven ECS desired-count updates for spider, enum, port scan, high-value, and technology-id worker services.
+  - `deploy.py deploy --ecs-workers` is the EC2 self-hosted mode: compose runs Postgres/Redis/RabbitMQ/Command Center/Gatekeeper locally, local worker replicas are scaled to zero, and ECS worker tasks connect back to the EC2 private IP.
   - ECS worker deploys intentionally replace running worker tasks by scaling existing worker services to zero before updating/scaling back up; ECS services themselves are preserved.
   - Command Center remains the metrics source for scaling via `/api/http-request-queue/metrics` and `/api/ops/rabbit-queues`; AWS orchestration stays outside application runtime code.
-  - Manual ECS worker desired-count overrides are persisted in `worker_scale_targets`, exposed through `/api/workers/scale` and `/api/workers/scale-overrides`, and honored by `deploy/aws/deploy.py ecs autoscale` before queue-driven scaling.
+  - Manual ECS worker desired-count overrides are persisted in `worker_scale_targets`, exposed through `/api/workers/scale` and `/api/workers/scale-overrides`, and honored by `deployment/aws/deploy.py ecs autoscale` before queue-driven scaling.
 - Manual EC2 worker machine scaling is separate from ECS scaling:
   - Command Center persists EC2 worker machines in `ec2_worker_machines`, enforces a maximum of two active machines, launches EC2 instances through AWS EC2, and sends per-machine scale changes through AWS Systems Manager Run Command.
-  - Remote EC2 worker machines run only worker containers via `deploy/docker-compose.ec2-workers.yml` and connect back to configured Postgres, Redis, and RabbitMQ endpoints.
+  - Remote EC2 worker machines run only worker containers via `deployment/docker-compose.ec2-workers.yml` and connect back to configured Postgres, Redis, and RabbitMQ endpoints.
 - Cloud usage tracking:
   - `cloud_resource_usage_samples` stores sampled running counts for ECS worker services and the current EC2 command-center host.
-  - `deploy/deploy.py usage recording` is the external recorder; `deploy.py deploy --ecs-workers` and `deploy.py ecs autoscale` call it so deploy/reconcile activity produces usage samples.
+  - `deploy.py usage recording` is the external recorder; `deploy.py deploy --ecs-workers` and `deploy.py ecs autoscale` call it so deploy/reconcile activity produces usage samples.
   - Command Center `/api/admin/usage` integrates samples for month-to-date ECS worker hours and EC2 server hours; `/admin` renders the operator view.
   - HTTP traffic totals on the Admin page are application-level estimates from persisted `http_request_queue` request/response headers, bodies, and response content length fields, not authoritative AWS network billing bytes.

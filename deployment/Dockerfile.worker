@@ -2,7 +2,7 @@
 # Generic .NET worker image.
 # Build context: repository root.
 # Recon tools are intentionally excluded here; only worker-enum uses
-# deploy/Dockerfile.worker-enum.
+# deployment/Dockerfile.worker-enum.
 
 ARG PROJECT_PATH=src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj
 ARG PROJECT_DIR=ArgusEngine.Gatekeeper

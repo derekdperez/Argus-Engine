@@ -14,7 +14,7 @@ argus_dev_repo_root() {
   dir="$(argus_dev_script_dir)"
 
   # Explicit override for unusual EC2/dev layouts.
-  if [[ -n "${ARGUS_DEV_ROOT:-}" && -f "${ARGUS_DEV_ROOT%/}/deploy/docker-compose.yml" ]]; then
+  if [[ -n "${ARGUS_DEV_ROOT:-}" && -f "${ARGUS_DEV_ROOT%/}/deployment/docker-compose.yml" ]]; then
     cd "${ARGUS_DEV_ROOT%/}" && pwd
     return 0
   fi
@@ -22,7 +22,7 @@ argus_dev_repo_root() {
   # Prefer the caller's working directory so scripts still work when launched
   # from an extracted helper folder such as ./deploy.py.
   for candidate in "$PWD" "$dir" "$dir/.." "$dir/../.." "$dir/../../.." "$dir/../../../.."; do
-    if [[ -f "$candidate/deploy/docker-compose.yml" ]]; then
+    if [[ -f "$candidate/deployment/docker-compose.yml" ]]; then
       cd "$candidate" && pwd
       return 0
     fi
@@ -30,7 +30,7 @@ argus_dev_repo_root() {
 
   if command -v git >/dev/null 2>&1; then
     candidate="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
-    if [[ -n "$candidate" && -f "$candidate/deploy/docker-compose.yml" ]]; then
+    if [[ -n "$candidate" && -f "$candidate/deployment/docker-compose.yml" ]]; then
       cd "$candidate" && pwd
       return 0
     fi

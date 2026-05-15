@@ -1,4 +1,4 @@
-# Copy to deploy/gcp/service-env and replace with production values.
+# Copy to deployment/gcp/service-env and replace with production values.
 # Use hostnames/IPs that Cloud Run Worker Pools can reach.
 
 ConnectionStrings__Postgres=Host=10.0.0.10;Port=5432;Database=argus_engine;Username=argus;Password=CHANGE_ME

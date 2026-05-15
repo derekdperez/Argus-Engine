@@ -1,5 +1,5 @@
 -- Argus Engine Postgres hotspot check.
--- Run with: docker compose -f deploy/docker-compose.yml exec -T postgres psql -U argus -d argus_engine < deploy/check-postgres-hotspots.sql
+-- Run with: docker compose -f deployment/docker-compose.yml exec -T postgres psql -U argus -d argus_engine < deployment/check-postgres-hotspots.sql
 
 SELECT count(*) AS active_connections
 FROM pg_stat_activity;

@@ -19,8 +19,8 @@ Then run the full validation locally:
 dotnet restore ArgusEngine.slnx
 dotnet build ArgusEngine.slnx
 dotnet test ArgusEngine.slnx
-docker compose -f deploy/docker-compose.yml build
-docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml up -d --build
+docker compose -f deployment/docker-compose.yml build
+docker compose -f deployment/docker-compose.yml -f deployment/docker-compose.observability.yml up -d --build
 ```
 
 ## Destructive rename boundary

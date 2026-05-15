@@ -18,7 +18,7 @@ Run:
 This restores every deployed service project into:
 
 ```text
-deploy/artifacts/nuget/packages/
+deployment/artifacts/nuget/packages/
 ```
 
 The service Dockerfiles copy those packages into the BuildKit NuGet cache before
@@ -33,18 +33,18 @@ more important than repository size.
 Run:
 
 ```bash
-./deploy/deploy.py gcp build
+./deploy gcp build
 ```
 
 This downloads the pinned `subfinder` and `amass` release archives, verifies the
 published checksums, and writes the Linux amd64 binaries to:
 
 ```text
-deploy/artifacts/recon-tools/linux-amd64/
+deployment/artifacts/recon-tools/linux-amd64/
 ```
 
-`deploy/Dockerfile.worker-enum` copies these binaries directly into the enum
-worker image. `deploy/Dockerfile.base-recon` is also zero-download and only
+`deployment/Dockerfile.worker-enum` copies these binaries directly into the enum
+worker image. `deployment/Dockerfile.base-recon` is also zero-download and only
 packages these committed binaries. If either binary is missing, the Docker build
 fails immediately instead of compiling Go projects during deployment.
 
@@ -58,8 +58,8 @@ registry, export Docker base images into git-managed tarballs:
 
 ```bash
 ./docker buildx build
-docker save argus-engine-base:local | gzip > deploy/artifacts/images/argus-engine-base.local.tar.gz
-docker save argus-recon-base:local | gzip > deploy/artifacts/images/argus-recon-base.local.tar.gz
+docker save argus-engine-base:local | gzip > deployment/artifacts/images/argus-engine-base.local.tar.gz
+docker save argus-recon-base:local | gzip > deployment/artifacts/images/argus-recon-base.local.tar.gz
 ```
 
 Then load them before deployment:
@@ -68,7 +68,7 @@ Then load them before deployment:
 ./docker load
 ```
 
-`deploy/deploy.py` also tries this loader before rebuilding missing base images.
+`deploy.py` also tries this loader before rebuilding missing base images.
 This is intentionally opt-in because image tarballs are large. Prefer ECR or
 another registry cache when available.
 
@@ -76,8 +76,8 @@ another registry cache when available.
 
 Commit these artifacts only when they provide measurable deployment speedup:
 
-- Commit `deploy/artifacts/recon-tools` for reliable enum-worker builds.
-- Commit `deploy/artifacts/nuget/packages` for air-gapped or routinely cold
+- Commit `deployment/artifacts/recon-tools` for reliable enum-worker builds.
+- Commit `deployment/artifacts/nuget/packages` for air-gapped or routinely cold
   builders.
 - Avoid committing app publish output unless a release process also verifies the
   artifact fingerprint against the source revision.

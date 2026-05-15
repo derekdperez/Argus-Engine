@@ -7,7 +7,7 @@
   - Added `NIGHTMARE_BUILD_SEQUENTIAL=1` mode to build selected services one-by-one for clearer progress and easier fault isolation.
   - Added `NIGHTMARE_BUILD_PROGRESS` to control BuildKit progress style (`auto|plain|tty`) through `BUILDKIT_PROGRESS`.
   - Why: recent deployments appeared hung during long parallel restore/publish stages; these controls provide bounded runtime and clearer operator visibility.
-  - Validation: `bash -n deploy/deploy.py` and `bash -n deploy/lib-nightmare-compose.sh` (Git Bash) succeeded.
+  - Validation: `bash -n deploy.py` and `bash -n deploy/lib-nightmare-compose.sh` (Git Bash) succeeded.
 
 - Fixed Command Center deployment publish blockers from recent refactor drift:
   - Removed invalid namespace import in `Startup/CommandCenterServiceRegistration.cs` (`Components.Pages.Operations` did not exist).
@@ -90,15 +90,15 @@
 - Added Admin cloud usage tracking:
   - New `cloud_resource_usage_samples` persistence tracks sampled ECS worker service running counts and current EC2 host uptime metadata.
   - Added `/api/admin/usage` and `/admin` with cumulative ECS worker hours, 2200-hour monthly allowance usage, cumulative EC2 server hours, and HTTP queue traffic estimates.
-  - Added `deploy/deploy.py usage recording` and wired deploy/autoscaler flows to record cloud usage samples.
+  - Added `deploy.py usage recording` and wired deploy/autoscaler flows to record cloud usage samples.
   - Updated AWS deploy docs/env example to document usage sampling and the need for a regular autoscaler cadence.
   - Why: give operators visibility into free-tier ECS worker-hour usage and rough application bandwidth.
 - Added ECS worker deployment and scaling helpers:
-  - `deploy/deploy.py ecs deploy` registers task definitions from ECR images and creates/updates ECS services.
-  - `deploy/aws/deploy.py ecs autoscale` scales spider, enum, port scan, high-value, and tech-id workers from Command Center queue metrics.
-  - `deploy/aws/destroy-ecs-services.sh` explicitly deletes worker or all Nightmare ECS services with confirmation env vars.
-  - `deploy/deploy.py deploy --ecs-workers` now runs the EC2 self-hosted core stack and deploys workers to ECS.
-  - `deploy/aws/bootstrap-ecs-from-ec2.sh` derives EC2/VPC settings, creates baseline ECS/IAM/ECR/log/security-group resources, and generates ECS env files for workers.
+  - `deploy.py ecs deploy` registers task definitions from ECR images and creates/updates ECS services.
+  - `deployment/aws/deploy.py ecs autoscale` scales spider, enum, port scan, high-value, and tech-id workers from Command Center queue metrics.
+  - `deployment/aws/destroy-ecs-services.sh` explicitly deletes worker or all Nightmare ECS services with confirmation env vars.
+  - `deploy.py deploy --ecs-workers` now runs the EC2 self-hosted core stack and deploys workers to ECS.
+  - `deployment/aws/bootstrap-ecs-from-ec2.sh` derives EC2/VPC settings, creates baseline ECS/IAM/ECR/log/security-group resources, and generates ECS env files for workers.
   - Tightened ECS rerun idempotency: deploy uses immutable source-stamp image tags by default, reuses matching task-definition revisions, and skips ECS service updates when the service already matches desired state.
   - Added `deploy.py ecs replace` and wired `deploy.py deploy --ecs-workers` to scale ECS workers to zero before recreating them on updated task definitions/images.
   - Updated AWS env examples, service env guidance, README, scaling guide, and gitignore for non-committed live AWS config.
@@ -179,8 +179,8 @@
   - Includes container/image rollups, per-component health (green/yellow/red/gray), and last 300 log lines per container.
   - Why: provide immediate runtime visibility for compose/ECS troubleshooting from Command Center.
 - Added deployment wiring for Docker runtime introspection:
-  - `deploy/Dockerfile.web` installs Docker CLI (`docker.io`).
-  - `deploy/docker-compose.yml` mounts `/var/run/docker.sock` read-only into `command-center`.
+  - `deployment/Dockerfile.web` installs Docker CLI (`docker.io`).
+  - `deployment/docker-compose.yml` mounts `/var/run/docker.sock` read-only into `command-center`.
   - Why: make `/api/ops/docker-status` functional in containerized runtime.
 - Validation: `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded.
 
@@ -234,7 +234,7 @@
 - Validation:
   - `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj -c Release` succeeded.
   - `dotnet test src/tests/NightmareV2.Infrastructure.Tests/NightmareV2.Infrastructure.Tests.csproj -c Release --no-restore` exited 0.
-  - `docker compose -f deploy/docker-compose.yml config --quiet` succeeded.
+  - `docker compose -f deployment/docker-compose.yml config --quiet` succeeded.
   - `git diff --check` passed with Git CRLF warnings only.
 
 - Condensed Operations target controls and corrected target rollups:
@@ -250,13 +250,13 @@
 - Added Operations worker scale controls and ECS manual desired-count path:
   - Worker grid shows scalable ECS services with `-1`, textbox `Set`, and `+1` controls.
   - Manual desired counts are persisted in `worker_scale_targets`; Command Center can update ECS immediately via AWS ECS SDK when AWS region/credentials are available.
-  - `deploy/aws/deploy.py ecs autoscale` reads `/api/workers/scale-overrides` and honors manual counts before queue-driven scaling.
+  - `deployment/aws/deploy.py ecs autoscale` reads `/api/workers/scale-overrides` and honors manual counts before queue-driven scaling.
   - Why: let operators add/remove spider, enum, port scan, high-value, and technology-id workers directly from Operations without losing settings to the autoscaler.
 - Validation:
   - `dotnet build src/NightmareV2.CommandCenter/NightmareV2.CommandCenter.csproj` succeeded.
   - `dotnet test NightmareV2.slnx` passed (18/18).
   - `git diff --check` passed with Git CRLF warnings only.
-  - `bash -n deploy/aws/deploy.py ecs autoscale` could not run on this Windows host because `/bin/bash` is unavailable.
+  - `bash -n deployment/aws/deploy.py ecs autoscale` could not run on this Windows host because `/bin/bash` is unavailable.
 
 - Promoted the Radzen operations workspace to the default operations surface:
   - `/` and `/ops` now route to the full operations workspace; the old basic page moved to `/ops-basic`, and `/ops-radzen` remains as an alternate direct link.

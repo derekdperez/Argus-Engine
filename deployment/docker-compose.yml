@@ -1,5 +1,5 @@
 # Run from the repository root:
-# docker compose -f deploy/docker-compose.yml up -d --build
+# docker compose -f deployment/docker-compose.yml up -d --build
 #
 # Project-specific deployment version rule:
 # ARGUS_ENGINE_VERSION and ARGUS_BUILD_TIME_UTC are exported by deploy.py
@@ -117,7 +117,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.commandcenter-host
+      dockerfile: deployment/Dockerfile.commandcenter-host
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.CommandCenter.Gateway
@@ -145,7 +145,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.commandcenter-host
+      dockerfile: deployment/Dockerfile.commandcenter-host
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.CommandCenter.Operations.Api
@@ -177,7 +177,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.commandcenter-host
+      dockerfile: deployment/Dockerfile.commandcenter-host
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.CommandCenter.Discovery.Api
@@ -209,7 +209,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.commandcenter-host
+      dockerfile: deployment/Dockerfile.commandcenter-host
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.CommandCenter.WorkerControl.Api
@@ -220,7 +220,7 @@ services:
       Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_CONTROL_API_POSTGRES_MAX_POOL_SIZE:-4}
       Argus__Autoscaler__Enabled: ${ARGUS_AUTOSCALER_ENABLED:-false}
       Argus__Autoscaler__RepoRoot: /workspace
-      Argus__Autoscaler__DockerComposePath: /workspace/deploy/docker-compose.yml
+      Argus__Autoscaler__DockerComposePath: /workspace/deployment/docker-compose.yml
       Argus__Autoscaler__DockerComposeProject: argus-engine
       AWS_REGION: ${AWS_REGION:-}
       ECS_CLUSTER: ${ECS_CLUSTER:-argus-engine}
@@ -250,7 +250,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.commandcenter-host
+      dockerfile: deployment/Dockerfile.commandcenter-host
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.CommandCenter.Maintenance.Api
@@ -282,7 +282,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.commandcenter-host
+      dockerfile: deployment/Dockerfile.commandcenter-host
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.CommandCenter.Updates.Api
@@ -313,7 +313,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.commandcenter-host
+      dockerfile: deployment/Dockerfile.commandcenter-host
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.CommandCenter.Realtime.Host
@@ -343,7 +343,7 @@ services:
     image: argus-engine/command-center-bootstrapper:${ARGUS_ENGINE_VERSION:-2.6.3}
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deployment/Dockerfile.worker
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.CommandCenter.Bootstrapper
@@ -365,7 +365,7 @@ services:
     image: argus-engine/command-center-spider-dispatcher:${ARGUS_ENGINE_VERSION:-2.6.3}
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deployment/Dockerfile.worker
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.CommandCenter.SpiderDispatcher
@@ -389,7 +389,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.commandcenter-host
+      dockerfile: deployment/Dockerfile.commandcenter-host
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.CommandCenter.Web
@@ -412,7 +412,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deployment/Dockerfile.worker
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.Gatekeeper
@@ -437,7 +437,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deployment/Dockerfile.worker
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.Workers.Spider
@@ -464,7 +464,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deployment/Dockerfile.worker
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.Workers.HttpRequester
@@ -494,7 +494,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker-enum
+      dockerfile: deployment/Dockerfile.worker-enum
       args:
         <<: *enum-build-args
         PROJECT_DIR: ArgusEngine.Workers.Enumeration
@@ -534,7 +534,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deployment/Dockerfile.worker
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.Workers.PortScan
@@ -561,7 +561,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deployment/Dockerfile.worker
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.Workers.HighValue
@@ -588,7 +588,7 @@ services:
     restart: unless-stopped
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.worker
+      dockerfile: deployment/Dockerfile.worker
       args:
         <<: *dotnet-build-args
         PROJECT_DIR: ArgusEngine.Workers.TechnologyIdentification

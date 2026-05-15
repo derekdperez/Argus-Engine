@@ -90,7 +90,7 @@ public sealed class EfReconProviderRunRecorder(
     public async Task MarkProviderFailedAsync(
         Guid targetId,
         string provider,
-        string error,
+        string errorMessage,
         CancellationToken cancellationToken = default)
     {
         try
@@ -115,7 +115,7 @@ public sealed class EfReconProviderRunRecorder(
                     ["id"] = Guid.NewGuid(),
                     ["target_id"] = targetId,
                     ["provider"] = NormalizeProvider(provider),
-                    ["error"] = error.Length > 4096 ? error[..4096] : error,
+                    ["error"] = errorMessage.Length > 4096 ? errorMessage[..4096] : errorMessage,
                     ["now"] = DateTimeOffset.UtcNow
                 },
                 cancellationToken).ConfigureAwait(false);

@@ -18,6 +18,6 @@ public interface IReconProviderRunRecorder
     Task MarkProviderFailedAsync(
         Guid targetId,
         string provider,
-        string error,
+        string errorMessage,
         CancellationToken cancellationToken = default);
 }

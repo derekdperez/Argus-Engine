@@ -1,6 +1,6 @@
 {
   "protocol_version": 1,
-  "last_updated": "2026-05-15T21:06:25Z",
+  "last_updated": "2026-05-15T21:26:06Z",
   "agents": {
     "agent-alpha": {
       "status": "idle",
@@ -15,10 +15,12 @@
       "working_on": []
     },
     "agent-gamma": {
-      "status": "idle",
-      "current_task": "",
-      "last_active": "2026-05-15T18:57:31Z",
-      "working_on": []
+      "status": "busy",
+      "current_task": "Fix GCP worker detection and scaling to 10-50 autoscaling per worker type",
+      "last_active": "2026-05-15T21:26:06Z",
+      "working_on": [
+        "src/ArgusEngine.CommandCenter.CloudDeploy.Api"
+      ]
     },
     "codex": {
       "status": "busy",
@@ -48,6 +50,12 @@
       "locked_by": "codex",
       "locked_at": "2026-05-15T21:06:25Z",
       "purpose": "Add user-visible action result panel for recon context menu selections",
+      "status": "in_progress"
+    },
+    "src/ArgusEngine.CommandCenter.CloudDeploy.Api": {
+      "locked_by": "agent-gamma",
+      "locked_at": "2026-05-15T21:26:06Z",
+      "purpose": "Fix GCP worker detection and scaling to 10-50 autoscaling per worker type",
       "status": "in_progress"
     }
   },

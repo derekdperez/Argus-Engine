@@ -40,7 +40,10 @@
                             FilterMode="FilterMode.Simple"
                             AllowSorting="true"
                             AllowPaging="true"
-                            PageSize="25"
+                            PageSize="250"
+                            PageSizeOptions="@GridPageSizeOptions"
+                            AllowVirtualization="true"
+                            Style="height: 560px"
                             Density="Density.Compact"
                             IsLoading="@_highValueLoading"
                             EmptyText="No high value assets found.">
@@ -122,7 +125,10 @@
                             FilterMode="FilterMode.Simple"
                             AllowSorting="true"
                             AllowPaging="true"
-                            PageSize="25"
+                            PageSize="250"
+                            PageSizeOptions="@GridPageSizeOptions"
+                            AllowVirtualization="true"
+                            Style="height: 560px"
                             Density="Density.Compact"
                             IsLoading="@_technologyLoading"
                             EmptyText="No technology detections found.">
@@ -164,7 +170,10 @@
                             FilterMode="FilterMode.Simple"
                             AllowSorting="true"
                             AllowPaging="true"
-                            PageSize="20"
+                            PageSize="250"
+                            PageSizeOptions="@GridPageSizeOptions"
+                            AllowVirtualization="true"
+                            Style="height: 420px"
                             Density="Density.Compact"
                             EmptyText="No version usage found.">
                 <Columns>
@@ -188,6 +197,7 @@
     private string _highValueStatusFilter = "Active";
     private string _technologySearch = "";
     private string? _selectedTechnologyName;
+    private static readonly int[] GridPageSizeOptions = [250, 1000, 10000];
 
     private static readonly string[] HighValueStatusOptions = ["Active", "All", "Pending", "In Process", "False Positive", "Valid Finding"];
 

@@ -120,7 +120,7 @@
             {
                 <span class="argus-dg-mode">virtualized</span>
             }
-            else if (Pagination is not null && GroupKeySelector is null)
+            @if (CanPage)
             {
                 <span class="argus-dg-mode">paged</span>
             }
@@ -211,4 +211,3 @@
         </div>
     }
 </div>
-

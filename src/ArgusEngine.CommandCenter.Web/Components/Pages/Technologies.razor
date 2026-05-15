@@ -60,7 +60,9 @@
                             Count="@rows.Count"
                             AllowSorting="true"
                             AllowFiltering="false"
-                            AllowPaging="false"
+                            AllowPaging="true"
+                            PageSize="250"
+                            PageSizeOptions="@GridPageSizeOptions"
                             AllowGrouping="true"
                             AllowVirtualization="true"
                             Style="height: 860px"
@@ -125,6 +127,7 @@
     private string _targetFilter = "";
     private string _subdomainFilter = "";
     private string _technologyFilter = "";
+    private static readonly int[] GridPageSizeOptions = [250, 1000, 10000];
 
     private string LiveStateCss => Realtime.IsConnected ? "ok" : "warn";
 

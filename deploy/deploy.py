@@ -576,8 +576,8 @@ class ArgusDeployConsole:
                     "Scale local or ECS workers",
                     "Monitor health, status, logs, queues, and worker counts",
                     "Operate services: restart, stop, smoke test, clean",
-                    "AWS ECS / ECR deployment and monitoring",
                     "Google Cloud Run worker deployment and scaling",
+                    "AWS ECS / ECR deployment and monitoring",
                     "Show changed/affected services",
                     "Open a command shell from the repo root",
                     "Exit",
@@ -593,9 +593,9 @@ class ArgusDeployConsole:
             elif choice == 3:
                 code = self.operations_menu()
             elif choice == 4:
-                code = self.ecs_menu()
-            elif choice == 5:
                 code = self.gcp_menu()
+            elif choice == 5:
+                code = self.ecs_menu()
             elif choice == 6:
                 self.show_changed_services()
                 code = 0
@@ -616,6 +616,7 @@ class ArgusDeployConsole:
                 "Incremental image deploy — rebuild changed images",
                 "Full fresh rebuild — no-cache image rebuild and recreate",
                 "Deploy/update selected components",
+                "Deploy local core + Google Cloud Run workers",
                 "Deploy local core + ECS workers from this EC2 host",
                 "Back",
             ],
@@ -629,6 +630,8 @@ class ArgusDeployConsole:
         if choice == 3:
             return self.selected_component_deploy()
         if choice == 4:
+            return self.gcp_from_args(["release"])
+        if choice == 5:
             return self.deploy_sh(["--ecs-workers"])
         return 0
 

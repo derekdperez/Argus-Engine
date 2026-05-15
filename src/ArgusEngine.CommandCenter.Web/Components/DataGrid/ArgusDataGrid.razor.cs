@@ -17,9 +17,10 @@ namespace ArgusEngine.CommandCenter.Web.Components.DataGrid;
 [CascadingTypeParameter(nameof(TGridItem))]
 public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
 {
+    private const int DefaultPageSize = 250;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly SearchValues<char> CsvEscapeChars = SearchValues.Create(['"', ',', '\r', '\n']);
-    private readonly PaginationState _fallbackPagination = new();
+    private readonly PaginationState _fallbackPagination = new() { ItemsPerPage = DefaultPageSize };
 
     private List<TGridItem> _effectiveRows = [];
     private IReadOnlyList<GridGroup<TGridItem>>? _groups;
@@ -68,7 +69,7 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
 
     [Parameter] public bool ShowPageSizePicker { get; set; } = true;
 
-    [Parameter] public IReadOnlyList<int> PageSizeOptions { get; set; } = [25, 50, 100, 250];
+    [Parameter] public IReadOnlyList<int> PageSizeOptions { get; set; } = [250, 1000, 10000];
 
     [Parameter] public bool Virtualize { get; set; } = true;
 
@@ -154,7 +155,7 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
 
     private bool ToolbarVisible =>
         ShowToolbar ?? (ShowSearch
-            || Pagination is not null
+            || CanPage
             || ConfigurationTemplate is not null
             || ToolbarTemplate is not null
             || RefreshRequested.HasDelegate
@@ -165,9 +166,9 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
 
     private bool EffectiveVirtualize => Virtualize && GroupKeySelector is null;
 
-    private bool CanPage => Pagination is not null && !EffectiveVirtualize && GroupKeySelector is null;
+    private bool CanPage => GroupKeySelector is null;
 
-    private PaginationState? EffectivePagination => CanPage ? Pagination : null;
+    private PaginationState? EffectivePagination => CanPage ? ActivePagination : null;
 
     private PaginationState ActivePagination => Pagination ?? _fallbackPagination;
 
@@ -336,8 +337,8 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
             return;
 
         SearchText = value;
-        if (Pagination is not null)
-            await Pagination.SetCurrentPageIndexAsync(0);
+        if (CanPage)
+            await ActivePagination.SetCurrentPageIndexAsync(0);
 
         await SearchTextChanged.InvokeAsync(SearchText);
         await SavePreferencesAsync();
@@ -345,13 +346,10 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
 
     private async Task OnPageSizeChanged(ChangeEventArgs e)
     {
-        if (Pagination is null)
-            return;
-
         if (int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var pageSize) && pageSize > 0)
         {
-            Pagination.ItemsPerPage = pageSize;
-            await Pagination.SetCurrentPageIndexAsync(0);
+            ActivePagination.ItemsPerPage = pageSize;
+            await ActivePagination.SetCurrentPageIndexAsync(0);
             await SavePreferencesAsync();
         }
     }
@@ -377,8 +375,8 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
         if (ClearFiltersRequested.HasDelegate)
             await ClearFiltersRequested.InvokeAsync();
 
-        if (Pagination is not null)
-            await Pagination.SetCurrentPageIndexAsync(0);
+        if (CanPage)
+            await ActivePagination.SetCurrentPageIndexAsync(0);
 
         await SavePreferencesAsync();
     }
@@ -497,8 +495,8 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
 
             _suppressPreferenceWrite = true;
 
-            if (PersistPageSize && Pagination is not null && prefs.PageSize is > 0)
-                Pagination.ItemsPerPage = prefs.PageSize.Value;
+            if (PersistPageSize && prefs.PageSize is > 0)
+                ActivePagination.ItemsPerPage = prefs.PageSize.Value;
 
             if (PersistDensity && !string.IsNullOrWhiteSpace(prefs.Density)
                 && Enum.TryParse<ArgusDataGridDensity>(prefs.Density, ignoreCase: true, out var density))
@@ -544,7 +542,7 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
         {
             var prefs = new GridPreferences(
                 PersistSearch ? SearchText : null,
-                PersistPageSize ? Pagination?.ItemsPerPage : null,
+                PersistPageSize ? ActivePagination.ItemsPerPage : null,
                 PersistDensity ? Density.ToString() : null);
 
             var json = JsonSerializer.Serialize(prefs, JsonOptions);
@@ -578,4 +576,3 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
 
     private sealed record GridPreferences(string? SearchText, int? PageSize, string? Density);
 }
-

@@ -64,6 +64,11 @@
 
             <RadzenDataGrid Data="_workerStatuses" TItem="WorkerStatus"
                             GridLines="DataGridGridLines.Horizontal"
+                            AllowPaging="true"
+                            PageSize="250"
+                            PageSizeOptions="@GridPageSizeOptions"
+                            AllowVirtualization="true"
+                            Style="height: 520px"
                             AllowSorting="false" AllowFiltering="false">
                 <Columns>
                     <RadzenDataGridColumn TItem="WorkerStatus" Title="Worker" Width="180px">
@@ -240,6 +245,7 @@
     private readonly List<LogEntry> _log = [];
     private readonly Dictionary<WorkerType, int> _desiredMin = [];
     private readonly Dictionary<WorkerType, int> _desiredMax = [];
+    private static readonly int[] GridPageSizeOptions = [250, 1000, 10000];
 
     protected override async Task OnInitializedAsync() =>
         await RefreshStatusAsync();

@@ -4,7 +4,7 @@
 # Recon tools are intentionally excluded here; only worker-enum uses
 # deployment/Dockerfile.worker-enum.
 
-ARG PROJECT_PATH=src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj
+ARG PROJECT_PATH=
 ARG PROJECT_DIR=ArgusEngine.Gatekeeper
 ARG APP_DLL=ArgusEngine.Gatekeeper.dll
 
@@ -20,16 +20,19 @@ COPY Directory.Build.props Directory.Build.targets Directory.Packages.props Argu
 COPY src/ src/
 
 RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
-    dotnet restore "${PROJECT_PATH}"
+    PROJECT_PATH_RESOLVED="${PROJECT_PATH:-src/${PROJECT_DIR}/${PROJECT_DIR}.csproj}" \
+    && dotnet restore "${PROJECT_PATH_RESOLVED}"
 
 RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
-    dotnet publish "${PROJECT_PATH}" \
+    PROJECT_PATH_RESOLVED="${PROJECT_PATH:-src/${PROJECT_DIR}/${PROJECT_DIR}.csproj}" \
+    && dotnet publish "${PROJECT_PATH_RESOLVED}" \
       -c Release -o /app/publish /p:UseAppHost=false \
       -p:maxcpucount -p:ParallelizePublish=true \
       /p:Version="${COMPONENT_VERSION}" \
       /p:AssemblyVersion="2.6.2.0" \
       /p:FileVersion="2.6.2.0" \
-      /p:InformationalVersion="${COMPONENT_VERSION}"
+      /p:InformationalVersion="${COMPONENT_VERSION}" \
+    && test -s "/app/publish/${APP_DLL}"
 
 FROM argus-engine-base:local AS final
 ARG APP_DLL

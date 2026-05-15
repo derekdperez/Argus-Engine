@@ -15,9 +15,26 @@ public static class GcpDeployServiceRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        var section = configuration.GetSection(GcpDeployOptions.Section);
+        var configuredOptions = section.Get<GcpDeployOptions>() ?? new GcpDeployOptions();
+        var hasRequiredConfiguration =
+            !string.IsNullOrWhiteSpace(configuredOptions.ProjectId) &&
+            !string.IsNullOrWhiteSpace(configuredOptions.HostPublicAddress) &&
+            !string.IsNullOrWhiteSpace(configuredOptions.RabbitMqPublicUrl);
+
+        if (!hasRequiredConfiguration)
+        {
+            var issues = configuredOptions.Validate().ToArray();
+            services.AddSingleton<IGcpHybridDeployService>(
+                sp => new DisabledGcpHybridDeployService(
+                    sp.GetRequiredService<ILogger<DisabledGcpHybridDeployService>>(),
+                    issues));
+            return services;
+        }
+
         services
             .AddOptions<GcpDeployOptions>()
-            .Bind(configuration.GetSection(GcpDeployOptions.Section))
+            .Bind(section)
             .ValidateOnStart();
 
         services.AddSingleton<IValidateOptions<GcpDeployOptions>, GcpDeployOptionsValidator>();
@@ -58,5 +75,96 @@ public static class GcpDeployServiceRegistration
 
             return ValidateOptionsResult.Fail(errors);
         }
+    }
+
+    private sealed class DisabledGcpHybridDeployService(
+        ILogger<DisabledGcpHybridDeployService> logger,
+        IReadOnlyList<string> issues)
+        : IGcpHybridDeployService
+    {
+        private const string BaseMessage =
+            "GCP hybrid deploy is disabled because required GcpDeploy configuration is missing.";
+
+        public Task<BulkDeployResult> BuildAndPushImagesAsync(
+            IEnumerable<WorkerType>? workers = null,
+            IProgress<DeployProgressEvent>? progress = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(FailedBulkResult(BaseMessage));
+
+        public Task<BulkDeployResult> DeployWorkersAsync(
+            IEnumerable<WorkerType>? workers = null,
+            IProgress<DeployProgressEvent>? progress = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(FailedBulkResult(BaseMessage));
+
+        public Task<CloudDeployResult> DeployWorkerAsync(
+            WorkerType worker,
+            IProgress<DeployProgressEvent>? progress = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(CloudDeployResult.Fail(BaseMessage));
+
+        public Task<BulkDeployResult> ScaleWorkersAsync(
+            int minInstances,
+            int maxInstances,
+            IEnumerable<WorkerType>? workers = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(FailedBulkResult(BaseMessage));
+
+        public Task<IReadOnlyList<WorkerStatus>> GetWorkerStatusesAsync(
+            IEnumerable<WorkerType>? workers = null,
+            CancellationToken ct = default)
+        {
+            var targetWorkers = workers?.ToArray() ?? WorkerTypeExtensions.All().ToArray();
+            var statuses = targetWorkers
+                .Select(worker => new WorkerStatus(
+                    worker,
+                    CloudDeployStatus.NotDeployed,
+                    ServiceUrl: null,
+                    CurrentInstances: 0,
+                    MinInstances: 0,
+                    MaxInstances: 0,
+                    ImageUri: null,
+                    LastError: BaseMessage))
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<WorkerStatus>>(statuses);
+        }
+
+        public Task<BulkDeployResult> TeardownWorkersAsync(
+            IEnumerable<WorkerType>? workers = null,
+            IProgress<DeployProgressEvent>? progress = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(FailedBulkResult(BaseMessage));
+
+        public Task<CloudDeployResult> StartLocalCoreAsync(
+            IProgress<DeployProgressEvent>? progress = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(CloudDeployResult.Fail(BaseMessage));
+
+        public Task<CloudDeployResult> StopLocalCoreAsync(
+            IProgress<DeployProgressEvent>? progress = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(CloudDeployResult.Fail(BaseMessage));
+
+        public Task<IReadOnlyList<string>> RunPreflightAsync(CancellationToken ct = default)
+        {
+            if (issues.Count == 0)
+            {
+                logger.LogWarning("{Message}", BaseMessage);
+                return Task.FromResult<IReadOnlyList<string>>([BaseMessage]);
+            }
+
+            var all = new List<string>(capacity: issues.Count + 1) { BaseMessage };
+            all.AddRange(issues);
+            logger.LogWarning(
+                "{Message} Issues: {Issues}",
+                BaseMessage,
+                string.Join("; ", all));
+            return Task.FromResult<IReadOnlyList<string>>(all);
+        }
+
+        private static BulkDeployResult FailedBulkResult(string message) =>
+            new(WorkerTypeExtensions.All()
+                .Select(worker => (worker, CloudDeployResult.Fail(message)))
+                .ToArray());
     }
 }

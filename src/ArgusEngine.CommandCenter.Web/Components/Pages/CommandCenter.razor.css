@@ -1,10 +1,8 @@
 .cc-page {
     min-height: 100vh;
     padding: 1.5rem;
-    background:
-        radial-gradient(circle at top left, rgba(60, 130, 246, 0.12), transparent 24rem),
-        linear-gradient(180deg, #07111f 0%, #0b1220 100%);
-    color: #e5eefb;
+    background: #f6f9ff;
+    color: #172033;
 }
 
 .cc-hero,
@@ -12,10 +10,9 @@
 .cc-card,
 .cc-status,
 .cc-error {
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    background: rgba(15, 23, 42, 0.82);
-    box-shadow: 0 18px 55px rgba(0, 0, 0, 0.32);
-    backdrop-filter: blur(14px);
+    border: 1px solid #d8e5f7;
+    background: #ffffff;
+    box-shadow: 0 12px 32px rgba(30, 64, 175, 0.08);
 }
 
 .cc-hero {
@@ -23,14 +20,15 @@
     justify-content: space-between;
     gap: 1rem;
     align-items: center;
-    border-radius: 1.5rem;
+    border-radius: 0.75rem;
     padding: 1.5rem;
     margin-bottom: 1rem;
+    border-top: 4px solid #2563eb;
 }
 
 .cc-eyebrow {
     margin: 0 0 0.25rem;
-    color: #93c5fd;
+    color: #1d4ed8;
     text-transform: uppercase;
     letter-spacing: 0.16em;
     font-size: 0.74rem;
@@ -44,11 +42,11 @@
 
 .cc-hero h1 {
     font-size: clamp(2rem, 4vw, 3rem);
-    letter-spacing: -0.04em;
+    letter-spacing: 0;
 }
 
 .cc-muted {
-    color: #94a3b8;
+    color: #64748b;
 }
 
 .cc-hero-actions,
@@ -62,22 +60,24 @@
 
 .cc-status,
 .cc-error {
-    border-radius: 1rem;
+    border-radius: 0.65rem;
     padding: 0.85rem 1rem;
     margin-bottom: 1rem;
 }
 
 .cc-status {
-    color: #bfdbfe;
-    border-color: rgba(96, 165, 250, 0.35);
+    color: #1d4ed8;
+    border-color: #bfdbfe;
+    background: #eff6ff;
 }
 
 .cc-error {
     display: flex;
     gap: 0.75rem;
     align-items: center;
-    color: #fecaca;
-    border-color: rgba(248, 113, 113, 0.45);
+    color: #991b1b;
+    border-color: #fecaca;
+    background: #fff7f7;
 }
 
 .cc-summary-grid {
@@ -88,25 +88,26 @@
 }
 
 .cc-card {
-    border-radius: 1.25rem;
+    border-radius: 0.65rem;
     padding: 1rem;
 }
 
 .cc-card span,
 .cc-card small {
     display: block;
-    color: #94a3b8;
+    color: #64748b;
 }
 
 .cc-card strong {
     display: block;
     margin: 0.25rem 0;
     font-size: 1.65rem;
-    letter-spacing: -0.03em;
+    letter-spacing: 0;
+    color: #1e3a8a;
 }
 
 .cc-panel {
-    border-radius: 1.4rem;
+    border-radius: 0.75rem;
     padding: 1rem;
     margin-bottom: 1rem;
 }
@@ -137,23 +138,23 @@
 .cc-tab,
 .cc-btn,
 .cc-input {
-    border-radius: 0.8rem;
-    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 0.5rem;
+    border: 1px solid #cbdcf2;
 }
 
 .cc-tab,
 .cc-btn {
-    color: #dbeafe;
-    background: rgba(30, 41, 59, 0.78);
+    color: #1e3a8a;
+    background: #ffffff;
     padding: 0.65rem 0.9rem;
     cursor: pointer;
 }
 
 .cc-tab-active,
 .cc-btn-primary {
-    color: #03111f;
-    background: #93c5fd;
-    border-color: #bfdbfe;
+    color: #ffffff;
+    background: #2563eb;
+    border-color: #2563eb;
 }
 
 .cc-btn-small {
@@ -169,13 +170,13 @@
 
 .cc-input {
     min-height: 2.35rem;
-    color: #e5eefb;
-    background: rgba(2, 6, 23, 0.58);
+    color: #172033;
+    background: #ffffff;
     padding: 0.5rem 0.7rem;
 }
 
 .cc-input::placeholder {
-    color: #64748b;
+    color: #94a3b8;
 }
 
 .cc-depth-input {
@@ -278,10 +279,23 @@
     min-height: 1.55rem;
     border-radius: 999px;
     padding: 0.12rem 0.55rem;
-    color: #bfdbfe;
-    background: rgba(30, 64, 175, 0.28);
-    border: 1px solid rgba(96, 165, 250, 0.28);
+    color: #1d4ed8;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
     font-size: 0.82rem;
+}
+
+.cc-column-picker {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 14rem;
+}
+
+.cc-column-picker label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #172033;
 }
 
 .cc-grid-targets .cc-row {

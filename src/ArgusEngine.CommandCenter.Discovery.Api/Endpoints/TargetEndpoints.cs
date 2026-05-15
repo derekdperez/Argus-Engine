@@ -16,12 +16,25 @@ namespace ArgusEngine.CommandCenter.Discovery.Api.Endpoints;
 
 public static class TargetEndpoints
 {
+    private static readonly Action<ILogger, Exception?> LogTargetsFallbackFailed =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(1, nameof(LogTargetsFallbackFailed)),
+            "Failed to build /api/targets fallback summary. Returning empty result.");
+
+    private static readonly Action<ILogger, Exception?> LogTargetsRollupsFailed =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(2, nameof(LogTargetsRollupsFailed)),
+            "Failed to load /api/targets rollups due to transient database pressure. Returning base target list.");
+
     public static IEndpointRouteBuilder MapTargetEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet(
             "/api/targets",
-            async (ArgusDbContext db, CancellationToken ct) =>
+            async (ArgusDbContext db, ILoggerFactory loggerFactory, CancellationToken ct) =>
             {
+                var logger = loggerFactory.CreateLogger("TargetEndpoints");
                 var targets = await db.Targets.AsNoTracking()
                     .OrderByDescending(t => t.CreatedAtUtc)
                     .ToListAsync(ct)
@@ -29,70 +42,96 @@ public static class TargetEndpoints
 
                 if (targets.Count == 0)
                 {
-                    var fallbackRows = await db.Assets.AsNoTracking()
-                        .GroupBy(a => a.TargetId)
-                        .Select(g => new
-                        {
-                            TargetId = g.Key,
-                            RootDomain = g.Min(a => a.RawValue) ?? g.Key.ToString(),
-                            CreatedAtUtc = g.Min(a => a.DiscoveredAtUtc),
-                            ConfirmedSubdomains = g.LongCount(a => a.Kind == AssetKind.Subdomain
-                                && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
-                            ConfirmedAssets = g.LongCount(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
-                            ConfirmedUrls = g.LongCount(a => a.Kind == AssetKind.Url
-                                && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
-                            LastAssetAtUtc = g.Max(a => (DateTimeOffset?)a.DiscoveredAtUtc),
-                        })
-                        .ToListAsync(ct)
-                        .ConfigureAwait(false);
+                    try
+                    {
+                        var fallbackRows = await db.Assets.AsNoTracking()
+                            .GroupBy(a => a.TargetId)
+                            .Select(g => new
+                            {
+                                TargetId = g.Key,
+                                RootDomain = g.Min(a => a.RawValue) ?? g.Key.ToString(),
+                                CreatedAtUtc = g.Min(a => a.DiscoveredAtUtc),
+                                ConfirmedSubdomains = g.LongCount(a => a.Kind == AssetKind.Subdomain
+                                    && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
+                                ConfirmedAssets = g.LongCount(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
+                                ConfirmedUrls = g.LongCount(a => a.Kind == AssetKind.Url
+                                    && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
+                                LastAssetAtUtc = g.Max(a => (DateTimeOffset?)a.DiscoveredAtUtc),
+                            })
+                            .ToListAsync(ct)
+                            .ConfigureAwait(false);
 
-                    return Results.Ok(
-                        fallbackRows.Select(
-                            row => new TargetSummary(
-                                row.TargetId,
-                                string.IsNullOrWhiteSpace(row.RootDomain) ? row.TargetId.ToString() : row.RootDomain,
-                                12,
-                                row.CreatedAtUtc,
-                                row.ConfirmedSubdomains,
-                                row.ConfirmedAssets,
-                                row.ConfirmedUrls,
-                                0,
-                                row.LastAssetAtUtc)));
+                        return Results.Ok(
+                            fallbackRows.Select(
+                                row => new TargetSummary(
+                                    row.TargetId,
+                                    string.IsNullOrWhiteSpace(row.RootDomain) ? row.TargetId.ToString() : row.RootDomain,
+                                    12,
+                                    row.CreatedAtUtc,
+                                    row.ConfirmedSubdomains,
+                                    row.ConfirmedAssets,
+                                    row.ConfirmedUrls,
+                                    0,
+                                    row.LastAssetAtUtc)));
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        LogTargetsFallbackFailed(logger, ex);
+                        return Results.Ok(Array.Empty<TargetSummary>());
+                    }
                 }
 
                 var targetIds = targets.Select(t => t.Id).ToList();
                 var now = DateTimeOffset.UtcNow;
 
-                var assetRollups = await db.Assets.AsNoTracking()
-                    .Where(a => targetIds.Contains(a.TargetId))
-                    .GroupBy(a => a.TargetId)
-                    .Select(
-                        g => new
-                        {
-                            TargetId = g.Key,
-                            ConfirmedSubdomains = g.LongCount(a => a.Kind == AssetKind.Subdomain
-                                && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
-                            ConfirmedAssets = g.LongCount(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
-                            ConfirmedUrls = g.LongCount(a => a.Kind == AssetKind.Url
-                                && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
-                            LastAssetAtUtc = g.Max(a => (DateTimeOffset?)a.DiscoveredAtUtc),
-                        })
-                    .ToDictionaryAsync(x => x.TargetId, ct)
-                    .ConfigureAwait(false);
+                Dictionary<Guid, AssetRollup> assetRollups;
+                Dictionary<Guid, QueueRollup> queueRollups;
+                try
+                {
+                    assetRollups = await db.Assets.AsNoTracking()
+                        .Where(a => targetIds.Contains(a.TargetId))
+                        .GroupBy(a => a.TargetId)
+                        .Select(
+                            g => new AssetRollup
+                            {
+                                TargetId = g.Key,
+                                ConfirmedSubdomains = g.LongCount(a => a.Kind == AssetKind.Subdomain
+                                    && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
+                                ConfirmedAssets = g.LongCount(a => a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
+                                ConfirmedUrls = g.LongCount(a => a.Kind == AssetKind.Url
+                                    && a.LifecycleStatus == AssetLifecycleStatus.Confirmed),
+                                LastAssetAtUtc = g.Max(a => (DateTimeOffset?)a.DiscoveredAtUtc),
+                            })
+                        .ToDictionaryAsync(x => x.TargetId, ct)
+                        .ConfigureAwait(false);
 
-                var queueRollups = await db.HttpRequestQueue.AsNoTracking()
-                    .Where(q => targetIds.Contains(q.TargetId))
-                    .GroupBy(q => q.TargetId)
-                    .Select(
-                        g => new
-                        {
-                            TargetId = g.Key,
-                            Queued = g.LongCount(q => q.State == HttpRequestQueueState.Queued
-                                || (q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now)),
-                            LastQueueAtUtc = g.Max(q => (DateTimeOffset?)q.UpdatedAtUtc),
-                        })
-                    .ToDictionaryAsync(x => x.TargetId, ct)
-                    .ConfigureAwait(false);
+                    queueRollups = await db.HttpRequestQueue.AsNoTracking()
+                        .Where(q => targetIds.Contains(q.TargetId))
+                        .GroupBy(q => q.TargetId)
+                        .Select(
+                            g => new QueueRollup
+                            {
+                                TargetId = g.Key,
+                                Queued = g.LongCount(q => q.State == HttpRequestQueueState.Queued
+                                    || (q.State == HttpRequestQueueState.Retry && q.NextAttemptAtUtc <= now)),
+                                LastQueueAtUtc = g.Max(q => (DateTimeOffset?)q.UpdatedAtUtc),
+                            })
+                        .ToDictionaryAsync(x => x.TargetId, ct)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    LogTargetsRollupsFailed(logger, ex);
+                    return Results.Ok(targets.Select(ToBaseSummary));
+                }
 
                 var rows = targets
                     .Select(
@@ -118,6 +157,18 @@ public static class TargetEndpoints
                 return Results.Ok(rows);
             })
             .WithName("ListTargets");
+
+        static TargetSummary ToBaseSummary(ReconTarget target) =>
+            new(
+                target.Id,
+                target.RootDomain,
+                target.GlobalMaxDepth,
+                target.CreatedAtUtc,
+                0,
+                0,
+                0,
+                0,
+                null);
 
         static DateTimeOffset? MaxUtc(DateTimeOffset? first, DateTimeOffset? second)
         {
@@ -488,6 +539,22 @@ public static class TargetEndpoints
             .WithName("BulkImportTargets");
 
         return app;
+    }
+
+    private sealed class AssetRollup
+    {
+        public Guid TargetId { get; init; }
+        public long ConfirmedSubdomains { get; init; }
+        public long ConfirmedAssets { get; init; }
+        public long ConfirmedUrls { get; init; }
+        public DateTimeOffset? LastAssetAtUtc { get; init; }
+    }
+
+    private sealed class QueueRollup
+    {
+        public Guid TargetId { get; init; }
+        public long Queued { get; init; }
+        public DateTimeOffset? LastQueueAtUtc { get; init; }
     }
 
     public static void Map(WebApplication app) => app.MapTargetEndpoints();

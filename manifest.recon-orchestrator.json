@@ -1,0 +1,23 @@
+{
+  "created_at_utc": "2026-05-15T17:46:13.774127Z",
+  "description": "ReconOrchestrator overlay for Argus Engine",
+  "files": [
+    "README-ReconOrchestrator.md",
+    "deploy/sql/2026-05-15-recon-orchestrator.sql",
+    "docs/SPEC-001-ReconOrchestrator.md",
+    "scripts/Apply-ReconOrchestratorOverlay.ps1",
+    "scripts/apply-recon-orchestrator-overlay.sh",
+    "src/ArgusEngine.Application/Workers/WorkerKeys.cs",
+    "src/ArgusEngine.Workers.Orchestration/ArgusEngine.Workers.Orchestration.csproj",
+    "src/ArgusEngine.Workers.Orchestration/Configuration/ReconOrchestratorOptions.cs",
+    "src/ArgusEngine.Workers.Orchestration/Persistence/IReconOrchestratorRepository.cs",
+    "src/ArgusEngine.Workers.Orchestration/Persistence/PostgresReconOrchestratorRepository.cs",
+    "src/ArgusEngine.Workers.Orchestration/Persistence/ReconSnapshots.cs",
+    "src/ArgusEngine.Workers.Orchestration/Program.cs",
+    "src/ArgusEngine.Workers.Orchestration/Services/ReconOrchestratorHostedService.cs",
+    "src/ArgusEngine.Workers.Orchestration/Services/ReconProfilePlanner.cs",
+    "src/ArgusEngine.Workers.Orchestration/State/ReconOrchestratorState.cs",
+    "src/ArgusEngine.Workers.Orchestration/State/ReconWorkerProfile.cs",
+    "src/ArgusEngine.Workers.Orchestration/appsettings.recon-orchestrator.sample.json"
+  ]
+}

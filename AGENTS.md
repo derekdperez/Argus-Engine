@@ -90,6 +90,105 @@ Deprecated env var alias: `NIGHTMARE_DIAGNOSTICS_API_KEY` may still appear in le
 
 Release (`release-main.yml`): triggered on push to `main` touching `src/`, `deploy/`, `scripts/`, etc. Uses `detect-affected-services.py` for incremental ECR publishing.
 
+## Services added
+
+### command-center-cloud-deploy-api
+- Project: `ArgusEngine.CommandCenter.CloudDeploy.Api` — hybrid GCP/local deployment management
+- Routes: `/api/cloud-deploy/*` (preflight, build, push, deploy, scale, teardown, core start/stop)
+- Port: 8089, Dockerfile: `Dockerfile.commandcenter-host`
+- Gateway: routed via `/api/cloud-deploy` prefix to `CloudDeployClientName`
+- Registered in `deploy.py`, `docker-compose.yml`, `service-catalog.tsv`
+
+## Recon orchestrator
+
+The recon orchestrator (`ReconOrchestratorHostedService`) runs inside the **Enumeration worker** (`ArgusEngine.Workers.Enumeration`). It polls active targets and drives subdomain enumeration/spider workflows.
+
+### Recon agent API
+- Endpoint: `POST /api/recon-agent/targets/{targetId:guid}/attach` — attaches a target to the recon orchestrator
+- Endpoint: `GET /api/recon-agent/targets/{targetId:guid}` — gets orchestrator snapshot
+- Registered in `ArgusEngine.CommandCenter.Discovery.Api/Program.cs`
+- Gateway route: `/api/recon-agent` → discovery API
+
+## UI changes
+
+### Right-click context menu
+- File: `wwwroot/reconContextMenu.js`
+- **Target rows**: "Assign Recon Orchestrator", "Enumerate Subdomains", "Spider"
+- **Subdomain rows**: "Spider Subdomain"
+- Uses toast notifications for feedback
+- Data attributes: `data-target-id` on target root domain spans, `data-subdomain-key` on subdomain spans
+
+### Status dashboard
+- Component: `Components/StatusDashboard.razor`
+- Shows green/red indicators for: Command Center, Postgres, Redis, RabbitMQ, Google Cloud workers, Local workers
+- Polls `/health/ready` every 15 seconds
+
+### Tab styling
+- Tabs styled as proper tab controls with active indicator and smooth fade-in transitions
+- "Argus Engine" eyebrow removed from hero header
+- High Value Assets / Top 10 Technologies panels removed
+
+## Known issues & fixes
+
+### NpgsqlRetryingExecutionStrategy
+- **Problem**: `ReconDbCommands` used `db.Database.OpenConnectionAsync()` which triggers the retry strategy. This strategy doesn't support user-initiated transactions, causing failures in `EfReconOrchestrator.AttachToTargetAsync`.
+- **Fix**: Replaced with direct `DbConnection` management bypassing the execution strategy (in `ReconDbCommands.cs`).
+
+### JSON curly braces in SQL
+- **Problem**: `ReconOrchestratorSql.cs` used `'{}'` in SQL for JSON defaults. EF's `ExecuteSqlRawAsync` interprets `{...}` as format placeholders.
+- **Fix**: Escaped to `'{{}}'`.
+
+### CA1805/CA1725 build errors
+- Fixed `AutoAttachNewTargets` explicit `= false` default (CA1805)
+- Fixed parameter name mismatch `error` → `errorMessage` in `EfReconProviderRunRecorder.cs` (CA1725)
+
+## GCP hybrid deployment
+
+Workers deploy to Cloud Run (region `us-east1`). Infrastructure services (Postgres, Redis, RabbitMQ) run locally on GCE.
+
+### Deployment flow
+```bash
+./deploy gcp configure          # setup deployment/gcp/.env + service-env
+./deploy gcp provision          # enable APIs + create Artifact Registry
+./deploy gcp release            # build, push, deploy all workers
+```
+
+### Worker connectivity
+- Workers connect to host via **public IP** with firewall rules for ports 5432, 6379, 5672, 15672
+- Host public IP: `34.148.132.67`
+- Health probe: `CloudRunPortProbeService` (in `Infrastructure/Messaging/`) listens on PORT for Cloud Run health checks
+- All 6 workers (spider, http-requester, enum, portscan, highvalue, techid) deployed and serving
+
+### Cloud Run URLs
+```
+argus-worker-spider:    https://argus-worker-spider-x43swxblna-ue.a.run.app
+argus-worker-enum:      https://argus-worker-enum-x43swxblna-ue.a.run.app
+argus-worker-http-requester: https://argus-worker-http-requester-x43swxblna-ue.a.run.app
+argus-worker-portscan:  https://argus-worker-portscan-x43swxblna-ue.a.run.app
+argus-worker-highvalue: https://argus-worker-highvalue-x43swxblna-ue.a.run.app
+argus-worker-techid:    https://argus-worker-techid-x43swxblna-ue.a.run.app
+```
+
+### Infrastructure endpoints (public)
+- Gateway: `http://34.148.132.67:8081/`
+- Web UI: `http://34.148.132.67:8082/`
+- Cloud Deploy API: `http://34.148.132.67:8089/`
+
+## Gateway routes summary
+
+Routes are defined in `ArgusEngine.CommandCenter.Gateway/Program.cs` — `SelectClientName()` method.
+
+| Prefix | Downstream service |
+|---|---|
+| `/api/cloud-deploy` | command-center-cloud-deploy-api |
+| `/api/workers`, `/api/ec2-workers`, `/api/ops/*` | command-center-worker-control-api |
+| `/api/status`, `/api/ops` | command-center-operations-api |
+| `/api/targets`, `/api/assets`, `/api/discovery`, `/api/recon-agent`, etc. | command-center-discovery-api |
+| `/api/admin`, `/api/maintenance`, `/api/diagnostics` | command-center-maintenance-api |
+| `/api/development/components` | command-center-updates-api |
+| `/hubs/discovery` | command-center-realtime |
+| `/` (default) | command-center-web |
+
 ## Debug
 
 `./debug.sh` executes commands from `.ai-debug/debug_commands.sh` and writes JSON results to `debug_results.json` (requires python3).

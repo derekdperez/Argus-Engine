@@ -63,6 +63,17 @@ FALLBACK_SERVICES = [
     "worker-techid",
 ]
 
+INFRASTRUCTURE_SERVICES = [
+    "postgres",
+    "filestore-db-init",
+    "redis",
+    "rabbitmq",
+]
+
+WEB_APP_SERVICES = [
+    "command-center-web",
+]
+
 WORKERS = {
     "worker-spider": {
         "label": "Spider worker",
@@ -486,6 +497,10 @@ class ArgusDeployConsole:
         available = set(self.services())
         return [service for service in WORKERS if service in available]
 
+    def project_services(self) -> list[str]:
+        workers = set(self.worker_services())
+        return [service for service in self.app_services() if service not in workers]
+
     # ---------- top-level dispatch ----------
 
     def run(self, argv: Sequence[str]) -> int:
@@ -557,40 +572,165 @@ class ArgusDeployConsole:
             self.show_context(compact=True)
 
             choice = self.ui.choose(
-                "What do you want to do?",
+                "Choose a deployment task",
                 [
-                    "Deploy or update the local Docker Compose stack",
-                    "Scale local or ECS workers",
-                    "Monitor health, status, logs, queues, and worker counts",
-                    "Operate services: restart, stop, smoke test, clean",
-                    "Google Cloud Run worker deployment and scaling",
-                    "AWS ECS / ECR deployment and monitoring",
-                    "Show changed/affected services",
+                    "Deploy Web App",
+                    "Deploy Infrastructure",
+                    "Deploy All Workers",
+                    "Deploy Select Workers",
+                    "Deploy Select Projects",
+                    "Rebuild All Images",
+                    "Rebuild Select Images",
+                    "Monitor / Operations",
                     "Exit",
                 ],
             )
 
             if choice == 0:
-                code = self.deploy_menu()
+                code = self.deploy_web_app()
             elif choice == 1:
-                code = self.scale_menu()
+                code = self.deploy_infrastructure()
             elif choice == 2:
-                code = self.monitor_menu()
+                code = self.deploy_all_workers()
             elif choice == 3:
-                code = self.operations_menu()
+                code = self.deploy_selected_workers()
             elif choice == 4:
-                code = self.gcp_menu()
+                code = self.deploy_selected_projects()
             elif choice == 5:
-                code = self.ecs_menu()
+                code = self.rebuild_all_images()
             elif choice == 6:
-                self.show_changed_services()
-                code = 0
+                code = self.rebuild_selected_images()
+            elif choice == 7:
+                code = self.monitor_operations_menu()
             else:
                 return 0
 
             if code != 0:
                 self.ui.warn(f"Last action exited with code {code}.")
             self.ui.pause()
+
+    def deploy_web_app(self) -> int:
+        services = [service for service in WEB_APP_SERVICES if service in self.services()]
+        if not services:
+            self.ui.error("command-center-web is not present in the Compose service list.")
+            return 2
+        self.ui.info("Building and deploying the Command Center web app.")
+        return self.compose_action(["--image", *services])
+
+    def deploy_infrastructure(self) -> int:
+        services = [service for service in INFRASTRUCTURE_SERVICES if service in self.services()]
+        if not services:
+            self.ui.error("No infrastructure services were found in the Compose service list.")
+            return 2
+        self.ui.info("Starting infrastructure dependencies: " + ", ".join(services))
+        return self.runner.run(self.compose("up", "-d", *services))
+
+    def deploy_all_workers(self) -> int:
+        workers = [worker for worker in self.worker_services() if worker in GCP_WORKER_SERVICES]
+        return self.deploy_workers_to_target(workers, title="Deploy all workers")
+
+    def deploy_selected_workers(self) -> int:
+        workers = self.select_services(include_infra=False, only_cloudish=True, default="workers")
+        workers = [worker for worker in workers if worker in WORKERS]
+        if not workers:
+            self.ui.warn("No workers selected.")
+            return 0
+        return self.deploy_workers_to_target(workers, title="Deploy selected workers")
+
+    def deploy_workers_to_target(self, workers: Sequence[str], *, title: str) -> int:
+        workers = [worker for worker in workers if worker in WORKERS]
+        if not workers:
+            self.ui.warn("No workers are available to deploy.")
+            return 0
+
+        choice = self.ui.choose(
+            title,
+            [
+                "Google Cloud Run - build, push, and deploy workers",
+                "Local Docker Compose - build images and restart workers",
+                "Local Docker Compose - restart workers without rebuild",
+                "Back",
+            ],
+        )
+        if choice == 0:
+            return self.gcp_from_args(["release", *workers])
+        if choice == 1:
+            return self.compose_action(["--image", *workers])
+        if choice == 2:
+            return self.runner.run(self.compose("up", "-d", "--no-deps", *workers))
+        return 0
+
+    def deploy_selected_projects(self) -> int:
+        services = self.select_project_services(default="changed")
+        if not services:
+            self.ui.warn("No projects selected.")
+            return 0
+
+        choice = self.ui.choose(
+            "Deploy selected projects",
+            [
+                "Build images and deploy selected projects",
+                "Deploy selected projects without rebuilding",
+                "Restart selected projects",
+                "Back",
+            ],
+        )
+        if choice == 0:
+            return self.compose_action(["--image", *services])
+        if choice == 1:
+            return self.runner.run(self.compose("up", "-d", "--no-deps", *services))
+        if choice == 2:
+            return self.compose_action(["restart", *services])
+        return 0
+
+    def rebuild_all_images(self) -> int:
+        self.ui.info("Rebuilding every Compose image without starting containers.")
+        return self.runner.run(self.compose("build"))
+
+    def rebuild_selected_images(self) -> int:
+        services = self.select_services(include_infra=False, allow_empty=False, default="changed")
+        if not services:
+            self.ui.warn("No services selected.")
+            return 0
+        return self.runner.run(self.compose("build", *services))
+
+    def monitor_operations_menu(self) -> int:
+        choice = self.ui.choose(
+            "Monitor / operations",
+            [
+                "Status",
+                "Health checks",
+                "Logs",
+                "Worker counts",
+                "Scale workers",
+                "Service operations",
+                "Google Cloud worker operations",
+                "AWS ECS / ECR operations",
+                "Show changed/affected services",
+                "Back",
+            ],
+        )
+        if choice == 0:
+            return self.compose_action(["status"])
+        if choice == 1:
+            return self.health_checks()
+        if choice == 2:
+            return self.monitor_menu()
+        if choice == 3:
+            self.show_worker_counts()
+            return 0
+        if choice == 4:
+            return self.scale_menu()
+        if choice == 5:
+            return self.operations_menu()
+        if choice == 6:
+            return self.gcp_menu()
+        if choice == 7:
+            return self.ecs_menu()
+        if choice == 8:
+            self.show_changed_services()
+            return 0
+        return 0
 
     def deploy_menu(self) -> int:
         choice = self.ui.choose(

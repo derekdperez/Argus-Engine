@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Zero-download recon tool image.
 #
-# Refresh the committed binaries with deploy/vendor-recon-tools.sh. Builds should
+# Refresh the committed binaries with deploy/deploy.py gcp build. Builds should
 # fail fast if these artifacts are absent instead of compiling Go tools during
 # deployment.
 FROM scratch

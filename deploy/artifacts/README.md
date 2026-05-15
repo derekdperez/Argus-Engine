@@ -7,9 +7,9 @@ deployment hosts.
 Supported artifact sets:
 
 - `nuget/packages/` - optional .NET global package cache, populated by
-  `deploy/vendor-nuget-packages.sh`.
+  `dotnet restore`.
 - `recon-tools/linux-amd64/` - optional `subfinder` and `amass` binaries,
-  populated by `deploy/vendor-recon-tools.sh`.
+  populated by `deploy/deploy.py gcp build`.
 
 The directories are empty by default so normal source-only development stays
 lightweight. If deployment speed on cold hosts matters more than repository

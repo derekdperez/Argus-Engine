@@ -99,7 +99,7 @@ The Operations page also has an `EC2 Workers` section for launching and scaling 
 
 Set the `EC2_WORKER_*` values in the Command Center environment before using the page. At minimum, configure the region, instance profile or role, subnet/security group, repository URL/branch, and routable service endpoints for Postgres, Redis, and RabbitMQ. The EC2 worker instance profile must allow SSM Managed Instance Core so Command Center can send scale commands after the instance boots.
 
-Remote EC2 worker machines run `deploy/docker-compose.ec2-workers.yml` through `deploy/apply-ec2-worker-scale.sh`. They do not run Postgres, Redis, RabbitMQ, Command Center, or Gatekeeper locally; they connect back to the configured core host.
+Remote EC2 worker machines run `deploy/docker-compose.ec2-workers.yml` through `deploy/deploy.py scale local`. They do not run Postgres, Redis, RabbitMQ, Command Center, or Gatekeeper locally; they connect back to the configured core host.
 
 Create local, non-committed config files:
 
@@ -117,8 +117,8 @@ Build and push the current code:
 set -a
 . deploy/aws/.env
 set +a
-deploy/aws/create-ecr-repos.sh
-deploy/aws/build-push-ecr.sh
+deploy/deploy.py ecs repos
+deploy/deploy.py ecs build
 ```
 
 Register task definitions and create or update ECS services:
@@ -162,13 +162,13 @@ By default the scaler records a usage sample after every run (`ECS_RECORD_USAGE_
 Delete only worker ECS services:
 
 ```bash
-CONFIRM_DESTROY_ECS_WORKERS=yes deploy/aws/destroy-ecs-services.sh workers
+CONFIRM_DESTROY_ECS_WORKERS=yes deploy/deploy.py ecs teardown workers
 ```
 
 Delete all argus ECS services:
 
 ```bash
-CONFIRM_DESTROY_ECS_ALL=yes deploy/aws/destroy-ecs-services.sh all
+CONFIRM_DESTROY_ECS_ALL=yes deploy/deploy.py ecs teardown all
 ```
 
 This deletes ECS services only. It does not delete ECR repositories, log groups, databases, brokers, VPC resources, or task definition revisions.
@@ -190,10 +190,10 @@ For high-throughput HTTP request processing, argusV2 supports distributed worker
 set -a
 . deploy/aws/.env
 set +a
-deploy/aws/provision-ec2-workers.sh
+deploy/deploy.py ecs provision-workers
 
 # Deploy and start workers once instances are running
-deploy/aws/deploy-worker-instances.sh <instance-id-1> <instance-id-2>
+deploy/deploy.py ecs deploy-workers <instance-id-1> <instance-id-2>
 
 # Verify workers are running
 curl http://${COMMAND_CENTER_URL}/api/http-request-queue/metrics
@@ -210,7 +210,7 @@ cd DotNetSolution
 set -a
 . deploy/aws/.env
 set +a
-deploy/aws/build-push-ecr.sh
+deploy/deploy.py ecs build
 ```
 
 ## Legacy single-service HTTP scaler
@@ -221,7 +221,7 @@ deploy/aws/build-push-ecr.sh
 set -a
 . deploy/aws/.env
 set +a
-deploy/aws/autoscale-http-workers.sh
+deploy/deploy.py scale autoscale
 ```
 
 New deployments should prefer `deploy.py ecs autoscale` because it scales spider, subdomain enum, port scan, high-value, and technology identification workers.
@@ -236,12 +236,12 @@ Defaults:
 - `amass` runs active enumeration with brute-force enabled against the bundled wordlist at `/opt/argus/wordlists/subdomains.txt`.
 - DNS fallback remains enabled so basic enumeration still works if a tool fails or times out.
 
-When changing tool versions, refresh and commit the vendored artifacts before running `deploy/aws/build-push-ecr.sh`:
+When changing tool versions, refresh and commit the vendored artifacts before running `deploy/deploy.py ecs build`:
 
 ```bash
 export SUBFINDER_VERSION=2.14.0
 export AMASS_VERSION=5.1.1
-./deploy/vendor-recon-tools.sh
+./deploy/deploy.py gcp build
 ```
 
 For ECS, copy the `Enumeration__*` variables from `deploy/aws/service-env.example` into the `worker-enum` task definition.

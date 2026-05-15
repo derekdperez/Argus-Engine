@@ -12,7 +12,7 @@ caches.
 Run:
 
 ```bash
-./deploy/vendor-nuget-packages.sh
+./dotnet restore
 ```
 
 This restores every deployed service project into:
@@ -33,7 +33,7 @@ more important than repository size.
 Run:
 
 ```bash
-./deploy/vendor-recon-tools.sh
+./deploy/deploy.py gcp build
 ```
 
 This downloads the pinned `subfinder` and `amass` release archives, verifies the
@@ -57,7 +57,7 @@ For the fastest possible bootstrap on machines that cannot pull from a nearby
 registry, export Docker base images into git-managed tarballs:
 
 ```bash
-./deploy/build-base-images.sh
+./docker buildx build
 docker save argus-engine-base:local | gzip > deploy/artifacts/images/argus-engine-base.local.tar.gz
 docker save argus-recon-base:local | gzip > deploy/artifacts/images/argus-recon-base.local.tar.gz
 ```
@@ -65,7 +65,7 @@ docker save argus-recon-base:local | gzip > deploy/artifacts/images/argus-recon-
 Then load them before deployment:
 
 ```bash
-./deploy/load-vendored-images.sh
+./docker load
 ```
 
 `deploy/deploy.py` also tries this loader before rebuilding missing base images.

@@ -6,9 +6,9 @@ This guide describes the debugging helpers added for local development and deplo
 
 The update adds:
 
-- `deploy/dev-check.sh` — one command that validates Compose, builds images, starts the stack, runs smoke tests, and prints error-like log lines.
+- `deploy/deploy.py validate && deploy/deploy.py smoke` — one command that validates Compose, builds images, starts the stack, runs smoke tests, and prints error-like log lines.
 - `deploy/deploy.py smoke` — checks the Command Center health endpoints, Blazor static assets, and diagnostics APIs.
-- `deploy/logs.sh` — focused Compose log helper with error highlighting and service filtering.
+- `deploy/deploy.py logs` — focused Compose log helper with error highlighting and service filtering.
 - `GET /api/diagnostics/dependencies` — authenticated dependency diagnostics for Postgres, file-store Postgres, Redis, RabbitMQ TCP reachability, and expected static asset paths.
 - Ready health checks now use `/health/ready` instead of `/health` so Docker reports Command Center as healthy only after the database is reachable.
 
@@ -17,19 +17,19 @@ The update adds:
 Start with the full sanity check:
 
 ```bash
-./deploy/dev-check.sh
+./deploy/deploy.py validate && deploy/deploy.py smoke
 ```
 
 Use a clean rebuild when Docker cache or dependency state is suspicious:
 
 ```bash
-./deploy/dev-check.sh --fresh
+./deploy/deploy.py validate && deploy/deploy.py smoke --fresh
 ```
 
 Skip builds when you only want to re-check the running stack:
 
 ```bash
-./deploy/dev-check.sh --no-build
+./deploy/deploy.py validate && deploy/deploy.py smoke --no-build
 ```
 
 ## Smoke-test only
@@ -66,25 +66,25 @@ The script verifies:
 Show status, recent logs, and highlighted failures:
 
 ```bash
-./deploy/logs.sh
+./deploy/deploy.py logs
 ```
 
 Show only error-like lines:
 
 ```bash
-./deploy/logs.sh --errors
+./deploy/deploy.py logs --errors
 ```
 
 Follow selected services:
 
 ```bash
-./deploy/logs.sh --follow command-center worker-spider
+./deploy/deploy.py logs --follow command-center worker-spider
 ```
 
 Increase the tail window:
 
 ```bash
-TAIL=500 ./deploy/logs.sh --errors
+TAIL=500 ./deploy/deploy.py logs --errors
 ```
 
 ## Diagnostics endpoints
@@ -150,7 +150,7 @@ docker compose -f deploy/docker-compose.yml up worker-spider
 Then inspect:
 
 ```bash
-./deploy/logs.sh --errors command-center worker-spider
+./deploy/deploy.py logs --errors command-center worker-spider
 ```
 
 ### Dependency failures
@@ -185,10 +185,10 @@ If either fails, debug the Command Center image and `App.razor` asset paths firs
 | Symptom | Most likely area | First command |
 |---|---|---|
 | Docker build exits before containers start | Dockerfile or external tool version | `docker compose -f deploy/docker-compose.yml build SERVICE` |
-| Container exits immediately | Runtime config or startup exception | `./deploy/logs.sh --errors SERVICE` |
+| Container exits immediately | Runtime config or startup exception | `./deploy/deploy.py logs --errors SERVICE` |
 | `/health` passes but `/health/ready` fails | Database dependency | `./deploy/deploy.py smoke` |
 | `blazor.web.js` returns 404 or `Unexpected token ':'` | Blazor static asset publishing/pathing; the script may contain `404: Not Found` | `curl -i http://localhost:8080/_framework/blazor.web.js` |
-| Workers run but no work progresses | RabbitMQ, outbox, or worker toggles | `./deploy/logs.sh --errors gatekeeper worker-enum worker-spider` |
+| Workers run but no work progresses | RabbitMQ, outbox, or worker toggles | `./deploy/deploy.py logs --errors gatekeeper worker-enum worker-spider` |
 
 ## Security note
 

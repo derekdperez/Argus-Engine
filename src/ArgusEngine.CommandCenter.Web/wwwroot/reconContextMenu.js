@@ -304,7 +304,7 @@ window.ReconContextMenu = {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ targetIds: [id], allTargets: false })
                     });
-                    await this._recordResponse(entry, resp, 'Subdomain enumeration request completed.', 'Subdomain enumeration request failed.');
+                    await this._recordResponse(entry, resp, 'Subdomain enumeration request completed.', 'Subdomain enumeration request failed.', 'workerScaleSucceeded');
                     break;
 
                 case 'spider':
@@ -313,7 +313,7 @@ window.ReconContextMenu = {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ targetIds: [id], allTargets: false })
                     });
-                    await this._recordResponse(entry, resp, 'Spider request completed.', 'Spider request failed.');
+                    await this._recordResponse(entry, resp, 'Spider request completed.', 'Spider request failed.', 'workerScaleSucceeded');
                     break;
 
                 case 'spider-subdomain':
@@ -322,7 +322,7 @@ window.ReconContextMenu = {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ targetIds: [id], subdomains: [subdomain] })
                     });
-                    await this._recordResponse(entry, resp, 'Subdomain spider request completed.', 'Subdomain spider request failed.');
+                    await this._recordResponse(entry, resp, 'Subdomain spider request completed.', 'Subdomain spider request failed.', 'workerScaleSucceeded');
                     break;
 
                 default:
@@ -337,19 +337,31 @@ window.ReconContextMenu = {
         }
     },
 
-    _recordResponse: async function (entry, resp, successMessage, failureMessage) {
+    _recordResponse: async function (entry, resp, successMessage, failureMessage, partialKey) {
         var result = await this._readResponse(resp);
         var detail = this._formatResponse(resp, result);
 
-        if (resp.ok) {
-            this._finishResult(entry, false, successMessage, detail);
-            this._showToast(successMessage, false);
+        if (!resp.ok) {
+            var message = failureMessage + ' HTTP ' + resp.status + ' ' + (resp.statusText || '').trim();
+            this._finishResult(entry, true, message, detail);
+            this._showToast(failureMessage, true);
             return;
         }
 
-        var message = failureMessage + ' HTTP ' + resp.status + ' ' + (resp.statusText || '').trim();
-        this._finishResult(entry, true, message, detail);
-        this._showToast(failureMessage, true);
+        var partialFailure = false;
+        if (partialKey && result) {
+            var val = result[partialKey];
+            partialFailure = val === false || val === 'false';
+        }
+
+        if (partialFailure) {
+            partialFailure = '(' + partialKey + ': false)\n' + detail;
+            this._finishResult(entry, true, successMessage + ' (worker scale failed)', partialFailure);
+            this._showToast(successMessage + ' (worker scale failed)', true);
+        } else {
+            this._finishResult(entry, false, successMessage, detail);
+            this._showToast(successMessage, false);
+        }
     },
 
     _readResponse: async function (resp) {

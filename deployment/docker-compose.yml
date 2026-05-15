@@ -487,6 +487,7 @@ services:
 
   worker-spider:
     image: argus-engine/worker-spider:${ARGUS_ENGINE_VERSION:-2.6.3}
+    pull_policy: never
     restart: unless-stopped
     build:
       context: ..
@@ -514,6 +515,7 @@ services:
 
   worker-http-requester:
     image: argus-engine/worker-http-requester:${ARGUS_ENGINE_VERSION:-2.6.3}
+    pull_policy: never
     restart: unless-stopped
     build:
       context: ..
@@ -544,6 +546,7 @@ services:
 
   worker-enum:
     image: argus-engine/worker-enum:${ARGUS_ENGINE_VERSION:-2.6.3}
+    pull_policy: never
     restart: unless-stopped
     build:
       context: ..
@@ -584,6 +587,7 @@ services:
 
   worker-portscan:
     image: argus-engine/worker-portscan:${ARGUS_ENGINE_VERSION:-2.6.3}
+    pull_policy: never
     restart: unless-stopped
     build:
       context: ..
@@ -611,6 +615,7 @@ services:
 
   worker-highvalue:
     image: argus-engine/worker-highvalue:${ARGUS_ENGINE_VERSION:-2.6.3}
+    pull_policy: never
     restart: unless-stopped
     build:
       context: ..
@@ -638,6 +643,7 @@ services:
 
   worker-techid:
     image: argus-engine/worker-techid:${ARGUS_ENGINE_VERSION:-2.6.3}
+    pull_policy: never
     restart: unless-stopped
     build:
       context: ..

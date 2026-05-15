@@ -26,9 +26,6 @@
     <Project Path="src/ArgusEngine.Workers.TechnologyIdentification/ArgusEngine.Workers.TechnologyIdentification.csproj" />
     <Project Path="src/ArgusEngine.Harness/ArgusEngine.Harness.csproj" />
   </Folder>
-  <Folder Name="/deploy/">
-    <Project Path="deploy/ArgusEngine.DeployUi/ArgusEngine.DeployUi.csproj" />
-  </Folder>
   <Folder Name="/tests/">
     <Project Path="src/tests/ArgusEngine.ArchitectureTests/ArgusEngine.ArchitectureTests.csproj" />
     <Project Path="src/tests/ArgusEngine.Infrastructure.Tests/ArgusEngine.Infrastructure.Tests.csproj" />

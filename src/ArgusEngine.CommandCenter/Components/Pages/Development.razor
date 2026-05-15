@@ -139,7 +139,7 @@
                             @foreach (var error in _errors)
                             {
                                 <tr>
-                                    <td>@error.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td>@FormatEst(error.Timestamp)</td>
                                     <td><span class="badge bad">@error.Severity</span></td>
                                     <td>@error.Source</td>
                                     <td class="message-cell">@error.Message</td>
@@ -399,7 +399,7 @@
             builder.AppendLine("Recent system_errors rows:");
             foreach (var error in _errors.Take(50))
             {
-                builder.AppendLine($"- [{error.Timestamp:u}] {error.Severity} {error.Source}: {error.Message}");
+                builder.AppendLine($"- [{FormatEst(error.Timestamp)} EST] {error.Severity} {error.Source}: {error.Message}");
                 if (!string.IsNullOrWhiteSpace(error.Exception))
                 {
                     builder.AppendLine($"  Exception: {TrimForPrompt(error.Exception, 1200)}");
@@ -505,7 +505,7 @@
         foreach (var error in _errors)
         {
             builder.AppendLine(
-                $"{Csv(error.Timestamp.ToString("u"))},{Csv(error.Severity)},{Csv(error.Source)},{Csv(error.Message)},{Csv(error.Exception)}");
+                $"{Csv(FormatEst(error.Timestamp))},{Csv(error.Severity)},{Csv(error.Source)},{Csv(error.Message)},{Csv(error.Exception)}");
         }
 
         await Js.InvokeVoidAsync(
@@ -521,7 +521,7 @@
     private async Task ShowErrorDetailAsync(SystemError error)
     {
         var builder = new StringBuilder();
-        builder.AppendLine($"{error.Timestamp:u} {error.Severity} {error.Source}");
+        builder.AppendLine($"{FormatEst(error.Timestamp)} EST {error.Severity} {error.Source}");
         builder.AppendLine();
         builder.AppendLine(error.Message);
 
@@ -542,4 +542,30 @@
 
     private static string TrimForPrompt(string value, int maxLength)
         => value.Length <= maxLength ? value : value[..maxLength] + "...";
+
+    private static string FormatEst(DateTimeOffset value)
+    {
+        var zone = ResolveEasternTimeZone();
+        var eastern = TimeZoneInfo.ConvertTime(value, zone);
+        return eastern.ToString("MM/dd/yyyy hh:mm:ss tt");
+    }
+
+    private static TimeZoneInfo ResolveEasternTimeZone()
+    {
+        foreach (var id in new[] { "America/New_York", "Eastern Standard Time" })
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(id);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return TimeZoneInfo.Utc;
+    }
 }

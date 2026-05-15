@@ -45,7 +45,9 @@
                             IsLoading="@_highValueLoading"
                             EmptyText="No high value assets found.">
                 <Columns>
-                    <RadzenDataGridColumn TItem="HighValueGridRow" Property="LastSeenAtUtc" Title="Last seen" FormatString="{0:g}" Width="150px" />
+                    <RadzenDataGridColumn TItem="HighValueGridRow" Property="LastSeenAtUtc" Title="Last seen" Width="190px">
+                        <Template Context="row">@AppTimeFormat.Format(row.LastSeenAtUtc)</Template>
+                    </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="HighValueGridRow" Property="InvestigationStatus" Title="Status" Width="140px" />
                     <RadzenDataGridColumn TItem="HighValueGridRow" Property="TargetRootDomain" Title="Target" Width="180px" />
                     <RadzenDataGridColumn TItem="HighValueGridRow" Property="Kind" Title="Kind" Width="110px" />
@@ -125,7 +127,9 @@
                             IsLoading="@_technologyLoading"
                             EmptyText="No technology detections found.">
                 <Columns>
-                    <RadzenDataGridColumn TItem="TechnologyGridRow" Property="LastSeenUtc" Title="Last seen" FormatString="{0:g}" Width="150px" />
+                    <RadzenDataGridColumn TItem="TechnologyGridRow" Property="LastSeenUtc" Title="Last seen" Width="190px">
+                        <Template Context="row">@AppTimeFormat.Format(row.LastSeenUtc)</Template>
+                    </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="TechnologyGridRow" Property="TargetRootDomain" Title="Target" Width="180px" />
                     <RadzenDataGridColumn TItem="TechnologyGridRow" Property="Subdomain" Title="Subdomain" Width="220px" />
                     <RadzenDataGridColumn TItem="TechnologyGridRow" Property="TechnologyName" Title="Technology" Width="180px" />

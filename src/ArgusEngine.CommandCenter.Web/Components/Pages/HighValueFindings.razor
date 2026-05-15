@@ -99,7 +99,9 @@
 
             @if (ColumnVisible("discovered"))
             {
-                <PropertyColumn Title="Discovered" Property="@(row => row.DiscoveredAtUtc)" Format="yyyy-MM-dd HH:mm:ss" Sortable="true" />
+                <TemplateColumn Title="Discovered" Context="context" SortBy="@SortDiscoveredAt">
+                    @AppTimeFormat.Format(context.DiscoveredAtUtc)
+                </TemplateColumn>
             }
             @if (ColumnVisible("lastSeen"))
             {
@@ -262,6 +264,8 @@
 
     private static readonly GridSort<HighValueAssetRowDto> SortLastSeen =
         GridSort<HighValueAssetRowDto>.ByDescending(static row => row.LastSeenAtUtc);
+    private static readonly GridSort<HighValueAssetRowDto> SortDiscoveredAt =
+        GridSort<HighValueAssetRowDto>.ByDescending(static row => row.DiscoveredAtUtc);
 
     private static readonly GridSort<HighValueAssetRowDto> SortInvestigationStatus =
         GridSort<HighValueAssetRowDto>.ByAscending(static row => row.InvestigationStatus);
@@ -485,7 +489,7 @@
         string.IsNullOrWhiteSpace(value) ? "-" : value;
 
     private static string FormatTime(DateTimeOffset? value) =>
-        value is null ? "-" : value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        value is null ? "-" : AppTimeFormat.Format(value.Value);
 
     private static string? TryHttpHref(string? value)
     {
@@ -506,5 +510,4 @@
 
     private sealed record GridColumnChoice(string Key, string Label);
 }
-
 

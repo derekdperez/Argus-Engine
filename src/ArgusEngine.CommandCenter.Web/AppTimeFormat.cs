@@ -14,10 +14,10 @@ internal static class AppTimeFormat
     public static string Format(DateTimeOffset value)
     {
         var eastern = TimeZoneInfo.ConvertTime(value, EasternTimeZone);
-        return eastern.ToString("MM/dd/yyyy hh:mm:ss tt zzz", CultureInfo.InvariantCulture);
+        return eastern.ToString("MM/dd/yyyy hh:mm:ss tt", CultureInfo.InvariantCulture);
     }
 
-    public static string FormatCompact(DateTimeOffset? value)
+    public static string FormatDate(DateTimeOffset? value)
     {
         if (value is null)
         {
@@ -25,7 +25,23 @@ internal static class AppTimeFormat
         }
 
         var eastern = TimeZoneInfo.ConvertTime(value.Value, EasternTimeZone);
-        return eastern.ToString("MM/dd/yyyy hh:mm tt", CultureInfo.InvariantCulture);
+        return eastern.ToString("MM/dd/yyyy", CultureInfo.InvariantCulture);
+    }
+
+    public static string FormatTime(DateTimeOffset? value)
+    {
+        if (value is null)
+        {
+            return "—";
+        }
+
+        var eastern = TimeZoneInfo.ConvertTime(value.Value, EasternTimeZone);
+        return eastern.ToString("hh:mm:ss tt", CultureInfo.InvariantCulture);
+    }
+
+    public static string FormatCompact(DateTimeOffset? value)
+    {
+        return Format(value);
     }
 
     public static string FormatDuration(TimeSpan? value)

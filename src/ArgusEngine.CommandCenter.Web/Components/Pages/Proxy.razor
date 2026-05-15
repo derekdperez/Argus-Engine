@@ -105,7 +105,16 @@
                                             <small>@proxy.Notes</small>
                                         }
                                     </td>
-                                    <td><code>@proxy.ProxyUri</code></td>
+                                    <td>
+                                        @if (TryHttpHref(proxy.ProxyUri) is { } href)
+                                        {
+                                            <a href="@href" target="_blank" rel="noopener noreferrer"><code>@proxy.ProxyUri</code></a>
+                                        }
+                                        else
+                                        {
+                                            <code>@proxy.ProxyUri</code>
+                                        }
+                                    </td>
                                     <td>@Display(proxy.PublicIpAddress)</td>
                                     <td>@Display(proxy.Region)</td>
                                     <td>@Display(proxy.LastStatus)</td>
@@ -361,6 +370,18 @@
     }
 
     private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+
+    private static string? TryHttpHref(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
+            ? uri.ToString()
+            : null;
+    }
 
     private static ProxyServer NewProxyDraft() =>
         new()

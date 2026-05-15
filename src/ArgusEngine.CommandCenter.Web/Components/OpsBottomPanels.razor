@@ -472,7 +472,7 @@
         string.IsNullOrWhiteSpace(value) ? "-" : value;
 
     private static string FormatTime(DateTimeOffset? value) =>
-        value is null ? "-" : value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        value is null ? "-" : AppTimeFormat.Format(value.Value);
 
     private static string? TryHttpHref(string? value)
     {

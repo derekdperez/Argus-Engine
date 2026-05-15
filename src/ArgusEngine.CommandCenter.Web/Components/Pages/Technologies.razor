@@ -19,7 +19,7 @@
 
             <div class="hero-meta">
                 <span class="live-pill @LiveStateCss">@Realtime.State</span>
-                <span>@(_lastLoadedAtUtc is null ? "Not loaded" : $"Last refresh {_lastLoadedAtUtc:yyyy-MM-dd HH:mm:ss} UTC")</span>
+                <span>@(_lastLoadedAtUtc is null ? "Not loaded" : $"Last refresh {AppTimeFormat.Format(_lastLoadedAtUtc)} EST")</span>
                 <span>@FilteredRows.Count.ToString("N0") rows</span>
             </div>
         </div>
@@ -70,7 +70,7 @@
                             ColumnWidth="180px">
                 <Columns>
                     <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="DetectedAtUtc" Title="Detected" Width="180px" SortOrder="SortOrder.Descending">
-                        <Template Context="r">@r.DetectedAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</Template>
+                        <Template Context="r">@AppTimeFormat.Format(r.DetectedAtUtc)</Template>
                     </RadzenDataGridColumn>
 
                     <RadzenDataGridColumn TItem="TechnologyDetectionRowDto" Property="TargetRootDomain" Title="Target" Width="200px" />

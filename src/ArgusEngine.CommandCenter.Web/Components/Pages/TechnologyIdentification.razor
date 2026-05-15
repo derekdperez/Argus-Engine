@@ -626,9 +626,8 @@
     private static string UsageKey(TechnologyUsageDto row) => $"{row.TechnologyName}|{row.Version}";
 
     private static string FormatTime(DateTimeOffset? value) =>
-        value is null ? "-" : value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+        value is null ? "-" : AppTimeFormat.Format(value.Value);
 
     private static string DisplayOrDash(string? value) => string.IsNullOrWhiteSpace(value) ? "-" : value;
 }
-
 

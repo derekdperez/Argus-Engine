@@ -162,7 +162,20 @@
                     <ItemContent>
                         <div class="cc-row" role="row" @key="RowKey(asset)" @onclick="@(() => ToggleAsset(asset))">
                             <span><span class="cc-pill">@Display(Text(asset, "kind", "Kind"))</span></span>
-                            <span class="cc-main-cell">@Display(Text(asset, "displayName", "DisplayName", "canonicalKey", "CanonicalKey", "rawValue", "RawValue", "finalUrl", "FinalUrl"))</span>
+                            <span class="cc-main-cell">
+                                @{
+                                    var assetText = Text(asset, "displayName", "DisplayName", "canonicalKey", "CanonicalKey", "rawValue", "RawValue", "finalUrl", "FinalUrl");
+                                    var assetHref = TryHttpHref(assetText);
+                                }
+                                @if (assetHref is null)
+                                {
+                                    @Display(assetText)
+                                }
+                                else
+                                {
+                                    <a href="@assetHref" target="_blank" rel="noopener noreferrer">@assetText</a>
+                                }
+                            </span>
                             <span>@Display(Text(asset, "category", "Category"))</span>
                             <span>@FormatTime(Text(asset, "lastSeenAtUtc", "LastSeenAtUtc", "discoveredAtUtc", "DiscoveredAtUtc"))</span>
                         </div>
@@ -952,10 +965,22 @@
 
         if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var timestamp))
         {
-            return timestamp.ToLocalTime().ToString("MMM d, HH:mm", CultureInfo.CurrentCulture);
+            return AppTimeFormat.Format(timestamp);
         }
 
         return value;
+    }
+
+    private static string? TryHttpHref(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
+            ? uri.ToString()
+            : null;
     }
 
     private bool IsSelectedTarget(JsonElement row)

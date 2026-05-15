@@ -206,10 +206,10 @@
 
         _versionLabel = buildTimeUtc is null
             ? $"Command Center version {releaseVersion}"
-            : $"Command Center version {releaseVersion} · built {buildTimeUtc.Value:yyyy-MM-dd HH:mm} UTC";
+            : $"Command Center version {releaseVersion} · built {AppTimeFormat.Format(buildTimeUtc.Value)} EST";
         _versionDetail = buildTimeUtc is null
             ? $"Release version {releaseVersion}."
-            : $"Release version {releaseVersion}. Build time {buildTimeUtc.Value:yyyy-MM-dd HH:mm:ss} UTC.";
+            : $"Release version {releaseVersion}. Build time {AppTimeFormat.Format(buildTimeUtc.Value)} EST.";
     }
 
     public void Dispose()

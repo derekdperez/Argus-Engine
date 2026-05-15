@@ -71,7 +71,7 @@
             <div class="harness-summary-card">
                 <div class="summary-stat">
                     <span class="label">Executed At</span>
-                    <span class="value">@_result.ExecutedAtUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)</span>
+                    <span class="value">@AppTimeFormat.Format(_result.ExecutedAtUtc)</span>
                 </div>
                 <div class="summary-stat">
                     <span class="label">Overall Status</span>
@@ -242,7 +242,7 @@
                     @foreach (var evt in _liveEvents.OrderByDescending(e => e.OccurredAtUtc))
                     {
                         <tr>
-                            <td>@evt.OccurredAtUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)</td>
+                            <td>@AppTimeFormat.Format(evt.OccurredAtUtc)</td>
                             <td>@evt.Scope</td>
                             <td>@evt.Kind</td>
                             <td>@evt.Summary</td>
@@ -323,7 +323,7 @@
                     <button class="btn secondary" @onclick="CloseErrorDetail">Close</button>
                 </div>
                 <div class="error-detail-meta">
-                    <div><span class="label">Time</span><strong>@_selectedError.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture)</strong></div>
+                    <div><span class="label">Time</span><strong>@AppTimeFormat.Format(_selectedError.Timestamp)</strong></div>
                     <div><span class="label">Component</span><strong>@Fallback(_selectedError.Component, "unknown")</strong></div>
                     <div><span class="label">Logger</span><strong>@Fallback(_selectedError.LoggerName, "unknown")</strong></div>
                     <div><span class="label">Machine</span><strong>@Fallback(_selectedError.MachineName, "unknown")</strong></div>
@@ -340,7 +340,7 @@
                         <div class="eyebrow">Generated AI Agent Prompt</div>
                         <h3>Investigate System-Wide Errors and Create a PR</h3>
                         <p>
-                            Generated @(_bugFixPromptGeneratedAtUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture) ?? "unknown").
+                            Generated @(_bugFixPromptGeneratedAtUtc is null ? "unknown" : $"{AppTimeFormat.Format(_bugFixPromptGeneratedAtUtc.Value)} EST").
                             Credential values are intentionally redacted; the agent must obtain them through approved secure channels.
                         </p>
                     </div>
@@ -377,7 +377,7 @@
                     @foreach (var e in _errors.OrderByDescending(e => e.Timestamp))
                     {
                         <tr @onclick="() => ToggleErrorDetail(e)">
-                            <td>@e.Timestamp.ToLocalTime().ToString("MM/dd HH:mm:ss", CultureInfo.InvariantCulture)</td>
+                            <td>@AppTimeFormat.Format(e.Timestamp)</td>
                             <td><span class="badge-component">@Fallback(e.Component, "unknown")</span></td>
                             <td>@Fallback(e.LogLevel, "Error")</td>
                             <td class="error-message-cell">
@@ -485,8 +485,8 @@
                     <pre class="stack-trace">@_latestAiBugFixRun.FailureDetail</pre>
                 }
                 <p>
-                    Run started @_latestAiBugFixRun.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture)
-                    • Last updated @_latestAiBugFixRun.UpdatedAtUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)
+                    Run started @AppTimeFormat.Format(_latestAiBugFixRun.CreatedAtUtc)
+                    • Last updated @AppTimeFormat.Format(_latestAiBugFixRun.UpdatedAtUtc)
                 </p>
             </div>
         }
@@ -845,8 +845,7 @@
         sb.AppendLine("This file contains every structured diagnostic error and Docker-log error block currently loaded on the Development page.");
         sb.AppendLine("It is intended to be attached to an AI agent task or debugging ticket.");
         sb.AppendLine();
-        sb.AppendLine($"Generated UTC: {generatedAtUtc:yyyy-MM-dd HH:mm:ss zzz}");
-        sb.AppendLine($"Generated local server time: {generatedAtUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}");
+        sb.AppendLine($"Generated EST: {AppTimeFormat.Format(generatedAtUtc)}");
         sb.AppendLine($"ASP.NET Core environment: {Fallback(HostEnvironment.EnvironmentName, "unknown")}");
         sb.AppendLine($"Application: {Fallback(HostEnvironment.ApplicationName, "unknown")}");
         sb.AppendLine($"Server machine: {Environment.MachineName}");
@@ -894,8 +893,7 @@
         sb.AppendLine("- Run `dotnet build ArgusEngine.slnx` and relevant `dotnet test` commands before opening the PR.");
         sb.AppendLine();
         sb.AppendLine("## Runtime context captured from the Development page");
-        sb.AppendLine($"- Generated at UTC: {generatedAtUtc:yyyy-MM-dd HH:mm:ss zzz}");
-        sb.AppendLine($"- Generated at local server time: {generatedAtUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}");
+        sb.AppendLine($"- Generated at EST: {AppTimeFormat.Format(generatedAtUtc)}");
         sb.AppendLine($"- ASP.NET Core environment: {Fallback(HostEnvironment.EnvironmentName, "unknown")}");
         sb.AppendLine($"- Application name: {Fallback(HostEnvironment.ApplicationName, "unknown")}");
         sb.AppendLine($"- Content root: {Fallback(HostEnvironment.ContentRootPath, "unknown")}");
@@ -941,8 +939,7 @@
         {
             sb.AppendLine($"### Error {index.ToString(CultureInfo.InvariantCulture)}");
             sb.AppendLine($"- Id: {error.Id}");
-            sb.AppendLine($"- Timestamp UTC: {error.Timestamp.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z");
-            sb.AppendLine($"- Timestamp local: {error.Timestamp.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}");
+            sb.AppendLine($"- Timestamp EST: {AppTimeFormat.Format(error.Timestamp)}");
             sb.AppendLine($"- Component: {Fallback(error.Component, "unknown")}");
             sb.AppendLine($"- Level: {Fallback(error.LogLevel, "Error")}");
             sb.AppendLine($"- Logger: {Fallback(error.LoggerName, "unknown")}");
@@ -1160,7 +1157,7 @@
     private static string BuildFullErrorDetail(SystemError e)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"Time: {e.Timestamp.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}");
+        sb.AppendLine($"Time EST: {AppTimeFormat.Format(e.Timestamp)}");
         sb.AppendLine($"Component: {Fallback(e.Component, "unknown")}");
         sb.AppendLine($"Level: {Fallback(e.LogLevel, "Error")}");
         sb.AppendLine($"Logger: {Fallback(e.LoggerName, "unknown")}");

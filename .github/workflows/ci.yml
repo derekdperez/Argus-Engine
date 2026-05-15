@@ -63,9 +63,7 @@ jobs:
           ARGUS_ENGINE_VERSION: ci-${{ github.run_number }}
           BUILD_SOURCE_STAMP: ${{ github.sha }}
           ARGUS_DIAGNOSTICS_API_KEY: ci-smoke-test-key
-        run: |
-          chmod +x deploy/validate-manifests.sh
-          deploy/validate-manifests.sh
+        run: python3 deploy/deploy.py validate --ci
 
   docker-build:
     name: Docker build - ${{ matrix.service }}
@@ -224,10 +222,7 @@ jobs:
           exit 1
 
       - name: Run split-service smoke tests
-        run: |
-          chmod +x deploy/command-center-split-smoke.sh deploy/smoke-test.sh
-          deploy/command-center-split-smoke.sh
-          deploy/smoke-test.sh
+        run: python3 deploy/deploy.py smoke
 
       - name: Verify selected background services stayed running
         run: |

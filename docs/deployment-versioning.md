@@ -20,9 +20,6 @@ The Docker build passes this value into .NET assembly metadata and OCI image lab
 ## Verification
 
 ```bash
-./scripts/verify-deployment-version.sh 2.6.1
-```
-
-```powershell
-./scripts/verify-deployment-version.ps1 -ExpectedVersion 2.6.1
+python3 deploy/deploy.py preflight
+python3 deploy/deploy.py validate
 ```

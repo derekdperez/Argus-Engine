@@ -33,7 +33,7 @@ Monorepo at `src/`, ~30 projects. Key boundaries:
 | **Command Center** | `ArgusEngine.CommandCenter.*` | 7 split-API services + Web (Blazor) + Gateway |
 | **Workers** | `ArgusEngine.Workers.*` | Spider, Enumeration, HttpRequester, PortScan, HighValue, TechId |
 | **Gatekeeper** | `ArgusEngine.Gatekeeper` | Admission control |
-| **Deploy** | `deploy/ArgusEngine.DeployUi` | Deploy UI |
+| **Deploy** | `deploy/deploy.py` | Python-only deployment console |
 
 Gateway routes: `ArgusEngine.CommandCenter.Gateway/Program.cs` — maps API prefixes to downstream services.
 
@@ -58,13 +58,13 @@ cd deploy
 
 Requires: **postgres, redis, rabbitmq** + all command-center services + gatekeeper + workers.
 
-Local services: `./deploy/deploy.sh` (incremental, auto-detects changes). Compat aliases: `deploy-local.sh`, `run-local.sh`.
+Local services: `python3 deploy/deploy.py deploy --hot` (incremental, auto-detects changes).
 
 Health: `http://localhost:8081/health/live`, `http://localhost:8081/health/ready`  
-Smoke: `deploy/smoke-test.sh` (set `BASE_URL`, `ARGUS_DIAGNOSTICS_API_KEY`)  
+Smoke: `python3 deploy/deploy.py smoke` (set `BASE_URL`, `ARGUS_DIAGNOSTICS_API_KEY`)  
 Diagnostics: `/api/diagnostics/self` and `/api/diagnostics/dependencies` (header auth via `X-Argus-Diagnostics-Key`)
 
-Deprecated env var alias: `NIGHTMARE_DIAGNOSTICS_API_KEY` still accepted in some scripts.
+Deprecated env var alias: `NIGHTMARE_DIAGNOSTICS_API_KEY` may still appear in legacy configuration.
 
 ## Workers
 
@@ -84,7 +84,7 @@ Deprecated env var alias: `NIGHTMARE_DIAGNOSTICS_API_KEY` still accepted in some
 ## CI pipeline (`.github/workflows/ci.yml`)
 
 1. `dotnet restore` → `dotnet build` → `./test.sh all`
-2. Validate Docker Compose manifests (`deploy/validate-manifests.sh`)
+2. Validate Docker Compose manifests (`python3 deploy/deploy.py validate --ci`)
 3. Docker build (matrix per service)
 4. Compose startup smoke test (full stack with `docker-compose.ci.yml`)
 

@@ -7,7 +7,7 @@ This guide describes the debugging helpers added for local development and deplo
 The update adds:
 
 - `deploy/dev-check.sh` — one command that validates Compose, builds images, starts the stack, runs smoke tests, and prints error-like log lines.
-- `deploy/smoke-test.sh` — checks the Command Center health endpoints, Blazor static assets, and diagnostics APIs.
+- `deploy/deploy.py smoke` — checks the Command Center health endpoints, Blazor static assets, and diagnostics APIs.
 - `deploy/logs.sh` — focused Compose log helper with error highlighting and service filtering.
 - `GET /api/diagnostics/dependencies` — authenticated dependency diagnostics for Postgres, file-store Postgres, Redis, RabbitMQ TCP reachability, and expected static asset paths.
 - Ready health checks now use `/health/ready` instead of `/health` so Docker reports Command Center as healthy only after the database is reachable.
@@ -37,19 +37,19 @@ Skip builds when you only want to re-check the running stack:
 After a deploy or restart:
 
 ```bash
-./deploy/smoke-test.sh
+./deploy/deploy.py smoke
 ```
 
 For a remote host:
 
 ```bash
-BASE_URL=http://YOUR_HOST:8080 ./deploy/smoke-test.sh
+BASE_URL=http://YOUR_HOST:8080 ./deploy/deploy.py smoke
 ```
 
 If you changed the diagnostics key:
 
 ```bash
-NIGHTMARE_DIAGNOSTICS_API_KEY='your-key' ./deploy/smoke-test.sh
+NIGHTMARE_DIAGNOSTICS_API_KEY='your-key' ./deploy/deploy.py smoke
 ```
 
 The script verifies:
@@ -158,7 +158,7 @@ Then inspect:
 Run:
 
 ```bash
-./deploy/smoke-test.sh
+./deploy/deploy.py smoke
 ```
 
 Then manually inspect dependency diagnostics if needed:
@@ -186,7 +186,7 @@ If either fails, debug the Command Center image and `App.razor` asset paths firs
 |---|---|---|
 | Docker build exits before containers start | Dockerfile or external tool version | `docker compose -f deploy/docker-compose.yml build SERVICE` |
 | Container exits immediately | Runtime config or startup exception | `./deploy/logs.sh --errors SERVICE` |
-| `/health` passes but `/health/ready` fails | Database dependency | `./deploy/smoke-test.sh` |
+| `/health` passes but `/health/ready` fails | Database dependency | `./deploy/deploy.py smoke` |
 | `blazor.web.js` returns 404 or `Unexpected token ':'` | Blazor static asset publishing/pathing; the script may contain `404: Not Found` | `curl -i http://localhost:8080/_framework/blazor.web.js` |
 | Workers run but no work progresses | RabbitMQ, outbox, or worker toggles | `./deploy/logs.sh --errors gatekeeper worker-enum worker-spider` |
 
@@ -196,7 +196,7 @@ Do not expose diagnostics publicly with the default key. For public deployments,
 
 ```bash
 export NIGHTMARE_DIAGNOSTICS_API_KEY='replace-with-a-long-random-secret'
-./deploy/deploy.sh
+python3 deploy/deploy.py deploy --hot
 ```
 
 Or disable diagnostics in production by setting:

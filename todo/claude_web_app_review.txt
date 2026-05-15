@@ -1,5 +1,5 @@
 Web App Review
-The web application is src/ArgusEngine.CommandCenter.Web — a Blazor Server app using Radzen components. The deploy/ArgusEngine.DeployUi is a separate deploy-focused UI, likely a Blazor or WinForms tool. From what's visible:
+The web application is src/ArgusEngine.CommandCenter.Web — a Blazor Server app using Radzen components. The deploy/deploy.py is a separate deploy-focused UI, likely a Blazor or WinForms tool. From what's visible:
 Architecture split (CommandCenter.Web vs. CloudDeploy API)
 The CloudDeploy feature exists in two places simultaneously: as a Blazor page (CloudDeploy.razor, deleted and partially restored) in CommandCenter.Web, and as a standalone API project (ArgusEngine.CommandCenter.CloudDeploy.Api). The appsettings.GcpDeploy.json explicitly calls this out:
 

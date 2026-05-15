@@ -1,5 +1,5 @@
 # Optional manual override for direct docker compose usage.
-# deploy.sh also patches explicit scales through deploy/apply-one-worker-defaults.sh.
+# deploy.py also patches explicit scales through deploy.py scale local.
 services:
   worker-spider:
     deploy:

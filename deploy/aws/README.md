@@ -7,7 +7,7 @@ These helpers keep the production stack self-hosted: Postgres, Redis, and Rabbit
 - No Amazon RDS, ElastiCache, Amazon MQ, or paid custom CloudWatch metrics are required.
 - Container images are pushed to ECR.
 - ECS services are created and updated by `deploy-ecs-services.sh`.
-- ECS worker services are scaled with `autoscale-ecs-workers.sh`, which reads Command Center queue APIs and calls `aws ecs update-service`.
+- ECS worker services are scaled with `deploy.py ecs autoscale`, which reads Command Center queue APIs and calls `aws ecs update-service`.
 - `docker-compose.yml` remains the local development deployment.
 
 ## Required AWS resources
@@ -50,7 +50,7 @@ The E2E host should use an instance profile with SSM managed-instance permission
 When running the self-hosted stack on one EC2 host and placing workers on ECS, use:
 
 ```bash
-./deploy/deploy.sh --ecs-workers
+python3 deploy/deploy.py deploy --ecs-workers
 ```
 
 That mode:
@@ -71,7 +71,7 @@ The mode is designed to be re-runnable. Existing roles, cluster, repositories, l
 `--ecs-workers` defaults `argus_GIT_PULL=1`, so it runs `git pull --ff-only` before building. Disable that only when you intentionally want to deploy the checked-out working tree:
 
 ```bash
-argus_GIT_PULL=0 ./deploy/deploy.sh --ecs-workers
+argus_GIT_PULL=0 python3 deploy/deploy.py deploy --ecs-workers
 ```
 
 Required before running:
@@ -86,7 +86,7 @@ For continuous scaling, run this periodically after the first deploy:
 set -a
 . deploy/aws/.env.generated
 set +a
-deploy/aws/autoscale-ecs-workers.sh
+deploy/aws/deploy.py ecs autoscale
 ```
 
 Run the scaler on a steady cadence, such as every minute from cron or systemd timer, because the Admin usage totals integrate worker-hours from these samples.
@@ -124,13 +124,13 @@ deploy/aws/build-push-ecr.sh
 Register task definitions and create or update ECS services:
 
 ```bash
-deploy/aws/deploy-ecs-services.sh
+deploy/deploy.py ecs deploy
 ```
 
 To deploy only selected services:
 
 ```bash
-deploy/aws/deploy-ecs-services.sh worker-spider worker-enum worker-portscan
+deploy/deploy.py ecs deploy worker-spider worker-enum worker-portscan
 ```
 
 By default, updates preserve existing desired counts and force a new deployment onto the newly registered task definition. Set `UPDATE_DESIRED_COUNTS=true` when you want the script to also apply `ECS_DESIRED_*` counts from `.env`.
@@ -143,7 +143,7 @@ Run this from cron, a small always-on host, or a scheduled ECS task:
 set -a
 . deploy/aws/.env
 set +a
-deploy/aws/autoscale-ecs-workers.sh
+deploy/aws/deploy.py ecs autoscale
 ```
 
 The scaler handles:
@@ -224,7 +224,7 @@ set +a
 deploy/aws/autoscale-http-workers.sh
 ```
 
-New deployments should prefer `autoscale-ecs-workers.sh` because it scales spider, subdomain enum, port scan, high-value, and technology identification workers.
+New deployments should prefer `deploy.py ecs autoscale` because it scales spider, subdomain enum, port scan, high-value, and technology identification workers.
 
 ## Subdomain enumeration tooling
 

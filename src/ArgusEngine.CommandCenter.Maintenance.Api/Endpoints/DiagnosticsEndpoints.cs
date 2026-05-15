@@ -316,7 +316,7 @@ public static class DiagnosticsEndpoints
                 ["blazorScriptPath"] = "/_framework/blazor.web.js",
                 ["appCssPath"] = "/app.css",
                 ["listenPlainHttp"] = listenPlainHttp.ToString(),
-                ["verification"] = "Use deploy/smoke-test.sh to fetch these URLs from the running container.",
+                ["verification"] = "Use deploy/deploy.py smoke to fetch these URLs from the running container.",
             });
     }
 

@@ -68,7 +68,7 @@ Then load them before deployment:
 ./deploy/load-vendored-images.sh
 ```
 
-`deploy/deploy.sh` also tries this loader before rebuilding missing base images.
+`deploy/deploy.py` also tries this loader before rebuilding missing base images.
 This is intentionally opt-in because image tarballs are large. Prefer ECR or
 another registry cache when available.
 

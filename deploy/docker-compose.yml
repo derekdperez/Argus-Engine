@@ -2,7 +2,7 @@
 # docker compose -f deploy/docker-compose.yml up -d --build
 #
 # Project-specific deployment version rule:
-# ARGUS_ENGINE_VERSION and ARGUS_BUILD_TIME_UTC are exported by deploy.sh
+# ARGUS_ENGINE_VERSION and ARGUS_BUILD_TIME_UTC are exported by deploy.py
 # from git state + UTC timestamp so each deploy reflects current source metadata.
 #
 # Database connection pool tuning:

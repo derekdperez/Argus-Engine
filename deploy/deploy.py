@@ -7,7 +7,7 @@ fresh EC2/local hosts before project dependencies are installed.
 
 It is both:
   1. a friendly menu-driven CLI for humans, and
-  2. a backwards-compatible deploy.sh handoff target.
+  2. the single Python source of truth for deployment operations.
 
 Examples:
     ./deploy/deploy.py
@@ -214,9 +214,6 @@ class Paths:
     repo_root: Path
     deploy_dir: Path
     compose_file: Path
-    deploy_sh: Path
-    logs_sh: Path
-    smoke_test: Path
     aws_dir: Path
 
     @staticmethod
@@ -233,9 +230,6 @@ class Paths:
                     repo_root=candidate,
                     deploy_dir=deploy_dir,
                     compose_file=compose_file,
-                    deploy_sh=deploy_dir / "deploy.sh",
-                    logs_sh=deploy_dir / "logs.sh",
-                    smoke_test=deploy_dir / "smoke-test.sh",
                     aws_dir=deploy_dir / "aws",
                 )
 
@@ -397,17 +391,6 @@ class Runner:
         except FileNotFoundError:
             return 127, "", f"Command not found: {args[0]}"
 
-    def shell(self, command: str) -> int:
-        if os.name == "nt":
-            return self.run(["powershell", "-NoProfile", "-Command", command])
-        return self.run(["bash", "-lc", command])
-
-    def bash_script(self, path: Path, args: Sequence[str] = (), *, env: Optional[Mapping[str, str]] = None) -> int:
-        if not path.exists():
-            self.ui.error(f"Script not found: {self.paths.rel(path)}")
-            return 2
-        return self.run(["bash", str(path), *args], env=env)
-
 
 def parse_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
@@ -477,7 +460,7 @@ class ArgusDeployConsole:
             self._compose_cmd = ["docker-compose"]
             return list(self._compose_cmd)
 
-        self.ui.error("Docker Compose was not found. Install Docker Compose v2 or run deploy.sh so it can bootstrap dependencies.")
+        self.ui.error("Docker Compose was not found. Install Docker Compose v2 and rerun deploy/deploy.py.")
         self._compose_cmd = ["docker", "compose"]
         return list(self._compose_cmd)
 
@@ -512,22 +495,24 @@ class ArgusDeployConsole:
         command = argv[0].lower()
         rest = list(argv[1:])
 
-        # Compatibility with deploy.sh's historical handoff behavior.
+        # Keep the historical CLI shortcuts working without delegating to any repository script.
         if command in {"up"}:
             return self.deploy_from_args(rest)
         if command in {"--fresh", "-fresh"}:
-            return self.deploy_sh(["--fresh", *rest])
+            return self.compose_action(["--fresh", *rest])
         if command in {"--ecs-workers"}:
-            return self.deploy_sh(["--ecs-workers", *rest])
+            return self.compose_action(["--ecs-workers", *rest])
         if command in {"--gcp-workers", "--google-workers"}:
             return self.gcp_from_args(["release", *rest])
         if command in {"--hot", "-hot"}:
-            return self.deploy_sh(["--hot", *rest])
+            return self.compose_action(["--hot", *rest])
         if command in {"--image", "-image"}:
-            return self.deploy_sh(["--image", *rest])
+            return self.compose_action(["--image", *rest])
 
         if command in {"deploy", "update"}:
             return self.deploy_from_args(rest)
+        if command == "preflight":
+            return self.preflight()
         if command in {"scale", "workers", "worker"}:
             return self.scale_from_args(rest)
         if command in {"monitor", "status", "ps"}:
@@ -535,11 +520,13 @@ class ArgusDeployConsole:
         if command in {"logs", "log"}:
             return self.logs_from_args(rest)
         if command == "restart":
-            return self.deploy_sh(["restart", *rest])
+            return self.compose_action(["restart", *rest])
         if command == "down":
-            return self.deploy_sh(["down", *rest])
+            return self.compose_action(["down", *rest])
         if command == "smoke":
-            return self.deploy_sh(["smoke", *rest])
+            return self.compose_action(["smoke", *rest])
+        if command in {"validate", "manifests"}:
+            return self.validate_manifests(rest)
         if command == "clean":
             return self.clean()
         if command in {"ecs", "aws", "cloud"}:
@@ -579,7 +566,6 @@ class ArgusDeployConsole:
                     "Google Cloud Run worker deployment and scaling",
                     "AWS ECS / ECR deployment and monitoring",
                     "Show changed/affected services",
-                    "Open a command shell from the repo root",
                     "Exit",
                 ],
             )
@@ -599,8 +585,6 @@ class ArgusDeployConsole:
             elif choice == 6:
                 self.show_changed_services()
                 code = 0
-            elif choice == 7:
-                code = self.custom_shell()
             else:
                 return 0
 
@@ -622,17 +606,17 @@ class ArgusDeployConsole:
             ],
         )
         if choice == 0:
-            return self.deploy_sh(["--hot"])
+            return self.compose_action(["--hot"])
         if choice == 1:
-            return self.deploy_sh(["--image"])
+            return self.compose_action(["--image"])
         if choice == 2:
-            return self.deploy_sh(["--fresh"])
+            return self.compose_action(["--fresh"])
         if choice == 3:
             return self.selected_component_deploy()
         if choice == 4:
             return self.gcp_from_args(["release"])
         if choice == 5:
-            return self.deploy_sh(["--ecs-workers"])
+            return self.compose_action(["--ecs-workers"])
         return 0
 
     def selected_component_deploy(self) -> int:
@@ -662,8 +646,8 @@ class ArgusDeployConsole:
         if mode == 2:
             return self.runner.run(self.compose("up", "-d", "--no-deps", "--force-recreate", *services))
         if mode == 3:
-            return self.deploy_sh(["restart", *services])
-        return self.deploy_sh(["logs", "--tail", "200", *services])
+            return self.compose_action(["restart", *services])
+        return self.compose_action(["logs", "--tail", "200", *services])
 
     def scale_menu(self) -> int:
         choice = self.ui.choose(
@@ -690,7 +674,7 @@ class ArgusDeployConsole:
             count = self.ui.prompt_int(f"{selected} replicas", current, minimum=0)
             return self.apply_local_worker_scale({selected: count})
         if choice == 3:
-            return self.run_aws_script("autoscale-ecs-workers.sh")
+            return self.unsupported_aws_operation("autoscale")
         if choice == 4:
             counts = self.prompt_worker_counts(include_http_requester=True)
             return self.apply_ecs_worker_scale(counts)
@@ -715,7 +699,7 @@ class ArgusDeployConsole:
             ],
         )
         if choice == 0:
-            return self.deploy_sh(["status"])
+            return self.compose_action(["status"])
         if choice == 1:
             self.show_worker_counts()
             return 0
@@ -724,10 +708,10 @@ class ArgusDeployConsole:
         if choice == 3:
             services = self.select_services(include_infra=True, allow_empty=True, default="none")
             tail = self.ui.prompt_int("Log tail lines", 200, minimum=1)
-            return self.deploy_sh(["logs", "--tail", str(tail), *services])
+            return self.compose_action(["logs", "--tail", str(tail), *services])
         if choice == 4:
             services = self.select_services(include_infra=True, allow_empty=True, default="none")
-            return self.deploy_sh(["logs", "--follow", *services])
+            return self.compose_action(["logs", "--follow", *services])
         if choice == 5:
             services = self.select_services(include_infra=True, allow_empty=True, default="none")
             tail = self.ui.prompt_int("Log tail lines to scan", 400, minimum=1)
@@ -755,15 +739,15 @@ class ArgusDeployConsole:
         )
         if choice == 0:
             services = self.select_services(include_infra=True, default="changed")
-            return self.deploy_sh(["restart", *services])
+            return self.compose_action(["restart", *services])
         if choice == 1:
-            return self.deploy_sh(["restart"])
+            return self.compose_action(["restart"])
         if choice == 2:
             if self.ui.confirm("Stop the local stack?", default=False, assume_yes=self.options.assume_yes):
-                return self.deploy_sh(["down"])
+                return self.compose_action(["down"])
             return 0
         if choice == 3:
-            return self.deploy_sh(["smoke"])
+            return self.compose_action(["smoke"])
         if choice == 4:
             return self.clean()
         if choice == 5:
@@ -787,29 +771,29 @@ class ArgusDeployConsole:
             ],
         )
         if choice == 0:
-            return self.deploy_sh(["--ecs-workers"])
+            return self.compose_action(["--ecs-workers"])
         if choice == 1:
-            return self.run_aws_script("create-ecr-repos.sh")
+            return self.aws_ecr_ensure_repos([])
         if choice in {2, 3, 4, 5}:
             services = self.select_services(include_infra=False, only_cloudish=True, default="workers")
             if not services:
                 self.ui.warn("No services selected.")
                 return 0
             if choice == 2:
-                return self.run_aws_script("build-push-ecr.sh", services)
+                return self.aws_ecr_build_push(services)
             if choice == 3:
-                return self.run_aws_script("deploy-ecs-services.sh", services)
+                return self.unsupported_aws_operation("deploy", services)
             if choice == 4:
-                create = self.run_aws_script("create-ecr-repos.sh")
+                create = self.aws_ecr_ensure_repos(services)
                 if create != 0:
                     return create
-                build = self.run_aws_script("build-push-ecr.sh", services)
+                build = self.aws_ecr_build_push(services)
                 if build != 0:
                     return build
-                return self.run_aws_script("deploy-ecs-services.sh", services)
-            return self.run_aws_script("replace-ecs-worker-tasks.sh", services)
+                return self.unsupported_aws_operation("deploy", services)
+            return self.unsupported_aws_operation("replace", services)
         if choice == 6:
-            return self.run_aws_script("autoscale-ecs-workers.sh")
+            return self.unsupported_aws_operation("autoscale")
         if choice == 7:
             return self.ecs_status()
         return 0
@@ -869,12 +853,12 @@ class ArgusDeployConsole:
         scale_counts, remaining = self.extract_scale_args(args)
 
         if "--ecs-workers" in remaining:
-            code = self.deploy_sh(["--ecs-workers", *[a for a in remaining if a != "--ecs-workers"]])
+            code = self.compose_action(["--ecs-workers", *[a for a in remaining if a != "--ecs-workers"]])
         elif "--gcp-workers" in remaining or "--google-workers" in remaining:
             args = [a for a in remaining if a not in {"--gcp-workers", "--google-workers"}]
             code = self.gcp_from_args(["release", *args])
         elif "--fresh" in remaining or "-fresh" in remaining:
-            code = self.deploy_sh(["--fresh", *[a for a in remaining if a not in {"--fresh", "-fresh"}]])
+            code = self.compose_action(["--fresh", *[a for a in remaining if a not in {"--fresh", "-fresh"}]])
         elif "--image" in remaining or "-image" in remaining:
             services = [a for a in remaining if not a.startswith("-")]
             if services:
@@ -882,10 +866,10 @@ class ArgusDeployConsole:
                 if code == 0:
                     code = self.runner.run(self.compose("up", "-d", "--no-deps", *services))
             else:
-                code = self.deploy_sh(["--image"])
+                code = self.compose_action(["--image"])
         else:
             services = [a for a in remaining if not a.startswith("-")]
-            code = self.deploy_sh(["--hot", *services])
+            code = self.compose_action(["--hot", *services])
 
         if code == 0 and scale_counts:
             return self.apply_local_worker_scale(scale_counts)
@@ -906,7 +890,7 @@ class ArgusDeployConsole:
         if target in {"gcp", "google"}:
             return self.gcp_from_args(["scale", *args[1:]])
         if target in {"autoscale", "auto"}:
-            return self.run_aws_script("autoscale-ecs-workers.sh", args[1:])
+            return self.unsupported_aws_operation("autoscale", args[1:])
 
         # Default to local for convenience: deploy.py scale worker-spider=3
         counts = self.parse_count_pairs(args)
@@ -916,7 +900,7 @@ class ArgusDeployConsole:
         command = args[0]
         rest = list(args[1:])
         if command in {"status", "ps"}:
-            return self.deploy_sh(["status", *rest])
+            return self.compose_action(["status", *rest])
         if not rest:
             return self.monitor_menu()
 
@@ -936,7 +920,7 @@ class ArgusDeployConsole:
         if "--errors" in args:
             remaining = [a for a in args if a != "--errors"]
             return self.error_logs(remaining, tail=400)
-        return self.deploy_sh(["logs", *args])
+        return self.compose_action(["logs", *args])
 
     def ecs_from_args(self, args: Sequence[str]) -> int:
         if not args:
@@ -945,25 +929,25 @@ class ArgusDeployConsole:
         rest = list(args[1:])
 
         if action in {"hybrid", "workers"}:
-            return self.deploy_sh(["--ecs-workers", *rest])
+            return self.compose_action(["--ecs-workers", *rest])
         if action == "repos":
-            return self.run_aws_script("create-ecr-repos.sh", rest)
+            return self.aws_ecr_ensure_repos(rest)
         if action in {"build", "push"}:
-            return self.run_aws_script("build-push-ecr.sh", rest)
+            return self.aws_ecr_build_push(rest)
         if action == "deploy":
-            return self.run_aws_script("deploy-ecs-services.sh", rest)
+            return self.unsupported_aws_operation("deploy", rest)
         if action == "release":
-            create = self.run_aws_script("create-ecr-repos.sh")
+            create = self.aws_ecr_ensure_repos(rest)
             if create != 0:
                 return create
-            build = self.run_aws_script("build-push-ecr.sh", rest)
+            build = self.aws_ecr_build_push(rest)
             if build != 0:
                 return build
-            return self.run_aws_script("deploy-ecs-services.sh", rest)
+            return self.unsupported_aws_operation("deploy", rest)
         if action == "replace":
-            return self.run_aws_script("replace-ecs-worker-tasks.sh", rest)
+            return self.unsupported_aws_operation("replace", rest)
         if action == "autoscale":
-            return self.run_aws_script("autoscale-ecs-workers.sh", rest)
+            return self.unsupported_aws_operation("autoscale", rest)
         if action == "scale":
             return self.apply_ecs_worker_scale(self.parse_count_pairs(rest))
         if action == "status":
@@ -1517,7 +1501,7 @@ GCP commands:
 
     # ---------- action helpers ----------
 
-    def deploy_sh(self, args: Sequence[str]) -> int:
+    def compose_action(self, args: Sequence[str]) -> int:
         if not args:
             return self.runner.run(self.compose("up", "-d"))
 
@@ -1611,6 +1595,120 @@ GCP commands:
         self.ui.error(f"Unsupported legacy command passthrough: {' '.join(args)}")
         return 2
 
+    def validate_manifests(self, args: Sequence[str]) -> int:
+        compose_files = [self.paths.compose_file]
+        if any(arg in {"--ci", "ci"} for arg in args):
+            ci_file = self.paths.deploy_dir / "docker-compose.ci.yml"
+            if ci_file.exists():
+                compose_files.append(ci_file)
+
+        command = [*self.compose_cmd()]
+        for compose_file in compose_files:
+            command.extend(["-f", str(compose_file)])
+        command.extend(["config", "--quiet"])
+        return self.runner.run(command)
+
+    def service_catalog(self) -> dict[str, dict[str, str]]:
+        catalog_path = self.paths.deploy_dir / "service-catalog.tsv"
+        services: dict[str, dict[str, str]] = {}
+        if not catalog_path.exists():
+            return services
+
+        with catalog_path.open(encoding="utf-8") as handle:
+            headers: list[str] = []
+            for raw in handle:
+                line = raw.strip()
+                if not line:
+                    continue
+                if line.startswith("#"):
+                    headers = line.lstrip("#").strip().split()
+                    continue
+                parts = line.split("\t")
+                if not headers or len(parts) < len(headers):
+                    continue
+                row = dict(zip(headers, parts))
+                services[row["service"]] = row
+        return services
+
+    def selected_ecr_services(self, args: Sequence[str]) -> list[dict[str, str]]:
+        catalog = self.service_catalog()
+        requested = [arg for arg in args if arg and arg != "all"]
+        names = requested or [name for name, row in catalog.items() if row.get("ecr_enabled") == "1"]
+        missing = [name for name in names if name not in catalog]
+        if missing:
+            raise SystemExit(f"Unknown ECR service(s): {', '.join(missing)}")
+        return [catalog[name] for name in names if catalog[name].get("ecr_enabled") == "1"]
+
+    def ecr_repository(self, service: str) -> str:
+        prefix = self.get_env("ECR_PREFIX", "argus-v2").strip("/")
+        return f"{prefix}/{service}" if prefix else service
+
+    def ecr_registry(self) -> str:
+        account_id = self.get_env("AWS_ACCOUNT_ID")
+        region = self.get_env("AWS_REGION", "us-east-1")
+        if not account_id:
+            raise SystemExit("AWS_ACCOUNT_ID is required for ECR image publishing.")
+        return f"{account_id}.dkr.ecr.{region}.amazonaws.com"
+
+    def git_short_sha(self) -> str:
+        code, stdout, _ = self.runner.capture(["git", "rev-parse", "--short=12", "HEAD"])
+        if code == 0 and stdout.strip():
+            return stdout.strip()
+        return "local"
+
+    def aws_ecr_ensure_repos(self, args: Sequence[str]) -> int:
+        services = self.selected_ecr_services(args)
+        region = self.get_env("AWS_REGION", "us-east-1")
+        for row in services:
+            repo = self.ecr_repository(row["service"])
+            exists = self.runner.capture(["aws", "ecr", "describe-repositories", "--region", region, "--repository-names", repo])
+            if exists[0] == 0:
+                self.ui.ok(f"ECR repository exists: {repo}")
+                continue
+            code = self.runner.run(["aws", "ecr", "create-repository", "--region", region, "--repository-name", repo])
+            if code != 0:
+                return code
+        return 0
+
+    def aws_ecr_build_push(self, args: Sequence[str]) -> int:
+        services = self.selected_ecr_services(args)
+        registry = self.ecr_registry()
+        image_tag = self.get_env("IMAGE_TAG") or self.get_env("BUILD_SOURCE_STAMP") or self.git_short_sha()
+        source_stamp = self.get_env("BUILD_SOURCE_STAMP", image_tag)
+        component_version = self.get_env("COMPONENT_VERSION", self.get_env("ARGUS_ENGINE_VERSION", image_tag))
+
+        for row in services:
+            service = row["service"]
+            repo = f"{registry}/{self.ecr_repository(service)}"
+            code = self.runner.run(
+                [
+                    "docker",
+                    "buildx",
+                    "build",
+                    "--platform",
+                    self.get_env("DOCKER_PLATFORM", "linux/amd64"),
+                    "--push",
+                    "-f",
+                    row["dockerfile"],
+                    "-t",
+                    f"{repo}:{image_tag}",
+                    "-t",
+                    f"{repo}:latest",
+                    "--build-arg",
+                    f"PROJECT_DIR={row['project_dir']}",
+                    "--build-arg",
+                    f"APP_DLL={row['app_dll']}",
+                    "--build-arg",
+                    f"BUILD_SOURCE_STAMP={source_stamp}",
+                    "--build-arg",
+                    f"COMPONENT_VERSION={component_version}",
+                    ".",
+                ]
+            )
+            if code != 0:
+                return code
+        return 0
+
     def clean(self) -> int:
         self.ui.warn("This removes compose containers, orphans, volumes, and hot-publish output.")
         if not self.ui.confirm("Continue with clean?", default=False, assume_yes=self.options.assume_yes):
@@ -1621,9 +1719,10 @@ GCP commands:
             shutil.rmtree(hot_publish, ignore_errors=True)
         return code
 
-    def run_aws_script(self, name: str, args: Sequence[str] = ()) -> int:
+    def unsupported_aws_operation(self, name: str, args: Sequence[str] = ()) -> int:
+        _ = args
         self.ui.error(
-            f"AWS helper '{name}' is shell-script based and disabled in standalone deploy.py."
+            f"AWS operation '{name}' has not been ported into standalone deploy.py yet."
         )
         return 2
 
@@ -1633,7 +1732,7 @@ GCP commands:
         for service, url in HEALTH_ENDPOINTS.items():
             start = time.time()
             try:
-                req = urllib.request.Request(url, headers={"User-Agent": "argus-deploy-ui/1.0"})
+                req = urllib.request.Request(url, headers={"User-Agent": "argus-deploy-python/1.0"})
                 with urllib.request.urlopen(req, timeout=5) as response:
                     elapsed_ms = int((time.time() - start) * 1000)
                     if 200 <= response.status < 300:
@@ -2133,12 +2232,6 @@ LIMIT 50;
     def get_env(self, key: str, default: str = "") -> str:
         return os.environ.get(key) or self.env.get(key) or default
 
-    def custom_shell(self) -> int:
-        command = self.ui.prompt("Command to run from repo root")
-        if not command:
-            return 0
-        return self.runner.shell(command)
-
     # ---------- help/preflight ----------
 
     def print_help(self) -> None:
@@ -2167,6 +2260,7 @@ Scaling:
   deploy/deploy.py scale autoscale
 
 Monitoring:
+  deploy/deploy.py preflight
   deploy/deploy.py monitor
   deploy/deploy.py status [service...]
   deploy/deploy.py logs [--follow] [service...]
@@ -2174,6 +2268,7 @@ Monitoring:
   deploy/deploy.py health
   deploy/deploy.py changed
   deploy/deploy.py services
+  deploy/deploy.py validate [--ci]
 
 AWS/ECS:
   deploy/deploy.py ecs hybrid
@@ -2202,7 +2297,7 @@ Global options:
   --verbose          Print discovery commands too
 
 Compatibility:
-  deploy.py still accepts deploy.sh handoff-style arguments such as:
+  deploy.py still accepts the historical deployment shortcuts:
   up, --fresh, -fresh, --ecs-workers, --gcp-workers, --hot, --image, logs, status, restart, down, smoke.
 """.strip()
         )
@@ -2216,7 +2311,6 @@ Compatibility:
             ("Python", sys.executable),
             ("Docker", "docker"),
             ("Git", "git"),
-            ("Bash", "bash"),
             ("AWS CLI", "aws"),
             ("gcloud", "gcloud"),
         ]
@@ -2239,7 +2333,7 @@ Compatibility:
             failures += 1
             self.ui.warn("Compose    not found")
 
-        for path in [self.paths.compose_file, self.paths.deploy_sh, self.paths.logs_sh]:
+        for path in [self.paths.compose_file, self.paths.deploy_dir / "deploy.py"]:
             if path.exists():
                 self.ui.ok(f"File       {self.paths.rel(path)}")
             else:

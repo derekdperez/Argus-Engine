@@ -7,8 +7,8 @@ These scripts are for running and debugging the entire Argus Engine stack on one
 From the repository root:
 
 ```bash
-chmod +x deploy-local.sh scripts/development/*.sh
-./deploy-local.sh
+chmod +x deploy/deploy.py scripts/development/*.sh
+./deploy/deploy.py
 ```
 
 This starts the full local Docker Compose stack:
@@ -31,13 +31,13 @@ The script explicitly disables ECS workers and keeps everything on the local mac
 
 ```bash
 # Deploy the whole stack locally.
-./deploy-local.sh
+./deploy/deploy.py
 
 # Rebuild from scratch.
-./deploy-local.sh --fresh
+./deploy/deploy.py --fresh
 
 # Deploy source-only changes into running containers when possible.
-./scripts/development/deploy_updated_components.sh --hot
+python3 deploy/deploy.py deploy --hot
 
 # Wrapper for the misspelled name requested during triage.
 ./scripts/development/deploy_updatd_components.sh --hot
@@ -75,7 +75,7 @@ Open the EC2 security group for the ports you need:
 Set `ARGUS_LOCAL_PUBLIC_HOST` if automatic EC2 public IP detection is blocked:
 
 ```bash
-ARGUS_LOCAL_PUBLIC_HOST=<ec2-public-ip> ./deploy-local.sh
+ARGUS_LOCAL_PUBLIC_HOST=<ec2-public-ip> ./deploy/deploy.py
 ```
 
 ## Worker scale
@@ -87,11 +87,11 @@ Override scale when needed:
 ```bash
 ARGUS_LOCAL_SCALE_WORKER_SPIDER=2 \
 ARGUS_LOCAL_SCALE_WORKER_ENUM=2 \
-./deploy-local.sh
+./deploy/deploy.py
 ```
 
 Or pass flags:
 
 ```bash
-./deploy-local.sh --scale-spider 2 --scale-enum 2
+./deploy/deploy.py --scale-spider 2 --scale-enum 2
 ```

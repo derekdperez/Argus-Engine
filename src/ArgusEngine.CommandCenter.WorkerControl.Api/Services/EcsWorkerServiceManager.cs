@@ -121,7 +121,7 @@ public sealed class EcsWorkerServiceManager(
             .ConfigureAwait(false);
         var taskDefinition = taskDefinitions.TaskDefinitionArns.FirstOrDefault();
         if (string.IsNullOrWhiteSpace(taskDefinition))
-            throw new InvalidOperationException($"No active ECS task definition was found for family {family}. Run deploy/aws/deploy-ecs-services.sh or ./deploy/deploy.sh --ecs-workers once to register it.");
+            throw new InvalidOperationException($"No active ECS task definition was found for family {family}. Run deploy/deploy.py ecs deploy or python3 deploy/deploy.py deploy --ecs-workers once to register it.");
 
         var subnets = SplitCsvConfiguration(configuration.GetArgusValue("Ecs:Subnets") ?? configuration["ECS_SUBNETS"]);
         var securityGroups = SplitCsvConfiguration(configuration.GetArgusValue("Ecs:SecurityGroups") ?? configuration["ECS_SECURITY_GROUPS"]);

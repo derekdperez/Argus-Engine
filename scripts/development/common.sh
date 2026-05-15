@@ -20,7 +20,7 @@ argus_dev_repo_root() {
   fi
 
   # Prefer the caller's working directory so scripts still work when launched
-  # from an extracted helper folder such as ./argus-local-dev-scripts.
+  # from an extracted helper folder such as ./deploy.py.
   for candidate in "$PWD" "$dir" "$dir/.." "$dir/../.." "$dir/../../.." "$dir/../../../.."; do
     if [[ -f "$candidate/deploy/docker-compose.yml" ]]; then
       cd "$candidate" && pwd

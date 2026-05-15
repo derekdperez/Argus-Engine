@@ -1,82 +1,55 @@
 # Developer feedback loop deployment
 
-This repo now supports two development deployment paths.
+`deploy/deploy.py` is the only deployment source of truth. It owns local Compose deploys, Google Cloud worker deployment, smoke checks, manifest validation, logs, scaling, and service operations without calling repository shell scripts.
 
-## Normal fast image deploy
-
-```bash
-./deploy/deploy.sh
-```
-
-This remains the safe default. The deploy script fingerprints each app service separately and rebuilds only the service images whose inputs changed. The fingerprint is split internally into:
-
-- **source inputs**: the target project, shared .NET projects, `Directory.Build.props`, and linked resource files;
-- **image inputs**: Dockerfile, Compose recipe, and enum tool/wordlist inputs.
-
-When only `worker-spider` changed, only the `worker-spider` image is rebuilt. When shared projects such as `NightmareV2.Infrastructure` change, dependent service images are rebuilt.
-
-## Source-only hot swap
+## Normal fast deploy
 
 ```bash
-./deploy/deploy.sh --hot
-# or
-./deploy/run-local.sh --hot
+python3 deploy/deploy.py deploy --hot
 ```
 
-Use this when the stack is already running and the change is .NET source only. The script:
+This is the safe default for day-to-day development. It brings the Compose stack up and can target selected services when you pass service names.
 
-1. detects which service fingerprints changed;
-2. checks whether the image recipe changed;
-3. for source-only changes, publishes the changed project inside `mcr.microsoft.com/dotnet/sdk:10.0` using the repo-local `.nuget/packages` cache;
-4. copies the publish output into the running container at `/app`;
-5. restarts only that service.
-
-If the service is not running, or if Dockerfile/Compose/tool inputs changed, the script falls back to a normal image rebuild for that service.
-
-## Cache warm-up
+## Image rebuild
 
 ```bash
-./deploy/prebuild-cache.sh
+python3 deploy/deploy.py deploy --image command-center-web worker-spider
 ```
 
-Run this after cloning, after dependency changes, or before a long debugging session. It builds all app images once and warms:
-
-- Docker build cache layers;
-- Dockerfile NuGet cache mounts;
-- Go module/build caches for the enum worker tools;
-- repo-local `.nuget/packages` used by hot-swap publishing.
+Use this when Dockerfile inputs, package dependencies, static assets, or runtime image contents changed.
 
 ## Full rebuild
 
 ```bash
-./deploy/deploy.sh -fresh
+python3 deploy/deploy.py deploy --fresh
 ```
 
-Use this after base image problems, suspicious stale output, or major deploy recipe changes. It forces `--pull --no-cache` and recreates containers.
+Use this after base image problems, suspicious stale output, or major deploy recipe changes. It rebuilds images without cache and recreates containers.
 
-## Dockerfile changes
+## Google Cloud workers
 
-The worker images were split:
+```bash
+python3 deploy/deploy.py deploy --gcp-workers
+python3 deploy/deploy.py gcp scale worker-spider=2:10 worker-enum=2
+```
 
-- `deploy/Dockerfile.worker` is now the generic .NET worker image and no longer installs `subfinder` or `amass`.
-- `deploy/Dockerfile.worker-enum` is the only image that builds and includes `subfinder`, `amass`, and the enum wordlist.
-- `deploy/Dockerfile.web` and both worker Dockerfiles copy only the project dependency closure instead of the entire `src` tree, so unrelated worker edits do not invalidate Docker publish layers.
+GCP is a primary deployment path. The Python deploy console provisions required GCP services, builds/pushes worker images, deploys Cloud Run worker services, and supports autoscaling ranges or explicit counts.
 
 ## Practical workflow
 
 ```bash
-# Once per machine / after dependencies change
-./deploy/prebuild-cache.sh
+# Validate manifests
+python3 deploy/deploy.py validate
 
-# Start everything
-./deploy/deploy.sh
+# Start or update everything
+python3 deploy/deploy.py deploy --hot
 
-# Edit one worker or the web app, then hot-swap source-only changes
-./deploy/deploy.sh --hot
+# Rebuild changed service images when image inputs changed
+python3 deploy/deploy.py deploy --image
 
-# If Dockerfile, compose, packages, external tools, or wordlists changed
-./deploy/deploy.sh
+# Smoke check the running stack
+python3 deploy/deploy.py smoke
 
 # If the environment is stale or confusing
-./deploy/deploy.sh -fresh
+python3 deploy/deploy.py deploy --fresh
 ```

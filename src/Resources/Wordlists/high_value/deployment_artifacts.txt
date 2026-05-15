@@ -13,7 +13,7 @@
 /azure-pipelines.yml
 /Jenkinsfile
 /jenkins/
-/deploy.sh
+/deploy.py
 /deployment.yml
 /kubernetes/
 /k8s/

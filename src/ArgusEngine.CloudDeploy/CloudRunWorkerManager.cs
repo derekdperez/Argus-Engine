@@ -9,52 +9,75 @@ namespace ArgusEngine.CloudDeploy;
 /// Creates, updates, scales, and deletes Cloud Run services for each worker type
 /// using the Google.Cloud.Run.V2 SDK directly — no gcloud CLI needed here.
 /// </summary>
-internal sealed class CloudRunWorkerManager(
-    IOptions<GcpDeployOptions>          options,
-    GcpImageBuilder                     imageBuilder,
-    ILogger<CloudRunWorkerManager>      logger)
+internal sealed class CloudRunWorkerManager : IAsyncDisposable
 {
-    private readonly GcpDeployOptions _opts = options.Value;
+    private readonly GcpDeployOptions _opts;
+    private readonly GcpImageBuilder _imageBuilder;
+    private readonly ILogger<CloudRunWorkerManager> _logger;
+    private readonly ServicesClient _client;
+
+    private CloudRunWorkerManager(
+        GcpDeployOptions opts,
+        GcpImageBuilder imageBuilder,
+        ILogger<CloudRunWorkerManager> logger,
+        ServicesClient client)
+    {
+        _opts = opts;
+        _imageBuilder = imageBuilder;
+        _logger = logger;
+        _client = client;
+    }
+
+    public static async Task<CloudRunWorkerManager> CreateAsync(
+        IOptions<GcpDeployOptions> options,
+        GcpImageBuilder imageBuilder,
+        ILogger<CloudRunWorkerManager> logger,
+        CancellationToken ct = default)
+    {
+        var client = await ServicesClient.CreateAsync(cancellationToken: ct);
+        return new(options.Value, imageBuilder, logger, client);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await ServicesClient.ShutdownDefaultChannelsAsync();
+    }
 
     // Cloud Run service name for a given worker
-    private string ServiceName(WorkerType w) =>
-        $"argus-worker-{w.ToSlug()}";
+    private string ServiceName(WorkerType w) => $"argus-worker-{w.ToSlug()}";
 
     // Full resource name: projects/{project}/locations/{region}/services/{name}
     private string ServiceResourceName(WorkerType w) =>
         $"projects/{_opts.ProjectId}/locations/{_opts.Region}/services/{ServiceName(w)}";
 
     // Parent for list/create calls
-    private string Parent =>
-        $"projects/{_opts.ProjectId}/locations/{_opts.Region}";
+    private string Parent => $"projects/{_opts.ProjectId}/locations/{_opts.Region}";
 
     // ── Deploy ────────────────────────────────────────────────────────────────
-
     public async Task<CloudDeployResult> DeployAsync(
-        WorkerType                      worker,
+        WorkerType worker,
         IProgress<DeployProgressEvent>? progress,
-        CancellationToken               ct)
+        CancellationToken ct)
     {
-        var imageUri = imageBuilder.GetImageUri(worker);
+        var imageUri = _imageBuilder.GetImageUri(worker);
         var serviceName = ServiceName(worker);
 
         progress?.Report(new(worker, $"Deploying Cloud Run service: {serviceName}"));
-        logger.LogInformation("Deploying worker {Worker} as service {Service}", worker, serviceName);
+        _logger.LogInformation("Deploying worker {Worker} as service {Service}", worker, serviceName);
 
-        var client = await ServicesClient.CreateAsync(cancellationToken: ct);
         var desiredService = BuildServiceSpec(worker, imageUri);
 
         try
         {
             // Try to get the existing service — update if it exists, create if not
-            var existing = await client.GetServiceAsync(ServiceResourceName(worker), ct);
+            var existing = await _client.GetServiceAsync(ServiceResourceName(worker), ct);
 
             progress?.Report(new(worker, $"Updating existing service {serviceName}..."));
             desiredService.Name = existing.Name;
 
-            var updateOp = await client.UpdateServiceAsync(new UpdateServiceRequest
+            var updateOp = await _client.UpdateServiceAsync(new UpdateServiceRequest
             {
-                Service = desiredService
+                Service = desiredService,
             });
 
             var updated = await updateOp.PollUntilCompletedAsync();
@@ -67,11 +90,11 @@ internal sealed class CloudRunWorkerManager(
         {
             progress?.Report(new(worker, $"Creating new service {serviceName}..."));
 
-            var createOp = await client.CreateServiceAsync(new CreateServiceRequest
+            var createOp = await _client.CreateServiceAsync(new CreateServiceRequest
             {
-                Parent    = Parent,
+                Parent = Parent,
                 ServiceId = serviceName,
-                Service   = desiredService,
+                Service = desiredService,
             }, ct);
 
             var created = await createOp.PollUntilCompletedAsync();
@@ -82,46 +105,50 @@ internal sealed class CloudRunWorkerManager(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to deploy worker {Worker}", worker);
+            _logger.LogError(ex, "Failed to deploy worker {Worker}", worker);
             return CloudDeployResult.Fail($"Deploy failed for {serviceName}: {ex.Message}");
         }
     }
 
     // ── Scale ─────────────────────────────────────────────────────────────────
-
     public async Task<CloudDeployResult> ScaleAsync(
-        WorkerType        worker,
-        int               minInstances,
-        int               maxInstances,
+        WorkerType worker,
+        int minInstances,
+        int maxInstances,
         CancellationToken ct)
     {
-        var client = await ServicesClient.CreateAsync(cancellationToken: ct);
         var normalizedMin = Math.Clamp(minInstances, 0, 1000);
         var normalizedMax = Math.Clamp(Math.Max(maxInstances, Math.Max(normalizedMin, 1)), 1, 1000);
 
         try
         {
-            var existing = await client.GetServiceAsync(ServiceResourceName(worker), ct);
+            var existing = await _client.GetServiceAsync(ServiceResourceName(worker), ct);
             var currentImage = existing.Template?.Containers.FirstOrDefault()?.Image;
-            var desiredService = BuildServiceSpec(worker, string.IsNullOrWhiteSpace(currentImage) ? imageBuilder.GetImageUri(worker) : currentImage);
-            desiredService.Name = existing.Name;
+            var desiredService = BuildServiceSpec(
+                worker,
+                string.IsNullOrWhiteSpace(currentImage)
+                    ? _imageBuilder.GetImageUri(worker)
+                    : currentImage);
 
+            desiredService.Name = existing.Name;
             desiredService.Template.Scaling = new RevisionScaling
             {
                 MinInstanceCount = normalizedMin,
-                MaxInstanceCount = normalizedMax
+                MaxInstanceCount = normalizedMax,
             };
 
-            var op = await client.UpdateServiceAsync(new UpdateServiceRequest
+            var op = await _client.UpdateServiceAsync(new UpdateServiceRequest
             {
-                Service = desiredService
+                Service = desiredService,
             });
 
             await op.PollUntilCompletedAsync();
 
-            logger.LogInformation(
+            _logger.LogInformation(
                 "Scaled {Worker} to min={Min} max={Max}",
-                worker, normalizedMin, normalizedMax);
+                worker,
+                normalizedMin,
+                normalizedMax);
 
             return CloudDeployResult.Ok(
                 $"Scaled {ServiceName(worker)}: min={normalizedMin}, max={normalizedMax}");
@@ -141,14 +168,11 @@ internal sealed class CloudRunWorkerManager(
     }
 
     // ── Status ────────────────────────────────────────────────────────────────
-
     public async Task<WorkerStatus> GetStatusAsync(WorkerType worker, CancellationToken ct)
     {
-        var client = await ServicesClient.CreateAsync(cancellationToken: ct);
-
         try
         {
-            var svc = await client.GetServiceAsync(ServiceResourceName(worker), ct);
+            var svc = await _client.GetServiceAsync(ServiceResourceName(worker), ct);
 
             // Derive running instance count from the condition/traffic info.
             // The SDK doesn't expose live instance count directly; use 0 as a
@@ -157,74 +181,71 @@ internal sealed class CloudRunWorkerManager(
             var status = condition?.State switch
             {
                 Google.Cloud.Run.V2.Condition.Types.State.ConditionSucceeded => CloudDeployStatus.Running,
-                Google.Cloud.Run.V2.Condition.Types.State.ConditionFailed    => CloudDeployStatus.Failed,
-                _                                                             => CloudDeployStatus.Deploying,
+                Google.Cloud.Run.V2.Condition.Types.State.ConditionFailed => CloudDeployStatus.Failed,
+                _ => CloudDeployStatus.Deploying,
             };
 
             return new WorkerStatus(
-                Worker:           worker,
-                Status:           status,
-                ServiceUrl:       svc.Uri,
+                Worker: worker,
+                Status: status,
+                ServiceUrl: svc.Uri,
                 CurrentInstances: 0,
-                MinInstances:     svc.Template.Scaling?.MinInstanceCount ?? _opts.WorkerMinInstances,
-                MaxInstances:     svc.Template.Scaling?.MaxInstanceCount ?? _opts.WorkerMaxInstances,
-                ImageUri:         svc.Template.Containers.FirstOrDefault()?.Image,
-                LastError:        status == CloudDeployStatus.Failed ? condition?.Message : null
+                MinInstances: svc.Template.Scaling?.MinInstanceCount ?? _opts.WorkerMinInstances,
+                MaxInstances: svc.Template.Scaling?.MaxInstanceCount ?? _opts.WorkerMaxInstances,
+                ImageUri: svc.Template.Containers.FirstOrDefault()?.Image,
+                LastError: status == CloudDeployStatus.Failed ? condition?.Message : null
             );
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
         {
             return new WorkerStatus(
-                Worker:           worker,
-                Status:           CloudDeployStatus.NotDeployed,
-                ServiceUrl:       null,
+                Worker: worker,
+                Status: CloudDeployStatus.NotDeployed,
+                ServiceUrl: null,
                 CurrentInstances: 0,
-                MinInstances:     0,
-                MaxInstances:     0,
-                ImageUri:         null,
-                LastError:        null
+                MinInstances: 0,
+                MaxInstances: 0,
+                ImageUri: null,
+                LastError: null
             );
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.InvalidArgument)
         {
             return new WorkerStatus(
-                Worker:           worker,
-                Status:           CloudDeployStatus.Failed,
-                ServiceUrl:       null,
+                Worker: worker,
+                Status: CloudDeployStatus.Failed,
+                ServiceUrl: null,
                 CurrentInstances: 0,
-                MinInstances:     0,
-                MaxInstances:     0,
-                ImageUri:         null,
-                LastError:        $"Invalid Cloud Run request/resource for {ServiceName(worker)}: {ex.Status.Detail}"
+                MinInstances: 0,
+                MaxInstances: 0,
+                ImageUri: null,
+                LastError: $"Invalid Cloud Run request/resource for {ServiceName(worker)}: {ex.Status.Detail}"
             );
         }
         catch (Exception ex)
         {
             return new WorkerStatus(
-                Worker:           worker,
-                Status:           CloudDeployStatus.Failed,
-                ServiceUrl:       null,
+                Worker: worker,
+                Status: CloudDeployStatus.Failed,
+                ServiceUrl: null,
                 CurrentInstances: 0,
-                MinInstances:     0,
-                MaxInstances:     0,
-                ImageUri:         null,
-                LastError:        $"Cloud status fetch failed for {ServiceName(worker)}: {ex.Message}"
+                MinInstances: 0,
+                MaxInstances: 0,
+                ImageUri: null,
+                LastError: $"Cloud status fetch failed for {ServiceName(worker)}: {ex.Message}"
             );
         }
     }
 
     // ── Teardown ──────────────────────────────────────────────────────────────
-
     public async Task<CloudDeployResult> TeardownAsync(WorkerType worker, CancellationToken ct)
     {
-        var client = await ServicesClient.CreateAsync(cancellationToken: ct);
-
         try
         {
-            var op = await client.DeleteServiceAsync(ServiceResourceName(worker), ct);
+            var op = await _client.DeleteServiceAsync(ServiceResourceName(worker), ct);
             await op.PollUntilCompletedAsync();
 
-            logger.LogInformation("Deleted Cloud Run service {Service}", ServiceName(worker));
+            _logger.LogInformation("Deleted Cloud Run service {Service}", ServiceName(worker));
             return CloudDeployResult.Ok($"Deleted {ServiceName(worker)}");
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
@@ -238,7 +259,6 @@ internal sealed class CloudRunWorkerManager(
     }
 
     // ── Spec builder ─────────────────────────────────────────────────────────
-
     private Service BuildServiceSpec(WorkerType worker, string imageUri)
     {
         var service = new Service
@@ -254,10 +274,10 @@ internal sealed class CloudRunWorkerManager(
                         {
                             Limits =
                             {
-                                ["cpu"]    = _opts.WorkerCpu,
+                                ["cpu"] = _opts.WorkerCpu,
                                 ["memory"] = _opts.WorkerMemory,
                             },
-                            CpuIdle = true,  // don't bill CPU while idle (scale-to-zero friendly)
+                            CpuIdle = true, // don't bill CPU while idle (scale-to-zero friendly)
                         },
                         // Workers listen on 8080 for Cloud Run health probes
                         Ports = { new ContainerPort { ContainerPort_ = 8080 } },
@@ -283,9 +303,9 @@ internal sealed class CloudRunWorkerManager(
     private IEnumerable<EnvVar> BuildEnvVars()
     {
         // Core connectivity — workers need to reach the local host
-        yield return Env("RabbitMq__Url",            _opts.RabbitMqPublicUrl);
-        yield return Env("ConnectionStrings__Argus",  _opts.PostgresPublicUrl);
-        yield return Env("Redis__Url",               _opts.RedisPublicUrl);
+        yield return Env("RabbitMq__Url", _opts.RabbitMqPublicUrl);
+        yield return Env("ConnectionStrings__Argus", _opts.PostgresPublicUrl);
+        yield return Env("Redis__Url", _opts.RedisPublicUrl);
         yield return Env("CommandCenter__ApiBaseUrl", _opts.CommandCenterApiUrl);
 
         // Standard .NET / ASP.NET vars for Cloud Run
@@ -293,8 +313,11 @@ internal sealed class CloudRunWorkerManager(
         yield return Env("DOTNET_RUNNING_IN_CONTAINER", "true");
     }
 
-    private static EnvVar Env(string name, string value) =>
-        new() { Name = name, Value = value };
+    private static EnvVar Env(string name, string value) => new()
+    {
+        Name = name,
+        Value = value,
+    };
 
     private int InitialMinInstances(WorkerType worker) =>
         worker is WorkerType.Spider or WorkerType.Enumeration or WorkerType.HttpRequester

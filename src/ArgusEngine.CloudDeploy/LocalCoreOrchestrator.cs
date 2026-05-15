@@ -7,11 +7,11 @@ namespace ArgusEngine.CloudDeploy;
 
 /// <summary>
 /// Manages the local core services (Postgres, Redis, RabbitMQ, CommandCenter stack)
-/// by shelling out to <c>docker compose</c> via CliWrap.
+/// by shelling out to docker compose via CliWrap.
 /// </summary>
 internal sealed class LocalCoreOrchestrator(
-    IOptions<GcpDeployOptions>      options,
-    ILogger<LocalCoreOrchestrator>  logger)
+    IOptions<GcpDeployOptions> options,
+    ILogger<LocalCoreOrchestrator> logger)
 {
     private readonly GcpDeployOptions _opts = options.Value;
 
@@ -22,32 +22,45 @@ internal sealed class LocalCoreOrchestrator(
 
     public async Task<CloudDeployResult> StartAsync(
         IProgress<DeployProgressEvent>? progress,
-        CancellationToken               ct)
+        CancellationToken ct)
     {
         if (!File.Exists(ComposeFilePath))
+        {
             return CloudDeployResult.Fail(
                 $"Core compose file not found: {ComposeFilePath}. " +
-                "Ensure deploy/docker-compose.core.yml exists in the repo.");
+                "Ensure deploy/docker-compose.yml exists in the repo.");
+        }
 
         progress?.Report(new(null, "Starting local core services via docker compose..."));
         logger.LogInformation("Starting local core services from {File}", ComposeFilePath);
 
         return await RunComposeAsync([
-            "up", "-d", "--pull", "missing",
-            "--scale", "gatekeeper=0",
-            "--scale", "command-center-spider-dispatcher=0",
-            "--scale", "worker-spider=0",
-            "--scale", "worker-http-requester=0",
-            "--scale", "worker-enum=0",
-            "--scale", "worker-portscan=0",
-            "--scale", "worker-highvalue=0",
-            "--scale", "worker-techid=0",
+            "up",
+            "-d",
+            "--pull",
+            "missing",
+            "--scale",
+            "gatekeeper=0",
+            "--scale",
+            "command-center-spider-dispatcher=0",
+            "--scale",
+            "worker-spider=0",
+            "--scale",
+            "worker-http-requester=0",
+            "--scale",
+            "worker-enum=0",
+            "--scale",
+            "worker-portscan=0",
+            "--scale",
+            "worker-highvalue=0",
+            "--scale",
+            "worker-techid=0",
         ], progress, ct);
     }
 
     public async Task<CloudDeployResult> StopAsync(
         IProgress<DeployProgressEvent>? progress,
-        CancellationToken               ct)
+        CancellationToken ct)
     {
         if (!File.Exists(ComposeFilePath))
             return CloudDeployResult.Fail($"Core compose file not found: {ComposeFilePath}");
@@ -57,14 +70,15 @@ internal sealed class LocalCoreOrchestrator(
     }
 
     private async Task<CloudDeployResult> RunComposeAsync(
-        string[]                        args,
+        string[] args,
         IProgress<DeployProgressEvent>? progress,
-        CancellationToken               ct)
+        CancellationToken ct)
     {
         var cmd = Cli.Wrap("docker")
             .WithArguments([
                 "compose",
-                "--file", ComposeFilePath,
+                "--file",
+                ComposeFilePath,
                 ..args,
             ])
             .WithWorkingDirectory(_opts.RepoRoot)
@@ -79,7 +93,7 @@ internal sealed class LocalCoreOrchestrator(
             })
             .WithValidation(CommandResultValidation.None);
 
-        var errors = new List<string>();
+        var stderrLines = new List<string>();
 
         await foreach (var ev in cmd.ListenAsync(ct))
         {
@@ -89,22 +103,24 @@ internal sealed class LocalCoreOrchestrator(
                     logger.LogDebug("[compose] {Line}", o.Text);
                     progress?.Report(new(null, o.Text));
                     break;
+
                 case StandardErrorCommandEvent e:
-                    // docker compose writes normal status lines to stderr too
+                    // docker compose writes informational status lines to stderr too.
+                    // Do not classify these as failures; rely only on the process exit code.
                     logger.LogDebug("[compose:err] {Line}", e.Text);
                     progress?.Report(new(null, e.Text));
-                    if (e.Text.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
-                        e.Text.Contains("error", StringComparison.OrdinalIgnoreCase))
-                        errors.Add(e.Text);
+                    stderrLines.Add(e.Text);
                     break;
-                case ExitedCommandEvent ex:
-                    if (ex.ExitCode != 0)
-                    {
-                        var msg = errors.Count > 0
-                            ? string.Join("; ", errors)
-                            : $"docker compose exited with code {ex.ExitCode}";
-                        return CloudDeployResult.Fail(msg);
-                    }
+
+                case ExitedCommandEvent ex when ex.ExitCode != 0:
+                    var detail = stderrLines.Count > 0
+                        ? string.Join(Environment.NewLine, stderrLines.TakeLast(5))
+                        : $"exit code {ex.ExitCode}";
+
+                    return CloudDeployResult.Fail(
+                        $"docker compose failed (exit {ex.ExitCode}):{Environment.NewLine}{detail}");
+
+                case ExitedCommandEvent:
                     break;
             }
         }

@@ -50,4 +50,9 @@ pack.ps1
 unpack.ps1
 packed.json
 packed.zip
-
+build.log
+todo.txt
+targets.txt
+targets.txt.bak
+.ai/
+.ai-debug/

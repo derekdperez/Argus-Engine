@@ -6,14 +6,16 @@
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- Avoid workload auto-resolution in constrained CI/dev containers. -->
     <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+
+    <!-- Central package management -->
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
 
-    <!-- Central product metadata. Final deployment version is forced in Directory.Build.targets. -->
-    <Product>Argus Engine</Product>
-    <Company>Argus Engine</Company>
     <Authors>Argus Engine</Authors>
+    <Company>Argus Engine</Company>
+    <Product>Argus Engine</Product>
     <RepositoryUrl>https://github.com/derekdperez/Argus-Engine</RepositoryUrl>
-    <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
 </Project>

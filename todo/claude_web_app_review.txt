@@ -1,0 +1,29 @@
+Web App Review
+The web application is src/ArgusEngine.CommandCenter.Web — a Blazor Server app using Radzen components. The deploy/ArgusEngine.DeployUi is a separate deploy-focused UI, likely a Blazor or WinForms tool. From what's visible:
+Architecture split (CommandCenter.Web vs. CloudDeploy API)
+The CloudDeploy feature exists in two places simultaneously: as a Blazor page (CloudDeploy.razor, deleted and partially restored) in CommandCenter.Web, and as a standalone API project (ArgusEngine.CommandCenter.CloudDeploy.Api). The appsettings.GcpDeploy.json explicitly calls this out:
+
+"Registration in CommandCenter.Web Program.cs: builder.Services.AddGcpHybridDeploy(builder.Configuration)"
+"Registration in CommandCenter.CloudDeploy.Api Program.cs: Already included."
+
+This duplication means the deploy service is registered in two separate processes. That's a valid design (web UI calls API, API does the actual work), but the CloudDeploy.razor page directly injects IGcpHybridDeployService without going through the API. So you have two paths to the same operation with no documented policy for which to use.
+Recommendation: Pick one boundary. Either the Blazor page calls the CloudDeploy.Api over HTTP (clean separation), or the standalone API project is eliminated and the Blazor app is the only host. The current state where both patterns coexist creates confusion about where deploys actually happen.
+Endpoint Organization
+CloudDeployEndpoints.cs at the repo root suggests Minimal API endpoints (MapGet, MapPost). Without seeing the file (it was 404'd), the pattern of having endpoints in a flat root file is concerning — especially since the src projects have properly organized Endpoints/ folders (AssetAdmissionDecisionEndpoints.cs, DataRetentionAdminEndpoints.cs, HttpArtifactBackfillEndpoints.cs are referenced in the README restore list).
+Dependency Injection
+GcpDeployServiceRegistration.AddGcpHybridDeploy() registers all three internal classes (GcpImageBuilder, CloudRunWorkerManager, LocalCoreOrchestrator) as singletons. This is appropriate given that these are stateless wrappers around external systems. However:
+
+LocalCoreOrchestrator holds no state but its ComposeFilePath property evaluates _opts.CoreComposeFile on every call. Since GcpDeployOptions is injected via IOptions<T> (not IOptionsSnapshot), option changes at runtime are not picked up. For a tool-mode app (not a web server), this is fine, but document it.
+If GcpHybridDeployService does maintain any deploy-in-progress state (progress channels, cancellation tokens for active operations), singletons are not safe for concurrent requests without proper locking. I would inspect GcpHybridDeployService.cs (not accessible) specifically for this pattern.
+
+Blazor-Specific Concerns
+Blazor Server apps have specific threading rules. Any long-running operation called from a component (like deploying workers, which can take minutes) must not block the SignalR circuit. The IProgress<DeployProgressEvent> pattern already indicates awareness of this — progress events should be marshalled back to the Blazor renderer via InvokeAsync. I would verify that CloudDeploy.razor uses await InvokeAsync(StateHasChanged) in its progress callback rather than calling StateHasChanged() directly from a background thread.
+Configuration Management
+
+Two config files exist for the same section: appsettings.GcpDeploy.json (at root, with // comments making it invalid JSON) and the real appsettings.json inside each project. The root file appears to be documentation masquerading as a config file, which is confusing.
+No evidence of Secret Manager or Azure Key Vault integration for the web app's own connection strings.
+The GcpDeployOptions.RepoRoot defaulting to Directory.GetCurrentDirectory() is fragile when deployed as a container or run from an IDE that sets the working directory differently.
+
+Error Handling and Logging
+The CloudRunWorkerManager has reasonable error handling — it catches RpcException for NotFound specifically, and Exception broadly for everything else, returning CloudDeployResult.Fail() rather than throwing. This prevents unhandled exceptions from surfacing to the UI.
+What's missing: structured logging for the deploy operations. The logger.LogInformation("Deploying worker {Worker} as service {Service}", worker, serviceName) call is good, but the exception logging logger.LogError(ex, "Failed to deploy worker {Worker}", worker) swallows the exception and returns a Fail result — this is correct for the user-facing flow but means that if the exception is transient (e.g., a credentials timeout), there's no retry logic.

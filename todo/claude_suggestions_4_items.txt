@@ -1,0 +1,79 @@
+4. Wire Up GcpDeployOptions.Validate() at Application Startup
+Problem: GcpDeployOptions has a well-written Validate() method that checks for ProjectId, Region, HostPublicAddress, and RabbitMqPublicUrl. But it is never called by the ASP.NET Core options validation pipeline:
+csharp// In GcpDeployServiceRegistration.cs — this binds, but does NOT validate:
+services.Configure<GcpDeployOptions>(configuration.GetSection(GcpDeployOptions.Section));
+If a developer forgets to set ProjectId, the service starts successfully and only fails at the first deploy attempt, typically with an unhelpful gRPC InvalidArgument or NotFound error that makes it look like a Cloud Run issue rather than a configuration issue.
+Why it matters: Fail-fast at startup is a core reliability principle. Silent misconfiguration leads to runtime errors that are hard to correlate.
+Files involved: GcpDeployServiceRegistration.cs, GcpDeployOptions.cs.
+Suggested fix:
+csharpservices.AddOptions<GcpDeployOptions>()
+    .Bind(configuration.GetSection(GcpDeployOptions.Section))
+    .Validate(opts =>
+    {
+        var errors = opts.Validate().ToList();
+        if (errors.Count > 0)
+            throw new OptionsValidationException(
+                nameof(GcpDeployOptions), typeof(GcpDeployOptions), errors);
+        return true;
+    }, "GcpDeploy configuration is invalid — see errors above.")
+    .ValidateOnStart();
+Alternatively, implement IValidateOptions<GcpDeployOptions> in a separate class and register it.
+Estimated effort: Small
+Risk level: Low
+
+
+
+
+6. Move ToCsprojPath() Out of the WorkerType Enum
+Problem: WorkerTypeExtensions.ToCsprojPath() embeds file system paths relative to the repo root directly in a domain enum:
+csharpWorkerType.Enumeration =>
+  "src/ArgusEngine.Workers.Enumeration/ArgusEngine.Workers.Enumeration.csproj",
+This means a domain-layer type (WorkerType) has a hard dependency on the build system's physical layout. If any worker project is renamed or relocated, this silently returns a wrong path. The GcpImageBuilder (which consumes this path) will fail at image build time with a file-not-found error rather than a compile-time or startup error.
+Why it matters: Domain types should not know about folder structures. This is an infrastructure concern. It also makes the domain untestable without the actual repo checkout.
+Files involved: WorkerType.cs, wherever GcpImageBuilder consumes ToCsprojPath().
+Suggested fix: Move the path mapping to GcpDeployOptions (configuration-driven):
+json"GcpDeploy": {
+  "WorkerProjectPaths": {
+    "Enumeration": "src/ArgusEngine.Workers.Enumeration/...",
+    "Spider": "src/ArgusEngine.Workers.Spider/..."
+  }
+}
+Or inject it via a IWorkerProjectPathResolver abstraction in GcpImageBuilder. Either way, the WorkerType enum returns to being a pure domain concept.
+Estimated effort: Small-Medium
+Risk level: Low
+
+
+8. Use ImageTag Pinning Instead of "latest" in Deploy Defaults
+Problem: GcpDeployOptions.ImageTag defaults to "latest" and the example appsettings.GcpDeploy.json also uses "latest". When GcpHybridDeployService builds and deploys workers using this tag, every deploy overwrites the latest tag. This means:
+
+You cannot roll back to a previous image — there's only ever one latest
+Two concurrent deploys could race and produce non-deterministic images
+Cloud Run itself may serve cached old images after a deploy if the digest changes without the tag changing
+
+Why it matters: In a hybrid security scanning engine, deploying a broken worker and being unable to roll back is a high-severity operational failure.
+Files involved: GcpDeployOptions.cs, appsettings.GcpDeploy.json, GcpImageBuilder.cs.
+Suggested fix: Generate a unique tag per deploy as the default. The VERSION file at the repo root is a good candidate, combined with a short git SHA:
+csharppublic string ImageTag { get; set; } = 
+    $"{File.ReadAllText("VERSION").Trim()}-{GetGitShortSha()}";
+Or accept the tag as a parameter to the deploy operation and require CI to provide it. Store deployed tags in a per-worker state record so rollback is possible.
+Estimated effort: Medium
+Risk level: High if not done (rollback impossible)
+
+
+
+9. Enable TreatWarningsAsErrors and Fix Warning Suppression
+Problem: Directory.Build.props has:
+xml<TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+<NoWarn>$(NoWarn);CA1707</NoWarn>
+CA1707 is the "identifiers should not contain underscores" analyzer warning — suppressed globally. TreatWarningsAsErrors = false means the entire codebase can accumulate nullable reference warnings, unused variable warnings, and analyzer findings silently.
+Why it matters: In .NET 10 with Nullable = enable, ignoring nullable warnings means NullReferenceExceptions at runtime that the compiler would have caught at build time. The CA1707 suppression likely exists to silence test method names (Should_DoX_When_Y), but it's suppressed globally instead of only for the test projects.
+Files involved: Directory.Build.props, individual test project .csproj files.
+Suggested fix:
+xml<!-- Directory.Build.props — production projects -->
+<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+<!-- In test .csproj files only -->
+<NoWarn>$(NoWarn);CA1707</NoWarn>
+Address any existing warnings before enabling — don't suppress them globally.
+Estimated effort: Medium (fixing suppressed warnings)
+Risk level: Low

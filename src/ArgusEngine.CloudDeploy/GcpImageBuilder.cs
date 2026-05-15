@@ -7,19 +7,19 @@ namespace ArgusEngine.CloudDeploy;
 
 /// <summary>
 /// Builds worker Docker images and pushes them to Google Artifact Registry
-/// by shelling out to <c>docker</c> and <c>gcloud</c> via CliWrap.
+/// by shelling out to docker and gcloud via CliWrap.
 /// </summary>
 internal sealed class GcpImageBuilder(
-    IOptions<GcpDeployOptions>  options,
-    ILogger<GcpImageBuilder>    logger)
+    IOptions<GcpDeployOptions> options,
+    ILogger<GcpImageBuilder> logger)
 {
     private readonly GcpDeployOptions _opts = options.Value;
+    private readonly string _imageTag = options.Value.ResolvedImageTag;
 
     public string GetImageUri(WorkerType worker) =>
-        $"{_opts.ResolvedImagePrefix}/worker-{worker.ToSlug()}:{_opts.ImageTag}";
+        $"{_opts.ResolvedImagePrefix}/worker-{worker.ToSlug()}:{_imageTag}";
 
     // ── GAR setup ─────────────────────────────────────────────────────────────
-
     public async Task EnsureGarRepositoryAsync(
         IProgress<DeployProgressEvent>? progress,
         CancellationToken ct)
@@ -28,10 +28,12 @@ internal sealed class GcpImageBuilder(
 
         await Cli.Wrap("gcloud")
             .WithArguments([
-                "services", "enable",
+                "services",
+                "enable",
                 "artifactregistry.googleapis.com",
                 "run.googleapis.com",
-                "--project", _opts.ProjectId,
+                "--project",
+                _opts.ProjectId,
                 "--quiet",
             ])
             .WithValidation(CommandResultValidation.ZeroExitCode)
@@ -40,10 +42,16 @@ internal sealed class GcpImageBuilder(
         // Check if repo exists
         var check = await Cli.Wrap("gcloud")
             .WithArguments([
-                "artifacts", "repositories", "describe", _opts.GarRepository,
-                "--location", _opts.Region,
-                "--project", _opts.ProjectId,
-                "--format", "value(name)",
+                "artifacts",
+                "repositories",
+                "describe",
+                _opts.GarRepository,
+                "--location",
+                _opts.Region,
+                "--project",
+                _opts.ProjectId,
+                "--format",
+                "value(name)",
             ])
             .WithValidation(CommandResultValidation.None)
             .ExecuteBufferedAsync(ct);
@@ -58,11 +66,18 @@ internal sealed class GcpImageBuilder(
 
         await Cli.Wrap("gcloud")
             .WithArguments([
-                "artifacts", "repositories", "create", _opts.GarRepository,
-                "--repository-format", "docker",
-                "--location", _opts.Region,
-                "--project", _opts.ProjectId,
-                "--description", "Argus Engine worker images",
+                "artifacts",
+                "repositories",
+                "create",
+                _opts.GarRepository,
+                "--repository-format",
+                "docker",
+                "--location",
+                _opts.Region,
+                "--project",
+                _opts.ProjectId,
+                "--description",
+                "Argus Engine worker images",
                 "--quiet",
             ])
             .WithValidation(CommandResultValidation.ZeroExitCode)
@@ -71,7 +86,8 @@ internal sealed class GcpImageBuilder(
         // Configure Docker credential helper
         await Cli.Wrap("gcloud")
             .WithArguments([
-                "auth", "configure-docker",
+                "auth",
+                "configure-docker",
                 $"{_opts.Region}-docker.pkg.dev",
                 "--quiet",
             ])
@@ -82,35 +98,52 @@ internal sealed class GcpImageBuilder(
     }
 
     // ── Build ─────────────────────────────────────────────────────────────────
-
     public async Task<CloudDeployResult> BuildImageAsync(
-        WorkerType                      worker,
+        WorkerType worker,
         IProgress<DeployProgressEvent>? progress,
-        CancellationToken               ct)
+        CancellationToken ct)
     {
         var imageUri = GetImageUri(worker);
-        var projectDir = worker.ToProjectDir();
-        var appDll = worker.ToAppDll();
-        var dockerfileName = worker == WorkerType.Enumeration ? "Dockerfile.worker-enum" : "Dockerfile.worker";
+        var projectPath = _opts.GetWorkerProjectPath(worker);
+        var projectDir = _opts.GetWorkerProjectDirectory(worker);
+        var appDll = _opts.GetWorkerAppDll(worker);
+        var dockerfileName = worker == WorkerType.Enumeration
+            ? "Dockerfile.worker-enum"
+            : "Dockerfile.worker";
         var dockerfilePath = Path.Combine(_opts.RepoRoot, "deploy", dockerfileName);
 
         if (!File.Exists(dockerfilePath))
+        {
             return CloudDeployResult.Fail(
-                $"Dockerfile.worker not found at {dockerfilePath}. " +
-                "Ensure deploy/Dockerfile.worker exists in the repo.");
+                $"Dockerfile '{dockerfileName}' not found at {dockerfilePath}. " +
+                $"Ensure deploy/{dockerfileName} exists in the repo.");
+        }
 
         progress?.Report(new(worker, $"Building image: {imageUri}"));
-        logger.LogInformation("Building {Worker} → {Image}", worker, imageUri);
+        logger.LogInformation(
+            "Building {Worker} from {ProjectPath} → {Image}",
+            worker,
+            projectPath,
+            imageUri);
 
         var stdErr = new System.Text.StringBuilder();
-
         var result = await Cli.Wrap("docker")
             .WithArguments([
                 "build",
-                "--file", dockerfilePath,
-                "--build-arg", $"PROJECT_DIR={projectDir}",
-                "--build-arg", $"APP_DLL={appDll}",
-                "--tag", imageUri,
+                "--file",
+                dockerfilePath,
+                "--build-arg",
+                $"PROJECT_PATH={projectPath}",
+                "--build-arg",
+                $"PROJECT_DIR={projectDir}",
+                "--build-arg",
+                $"APP_DLL={appDll}",
+                "--build-arg",
+                $"BUILD_SOURCE_STAMP={_imageTag}",
+                "--build-arg",
+                $"BUILD_TIME_UTC={DateTimeOffset.UtcNow:O}",
+                "--tag",
+                imageUri,
                 _opts.RepoRoot,
             ])
             .WithWorkingDirectory(_opts.RepoRoot)
@@ -122,7 +155,8 @@ internal sealed class GcpImageBuilder(
         {
             var error = stdErr.ToString();
             logger.LogError("Build failed for {Worker}: {Error}", worker, error);
-            return CloudDeployResult.Fail($"docker build failed for {worker.ToSlug()}: {error[..Math.Min(500, error.Length)]}");
+            return CloudDeployResult.Fail(
+                $"docker build failed for {worker.ToSlug()}: {error[..Math.Min(500, error.Length)]}");
         }
 
         progress?.Report(new(worker, $"Build complete: {imageUri}"));
@@ -130,18 +164,17 @@ internal sealed class GcpImageBuilder(
     }
 
     // ── Push ──────────────────────────────────────────────────────────────────
-
     public async Task<CloudDeployResult> PushImageAsync(
-        WorkerType                      worker,
+        WorkerType worker,
         IProgress<DeployProgressEvent>? progress,
-        CancellationToken               ct)
+        CancellationToken ct)
     {
         var imageUri = GetImageUri(worker);
+
         progress?.Report(new(worker, $"Pushing image to GAR: {imageUri}"));
         logger.LogInformation("Pushing {Image}", imageUri);
 
         var stdErr = new System.Text.StringBuilder();
-
         var result = await Cli.Wrap("docker")
             .WithArguments(["push", imageUri])
             .WithStandardErrorPipe(PipeTarget.ToStringBuilder(stdErr))
@@ -152,7 +185,8 @@ internal sealed class GcpImageBuilder(
         {
             var error = stdErr.ToString();
             logger.LogError("Push failed for {Worker}: {Error}", worker, error);
-            return CloudDeployResult.Fail($"docker push failed for {worker.ToSlug()}: {error[..Math.Min(500, error.Length)]}");
+            return CloudDeployResult.Fail(
+                $"docker push failed for {worker.ToSlug()}: {error[..Math.Min(500, error.Length)]}");
         }
 
         progress?.Report(new(worker, $"Pushed: {imageUri}"));
@@ -160,12 +194,13 @@ internal sealed class GcpImageBuilder(
     }
 
     // ── Preflight ─────────────────────────────────────────────────────────────
-
     public async Task<bool> IsDockerAvailableAsync(CancellationToken ct)
     {
-        var r = await Cli.Wrap("docker").WithArguments("info")
+        var r = await Cli.Wrap("docker")
+            .WithArguments("info")
             .WithValidation(CommandResultValidation.None)
             .ExecuteAsync(ct);
+
         return r.ExitCode == 0;
     }
 
@@ -175,6 +210,7 @@ internal sealed class GcpImageBuilder(
             .WithArguments(["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"])
             .WithValidation(CommandResultValidation.None)
             .ExecuteBufferedAsync(ct);
+
         return r.ExitCode == 0 && r.StandardOutput.Contains("@");
     }
 }

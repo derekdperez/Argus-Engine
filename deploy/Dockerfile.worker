@@ -4,58 +4,40 @@
 # Recon tools are intentionally excluded here; only worker-enum uses
 # deploy/Dockerfile.worker-enum.
 
+ARG PROJECT_PATH=src/ArgusEngine.Gatekeeper/ArgusEngine.Gatekeeper.csproj
 ARG PROJECT_DIR=ArgusEngine.Gatekeeper
 ARG APP_DLL=ArgusEngine.Gatekeeper.dll
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-ARG COMPONENT_VERSION=2.6.1
+ARG COMPONENT_VERSION=2.6.2
+ARG PROJECT_PATH
 ARG PROJECT_DIR
+ARG APP_DLL
 
 WORKDIR /src
 
 COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ArgusEngine.slnx ./
-COPY src/*/*.csproj ./src/
-COPY src/tests/*/*.csproj ./src/tests/
-
-RUN for f in src/*.csproj; do \
-    [ -e "$f" ] || continue; \
-    p="${f#src/}"; \
-    p="${p%.csproj}"; \
-    mkdir -p "src/$p"; \
-    mv "$f" "src/$p/"; \
-    done; \
-    if [ -d "src/tests" ]; then \
-      for f in src/tests/*.csproj; do \
-        [ -e "$f" ] || continue; \
-        p="${f#src/tests/}"; \
-        p="${p%.csproj}"; \
-        mkdir -p "src/tests/$p"; \
-        mv "$f" "src/tests/$p/"; \
-      done; \
-    fi
-
-RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
-    dotnet restore "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj"
-
 COPY src/ src/
 
 RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
-    dotnet publish "src/${PROJECT_DIR}/${PROJECT_DIR}.csproj" \
+    dotnet restore "${PROJECT_PATH}"
+
+RUN --mount=type=cache,id=argus-nuget-clean-v2,target=/root/.nuget/packages,sharing=locked \
+    dotnet publish "${PROJECT_PATH}" \
       -c Release -o /app/publish /p:UseAppHost=false \
       -p:maxcpucount -p:ParallelizePublish=true \
       /p:Version="${COMPONENT_VERSION}" \
-      /p:AssemblyVersion="2.6.1.0" \
-      /p:FileVersion="2.6.1.0" \
+      /p:AssemblyVersion="2.6.2.0" \
+      /p:FileVersion="2.6.2.0" \
       /p:InformationalVersion="${COMPONENT_VERSION}"
 
 FROM argus-engine-base:local AS final
 ARG APP_DLL
 ARG BUILD_SOURCE_STAMP=unknown
 ARG BUILD_TIME_UTC=unknown
-ARG COMPONENT_VERSION=2.6.1
+ARG COMPONENT_VERSION=2.6.2
 
 WORKDIR /app
-
 COPY --from=build /app/publish .
 
 ENV APP_DLL=${APP_DLL}

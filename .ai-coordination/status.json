@@ -1,6 +1,6 @@
 {
   "protocol_version": 1,
-  "last_updated": "2026-05-15T21:30:35Z",
+  "last_updated": "2026-05-15T21:36:09Z",
   "agents": {
     "agent-alpha": {
       "status": "idle",
@@ -17,9 +17,8 @@
     "agent-gamma": {
       "status": "busy",
       "current_task": "Fix GCP worker detection, deploy workers to Cloud Run with min=10, max=50 autoscaling",
-      "last_active": "2026-05-15T21:30:35Z",
+      "last_active": "2026-05-15T21:36:09Z",
       "working_on": [
-        "src/ArgusEngine.CommandCenter.CloudDeploy.Api",
         "src/ArgusEngine.CommandCenter.WorkerControl.Api/Services/GcpCloudRunClient.cs",
         "src/ArgusEngine.CommandCenter.WorkerControl.Api/Endpoints/GcpWorkerEndpoints.cs",
         "src/ArgusEngine.CommandCenter.Web/Components/StatusDashboard.razor",
@@ -54,12 +53,6 @@
       "locked_by": "codex",
       "locked_at": "2026-05-15T21:06:25Z",
       "purpose": "Add user-visible action result panel for recon context menu selections",
-      "status": "in_progress"
-    },
-    "src/ArgusEngine.CommandCenter.CloudDeploy.Api": {
-      "locked_by": "agent-gamma",
-      "locked_at": "2026-05-15T21:26:06Z",
-      "purpose": "Fix GCP worker detection and scaling to 10-50 autoscaling per worker type",
       "status": "in_progress"
     }
   },

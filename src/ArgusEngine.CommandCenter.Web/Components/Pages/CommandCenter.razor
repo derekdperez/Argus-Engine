@@ -64,6 +64,17 @@
         <button class="@TabClass(CommandTab.Workers)" @onclick="@(() => SelectTabAsync(CommandTab.Workers))">Workers</button>
     </nav>
 
+    <section id="recon-action-results" class="recon-action-panel" aria-live="polite">
+        <div class="recon-action-panel-header">
+            <div>
+                <h2>Action results</h2>
+                <p id="recon-action-summary">No actions run yet.</p>
+            </div>
+            <button id="recon-action-clear" type="button" class="cc-btn">Clear</button>
+        </div>
+        <div id="recon-action-list" class="recon-action-list"></div>
+    </section>
+
     @if (_activeTab == CommandTab.Targets)
     {
         <section class="cc-panel">
@@ -158,7 +169,7 @@
                         @if (ColumnVisible("subdomains.name"))
                         {
                             <TemplateColumn Title="Subdomain" Context="subdomain" SortBy="@SortSubdomainName" Class="wide-col">
-                                <span data-target-id="@RowKey(subdomain)" data-subdomain-key="@Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue")" class="argus-dg-clip" title="@Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue")">
+                                <span data-target-id="@Text(subdomain, "targetId", "TargetId", "id", "Id")" data-subdomain-key="@Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue")" class="argus-dg-clip" title="@Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue")">
                                     @Display(Text(subdomain, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue"))
                                 </span>
                             </TemplateColumn>

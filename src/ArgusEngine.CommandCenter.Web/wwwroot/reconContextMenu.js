@@ -1,13 +1,25 @@
 window.ReconContextMenu = {
+    _initialized: false,
     _menu: null,
     _overlay: null,
-    _toast: null,
+    _toastElement: null,
     _toastTimer: null,
+    _panel: null,
+    _summary: null,
+    _list: null,
     _targetId: null,
     _subdomainKey: null,
     _rowType: null,
 
     init: function () {
+        if (this._initialized) {
+            this._ensureFeedbackPanel();
+            return;
+        }
+
+        this._initialized = true;
+        this._ensureFeedbackPanel();
+
         document.addEventListener('contextmenu', function (e) {
             var row = e.target.closest('tr');
             if (!row) return;
@@ -40,11 +52,8 @@ window.ReconContextMenu = {
             document.body.appendChild(this._menu);
         }
 
-        if (!this._toast) {
-            this._toast = document.createElement('div');
-            this._toast.className = 'recon-toast';
-            document.body.appendChild(this._toast);
-        }
+        this._ensureFeedbackPanel();
+        this._ensureToast();
 
         this._menu.innerHTML = this._rowType === 'subdomain'
             ? this._subdomainTemplate()
@@ -73,9 +82,23 @@ window.ReconContextMenu = {
         if (this._overlay) this._overlay.style.display = 'none';
     },
 
-    _toast: function (msg, isError) {
-        var el = document.querySelector('.recon-toast');
-        if (!el) return;
+    _ensureToast: function () {
+        if (this._toastElement && document.body.contains(this._toastElement)) {
+            return this._toastElement;
+        }
+
+        this._toastElement = document.querySelector('.recon-toast');
+        if (!this._toastElement) {
+            this._toastElement = document.createElement('div');
+            this._toastElement.className = 'recon-toast';
+            document.body.appendChild(this._toastElement);
+        }
+
+        return this._toastElement;
+    },
+
+    _showToast: function (msg, isError) {
+        var el = this._ensureToast();
         el.textContent = msg;
         el.className = 'recon-toast' + (isError ? ' recon-toast-error' : ' recon-toast-success');
         el.style.display = 'block';
@@ -83,16 +106,153 @@ window.ReconContextMenu = {
         this._toastTimer = setTimeout(function () { el.style.display = 'none'; }, 4000);
     },
 
+    _ensureFeedbackPanel: function () {
+        this._panel = document.getElementById('recon-action-results');
+
+        if (!this._panel) {
+            this._panel = document.createElement('section');
+            this._panel.id = 'recon-action-results';
+            this._panel.className = 'recon-action-panel';
+            this._panel.setAttribute('aria-live', 'polite');
+
+            var header = document.createElement('div');
+            header.className = 'recon-action-panel-header';
+
+            var titleWrap = document.createElement('div');
+            var title = document.createElement('h2');
+            title.textContent = 'Action results';
+            this._summary = document.createElement('p');
+            this._summary.id = 'recon-action-summary';
+            this._summary.textContent = 'No actions run yet.';
+            titleWrap.appendChild(title);
+            titleWrap.appendChild(this._summary);
+
+            var clear = document.createElement('button');
+            clear.id = 'recon-action-clear';
+            clear.type = 'button';
+            clear.className = 'cc-btn';
+            clear.textContent = 'Clear';
+
+            header.appendChild(titleWrap);
+            header.appendChild(clear);
+
+            this._list = document.createElement('div');
+            this._list.id = 'recon-action-list';
+            this._list.className = 'recon-action-list';
+
+            this._panel.appendChild(header);
+            this._panel.appendChild(this._list);
+
+            var anchor = document.querySelector('.cc-tabs');
+            if (anchor && anchor.parentNode) {
+                anchor.parentNode.insertBefore(this._panel, anchor.nextSibling);
+            } else {
+                document.body.appendChild(this._panel);
+            }
+        }
+
+        this._summary = document.getElementById('recon-action-summary');
+        this._list = document.getElementById('recon-action-list');
+
+        var clearButton = document.getElementById('recon-action-clear');
+        if (clearButton && clearButton.getAttribute('data-recon-bound') !== 'true') {
+            clearButton.setAttribute('data-recon-bound', 'true');
+            clearButton.addEventListener('click', function () {
+                ReconContextMenu._clearResults();
+            });
+        }
+    },
+
+    _clearResults: function () {
+        this._ensureFeedbackPanel();
+        if (this._list) {
+            this._list.innerHTML = '';
+        }
+        if (this._summary) {
+            this._summary.textContent = 'No actions run yet.';
+        }
+    },
+
+    _startResult: function (action, targetId, subdomain) {
+        this._ensureFeedbackPanel();
+
+        var entry = document.createElement('article');
+        entry.className = 'recon-action-entry recon-action-pending';
+
+        var top = document.createElement('div');
+        top.className = 'recon-action-entry-top';
+
+        var title = document.createElement('h3');
+        title.textContent = this._actionLabel(action);
+
+        var state = document.createElement('span');
+        state.className = 'recon-action-state';
+        state.textContent = 'Processing';
+
+        top.appendChild(title);
+        top.appendChild(state);
+
+        var meta = document.createElement('div');
+        meta.className = 'recon-action-meta';
+        meta.textContent = this._targetLabel(targetId, subdomain);
+
+        var detail = document.createElement('pre');
+        detail.className = 'recon-action-detail';
+        detail.textContent = 'Request started at ' + new Date().toLocaleTimeString() + '.';
+
+        entry.appendChild(top);
+        entry.appendChild(meta);
+        entry.appendChild(detail);
+        entry._state = state;
+        entry._detail = detail;
+
+        if (this._list) {
+            this._list.prepend(entry);
+            while (this._list.children.length > 12) {
+                this._list.removeChild(this._list.lastElementChild);
+            }
+        }
+
+        if (this._summary) {
+            this._summary.textContent = this._actionLabel(action) + ' is processing.';
+        }
+
+        return entry;
+    },
+
+    _finishResult: function (entry, isError, message, detail) {
+        if (!entry) return;
+
+        entry.className = 'recon-action-entry ' + (isError ? 'recon-action-error' : 'recon-action-success');
+        if (entry._state) {
+            entry._state.textContent = isError ? 'Failed' : 'Completed';
+        }
+        if (entry._detail) {
+            entry._detail.textContent = message + (detail ? '\n' + detail : '');
+        }
+        if (this._summary) {
+            this._summary.textContent = message;
+        }
+    },
+
     _action: async function (action) {
         var id = this._targetId;
         var subdomain = this._subdomainKey;
         this._hide();
-        if (!id) return;
 
-        this._toast('Processing...', false);
+        var entry = this._startResult(action, id, subdomain);
+
+        if (!id) {
+            var missingMessage = 'Action could not start because the selected row did not expose a target id.';
+            this._finishResult(entry, true, missingMessage, '');
+            this._showToast(missingMessage, true);
+            return;
+        }
+
+        this._showToast('Processing ' + this._actionLabel(action).toLowerCase() + '...', false);
 
         try {
-            var resp, data;
+            var resp;
 
             switch (action) {
                 case 'recon':
@@ -101,12 +261,7 @@ window.ReconContextMenu = {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ attachedBy: 'context-menu', configuration: null })
                     });
-                    if (resp.ok) {
-                        this._toast('Recon orchestrator assigned to target', false);
-                    } else {
-                        var err = await resp.text();
-                        this._toast('Failed: ' + err, true);
-                    }
+                    await this._recordResponse(entry, resp, 'Recon orchestrator assigned to target.', 'Recon orchestrator assignment failed.');
                     break;
 
                 case 'enumerate':
@@ -115,12 +270,7 @@ window.ReconContextMenu = {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ targetIds: [id], allTargets: false })
                     });
-                    if (resp.ok) {
-                        data = await resp.json();
-                        this._toast('Enumerate queued (' + (data.jobsQueued || data.jobsQueued === 0 ? data.jobsQueued + ' jobs' : 'done') + ')', false);
-                    } else {
-                        this._toast('Enumerate failed', true);
-                    }
+                    await this._recordResponse(entry, resp, 'Subdomain enumeration request completed.', 'Subdomain enumeration request failed.');
                     break;
 
                 case 'spider':
@@ -129,12 +279,7 @@ window.ReconContextMenu = {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ targetIds: [id], allTargets: false })
                     });
-                    if (resp.ok) {
-                        data = await resp.json();
-                        this._toast('Spider queued (' + (data.rootSeedsQueued || 0) + ' seeds)', false);
-                    } else {
-                        this._toast('Spider failed', true);
-                    }
+                    await this._recordResponse(entry, resp, 'Spider request completed.', 'Spider request failed.');
                     break;
 
                 case 'spider-subdomain':
@@ -143,16 +288,144 @@ window.ReconContextMenu = {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ targetIds: [id], subdomains: [subdomain] })
                     });
-                    if (resp.ok) {
-                        data = await resp.json();
-                        this._toast('Spider queued for subdomain', false);
-                    } else {
-                        this._toast('Spider subdomain failed', true);
-                    }
+                    await this._recordResponse(entry, resp, 'Subdomain spider request completed.', 'Subdomain spider request failed.');
+                    break;
+
+                default:
+                    this._finishResult(entry, true, 'Unknown action: ' + action, '');
+                    this._showToast('Unknown action', true);
                     break;
             }
         } catch (ex) {
-            this._toast('Error: ' + ex.message, true);
+            var errorMessage = 'Request error: ' + ex.message;
+            this._finishResult(entry, true, errorMessage, '');
+            this._showToast(errorMessage, true);
         }
+    },
+
+    _recordResponse: async function (entry, resp, successMessage, failureMessage) {
+        var result = await this._readResponse(resp);
+        var detail = this._formatResponse(resp, result);
+
+        if (resp.ok) {
+            this._finishResult(entry, false, successMessage, detail);
+            this._showToast(successMessage, false);
+            return;
+        }
+
+        var message = failureMessage + ' HTTP ' + resp.status + ' ' + (resp.statusText || '').trim();
+        this._finishResult(entry, true, message, detail);
+        this._showToast(failureMessage, true);
+    },
+
+    _readResponse: async function (resp) {
+        var text = await resp.text();
+        var data = null;
+
+        if (text) {
+            try {
+                data = JSON.parse(text);
+            } catch {
+                data = null;
+            }
+        }
+
+        return { text: text, data: data };
+    },
+
+    _formatResponse: function (resp, result) {
+        var lines = ['HTTP ' + resp.status + ' ' + (resp.statusText || '').trim()];
+
+        var summary = this._summarizePayload(result.data);
+        if (summary) {
+            lines.push(summary);
+        } else if (result.text) {
+            lines.push(this._truncate(result.text, 1200));
+        } else {
+            lines.push('No response body.');
+        }
+
+        return lines.join('\n');
+    },
+
+    _summarizePayload: function (payload) {
+        if (!payload || typeof payload !== 'object') {
+            return '';
+        }
+
+        var keys = [
+            'status',
+            'message',
+            'jobsQueued',
+            'rootSeedsQueued',
+            'workerScale',
+            'workerScaleSucceeded',
+            'queued',
+            'created',
+            'updated',
+            'error',
+            'detail'
+        ];
+
+        var lines = [];
+        for (var i = 0; i < keys.length; i++) {
+            var key = keys[i];
+            if (Object.prototype.hasOwnProperty.call(payload, key)) {
+                lines.push(key + ': ' + this._formatValue(payload[key]));
+            }
+        }
+
+        if (lines.length === 0) {
+            lines.push(this._truncate(JSON.stringify(payload, null, 2), 1200));
+        }
+
+        return lines.join('\n');
+    },
+
+    _formatValue: function (value) {
+        if (value === null || value === undefined) {
+            return '';
+        }
+
+        if (typeof value === 'object') {
+            return this._truncate(JSON.stringify(value), 500);
+        }
+
+        return String(value);
+    },
+
+    _truncate: function (value, maxLength) {
+        if (!value || value.length <= maxLength) {
+            return value || '';
+        }
+
+        return value.slice(0, maxLength - 1) + '...';
+    },
+
+    _actionLabel: function (action) {
+        switch (action) {
+            case 'recon':
+                return 'Assign Recon Orchestrator';
+            case 'enumerate':
+                return 'Enumerate Subdomains';
+            case 'spider':
+                return 'Spider Target';
+            case 'spider-subdomain':
+                return 'Spider Subdomain';
+            default:
+                return action || 'Action';
+        }
+    },
+
+    _targetLabel: function (targetId, subdomain) {
+        var parts = [];
+        if (targetId) {
+            parts.push('Target ' + targetId);
+        }
+        if (subdomain) {
+            parts.push('Subdomain ' + subdomain);
+        }
+
+        return parts.length > 0 ? parts.join(' | ') : 'No target selected';
     }
 };

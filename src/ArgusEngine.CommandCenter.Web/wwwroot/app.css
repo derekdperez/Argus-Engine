@@ -705,6 +705,109 @@ h1:focus {
     border-radius: 999px;
 }
 
+.recon-action-panel {
+    margin: 0 0 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.04);
+    padding: 0.85rem;
+}
+
+.recon-action-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.65rem;
+}
+
+.recon-action-panel-header h2 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 750;
+}
+
+.recon-action-panel-header p {
+    margin: 0.15rem 0 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+.recon-action-list {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.recon-action-entry {
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-left-width: 4px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.72);
+    padding: 0.7rem 0.8rem;
+}
+
+.recon-action-entry-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.recon-action-entry h3 {
+    margin: 0;
+    font-size: 0.86rem;
+    font-weight: 750;
+}
+
+.recon-action-state {
+    flex: 0 0 auto;
+    border-radius: 999px;
+    padding: 0.13rem 0.55rem;
+    background: rgba(148, 163, 184, 0.16);
+    color: #475569;
+    font-size: 0.7rem;
+    font-weight: 750;
+}
+
+.recon-action-meta {
+    margin-top: 0.25rem;
+    color: var(--muted);
+    font-size: 0.72rem;
+    overflow-wrap: anywhere;
+}
+
+.recon-action-detail {
+    margin: 0.55rem 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: #334155;
+}
+
+.recon-action-pending {
+    border-left-color: #2563eb;
+}
+
+.recon-action-success {
+    border-left-color: #059669;
+}
+
+.recon-action-success .recon-action-state {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.recon-action-error {
+    border-left-color: #dc2626;
+}
+
+.recon-action-error .recon-action-state {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
 .recon-custom-menu {
     position: fixed;
     z-index: 10000;

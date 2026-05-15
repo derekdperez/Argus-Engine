@@ -127,6 +127,11 @@ internal static class OperationsApiEndpointExtensions
 
                         var top = domainCounts.OrderByDescending(x => x.Count).ThenBy(x => x.RootDomain, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
                         var storage = await OpsStorageMetricsQuery.LoadAsync(db, fileStoreFactory, ct).ConfigureAwait(false);
+                        var workerCount = await db.WorkerHeartbeats.AsNoTracking()
+                            .Select(h => h.HostName)
+                            .Distinct()
+                            .LongCountAsync(ct)
+                            .ConfigureAwait(false);
                         return Results.Ok(
                             new OpsOverviewDto(
                                 totalTargets,
@@ -152,7 +157,8 @@ internal static class OperationsApiEndpointExtensions
                                 storage.HttpArtifactBytes,
                                 storage.InlineHttpBytes,
                                 storage.EventJournalBytes,
-                                storage.TotalBytes));
+                                storage.TotalBytes,
+                                workerCount));
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {

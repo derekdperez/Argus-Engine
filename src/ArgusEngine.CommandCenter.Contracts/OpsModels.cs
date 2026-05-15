@@ -70,7 +70,8 @@ public sealed record OpsOverviewDto(
     long HttpArtifactStorageBytes,
     long InlineHttpStorageBytes,
     long EventJournalStorageBytes,
-    long TotalTrackedStorageBytes);
+    long TotalTrackedStorageBytes,
+    long WorkerCount);
 
 public sealed record OpsSnapshotDto(
     IReadOnlyList<WorkerSwitchDto> Workers,

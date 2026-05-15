@@ -167,6 +167,12 @@ public static class OpsEndpoints
 
                 var storage = await OpsStorageMetricsQuery.LoadAsync(db, fileStoreFactory, ct).ConfigureAwait(false);
 
+                var workerCount = await db.WorkerHeartbeats.AsNoTracking()
+                    .Select(h => h.HostName)
+                    .Distinct()
+                    .LongCountAsync(ct)
+                    .ConfigureAwait(false);
+
                 return Results.Ok(
                     new OpsOverviewDto(
                         totalTargets,
@@ -192,7 +198,8 @@ public static class OpsEndpoints
                         storage.HttpArtifactBytes,
                         storage.InlineHttpBytes,
                         storage.EventJournalBytes,
-                        storage.TotalBytes));
+                        storage.TotalBytes,
+                        workerCount));
             })
             .WithName("OpsOverview");
 

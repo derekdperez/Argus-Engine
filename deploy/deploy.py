@@ -10,12 +10,12 @@ It is both:
   2. a backwards-compatible deploy.sh handoff target.
 
 Examples:
-    ./deploy/deploy-ui.py
-    ./deploy/deploy-ui.py deploy --hot
-    ./deploy/deploy-ui.py deploy --image command-center-web worker-spider
-    ./deploy/deploy-ui.py scale local worker-spider=4 worker-enum=2
-    ./deploy/deploy-ui.py scale ecs worker-spider=6 worker-techid=1
-    ./deploy/deploy-ui.py monitor
+    ./deploy/deploy.py
+    ./deploy/deploy.py deploy --hot
+    ./deploy/deploy.py deploy --image command-center-web worker-spider
+    ./deploy/deploy.py scale local worker-spider=4 worker-enum=2
+    ./deploy/deploy.py scale ecs worker-spider=6 worker-techid=1
+    ./deploy/deploy.py monitor
 """
 
 from __future__ import annotations
@@ -815,7 +815,7 @@ class ArgusDeployConsole:
         if target in {"autoscale", "auto"}:
             return self.run_aws_script("autoscale-ecs-workers.sh", args[1:])
 
-        # Default to local for convenience: deploy-ui.py scale worker-spider=3
+        # Default to local for convenience: deploy.py scale worker-spider=3
         counts = self.parse_count_pairs(args)
         return self.apply_local_worker_scale(counts)
 
@@ -882,24 +882,114 @@ class ArgusDeployConsole:
     # ---------- action helpers ----------
 
     def deploy_sh(self, args: Sequence[str]) -> int:
-        return self.runner.bash_script(self.paths.deploy_sh, list(args))
+        if not args:
+            return self.runner.run(self.compose("up", "-d"))
+
+        cmd = args[0]
+        rest = list(args[1:])
+
+        if cmd == "--hot":
+            services = [a for a in rest if not a.startswith("-")]
+            if services:
+                return self.runner.run(self.compose("up", "-d", "--no-deps", *services))
+            return self.runner.run(self.compose("up", "-d"))
+
+        if cmd in {"--image", "--fresh"}:
+            services = [a for a in rest if not a.startswith("-")]
+            build_args = ["build"]
+            if cmd == "--fresh":
+                build_args.append("--no-cache")
+            build_args.extend(services)
+            code = self.runner.run(self.compose(*build_args))
+            if code != 0:
+                return code
+            up_args = ["up", "-d"]
+            if services:
+                up_args.extend(["--no-deps", *services])
+            if cmd == "--fresh":
+                up_args.append("--force-recreate")
+            return self.runner.run(self.compose(*up_args))
+
+        if cmd == "--ecs-workers":
+            code = self.runner.run(self.compose("up", "-d"))
+            if code != 0:
+                return code
+            return self.runner.run(
+                self.compose(
+                    "up",
+                    "-d",
+                    "--no-deps",
+                    "--scale",
+                    "worker-spider=0",
+                    "--scale",
+                    "worker-http-requester=0",
+                    "--scale",
+                    "worker-enum=0",
+                    "--scale",
+                    "worker-portscan=0",
+                    "--scale",
+                    "worker-highvalue=0",
+                    "--scale",
+                    "worker-techid=0",
+                    "worker-spider",
+                    "worker-http-requester",
+                    "worker-enum",
+                    "worker-portscan",
+                    "worker-highvalue",
+                    "worker-techid",
+                )
+            )
+
+        if cmd in {"status", "ps"}:
+            return self.runner.run(self.compose("ps", *rest))
+        if cmd == "down":
+            return self.runner.run(self.compose("down", "--remove-orphans"))
+        if cmd == "restart":
+            return self.runner.run(self.compose("restart", *rest))
+        if cmd == "smoke":
+            return self.health_checks()
+        if cmd == "clean":
+            return self.clean()
+        if cmd == "logs":
+            follow = False
+            tail = 200
+            services: list[str] = []
+            i = 0
+            while i < len(rest):
+                token = rest[i]
+                if token in {"-f", "--follow"}:
+                    follow = True
+                    i += 1
+                    continue
+                if token == "--tail" and i + 1 < len(rest):
+                    try:
+                        tail = int(rest[i + 1])
+                    except ValueError:
+                        tail = 200
+                    i += 2
+                    continue
+                services.append(token)
+                i += 1
+            return self.logs(services=services, tail=tail, follow=follow)
+
+        self.ui.error(f"Unsupported legacy command passthrough: {' '.join(args)}")
+        return 2
 
     def clean(self) -> int:
         self.ui.warn("This removes compose containers, orphans, volumes, and hot-publish output.")
         if not self.ui.confirm("Continue with clean?", default=False, assume_yes=self.options.assume_yes):
             return 0
-        return self.runner.bash_script(
-            self.paths.deploy_sh,
-            ["clean"],
-            env={"CONFIRM_ARGUS_CLEAN": "yes"},
-        )
+        code = self.runner.run(self.compose("down", "--remove-orphans", "--volumes"))
+        hot_publish = self.paths.deploy_dir / ".hot-publish"
+        if hot_publish.exists() and not self.options.dry_run:
+            shutil.rmtree(hot_publish, ignore_errors=True)
+        return code
 
     def run_aws_script(self, name: str, args: Sequence[str] = ()) -> int:
-        script = self.paths.aws_dir / name
-        if not script.exists():
-            self.ui.error(f"AWS helper not found: {self.paths.rel(script)}")
-            return 2
-        return self.runner.bash_script(script, list(args))
+        self.ui.error(
+            f"AWS helper '{name}' is shell-script based and disabled in standalone deploy.py."
+        )
+        return 2
 
     def health_checks(self) -> int:
         self.ui.section("Health checks")
@@ -924,9 +1014,24 @@ class ArgusDeployConsole:
         return 1 if failures else 0
 
     def error_logs(self, services: Sequence[str], *, tail: int = 400) -> int:
-        if self.paths.logs_sh.exists():
-            return self.runner.bash_script(self.paths.logs_sh, ["--errors", "--tail", str(tail), *services])
-        return self.deploy_sh(["logs", "--tail", str(tail), *services])
+        code, stdout, stderr = self.runner.capture(self.compose("logs", "--tail", str(tail), *services))
+        if code != 0:
+            if stderr.strip():
+                print(stderr.strip())
+            return code
+        patterns = (" error", "exception", "failed", "fatal", "panic")
+        for line in stdout.splitlines():
+            lower = line.lower()
+            if any(pattern in lower for pattern in patterns):
+                print(line)
+        return 0
+
+    def logs(self, *, services: Sequence[str], tail: int = 200, follow: bool = False) -> int:
+        args = ["logs", "--tail", str(tail)]
+        if follow:
+            args.append("-f")
+        args.extend(services)
+        return self.runner.run(self.compose(*args))
 
     def queue_diagnostics(self) -> int:
         self.ui.section("Queue and worker diagnostics")
@@ -996,10 +1101,6 @@ LIMIT 50;
         return exit_code
 
     def ecs_status(self) -> int:
-        status_script = self.paths.aws_dir / "ecs-command-center-status.sh"
-        if status_script.exists():
-            return self.runner.bash_script(status_script)
-
         region = self.get_env("AWS_REGION", "us-east-1")
         cluster = self.get_env("ECS_CLUSTER", "argus-engine")
         service_names = [self.ecs_service_name(worker) for worker in self.worker_services()]
@@ -1410,40 +1511,40 @@ LIMIT 50;
 Argus deployment console
 
 Usage:
-  deploy/deploy-ui.py [global options] [command]
+  deploy/deploy.py [global options] [command]
 
 Interactive:
-  deploy/deploy-ui.py
-  deploy/deploy-ui.py menu
+  deploy/deploy.py
+  deploy/deploy.py menu
 
 Deploy/update:
-  deploy/deploy-ui.py deploy --hot [service...]
-  deploy/deploy-ui.py deploy --image [service...]
-  deploy/deploy-ui.py deploy --fresh
-  deploy/deploy-ui.py deploy --ecs-workers
+  deploy/deploy.py deploy --hot [service...]
+  deploy/deploy.py deploy --image [service...]
+  deploy/deploy.py deploy --fresh
+  deploy/deploy.py deploy --ecs-workers
 
 Scaling:
-  deploy/deploy-ui.py scale local worker-spider=4 worker-enum=2 worker-http-requester=2
-  deploy/deploy-ui.py scale ecs worker-spider=6 worker-techid=1
-  deploy/deploy-ui.py scale autoscale
+  deploy/deploy.py scale local worker-spider=4 worker-enum=2 worker-http-requester=2
+  deploy/deploy.py scale ecs worker-spider=6 worker-techid=1
+  deploy/deploy.py scale autoscale
 
 Monitoring:
-  deploy/deploy-ui.py monitor
-  deploy/deploy-ui.py status [service...]
-  deploy/deploy-ui.py logs [--follow] [service...]
-  deploy/deploy-ui.py logs --errors [service...]
-  deploy/deploy-ui.py health
-  deploy/deploy-ui.py changed
-  deploy/deploy-ui.py services
+  deploy/deploy.py monitor
+  deploy/deploy.py status [service...]
+  deploy/deploy.py logs [--follow] [service...]
+  deploy/deploy.py logs --errors [service...]
+  deploy/deploy.py health
+  deploy/deploy.py changed
+  deploy/deploy.py services
 
 AWS/ECS:
-  deploy/deploy-ui.py ecs hybrid
-  deploy/deploy-ui.py ecs repos
-  deploy/deploy-ui.py ecs build [service...]
-  deploy/deploy-ui.py ecs deploy [service...]
-  deploy/deploy-ui.py ecs release [service...]
-  deploy/deploy-ui.py ecs replace [worker-service...]
-  deploy/deploy-ui.py ecs status
+  deploy/deploy.py ecs hybrid
+  deploy/deploy.py ecs repos
+  deploy/deploy.py ecs build [service...]
+  deploy/deploy.py ecs deploy [service...]
+  deploy/deploy.py ecs release [service...]
+  deploy/deploy.py ecs replace [worker-service...]
+  deploy/deploy.py ecs status
 
 Global options:
   --dry-run, -n       Print commands without executing them
@@ -1453,7 +1554,7 @@ Global options:
   --verbose          Print discovery commands too
 
 Compatibility:
-  deploy-ui.py still accepts deploy.sh handoff-style arguments such as:
+  deploy.py still accepts deploy.sh handoff-style arguments such as:
   up, --fresh, -fresh, --ecs-workers, --hot, --image, logs, status, restart, down, smoke.
 """.strip()
         )

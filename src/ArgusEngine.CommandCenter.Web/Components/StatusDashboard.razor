@@ -124,7 +124,7 @@
                 var statuses = await Http.GetFromJsonAsync<List<GcpWorkerStatus>>("/api/cloud-deploy/workers/status");
                 if (statuses is not null)
                 {
-                    _gcpWorkerCount = statuses.Count(s => s.Status == 2);
+                    _gcpWorkerCount = statuses.Count(s => s.Status == 3);
                     _gcpOk = _gcpWorkerCount > 0;
                 }
             }

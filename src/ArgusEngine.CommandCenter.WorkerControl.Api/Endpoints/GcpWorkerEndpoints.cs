@@ -25,6 +25,18 @@ public static class GcpWorkerEndpoints
             return result is null ? Results.Problem("Failed to deploy worker") : Results.Ok(result);
         });
 
+        group.MapPost("/deploy-all", async (GcpCloudRunClient gcp, ILogger<GcpWorkerEndpoints> logger, CancellationToken ct) =>
+        {
+            var results = new List<object>();
+            foreach (var slug in DefaultSlugs)
+            {
+                logger.LogInformation("Deploying worker {Slug} with min=10, max=50", slug);
+                var result = await gcp.DeployWorkerAsync(slug, 10, 50, ct);
+                results.Add(new { slug, success = result is not null, service = result?.Name, url = result?.Url });
+            }
+            return Results.Ok(new { results });
+        });
+
         group.MapPut("/scale", async (ScaleGcpWorkersRequest body, GcpCloudRunClient gcp, CancellationToken ct) =>
         {
             var results = new List<object>();

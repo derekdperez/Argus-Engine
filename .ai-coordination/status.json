@@ -1,6 +1,6 @@
 {
   "protocol_version": 1,
-  "last_updated": "2026-05-15T21:26:06Z",
+  "last_updated": "2026-05-15T21:30:35Z",
   "agents": {
     "agent-alpha": {
       "status": "idle",
@@ -16,10 +16,14 @@
     },
     "agent-gamma": {
       "status": "busy",
-      "current_task": "Fix GCP worker detection and scaling to 10-50 autoscaling per worker type",
-      "last_active": "2026-05-15T21:26:06Z",
+      "current_task": "Fix GCP worker detection, deploy workers to Cloud Run with min=10, max=50 autoscaling",
+      "last_active": "2026-05-15T21:30:35Z",
       "working_on": [
-        "src/ArgusEngine.CommandCenter.CloudDeploy.Api"
+        "src/ArgusEngine.CommandCenter.CloudDeploy.Api",
+        "src/ArgusEngine.CommandCenter.WorkerControl.Api/Services/GcpCloudRunClient.cs",
+        "src/ArgusEngine.CommandCenter.WorkerControl.Api/Endpoints/GcpWorkerEndpoints.cs",
+        "src/ArgusEngine.CommandCenter.Web/Components/StatusDashboard.razor",
+        "deployment/docker-compose.yml"
       ]
     },
     "codex": {

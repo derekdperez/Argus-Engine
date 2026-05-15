@@ -27,17 +27,120 @@ public sealed class GcpCloudRunClient(IHttpClientFactory httpFactory, IConfigura
         if (!string.IsNullOrWhiteSpace(_cachedToken) && DateTime.UtcNow < _tokenExpiry)
             return _cachedToken;
 
-        var req = new HttpRequestMessage(HttpMethod.Get,
-            "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token");
-        req.Headers.Add("Metadata-Flavor", "Google");
-        using var resp = await _http.SendAsync(req, ct);
-        resp.EnsureSuccessStatusCode();
-        var body = await resp.Content.ReadAsStringAsync(ct);
-        using var doc = JsonDocument.Parse(body);
-        _cachedToken = doc.RootElement.GetProperty("access_token").GetString() ?? "";
-        _tokenExpiry = DateTime.UtcNow.AddSeconds(
-            doc.RootElement.GetProperty("expires_in").GetInt32() - 60);
-        return _cachedToken;
+        // Try the link-local IP first (works in Docker), then fall back to the DNS name
+        var metadataUrls = new[]
+        {
+            "http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token",
+            "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
+        };
+
+        foreach (var metadataUrl in metadataUrls)
+        {
+            try
+            {
+                var req = new HttpRequestMessage(HttpMethod.Get, metadataUrl);
+                req.Headers.Add("Metadata-Flavor", "Google");
+                using var resp = await _http.SendAsync(req, ct);
+                resp.EnsureSuccessStatusCode();
+                var body = await resp.Content.ReadAsStringAsync(ct);
+                using var doc = JsonDocument.Parse(body);
+                _cachedToken = doc.RootElement.GetProperty("access_token").GetString() ?? "";
+                _tokenExpiry = DateTime.UtcNow.AddSeconds(
+                    doc.RootElement.GetProperty("expires_in").GetInt32() - 60);
+                return _cachedToken;
+            }
+            catch (Exception ex) when (metadataUrl != metadataUrls.Last())
+            {
+                _logger.LogDebug("Metadata server at {Url} failed: {Msg}; trying next endpoint", metadataUrl, ex.Message);
+            }
+        }
+
+        // If all metadata endpoints failed, try GOOGLE_APPLICATION_CREDENTIALS env var
+        var credsFile = Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS");
+        if (!string.IsNullOrWhiteSpace(credsFile) && File.Exists(credsFile))
+        {
+            try
+            {
+                var json = await File.ReadAllTextAsync(credsFile, ct);
+                using var doc = JsonDocument.Parse(json);
+                var clientEmail = doc.RootElement.GetProperty("client_email").GetString() ?? "";
+                var privateKey = doc.RootElement.GetProperty("private_key").GetString() ?? "";
+                if (!string.IsNullOrWhiteSpace(clientEmail) && !string.IsNullOrWhiteSpace(privateKey))
+                {
+                    _cachedToken = await GetTokenFromServiceAccountAsync(clientEmail, privateKey, ct);
+                    _tokenExpiry = DateTime.UtcNow.AddMinutes(55);
+                    return _cachedToken;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to use GOOGLE_APPLICATION_CREDENTIALS");
+            }
+        }
+
+        // Fall back to GCP_ACCESS_TOKEN env var (pre-fetched from host)
+        var accessToken = Environment.GetEnvironmentVariable("GCP_ACCESS_TOKEN");
+        if (!string.IsNullOrWhiteSpace(accessToken))
+        {
+            _cachedToken = accessToken;
+            _tokenExpiry = DateTime.UtcNow.AddMinutes(30);
+            return _cachedToken;
+        }
+
+        throw new InvalidOperationException("No GCP credentials available. Ensure the metadata server is reachable, GOOGLE_APPLICATION_CREDENTIALS is set, or GCP_ACCESS_TOKEN is provided.");
+    }
+
+    /// <summary>
+    /// Gets an OAuth2 access token from a service account JSON key file
+    /// using a self-signed JWT grant (without needing the Google.Apis.Auth library).
+    /// </summary>
+    private static async Task<string> GetTokenFromServiceAccountAsync(string clientEmail, string privateKey, CancellationToken ct)
+    {
+        // Build a self-signed JWT assertion
+        var header = new { alg = "RS256", typ = "JWT" };
+        var now = DateTimeOffset.UtcNow;
+        var payload = new
+        {
+            iss = clientEmail,
+            scope = "https://www.googleapis.com/auth/cloud-platform",
+            aud = "https://oauth2.googleapis.com/token",
+            exp = now.AddMinutes(55).ToUnixTimeSeconds(),
+            iat = now.ToUnixTimeSeconds()
+        };
+
+        var headerJson = JsonSerializer.Serialize(header);
+        var payloadJson = JsonSerializer.Serialize(payload);
+        var headerBase64 = Base64UrlEncode(Encoding.UTF8.GetBytes(headerJson));
+        var payloadBase64 = Base64UrlEncode(Encoding.UTF8.GetBytes(payloadJson));
+        var toSign = Encoding.UTF8.GetBytes($"{headerBase64}.{payloadBase64}");
+
+        using var rsa = System.Security.Cryptography.RSA.Create();
+        rsa.ImportFromPem(privateKey.ToCharArray());
+        var signature = rsa.SignData(toSign, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+        var signatureBase64 = Base64UrlEncode(signature);
+
+        var assertion = $"{headerBase64}.{payloadBase64}.{signatureBase64}";
+
+        using var httpClient = new HttpClient();
+        var tokenRequest = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            ["assertion"] = assertion
+        });
+
+        var response = await httpClient.PostAsync("https://oauth2.googleapis.com/token", tokenRequest, ct);
+        response.EnsureSuccessStatusCode();
+        var responseBody = await response.Content.ReadAsStringAsync(ct);
+        using var doc = JsonDocument.Parse(responseBody);
+        return doc.RootElement.GetProperty("access_token").GetString() ?? "";
+    }
+
+    private static string Base64UrlEncode(byte[] data)
+    {
+        return Convert.ToBase64String(data)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
     }
 
     private async Task<HttpRequestMessage> CreateRequestAsync(HttpMethod method, string path, object? body = null, CancellationToken ct = default)
@@ -82,7 +185,7 @@ public sealed class GcpCloudRunClient(IHttpClientFactory httpFactory, IConfigura
                         c.TryGetProperty("type", out var tpe) && tpe.GetString() == "Ready" &&
                         c.TryGetProperty("status", out var rdy) && rdy.GetString() == "True");
 
-                    result.Add(new GcpWorkerStatus(name, url ?? "", ready ? "active" : "inactive", int.TryParse(minStr, out var mn) ? mn : 1, int.TryParse(maxStr, out var mx) ? mx : 1));
+                    result.Add(new GcpWorkerStatus(name, url ?? "", ready ? "active" : "inactive", int.TryParse(minStr, out var mn) ? mn : 1, int.TryParse(maxStr, out var mx) ? mx : 1) { Id = uid });
                 }
             }
         }
@@ -210,4 +313,7 @@ public sealed class GcpCloudRunClient(IHttpClientFactory httpFactory, IConfigura
     }
 }
 
-public sealed record GcpWorkerStatus(string Name, string Url, string Status, int MinInstances, int MaxInstances);
+public sealed record GcpWorkerStatus(string Name, string Url, string Status, int MinInstances, int MaxInstances)
+{
+    public string Id { get; init; } = Name;
+}

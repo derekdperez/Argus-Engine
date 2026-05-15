@@ -9,6 +9,8 @@ builder.Services.AddHealthChecks();
 var app = builder.Build();
 
 app.MapHealthChecks("/healthz");
+app.MapHealthChecks("/health/live");
+app.MapHealthChecks("/health/ready");
 app.MapCloudDeployEndpoints();
 
 app.Run();

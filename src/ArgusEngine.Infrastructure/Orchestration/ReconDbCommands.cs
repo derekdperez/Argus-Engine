@@ -1,3 +1,4 @@
+using System.Data;
 using System.Data.Common;
 using ArgusEngine.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -7,17 +8,28 @@ namespace ArgusEngine.Infrastructure.Orchestration;
 
 internal static class ReconDbCommands
 {
+    private static DbCommand CreateCommand(ArgusDbContext db, string sql, IReadOnlyDictionary<string, object?> parameters)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open)
+        {
+            conn.Open();
+        }
+
+        var command = conn.CreateCommand();
+        command.CommandText = sql;
+        ApplyCurrentTransaction(db, command);
+        AddParameters(command, parameters);
+        return command;
+    }
+
     public static async Task<int> ExecuteAsync(
         ArgusDbContext db,
         string sql,
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken cancellationToken)
     {
-        await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = db.Database.GetDbConnection().CreateCommand();
-        command.CommandText = sql;
-        ApplyCurrentTransaction(db, command);
-        AddParameters(command, parameters);
+        await using var command = CreateCommand(db, sql, parameters);
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -27,11 +39,7 @@ internal static class ReconDbCommands
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken cancellationToken)
     {
-        await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = db.Database.GetDbConnection().CreateCommand();
-        command.CommandText = sql;
-        ApplyCurrentTransaction(db, command);
-        AddParameters(command, parameters);
+        await using var command = CreateCommand(db, sql, parameters);
         var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         if (value is null || value is DBNull)
         {
@@ -48,12 +56,7 @@ internal static class ReconDbCommands
         Func<DbDataReader, T> map,
         CancellationToken cancellationToken)
     {
-        await db.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = db.Database.GetDbConnection().CreateCommand();
-        command.CommandText = sql;
-        ApplyCurrentTransaction(db, command);
-        AddParameters(command, parameters);
-
+        await using var command = CreateCommand(db, sql, parameters);
         var rows = new List<T>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))

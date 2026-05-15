@@ -13,6 +13,7 @@ builder.Services.AddHttpClient(GatewayServiceRoutes.WorkerControlClientName, cli
 builder.Services.AddHttpClient(GatewayServiceRoutes.MaintenanceClientName, client => ConfigureClient(client, serviceRoutes.Maintenance));
 builder.Services.AddHttpClient(GatewayServiceRoutes.UpdatesClientName, client => ConfigureClient(client, serviceRoutes.Updates));
 builder.Services.AddHttpClient(GatewayServiceRoutes.RealtimeClientName, client => ConfigureClient(client, serviceRoutes.Realtime));
+builder.Services.AddHttpClient(GatewayServiceRoutes.CloudDeployClientName, client => ConfigureClient(client, serviceRoutes.CloudDeploy));
 
 var app = builder.Build();
 
@@ -181,11 +182,19 @@ static async Task<IResult> ForwardToSplitCommandCenterAsync(
 
 static string? SelectClientName(PathString path)
 {
+    if (path.StartsWithSegments("/api/cloud-deploy", StringComparison.OrdinalIgnoreCase))
+    {
+        return GatewayServiceRoutes.CloudDeployClientName;
+    }
+
     if (path.StartsWithSegments("/api/workers", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/ec2-workers", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/ops/ecs-status", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/ops/spider/restart", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/api/ops/subdomain-enum/restart", StringComparison.OrdinalIgnoreCase))
+        || path.StartsWithSegments("/api/ops/spider/continuous", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/ops/spider/subdomains/restart", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/ops/subdomain-enum/restart", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/ops/subdomain-enum/continuous", StringComparison.OrdinalIgnoreCase))
     {
         return GatewayServiceRoutes.WorkerControlClientName;
     }
@@ -208,7 +217,8 @@ static string? SelectClientName(PathString path)
         || path.StartsWithSegments("/api/http-request-queue", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/filestore", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/events", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/api/discovery", StringComparison.OrdinalIgnoreCase))
+        || path.StartsWithSegments("/api/discovery", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/recon-agent", StringComparison.OrdinalIgnoreCase))
     {
         return GatewayServiceRoutes.DiscoveryClientName;
     }
@@ -429,6 +439,7 @@ static class GatewayRouteDiagnostics
 
     private static readonly string[] UpdatesPrefixes = ["/api/development/components"];
     private static readonly string[] RealtimePrefixes = ["/hubs/discovery"];
+    private static readonly string[] CloudDeployPrefixes = ["/api/cloud-deploy"];
 
     private static readonly string[] WebPrefixes =
     [
@@ -456,6 +467,7 @@ static class GatewayRouteDiagnostics
         new("command-center-maintenance-api", MaintenancePrefixes),
         new("command-center-updates-api", UpdatesPrefixes),
         new("command-center-realtime", RealtimePrefixes),
+        new("command-center-cloud-deploy-api", CloudDeployPrefixes),
         new("command-center-web", WebPrefixes)
     ];
 }
@@ -467,7 +479,8 @@ sealed record GatewayServiceRoutes(
     Uri WorkerControl,
     Uri Maintenance,
     Uri Updates,
-    Uri Realtime)
+    Uri Realtime,
+    Uri CloudDeploy)
 {
     public const string WebClientName = "command-center-web";
     public const string DiscoveryClientName = "command-center-discovery-api";
@@ -476,6 +489,7 @@ sealed record GatewayServiceRoutes(
     public const string MaintenanceClientName = "command-center-maintenance-api";
     public const string UpdatesClientName = "command-center-updates-api";
     public const string RealtimeClientName = "command-center-realtime";
+    public const string CloudDeployClientName = "command-center-cloud-deploy-api";
 
     public IReadOnlyList<DownstreamHealthTarget> HealthCheckTargets =>
     [
@@ -485,7 +499,8 @@ sealed record GatewayServiceRoutes(
         new(WorkerControlClientName, WorkerControl),
         new(MaintenanceClientName, Maintenance),
         new(UpdatesClientName, Updates),
-        new(RealtimeClientName, Realtime)
+        new(RealtimeClientName, Realtime),
+        new(CloudDeployClientName, CloudDeploy)
     ];
 
     public static GatewayServiceRoutes FromConfiguration(IConfiguration configuration)
@@ -497,7 +512,8 @@ sealed record GatewayServiceRoutes(
             GetUri(configuration, "WorkerControl", "http://command-center-worker-control-api:8080/"),
             GetUri(configuration, "Maintenance", "http://command-center-maintenance-api:8080/"),
             GetUri(configuration, "Updates", "http://command-center-updates-api:8080/"),
-            GetUri(configuration, "Realtime", "http://command-center-realtime:8080/"));
+            GetUri(configuration, "Realtime", "http://command-center-realtime:8080/"),
+            GetUri(configuration, "CloudDeploy", "http://command-center-cloud-deploy-api:8080/"));
     }
 
     public Uri GetBaseAddress(string clientName) =>
@@ -510,6 +526,7 @@ sealed record GatewayServiceRoutes(
             MaintenanceClientName => Maintenance,
             UpdatesClientName => Updates,
             RealtimeClientName => Realtime,
+            CloudDeployClientName => CloudDeploy,
             _ => throw new InvalidOperationException($"Unknown CommandCenter split-service client '{clientName}'.")
         };
 
@@ -522,7 +539,8 @@ sealed record GatewayServiceRoutes(
             workerControl = WorkerControl,
             maintenance = Maintenance,
             updates = Updates,
-            realtime = Realtime
+            realtime = Realtime,
+            cloudDeploy = CloudDeploy
         };
 
     private static Uri GetUri(IConfiguration configuration, string serviceName, string localDefault)

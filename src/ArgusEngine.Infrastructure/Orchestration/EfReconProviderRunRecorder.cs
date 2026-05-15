@@ -170,10 +170,10 @@ public sealed class EfReconProviderRunRecorder(
     public async Task MarkProviderFailedAsync(
         Guid targetId,
         string provider,
-        string error,
+        string errorMessage,
         CancellationToken cancellationToken = default)
     {
-        await MarkTerminalAsync(targetId, provider, "failed", error, cancellationToken).ConfigureAwait(false);
+        await MarkTerminalAsync(targetId, provider, "failed", errorMessage, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task MarkProviderCompletedCoreAsync(

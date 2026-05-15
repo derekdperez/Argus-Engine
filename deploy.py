@@ -53,6 +53,7 @@ FALLBACK_SERVICES = [
     "command-center-maintenance-api",
     "command-center-updates-api",
     "command-center-realtime",
+    "command-center-cloud-deploy-api",
     "command-center-bootstrapper",
     "command-center-spider-dispatcher",
     "command-center-web",
@@ -148,6 +149,7 @@ HEALTH_ENDPOINTS = {
     "command-center-maintenance-api": "http://127.0.0.1:8086/health/ready",
     "command-center-updates-api": "http://127.0.0.1:8087/health/ready",
     "command-center-realtime": "http://127.0.0.1:8088/health/ready",
+    "command-center-cloud-deploy-api": "http://127.0.0.1:8089/healthz",
 }
 
 PROJECT_HINTS = {
@@ -158,6 +160,7 @@ PROJECT_HINTS = {
     "command-center-maintenance-api": ["src/ArgusEngine.CommandCenter.Maintenance.Api/"],
     "command-center-updates-api": ["src/ArgusEngine.CommandCenter.Updates.Api/"],
     "command-center-realtime": ["src/ArgusEngine.CommandCenter.Realtime.Host/"],
+    "command-center-cloud-deploy-api": ["src/ArgusEngine.CommandCenter.CloudDeploy.Api/"],
     "command-center-bootstrapper": ["src/ArgusEngine.CommandCenter.Bootstrapper/"],
     "command-center-spider-dispatcher": ["src/ArgusEngine.CommandCenter.SpiderDispatcher/"],
     "command-center-web": ["src/ArgusEngine.CommandCenter.Web/"],

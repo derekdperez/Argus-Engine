@@ -6,6 +6,7 @@ command-center-worker-control-api	ArgusEngine.CommandCenter.WorkerControl.Api	Ar
 command-center-maintenance-api	ArgusEngine.CommandCenter.Maintenance.Api	ArgusEngine.CommandCenter.Maintenance.Api.dll	deployment/Dockerfile.commandcenter-host	1	aspnet	
 command-center-updates-api	ArgusEngine.CommandCenter.Updates.Api	ArgusEngine.CommandCenter.Updates.Api.dll	deployment/Dockerfile.commandcenter-host	1	aspnet	
 command-center-realtime	ArgusEngine.CommandCenter.Realtime.Host	ArgusEngine.CommandCenter.Realtime.Host.dll	deployment/Dockerfile.commandcenter-host	1	aspnet	
+command-center-cloud-deploy-api	ArgusEngine.CommandCenter.CloudDeploy.Api	ArgusEngine.CommandCenter.CloudDeploy.Api.dll	deployment/Dockerfile.commandcenter-host	1	aspnet	
 command-center-bootstrapper	ArgusEngine.CommandCenter.Bootstrapper	ArgusEngine.CommandCenter.Bootstrapper.dll	deployment/Dockerfile.worker	0	worker	
 command-center-spider-dispatcher	ArgusEngine.CommandCenter.SpiderDispatcher	ArgusEngine.CommandCenter.SpiderDispatcher.dll	deployment/Dockerfile.worker	1	worker	src/ArgusEngine.Workers.Spider
 command-center-web	ArgusEngine.CommandCenter.Web	ArgusEngine.CommandCenter.Web.dll	deployment/Dockerfile.commandcenter-host	1	aspnet	src/ArgusEngine.Harness.Core

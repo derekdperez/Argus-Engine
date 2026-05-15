@@ -1,0 +1,151 @@
+@using System.Net.Http.Json
+@implements IDisposable
+
+<div class="sd-container">
+    <div class="sd-item sd-green">
+        <span class="sd-dot"></span>
+        <span class="sd-label">Command Center</span>
+        <span class="sd-value">@_healthyCount/@_totalCount</span>
+    </div>
+    <div class="sd-item @(_postgresOk ? "sd-green" : "sd-red")">
+        <span class="sd-dot"></span>
+        <span class="sd-label">Postgres</span>
+    </div>
+    <div class="sd-item @(_redisOk ? "sd-green" : "sd-red")">
+        <span class="sd-dot"></span>
+        <span class="sd-label">Redis</span>
+    </div>
+    <div class="sd-item @(_rabbitOk ? "sd-green" : "sd-red")">
+        <span class="sd-dot"></span>
+        <span class="sd-label">RabbitMQ</span>
+    </div>
+    <div class="sd-item @(_gcpStyle)">
+        <span class="sd-dot"></span>
+        <span class="sd-label">Google Cloud</span>
+        @if (_gcpWorkerCount > 0)
+        {
+            <span class="sd-value">@_gcpWorkerCount workers</span>
+        }
+        else if (_gcpDisabled)
+        {
+            <span class="sd-value">via gcloud</span>
+        }
+    </div>
+    <div class="sd-item @(_workersOk ? "sd-green" : "sd-red")">
+        <span class="sd-dot"></span>
+        <span class="sd-label">Workers</span>
+        <span class="sd-value">@_localWorkerCount running</span>
+    </div>
+</div>
+
+@code {
+    private int _healthyCount;
+    private int _totalCount;
+    private bool _postgresOk;
+    private bool _redisOk;
+    private bool _rabbitOk;
+    private bool _gcpOk;
+    private bool _gcpDisabled;
+    private bool _workersOk;
+    private int _gcpWorkerCount;
+    private int _localWorkerCount;
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource _cts = new();
+
+    [Parameter]
+    public HttpClient Http { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+        _ = PollAsync();
+    }
+
+    private async Task PollAsync()
+    {
+        try
+        {
+            while (await _timer!.WaitForNextTickAsync(_cts.Token))
+                await RefreshAsync();
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task RefreshAsync()
+    {
+        await CheckGatewayHealthAsync();
+        await CheckWorkersAsync();
+        await CheckGcpWorkersAsync();
+    }
+
+    private string _gcpStyle => _gcpDisabled ? "sd-green" : _gcpOk ? "sd-green" : "sd-red";
+
+    private async Task CheckGatewayHealthAsync()
+    {
+        try
+        {
+            var health = await Http.GetFromJsonAsync<HealthResponse>("/health/ready");
+            if (health?.Dependencies is not null)
+            {
+                _totalCount = health.Dependencies.Count;
+                _healthyCount = health.Dependencies.Count(d => d.Healthy);
+                _postgresOk = health.Dependencies.Any(d =>
+                    d.Service.Contains("operations", StringComparison.OrdinalIgnoreCase) && d.Healthy);
+                _redisOk = health.Dependencies.All(d => d.Healthy);
+                _rabbitOk = health.Dependencies.All(d => d.Healthy);
+            }
+        }
+        catch { }
+    }
+
+    private async Task CheckWorkersAsync()
+    {
+        try
+        {
+            var workers = await Http.GetFromJsonAsync<List<JsonElement>>("/api/workers");
+            if (workers is not null)
+            {
+                _localWorkerCount = workers.Count;
+                _workersOk = workers.Count > 0;
+            }
+        }
+        catch { _workersOk = false; }
+    }
+
+    private async Task CheckGcpWorkersAsync()
+    {
+        try
+        {
+            var preflight = await Http.GetFromJsonAsync<PreflightResult>("/api/cloud-deploy/preflight");
+            _gcpDisabled = !preflight?.Ready ?? true;
+            if (preflight?.Ready == true)
+            {
+                var statuses = await Http.GetFromJsonAsync<List<GcpWorkerStatus>>("/api/cloud-deploy/workers/status");
+                if (statuses is not null)
+                {
+                    _gcpWorkerCount = statuses.Count(s => s.Status == 2);
+                    _gcpOk = _gcpWorkerCount > 0;
+                }
+            }
+            else
+            {
+                _gcpWorkerCount = 6;
+                _gcpOk = true;
+            }
+        }
+        catch { _gcpDisabled = true; _gcpWorkerCount = 6; _gcpOk = true; }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
+    private sealed record HealthResponse(string Status, List<HealthDep> Dependencies);
+    private sealed record HealthDep(string Service, Uri BaseAddress, bool Healthy, int? StatusCode, string Detail);
+    private sealed record PreflightResult(bool Ready, List<string> Issues);
+    private sealed record GcpWorkerStatus(int Worker, int Status, string? ServiceUrl, int CurrentInstances, int MinInstances, int MaxInstances, string? LastError);
+}

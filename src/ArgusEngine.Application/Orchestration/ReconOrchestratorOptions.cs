@@ -5,7 +5,7 @@ public sealed class ReconOrchestratorOptions
     public bool Enabled { get; set; } = true;
 
     // New targets are not attached automatically unless this is explicitly enabled.
-    public bool AutoAttachNewTargets { get; set; } = false;
+    public bool AutoAttachNewTargets { get; set; }
 
     public int PollIntervalSeconds { get; set; } = 15;
 

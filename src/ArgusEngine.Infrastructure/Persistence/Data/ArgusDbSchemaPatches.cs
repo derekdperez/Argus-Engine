@@ -521,10 +521,12 @@ public static partial class ArgusDbSchemaPatches
         await BackfillAssetRelationshipsAsync(db, logger, cancellationToken).ConfigureAwait(false);
         await EnsureHttpRequestQueueDefaultsAsync(db, logger, cancellationToken).ConfigureAwait(false);
         await BackfillHttpRequestQueueAsync(db, logger, cancellationToken).ConfigureAwait(false);
-        await BackfillLegacyDiscoveredAssetsAsync(db, logger, cancellationToken).ConfigureAwait(false);
-
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         LogPatchesApplied(logger);
+
+        // Run outside the transaction — ExecuteUpdateAsync uses NpgsqlRetryingExecutionStrategy
+        // which doesn't support user-initiated transactions.
+        await BackfillLegacyDiscoveredAssetsAsync(db, logger, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task NormalizeStoredAssetIdColumnAsync(ArgusDbContext db, ILogger logger, CancellationToken cancellationToken)

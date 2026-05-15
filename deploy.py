@@ -1831,7 +1831,8 @@ GCP commands:
         if ref.startswith("refs/") or ref == "HEAD" or "/" not in ref:
             return self.runner.run(["git", "fetch", "--prune", "--all"])
         remote, branch = ref.split("/", 1)
-        return self.runner.run(["git", "fetch", "--prune", remote, branch])
+        remote_ref = f"refs/remotes/{remote}/{branch}"
+        return self.runner.run(["git", "fetch", "--prune", remote, f"+refs/heads/{branch}:{remote_ref}"])
 
     def ensure_checkout_at_target(self, target_ref: str, target_sha: str) -> int:
         if self.options.dry_run:

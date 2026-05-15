@@ -11,6 +11,7 @@ It is both:
 
 Examples:
     ./deploy
+    ./deploy all-in-1
     ./deploy deploy --hot
     ./deploy deploy --image command-center-web worker-spider
     ./deploy scale local worker-spider=4 worker-enum=2
@@ -526,6 +527,8 @@ class ArgusDeployConsole:
 
         if command in {"deploy", "update"}:
             return self.deploy_from_args(rest)
+        if command in {"all-in-1", "all-in-one", "allin1", "allinone", "auto", "auto-deploy"}:
+            return self.all_in_one_deploy(rest)
         if command == "preflight":
             return self.preflight()
         if command in {"scale", "workers", "worker"}:
@@ -574,6 +577,7 @@ class ArgusDeployConsole:
             choice = self.ui.choose(
                 "Choose a deployment task",
                 [
+                    "All-in-1 incremental hot deploy from GitHub",
                     "Deploy Web App",
                     "Deploy Infrastructure",
                     "Deploy All Workers",
@@ -587,20 +591,22 @@ class ArgusDeployConsole:
             )
 
             if choice == 0:
-                code = self.deploy_web_app()
+                code = self.all_in_one_deploy([])
             elif choice == 1:
-                code = self.deploy_infrastructure()
+                code = self.deploy_web_app()
             elif choice == 2:
-                code = self.deploy_all_workers()
+                code = self.deploy_infrastructure()
             elif choice == 3:
-                code = self.deploy_selected_workers()
+                code = self.deploy_all_workers()
             elif choice == 4:
-                code = self.deploy_selected_projects()
+                code = self.deploy_selected_workers()
             elif choice == 5:
-                code = self.rebuild_all_images()
+                code = self.deploy_selected_projects()
             elif choice == 6:
-                code = self.rebuild_selected_images()
+                code = self.rebuild_all_images()
             elif choice == 7:
+                code = self.rebuild_selected_images()
+            elif choice == 8:
                 code = self.monitor_operations_menu()
             else:
                 return 0
@@ -1735,6 +1741,244 @@ GCP commands:
         self.ui.error(f"Unsupported legacy command passthrough: {' '.join(args)}")
         return 2
 
+    def all_in_one_deploy(self, args: Sequence[str]) -> int:
+        flags = {arg for arg in args if arg.startswith("-")}
+        requested = [arg for arg in args if not arg.startswith("-")]
+        no_fetch = "--no-fetch" in flags
+        no_update = "--no-update" in flags
+
+        target = self.resolve_github_target(fetch=not no_fetch)
+        if target is None:
+            return 2
+        target_ref, target_sha = target
+
+        if not no_update:
+            code = self.ensure_checkout_at_target(target_ref, target_sha)
+            if code != 0:
+                return code
+
+        services = self.resolve_deploy_service_args(requested) if requested else self.app_services()
+        if not services:
+            self.ui.warn("No application services were found to deploy.")
+            return 0
+
+        plan = self.services_requiring_deploy(services, target_sha)
+        stale = [item["service"] for item in plan if item["deploy"]]
+
+        self.ui.section("All-in-1 incremental deploy plan")
+        self.ui.info(f"GitHub target: {target_ref} @ {target_sha[:12]}")
+        for item in plan:
+            service = item["service"]
+            status = "deploy" if item["deploy"] else "current"
+            print(f"{service:<42} {status:<8} {item['reason']}")
+
+        if not stale:
+            self.ui.ok(f"All selected services already match {target_sha[:12]}.")
+            return 0
+
+        env = self.build_stamp_env(target_sha)
+        self.ui.info("Rebuilding only stale images: " + ", ".join(stale))
+        code = self.runner.run(self.compose("build", *stale), env=env)
+        if code != 0:
+            return code
+
+        self.ui.info("Recreating only stale services with the freshly stamped images.")
+        return self.runner.run(self.compose("up", "-d", "--no-deps", *stale), env=env)
+
+    def resolve_github_target(self, *, fetch: bool) -> Optional[tuple[str, str]]:
+        ref = self.get_env("ARGUS_DEPLOY_REF", "").strip()
+        if not ref:
+            code, stdout, _ = self.runner.capture(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+            upstream = stdout.strip()
+            ref = upstream if code == 0 and upstream else "origin/main"
+
+        if fetch:
+            code = self.fetch_github_ref(ref)
+            if code != 0:
+                self.ui.error(f"Could not fetch GitHub target {ref}.")
+                return None
+
+        if self.options.dry_run:
+            code, stdout, stderr = self.capture_git_without_mutation(["rev-parse", ref])
+            if code != 0:
+                code, stdout, stderr = self.capture_git_without_mutation(["rev-parse", "HEAD"])
+                ref = "HEAD"
+        else:
+            code, stdout, stderr = self.runner.capture(["git", "rev-parse", ref])
+        target_sha = stdout.strip()
+        if code != 0 or not target_sha:
+            if stderr.strip():
+                self.ui.warn(stderr.strip())
+            self.ui.error(f"Could not resolve deployment target {ref}.")
+            return None
+        return ref, target_sha
+
+    def capture_git_without_mutation(self, args: Sequence[str]) -> tuple[int, str, str]:
+        try:
+            completed = subprocess.run(
+                ["git", *args],
+                cwd=self.paths.repo_root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            return completed.returncode, completed.stdout, completed.stderr
+        except FileNotFoundError:
+            return 127, "", "Command not found: git"
+
+    def fetch_github_ref(self, ref: str) -> int:
+        if ref.startswith("refs/") or ref == "HEAD" or "/" not in ref:
+            return self.runner.run(["git", "fetch", "--prune", "--all"])
+        remote, branch = ref.split("/", 1)
+        return self.runner.run(["git", "fetch", "--prune", remote, branch])
+
+    def ensure_checkout_at_target(self, target_ref: str, target_sha: str) -> int:
+        if self.options.dry_run:
+            self.ui.info(f"Would ensure the local checkout is fast-forwarded to {target_ref} @ {target_sha[:12]}.")
+            return 0
+
+        code, stdout, _ = self.runner.capture(["git", "rev-parse", "HEAD"])
+        local_sha = stdout.strip()
+        if code != 0 or not local_sha:
+            self.ui.error("Could not read the local Git revision.")
+            return 2
+        if local_sha == target_sha:
+            return 0
+
+        code, stdout, _ = self.runner.capture(["git", "status", "--porcelain"])
+        if code != 0:
+            self.ui.error("Could not inspect the Git worktree before deployment.")
+            return code
+        if stdout.strip():
+            self.ui.error(
+                "GitHub is ahead of this checkout, but the worktree has uncommitted changes. "
+                "Commit or stash them before running all-in-1 deploy."
+            )
+            return 2
+
+        self.ui.info(f"Fast-forwarding local checkout from {local_sha[:12]} to {target_sha[:12]}.")
+        return self.runner.run(["git", "merge", "--ff-only", target_ref])
+
+    def resolve_deploy_service_args(self, args: Sequence[str]) -> list[str]:
+        available = self.app_services()
+        by_name = {service.lower(): service for service in available}
+        selected: list[str] = []
+
+        for raw in args:
+            key = raw.strip().lower().replace("_", "-")
+            if not key:
+                continue
+            if key in {"all", "app", "apps", "projects"}:
+                for service in available:
+                    if service not in selected:
+                        selected.append(service)
+                continue
+            if key in {"worker", "workers"}:
+                for service in self.worker_services():
+                    if service not in selected:
+                        selected.append(service)
+                continue
+            match = by_name.get(key)
+            if match is None and not key.startswith("worker-"):
+                match = by_name.get(f"worker-{key}")
+            if match is None:
+                self.ui.warn(f"Ignoring unknown deploy service: {raw}")
+                continue
+            if match not in selected:
+                selected.append(match)
+
+        return selected
+
+    def services_requiring_deploy(self, services: Sequence[str], target_sha: str) -> list[dict[str, object]]:
+        plan: list[dict[str, object]] = []
+        for service in services:
+            revisions = self.deployed_revisions(service)
+            if not revisions:
+                plan.append({"service": service, "deploy": True, "reason": "not running or no deployed stamp found"})
+                continue
+            mismatched = [revision for revision in revisions if not self.revision_matches(revision, target_sha)]
+            if mismatched:
+                joined = ", ".join(revision[:12] for revision in revisions)
+                plan.append({"service": service, "deploy": True, "reason": f"deployed {joined}"})
+            else:
+                joined = ", ".join(revision[:12] for revision in revisions)
+                plan.append({"service": service, "deploy": False, "reason": f"deployed {joined}"})
+        return plan
+
+    def deployed_revisions(self, service: str) -> list[str]:
+        code, stdout, _ = self.runner.capture(self.compose("ps", "-q", service))
+        if code != 0:
+            return []
+
+        revisions: list[str] = []
+        for container_id in [line.strip() for line in stdout.splitlines() if line.strip()]:
+            revision = self.container_revision(container_id)
+            if revision and revision not in revisions:
+                revisions.append(revision)
+        return revisions
+
+    def container_revision(self, container_id: str) -> str:
+        code, stdout, _ = self.runner.capture(["docker", "inspect", container_id])
+        if code != 0 or not stdout.strip():
+            return ""
+        try:
+            data = json.loads(stdout)[0]
+        except (IndexError, json.JSONDecodeError, TypeError):
+            return ""
+
+        config = data.get("Config") or {}
+        labels = config.get("Labels") or {}
+        revision = str(labels.get("org.opencontainers.image.revision") or "").strip()
+        if revision:
+            return revision
+
+        env = self.env_list_to_dict(config.get("Env") or [])
+        revision = env.get("ARGUS_BUILD_STAMP", "").strip() or env.get("BUILD_SOURCE_STAMP", "").strip()
+        if revision:
+            return revision
+
+        image_id = str(data.get("Image") or "").strip()
+        if not image_id:
+            return ""
+        code, image_stdout, _ = self.runner.capture(["docker", "image", "inspect", image_id])
+        if code != 0 or not image_stdout.strip():
+            return ""
+        try:
+            image_data = json.loads(image_stdout)[0]
+        except (IndexError, json.JSONDecodeError, TypeError):
+            return ""
+        image_config = image_data.get("Config") or {}
+        image_labels = image_config.get("Labels") or {}
+        return str(image_labels.get("org.opencontainers.image.revision") or "").strip()
+
+    def env_list_to_dict(self, values: Sequence[str]) -> dict[str, str]:
+        env: dict[str, str] = {}
+        for value in values:
+            if "=" not in value:
+                continue
+            key, raw = value.split("=", 1)
+            env[key] = raw
+        return env
+
+    def revision_matches(self, deployed: str, target_sha: str) -> bool:
+        deployed = deployed.strip()
+        target_sha = target_sha.strip()
+        if not deployed or deployed.lower() in {"unknown", "local"}:
+            return False
+        return deployed == target_sha or deployed.startswith(target_sha) or target_sha.startswith(deployed)
+
+    def build_stamp_env(self, target_sha: str) -> dict[str, str]:
+        component_version = self.version() or target_sha[:12]
+        build_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        return {
+            "ARGUS_ENGINE_VERSION": component_version,
+            "COMPONENT_VERSION": component_version,
+            "BUILD_SOURCE_STAMP": target_sha,
+            "BUILD_TIME_UTC": build_time,
+            "ARGUS_BUILD_TIME_UTC": build_time,
+        }
+
     def validate_manifests(self, args: Sequence[str]) -> int:
         compose_files = [self.paths.compose_file]
         if any(arg in {"--ci", "ci"} for arg in args):
@@ -2275,7 +2519,13 @@ LIMIT 50;
             return []
 
         normalized = [f.replace("\\", "/") for f in files]
-        if any(file in GLOBAL_INVALIDATORS or file.startswith("deploy/") for file in normalized):
+        if any(
+            file in GLOBAL_INVALIDATORS
+            or file == "deploy.py"
+            or file == "deploy"
+            or file.startswith("deployment/")
+            for file in normalized
+        ):
             return sorted(self.app_services())
 
         affected: set[str] = set()
@@ -2387,6 +2637,9 @@ Interactive:
   ./deploy menu
 
 Deploy/update:
+  ./deploy all-in-1 [service...]            Fetch GitHub, compare deployed build stamps, rebuild stale services only
+  ./deploy all-in-1 --no-update [service...] Compare without fast-forwarding the local checkout
+  ./deploy all-in-1 --no-fetch [service...]  Use the already-fetched GitHub ref
   ./deploy deploy --hot [service...]
   ./deploy deploy --image [service...]
   ./deploy deploy --fresh
@@ -2473,7 +2726,7 @@ Compatibility:
             failures += 1
             self.ui.warn("Compose    not found")
 
-        for path in [self.paths.compose_file, self.paths.deploy_dir / "deploy.py"]:
+        for path in [self.paths.compose_file, self.paths.repo_root / "deploy.py", self.paths.repo_root / "deploy"]:
             if path.exists():
                 self.ui.ok(f"File       {self.paths.rel(path)}")
             else:

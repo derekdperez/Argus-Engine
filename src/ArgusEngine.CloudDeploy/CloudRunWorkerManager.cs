@@ -303,14 +303,42 @@ internal sealed class CloudRunWorkerManager : IAsyncDisposable
     private IEnumerable<EnvVar> BuildEnvVars()
     {
         // Core connectivity — workers need to reach the local host
-        yield return Env("RabbitMq__Url", _opts.RabbitMqPublicUrl);
-        yield return Env("ConnectionStrings__Argus", _opts.PostgresPublicUrl);
-        yield return Env("Redis__Url", _opts.RedisPublicUrl);
+        yield return Env("ConnectionStrings__Postgres", _opts.PostgresPublicUrl);
+        yield return Env("ConnectionStrings__Redis", _opts.RedisPublicUrl);
+        yield return Env("RabbitMq__Host", ParseHostFromUrl(_opts.RabbitMqPublicUrl));
+        yield return Env("RabbitMq__Username", ParseUserFromUrl(_opts.RabbitMqPublicUrl));
+        yield return Env("RabbitMq__Password", ParsePassFromUrl(_opts.RabbitMqPublicUrl));
+        yield return Env("RabbitMq__ManagementUrl", $"http://{ParseHostFromUrl(_opts.RabbitMqPublicUrl)}:15672");
+        yield return Env("RabbitMq__VirtualHost", ParseVhostFromUrl(_opts.RabbitMqPublicUrl));
         yield return Env("CommandCenter__ApiBaseUrl", _opts.CommandCenterApiUrl);
+
+        // Skip DB bootstrap on startup (workers connect to existing DB)
+        yield return Env("Argus__SkipStartupDatabase", "true");
+        yield return Env("ARGUS_SKIP_STARTUP_DATABASE", "1");
 
         // Standard .NET / ASP.NET vars for Cloud Run
         yield return Env("ASPNETCORE_ENVIRONMENT", "Production");
         yield return Env("DOTNET_RUNNING_IN_CONTAINER", "true");
+    }
+
+    private static string ParseHostFromUrl(string url)
+    {
+        try { return new Uri(url).Host; } catch { return url; }
+    }
+
+    private static string ParseUserFromUrl(string url)
+    {
+        try { return Uri.UnescapeDataString(new Uri(url).UserInfo.Split(':').FirstOrDefault() ?? "") ?? "argus"; } catch { return "argus"; }
+    }
+
+    private static string ParsePassFromUrl(string url)
+    {
+        try { var parts = new Uri(url).UserInfo.Split(':'); return parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : "argus"; } catch { return "argus"; }
+    }
+
+    private static string ParseVhostFromUrl(string url)
+    {
+        try { return Uri.UnescapeDataString(new Uri(url).AbsolutePath.Trim('/')) ?? "/"; } catch { return "/"; }
     }
 
     private static EnvVar Env(string name, string value) => new()
@@ -320,5 +348,5 @@ internal sealed class CloudRunWorkerManager : IAsyncDisposable
     };
 
     private int InitialMinInstances(WorkerType worker) =>
-        Math.Max(2, _opts.WorkerMinInstances);
+        Math.Max(0, _opts.WorkerMinInstances);
 }

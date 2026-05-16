@@ -229,15 +229,13 @@ services:
       <<: *common-env
       ASPNETCORE_URLS: http://+:8080
       Argus__Postgres__MaxPoolSize: ${ARGUS_WORKER_CONTROL_API_POSTGRES_MAX_POOL_SIZE:-4}
-      GcpDeploy__ProjectId: "gen-lang-client-0221281588"
-      GcpDeploy__Region: "us-east1"
-      GcpDeploy__HostPublicAddress: "34.148.132.67"
-      GcpDeploy__RabbitMqPublicUrl: "amqp://argus:argus@34.148.132.67:5672/argus"
-      GcpDeploy__PostgresPublicUrl: "Host=34.148.132.67;Port=5432;Database=argus_engine;Username=argus;Password=argus"
-      GcpDeploy__RedisPublicUrl: "34.148.132.67:6379"
-      GcpDeploy__CommandCenterApiUrl: "http://34.148.132.67:8081"
-      GCP_PROJECT_ID: "gen-lang-client-0221281588"
-      GCP_REGION: "us-east1"
+      GcpDeploy__ProjectId: ${GCP_PROJECT_ID:-}
+      GcpDeploy__Region: ${GCP_REGION:-us-east1}
+      GcpDeploy__HostPublicAddress: ${ARGUS_HOST_PUBLIC_IP:-}
+      GcpDeploy__ImageTag: ${GCP_IMAGE_TAG:-latest}
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
+      GCP_REGION: ${GCP_REGION:-us-east1}
+      ARGUS_HOST_PUBLIC_IP: ${ARGUS_HOST_PUBLIC_IP:-}
       Argus__Autoscaler__Enabled: ${ARGUS_AUTOSCALER_ENABLED:-false}
       Argus__Autoscaler__RepoRoot: /workspace
       Argus__Autoscaler__DockerComposePath: /workspace/deployment/docker-compose.yml

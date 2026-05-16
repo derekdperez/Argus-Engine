@@ -94,7 +94,7 @@ public static class SystemErrorsEndpoints
 
                     var query = db.SystemErrors.AsNoTracking()
                         .Where(e => e.Timestamp >= since)
-                        .Where(e => e.Component.StartsWith("worker-") || e.Component == "gatekeeper");
+                        .Where(e => e.Component.StartsWith("argus-worker-") || e.Component == "argus-gatekeeper");
 
                     if (!string.IsNullOrWhiteSpace(level))
                     {
@@ -137,7 +137,7 @@ public static class SystemErrorsEndpoints
                 async (ArgusDbContext db, CancellationToken ct) =>
                 {
                     var workers = await db.SystemErrors.AsNoTracking()
-                        .Where(e => e.Component.StartsWith("worker-") || e.Component == "gatekeeper")
+                        .Where(e => e.Component.StartsWith("argus-worker-") || e.Component == "argus-gatekeeper")
                         .Select(e => e.Component)
                         .Distinct()
                         .OrderBy(c => c)

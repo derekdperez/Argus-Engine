@@ -88,10 +88,7 @@
             <div class="cc-panel-header">
                 <div>
                     <h2>Targets</h2>
-                    <p class="cc-muted">Manage targets and monitor reconnaissance progress.</p>
                 </div>
-            </div>
-            <div class="cc-two-column">
                 @if (_showDebug)
                 {
                     <div class="cc-debug">
@@ -101,6 +98,8 @@
                         <span>@_targetRefreshAgo</span>
                     </div>
                 }
+            </div>
+            <div class="cc-two-column">
                 <ArgusDataGrid TGridItem="JsonElement"
                                Items="@TargetRows.AsQueryable()"
                                RowMatches="@JsonRowMatches"
@@ -888,6 +887,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadColumnPrefsAsync().ConfigureAwait(false);
         await LoadInitialWorkspaceAsync().ConfigureAwait(false);
 
         Realtime.StatusChangedReceived += OnStatusChanged;
@@ -1691,20 +1691,44 @@
 
     private bool ColumnVisible(string key) => !_hiddenGridColumns.Contains(key);
 
-    private void ToggleColumn(string key, ChangeEventArgs args)
+    private async Task ToggleColumn(string key, ChangeEventArgs args)
     {
-        var visible = args.Value is bool boolValue
-            ? boolValue
-            : bool.TryParse(args.Value?.ToString(), out var parsed) && parsed;
+        if (args.Value is bool isChecked)
+        {
+            if (isChecked)
+                _hiddenGridColumns.Remove(key);
+            else
+                _hiddenGridColumns.Add(key);
+            await SaveColumnPrefsAsync();
+        }
+    }
 
-        if (visible)
+    private async Task SaveColumnPrefsAsync()
+    {
+        try
         {
-            _hiddenGridColumns.Remove(key);
+            var json = System.Text.Json.JsonSerializer.Serialize(_hiddenGridColumns.ToList());
+            await JS.InvokeVoidAsync("localStorage.setItem", "argus-column-prefs", json);
         }
-        else
+        catch { }
+    }
+
+    private async Task LoadColumnPrefsAsync()
+    {
+        try
         {
-            _hiddenGridColumns.Add(key);
+            var json = await JS.InvokeAsync<string>("localStorage.getItem", "argus-column-prefs");
+            if (!string.IsNullOrWhiteSpace(json))
+            {
+                var saved = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json);
+                if (saved is not null)
+                {
+                    _hiddenGridColumns.Clear();
+                    foreach (var k in saved) _hiddenGridColumns.Add(k);
+                }
+            }
         }
+        catch { }
     }
 
     private RenderFragment ColumnPicker(IReadOnlyList<GridColumnChoice> columns) => builder =>

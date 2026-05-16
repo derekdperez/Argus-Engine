@@ -62,14 +62,13 @@
                 <strong>@_buildTime</strong>
             </article>
         </section>
+        <nav class="cc-tabs" aria-label="Command Center sections">
+            <button class="@TabClass(CommandTab.Targets)" @onclick="@(() => SelectTabAsync(CommandTab.Targets))">Targets</button>
+            <button class="@TabClass(CommandTab.Discovery)" @onclick="@(() => SelectTabAsync(CommandTab.Discovery))">Discovery</button>
+            <button class="@TabClass(CommandTab.Workers)" @onclick="@(() => SelectTabAsync(CommandTab.Workers))">Workers</button>
+            <button class="@TabClass(CommandTab.Logs)" @onclick="@(() => SelectTabAsync(CommandTab.Logs))">Logs</button>
+        </nav>
     </header>
-
-    <nav class="cc-tabs" aria-label="Command Center sections">
-        <button class="@TabClass(CommandTab.Targets)" @onclick="@(() => SelectTabAsync(CommandTab.Targets))">Targets</button>
-        <button class="@TabClass(CommandTab.Discovery)" @onclick="@(() => SelectTabAsync(CommandTab.Discovery))">Discovery</button>
-        <button class="@TabClass(CommandTab.Workers)" @onclick="@(() => SelectTabAsync(CommandTab.Workers))">Workers</button>
-        <button class="@TabClass(CommandTab.Logs)" @onclick="@(() => SelectTabAsync(CommandTab.Logs))">Logs</button>
-    </nav>
 
     <div id="recon-action-results" class="recon-action-collapsed">
         <div class="recon-action-panel-header">
@@ -100,12 +99,6 @@
                         <span>@((_targetLoadSize / 1024).ToString("N0")) KB</span>
                         <span>@_targetLoadTime.ToString("F1")s</span>
                         <span>@_targetRefreshAgo</span>
-                    </div>
-                    <div class="cc-debug">
-                        <span>@SubdomainRows.Length rows</span>
-                        <span>@((_subdomainLoadSize / 1024).ToString("N0")) KB</span>
-                        <span>@_subdomainLoadTime.ToString("F1")s</span>
-                        <span>@_subdomainRefreshAgo</span>
                     </div>
                 }
                 <ArgusDataGrid TGridItem="JsonElement"
@@ -698,9 +691,6 @@
     private long _targetLoadSize;
     private double _targetLoadTime;
     private string _targetRefreshAgo = "";
-    private long _subdomainLoadSize;
-    private double _subdomainLoadTime;
-    private string _subdomainRefreshAgo = "";
     private Dictionary<string, TargetEnrichment> _targetEnrichment = new();
     private long _httpQueueCount;
     private long _publishedEvents;
@@ -1001,6 +991,7 @@
 
     private async Task RefreshActiveAsync()
     {
+        UpdateRefreshAgo();
         switch (_activeTab)
         {
             case CommandTab.Targets:
@@ -1371,6 +1362,12 @@
         .Where(row => string.IsNullOrWhiteSpace(_workerLogLevelFilter) || string.Equals(Text(row, "logLevel", "LogLevel"), _workerLogLevelFilter, StringComparison.OrdinalIgnoreCase))
         .Where(row => string.IsNullOrWhiteSpace(_workerLogWorkerFilter) || string.Equals(Text(row, "component", "Component"), _workerLogWorkerFilter, StringComparison.OrdinalIgnoreCase))
         .ToArray();
+
+    private void UpdateRefreshAgo()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _targetRefreshAgo = _targetsRefreshedUtc is null ? "" : $"{(now - _targetsRefreshedUtc.Value).TotalSeconds:F0}s ago";
+    }
 
     private static string TruncateUrl(string? url)
     {

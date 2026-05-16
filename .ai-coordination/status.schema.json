@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Argus Engine AI Coordination Status",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "last_updated",
+    "agents",
+    "file_locks",
+    "shared_files",
+    "pending_merges",
+    "agent_notes",
+    "role_policy"
+  ],
+  "properties": {
+    "protocol_version": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "last_updated": {
+      "type": "string"
+    },
+    "role_policy": {
+      "type": "object",
+      "required": [
+        "final_decision_agent",
+        "active_agents",
+        "helper_agents"
+      ],
+      "properties": {
+        "final_decision_agent": {
+          "type": "string"
+        },
+        "active_agents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "helper_agents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "protected_file_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "agents": {
+      "type": "object"
+    },
+    "file_locks": {
+      "type": "object"
+    },
+    "shared_files": {
+      "type": "object"
+    },
+    "pending_merges": {
+      "type": "array"
+    },
+    "agent_notes": {
+      "type": "object"
+    },
+    "decision_log": {
+      "type": "array"
+    },
+    "blocked_items": {
+      "type": "array"
+    }
+  },
+  "additionalProperties": true
+}

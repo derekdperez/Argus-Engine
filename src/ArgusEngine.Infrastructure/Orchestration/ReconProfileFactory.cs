@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using ArgusEngine.Application.Orchestration;
 
 namespace ArgusEngine.Infrastructure.Orchestration;
@@ -12,6 +13,7 @@ internal static class ReconProfileFactory
         WriteIndented = false
     };
 
+    private static readonly Lazy<IReadOnlyList<string>> UserAgentCatalog = new(LoadUserAgentCatalog);
     private static readonly string[] Languages = ["en-US,en;q=0.9", "en-GB,en;q=0.9", "en-US,en;q=0.8"];
 
     public static GeneratedReconProfile Create(
@@ -21,7 +23,7 @@ internal static class ReconProfileFactory
         string machineKey,
         int profileIndex)
     {
-        var seed = StableInt($"{targetId:N}|{subdomainKey}|profile:{profileIndex}");
+        var seed = StableInt($"{machineKey}|profile:{profileIndex}");
         var deviceType = Pick(configuration.ReconProfileDeviceTypes, seed, 11, "desktop");
         var browser = PickBrowser(configuration, deviceType, seed);
         var os = PickOs(configuration, deviceType, browser, seed);
@@ -30,7 +32,7 @@ internal static class ReconProfileFactory
             : PositiveModulo(StableInt($"{seed}|hardware-age"), configuration.ReconProfileHardwareAge + 1);
         var language = Pick(Languages, seed, 17, "en-US,en;q=0.9");
         var viewport = PickViewport(deviceType, seed);
-        var userAgent = BuildUserAgent(deviceType, browser, os, seed, hardwareAge);
+        var userAgent = PickUserAgent(seed) ?? BuildUserAgent(deviceType, browser, os, seed, hardwareAge);
         var headers = BuildHeaders(configuration, subdomainKey, deviceType, browser, os, language, viewport.Width, userAgent, seed);
         var headerOrderSeed = StableInt($"{seed}|header-order");
 
@@ -237,6 +239,66 @@ internal static class ReconProfileFactory
         Span<byte> hash = stackalloc byte[32];
         SHA256.HashData(Encoding.UTF8.GetBytes(value), hash);
         return BitConverter.ToInt32(hash[..4]);
+    }
+
+    private static string? PickUserAgent(int seed)
+    {
+        var catalog = UserAgentCatalog.Value;
+        if (catalog.Count == 0)
+        {
+            return null;
+        }
+
+        return catalog[PositiveModulo(seed, catalog.Count)];
+    }
+
+    private static IReadOnlyList<string> LoadUserAgentCatalog()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Directory.GetCurrentDirectory(), "src", "Resources", "Wordlists", "user_agents.json"),
+            Path.Combine(AppContext.BaseDirectory, "Resources", "Wordlists", "user_agents.json"),
+            Path.Combine(AppContext.BaseDirectory, "..", "Resources", "Wordlists", "user_agents.json"),
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "src", "Resources", "Wordlists", "user_agents.json"),
+        };
+
+        var path = candidates.FirstOrDefault(File.Exists);
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return [];
+        }
+
+        var text = File.ReadAllText(path);
+        var matches = Regex.Matches(text, "value\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"", RegexOptions.CultureInvariant);
+        if (matches.Count == 0)
+        {
+            return [];
+        }
+
+        var values = new List<string>(matches.Count);
+        foreach (Match match in matches)
+        {
+            var raw = match.Groups[1].Value;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            try
+            {
+                var decoded = JsonSerializer.Deserialize<string>($"\"{raw}\"");
+                if (!string.IsNullOrWhiteSpace(decoded))
+                {
+                    values.Add(decoded.Trim());
+                }
+            }
+            catch (JsonException)
+            {
+                // Ignore malformed entries and keep parsing remaining values.
+            }
+        }
+
+        return values.Distinct(StringComparer.Ordinal).ToArray();
     }
 }
 

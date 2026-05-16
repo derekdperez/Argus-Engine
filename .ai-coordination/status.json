@@ -1,20 +1,71 @@
 {
-  "protocol_version": 1,
-  "last_updated": "2026-05-16T03:39:40Z",
+  "protocol_version": 2,
+  "last_updated": "2026-05-15T21:36:09Z",
+  "role_policy": {
+    "final_decision_agent": "codex",
+    "active_agents": [
+      "codex",
+      "agent-alpha",
+      "agent-beta"
+    ],
+    "helper_agents": [
+      "agent-alpha",
+      "agent-beta"
+    ],
+    "legacy_agents": [
+      "agent-gamma"
+    ],
+    "decision_required_for": [
+      "architecture",
+      "new_features",
+      "cross_cutting_refactors",
+      "service_boundary_changes",
+      "schema_or_contract_changes",
+      "deployment_topology_changes",
+      "security_sensitive_changes",
+      "discarding_or_reverting_another_agent_change"
+    ],
+    "protected_file_patterns": [
+      "*.sln",
+      "*.slnx",
+      "*.csproj",
+      "Directory.Build.props",
+      "Directory.Build.targets",
+      "Directory.Packages.props",
+      "src/*Contracts*/**",
+      "src/ArgusEngine.Domain/**",
+      "src/**/Migrations/**",
+      "src/ArgusEngine.CommandCenter.Gateway/**",
+      "src/ArgusEngine.Application/**",
+      "src/ArgusEngine.Infrastructure/**/Messaging/**",
+      "**/Program.cs",
+      "**/Startup*.cs",
+      "deployment/docker-compose*.yml",
+      "deployment/gcp/**",
+      "deploy.py",
+      "**/appsettings*.json"
+    ]
+  },
   "agents": {
     "agent-alpha": {
+      "role": "implementation_helper",
+      "authority": "scoped_changes_only",
       "status": "idle",
       "current_task": "",
       "last_active": "2026-05-15T18:57:31Z",
       "working_on": []
     },
     "agent-beta": {
+      "role": "devops_helper",
+      "authority": "scoped_devops_scripts_and_procedures_only",
       "status": "idle",
       "current_task": "",
       "last_active": "2026-05-15T18:57:31Z",
       "working_on": []
     },
     "agent-gamma": {
+      "role": "legacy_helper",
+      "authority": "legacy_existing_locks_only",
       "status": "busy",
       "current_task": "Fix GCP worker detection, deploy workers to Cloud Run with min=10, max=50 autoscaling",
       "last_active": "2026-05-15T21:36:09Z",
@@ -26,15 +77,42 @@
       ]
     },
     "codex": {
-      "status": "idle",
-      "current_task": "",
-      "last_active": "2026-05-16T03:39:40Z",
-      "working_on": []
+      "role": "senior_architect",
+      "authority": "final_decision",
+      "status": "busy",
+      "current_task": "Add user-visible action result panel for recon context menu selections",
+      "last_active": "2026-05-15T21:06:25Z",
+      "working_on": [
+        "src/ArgusEngine.CommandCenter.Web/Components/Pages/CommandCenter.razor",
+        "src/ArgusEngine.CommandCenter.Web/wwwroot/app.css",
+        "src/ArgusEngine.CommandCenter.Web/wwwroot/reconContextMenu.js"
+      ]
     }
   },
-  "file_locks": {},
+  "file_locks": {
+    "src/ArgusEngine.CommandCenter.Web/Components/Pages/CommandCenter.razor": {
+      "locked_by": "codex",
+      "locked_at": "2026-05-15T21:05:52Z",
+      "purpose": "Add user-visible action result panel for recon context menu selections",
+      "status": "in_progress"
+    },
+    "src/ArgusEngine.CommandCenter.Web/wwwroot/app.css": {
+      "locked_by": "codex",
+      "locked_at": "2026-05-15T21:06:25Z",
+      "purpose": "Add user-visible action result panel for recon context menu selections",
+      "status": "in_progress"
+    },
+    "src/ArgusEngine.CommandCenter.Web/wwwroot/reconContextMenu.js": {
+      "locked_by": "codex",
+      "locked_at": "2026-05-15T21:06:25Z",
+      "purpose": "Add user-visible action result panel for recon context menu selections",
+      "status": "in_progress"
+    }
+  },
   "shared_files": {},
   "pending_merges": [],
+  "blocked_items": [],
+  "decision_log": [],
   "agent_notes": {
     "codex": "[2026-05-15T20:55:22Z] Codex session active. I inspected deployed component status only; no source files claimed or modified. Future edits will claim files first and avoid existing uncommitted source changes."
   }

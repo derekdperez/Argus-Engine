@@ -2,295 +2,520 @@
 set -euo pipefail
 
 # AI Agent Coordination Script
-# Usage: bash .ai-coordination/scripts/coordinate.sh <action> <agent-name> [args...]
+# Usage: bash .ai-coordination/scripts/coordinate.sh <action> [args...]
 #
 # Actions:
-#   claim    <agent> <file-path> <purpose>   - Claim a file for editing
-#   release  <agent> <file-path>             - Release a claimed file
-#   push     <agent> <commit-message>        - Stage, pull, commit, push all changes
-#   heartbeat <agent>                        - Update last_active timestamp
-#   share    <agent> <file-path>             - Mark a file as shared between agents
-#   note     <agent> <message>               - Leave a note for other agents
-#   status                                    - Show current coordination status
+#   status
+#   register  <agent> <role> <task>
+#   claim     <agent> <file-path> <purpose>
+#   release   <agent> <file-path>
+#   push      <agent> <commit-message>
+#   heartbeat <agent>
+#   share     <agent> <file-path>
+#   note      <agent> <message>
+#   block     <agent> <reason>
+#   decision  <agent> <summary> [scope] [comma-separated-files]
 
-STATUS_FILE=".ai-coordination/status.json"
-AGENT_NAME="${2:-}"
 ACTION="${1:-}"
+FINAL_DECISION_AGENT="codex"
 
-if [ -z "$ACTION" ]; then
-  echo "Usage: $0 <action> <agent-name> [args...]"
-  echo ""
-  echo "Actions:"
-  echo "  claim    <agent> <file-path> <purpose>"
-  echo "  release  <agent> <file-path>"
-  echo "  push     <agent> <commit-message>"
-  echo "  heartbeat <agent>"
-  echo "  share    <agent> <file-path>"
-  echo "  note     <agent> <message>"
-  echo "  status"
+usage() {
+  cat <<'USAGE'
+Usage: bash .ai-coordination/scripts/coordinate.sh <action> [args...]
+
+Actions:
+  status
+  register  <agent> <role> <task>
+  claim     <agent> <file-path> <purpose>
+  release   <agent> <file-path>
+  push      <agent> <commit-message>
+  heartbeat <agent>
+  share     <agent> <file-path>
+  note      <agent> <message>
+  block     <agent> <reason>
+  decision  <agent> <summary> [scope] [comma-separated-files]
+
+Roles:
+  senior_architect
+  implementation_helper
+  devops_helper
+USAGE
+}
+
+if [[ -z "$ACTION" ]]; then
+  usage
   exit 1
 fi
 
-# ---------- Utility Functions ----------
-
-pull_latest() {
-  echo "[coordinate] Pulling latest changes from remote..."
-  git pull --rebase 2>/dev/null || {
-    echo "[coordinate] Pull failed. Stashing local changes and retrying..."
-    git stash
-    git pull --rebase
-    git stash pop
-  }
+require_command() {
+  local command_name="$1"
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "[coordinate] ERROR: required command not found: $command_name" >&2
+    exit 1
+  fi
 }
 
-push_changes() {
+require_command git
+require_command jq
+
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+cd "$REPO_ROOT"
+
+STATUS_FILE=".ai-coordination/status.json"
+STATUS_SCHEMA_FILE=".ai-coordination/status.schema.json"
+
+utc_now() {
+  date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+has_upstream() {
+  git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1
+}
+
+pull_latest() {
+  if has_upstream; then
+    echo "[coordinate] Pulling latest changes from upstream..."
+    git pull --rebase --autostash
+  else
+    echo "[coordinate] No upstream branch configured; skipping pull."
+  fi
+}
+
+push_to_upstream() {
+  if has_upstream; then
+    echo "[coordinate] Pushing to upstream..."
+    git push
+  else
+    echo "[coordinate] No upstream branch configured; local commit created, push skipped."
+  fi
+}
+
+ensure_status_file() {
+  mkdir -p .ai-coordination/scripts
+  if [[ -f "$STATUS_FILE" ]]; then
+    return 0
+  fi
+
+  local ts
+  ts=$(utc_now)
+  cat > "$STATUS_FILE" <<JSON
+{
+  "protocol_version": 2,
+  "last_updated": "$ts",
+  "role_policy": {
+    "final_decision_agent": "codex",
+    "active_agents": ["codex", "agent-alpha", "agent-beta"],
+    "helper_agents": ["agent-alpha", "agent-beta"],
+    "decision_required_for": [
+      "architecture",
+      "new_features",
+      "cross_cutting_refactors",
+      "service_boundary_changes",
+      "schema_or_contract_changes",
+      "deployment_topology_changes",
+      "security_sensitive_changes",
+      "discarding_or_reverting_another_agent_change"
+    ],
+    "protected_file_patterns": []
+  },
+  "agents": {},
+  "file_locks": {},
+  "shared_files": {},
+  "pending_merges": [],
+  "blocked_items": [],
+  "decision_log": [],
+  "agent_notes": {}
+}
+JSON
+}
+
+jq_write() {
+  local filter="$1"
+  local tmp_file
+  tmp_file=$(mktemp "${STATUS_FILE}.XXXXXX")
+  jq "$filter" "$STATUS_FILE" > "$tmp_file"
+  mv "$tmp_file" "$STATUS_FILE"
+}
+
+validate_json() {
+  jq empty "$STATUS_FILE" >/dev/null
+}
+
+agent_exists_or_register_minimal() {
+  local agent="$1"
+  local role="${2:-unknown}"
+  local task="${3:-}"
+  local ts
+  ts=$(utc_now)
+  jq --arg agent "$agent" --arg role "$role" --arg task "$task" --arg ts "$ts" '
+    .last_updated = $ts
+    | .agents[$agent] = (
+        (.agents[$agent] // {})
+        + {
+            "role": ((.agents[$agent].role // $role)),
+            "status": ((.agents[$agent].status // "idle")),
+            "current_task": ((if $task == "" then (.agents[$agent].current_task // "") else $task end)),
+            "last_active": $ts,
+            "working_on": ((.agents[$agent].working_on // []))
+          }
+      )
+  ' "$STATUS_FILE" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
+}
+
+commit_and_push() {
   local agent="$1"
   local message="$2"
 
-  echo "[coordinate] Staging all changes..."
+  validate_json
   git add -A
 
-  # Check if there's anything to commit
   if git diff --cached --quiet; then
     echo "[coordinate] No changes to commit."
     return 0
   fi
 
-  # Pull latest before push to catch conflicts early
-  echo "[coordinate] Pulling latest to detect conflicts before committing..."
-  git pull --rebase 2>/dev/null || {
-    echo "[coordinate] Merge conflict detected during pull!"
-    echo "[coordinate] Resolve conflicts manually, then run:"
-    echo "  git add <resolved-files>"
-    echo "  git commit -m \"merge: resolve conflicts between agents\""
-    echo "  git push"
-    echo ""
-    echo "[coordinate] Conflicting files:"
-    git diff --name-only --diff-filter=U 2>/dev/null || true
-    exit 1
-  }
-
-  echo "[coordinate] Committing changes..."
+  echo "[coordinate] Committing: $message"
   git commit -m "$message"
 
-  echo "[coordinate] Pushing to remote..."
-  if ! git push 2>/dev/null; then
-    echo "[coordinate] Push rejected. Remote has new commits. Rebasing and retrying..."
-    git pull --rebase
-    git push
+  if has_upstream; then
+    echo "[coordinate] Rebasing committed changes onto upstream..."
+    if ! git pull --rebase --autostash; then
+      echo "[coordinate] ERROR: conflict during rebase." >&2
+      echo "[coordinate] Resolve conflicts manually, preserve other agents' work, then run:" >&2
+      echo "  git status --short" >&2
+      echo "  git diff" >&2
+      echo "  git add <resolved-files>" >&2
+      echo "  git rebase --continue" >&2
+      echo "  git push" >&2
+      echo "[coordinate] Conflicting files:" >&2
+      git diff --name-only --diff-filter=U 2>/dev/null || true
+      exit 1
+    fi
   fi
 
-  echo "[coordinate] Changes pushed successfully."
+  push_to_upstream
 }
 
-update_timestamp() {
+is_helper_agent() {
   local agent="$1"
-  local timestamp
-  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-  echo "[coordinate] Updating timestamp for $agent to $timestamp"
+  [[ "$agent" != "$FINAL_DECISION_AGENT" ]]
 }
 
-jq_update() {
-  local file="$1"
-  local filter="$2"
-  local tmp_file="${file}.tmp"
-  jq "$filter" "$file" > "$tmp_file" && mv "$tmp_file" "$file"
+is_protected_path() {
+  local path="$1"
+  case "$path" in
+    *.sln|*.slnx|*.csproj) return 0 ;;
+    Directory.Build.props|Directory.Build.targets|Directory.Packages.props) return 0 ;;
+    src/*Contracts*/*|src/*Contracts*/**|src/ArgusEngine.Domain/*|src/ArgusEngine.Domain/**) return 0 ;;
+    src/*/Migrations/*|src/**/Migrations/**) return 0 ;;
+    src/ArgusEngine.CommandCenter.Gateway/*|src/ArgusEngine.CommandCenter.Gateway/**) return 0 ;;
+    src/ArgusEngine.Application/*|src/ArgusEngine.Application/**) return 0 ;;
+    src/ArgusEngine.Infrastructure/*/Messaging/*|src/ArgusEngine.Infrastructure/**/Messaging/**) return 0 ;;
+    */Program.cs|Program.cs|*/Startup*.cs|Startup*.cs) return 0 ;;
+    deployment/docker-compose*.yml|deployment/gcp/*|deployment/gcp/**) return 0 ;;
+    deploy.py|*/appsettings*.json|appsettings*.json) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
-read_agent_field() {
-  local agent="$1"
-  local field="$2"
-  jq -r ".agents.\"$agent\".\"$field\" // \"\"" "$STATUS_FILE" 2>/dev/null || echo ""
+has_codex_decision_for_file() {
+  local path="$1"
+  jq -e --arg file "$path" '
+    any(.decision_log[]?;
+      (.agent == "codex")
+      and ((.files // []) | index($file) != null or (.scope // "") == "architecture" or (.scope // "") == "protected-file")
+    )
+  ' "$STATUS_FILE" >/dev/null 2>&1
 }
 
-# ---------- Actions ----------
+print_status() {
+  ensure_status_file
+  validate_json
+  echo "=== AI Coordination Status ==="
+  echo ""
+  echo "Protocol: $(jq -r '.protocol_version // "unknown"' "$STATUS_FILE")"
+  echo "Final decision agent: $(jq -r '.role_policy.final_decision_agent // "codex"' "$STATUS_FILE")"
+  echo "Last updated: $(jq -r '.last_updated // "unknown"' "$STATUS_FILE")"
+  echo ""
+  echo "--- Agents ---"
+  jq -r '
+    (.agents // {})
+    | to_entries[]?
+    | "\(.key): role=\(.value.role // "unknown") status=\(.value.status // "unknown") task=\(.value.current_task // "") last_active=\(.value.last_active // "unknown") files=\((.value.working_on // []) | join(","))"
+  ' "$STATUS_FILE"
+  echo ""
+  echo "--- File Locks ---"
+  jq -r '
+    (.file_locks // {})
+    | to_entries[]?
+    | "\(.key) -> \(.value.locked_by) [\(.value.status // "unknown")] \(.value.purpose // "")"
+  ' "$STATUS_FILE"
+  echo ""
+  echo "--- Shared Files ---"
+  jq -r '
+    (.shared_files // {})
+    | to_entries[]?
+    | "\(.key) -> \((.value.working_agents // []) | join(", "))"
+  ' "$STATUS_FILE"
+  echo ""
+  echo "--- Blocks ---"
+  jq -r '
+    (.blocked_items // [])[]?
+    | "\(.created_at) \(.agent): \(.reason) [\(.status)]"
+  ' "$STATUS_FILE"
+  echo ""
+  echo "--- Recent Decisions ---"
+  jq -r '
+    (.decision_log // [])[-10:][]?
+    | "\(.created_at) \(.agent): [\(.scope)] \(.summary) files=\((.files // []) | join(","))"
+  ' "$STATUS_FILE"
+  echo ""
+  echo "--- Notes ---"
+  jq -r '
+    (.agent_notes // {})
+    | to_entries[]?
+    | "\(.key): \(.value)"
+  ' "$STATUS_FILE"
+}
 
 case "$ACTION" in
+  status)
+    print_status
+    ;;
+
+  register)
+    AGENT="${2:-}"
+    ROLE="${3:-}"
+    TASK="${4:-}"
+    if [[ -z "$AGENT" || -z "$ROLE" || -z "$TASK" ]]; then
+      echo "Usage: $0 register <agent> <role> <task>" >&2
+      exit 1
+    fi
+    ensure_status_file
+    pull_latest
+    agent_exists_or_register_minimal "$AGENT" "$ROLE" "$TASK"
+    TS=$(utc_now)
+    jq --arg agent "$AGENT" --arg role "$ROLE" --arg task "$TASK" --arg ts "$TS" '
+      .last_updated = $ts
+      | .agents[$agent] = ((.agents[$agent] // {}) + {
+          "role": $role,
+          "status": "busy",
+          "current_task": $task,
+          "last_active": $ts,
+          "working_on": (.agents[$agent].working_on // [])
+        })
+    ' "$STATUS_FILE" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
+    commit_and_push "$AGENT" "coordinate: register $AGENT"
+    ;;
+
   claim)
+    AGENT="${2:-}"
     FILE_PATH="${3:-}"
     PURPOSE="${4:-}"
-    if [ -z "$AGENT_NAME" ] || [ -z "$FILE_PATH" ]; then
-      echo "Usage: $0 claim <agent-name> <file-path> <purpose>"
+    if [[ -z "$AGENT" || -z "$FILE_PATH" || -z "$PURPOSE" ]]; then
+      echo "Usage: $0 claim <agent> <file-path> <purpose>" >&2
       exit 1
     fi
-
+    ensure_status_file
     pull_latest
+    validate_json
 
-    # Check if file is already locked
-    LOCKED_BY=$(jq -r ".file_locks.\"$FILE_PATH\".locked_by // \"\"" "$STATUS_FILE" 2>/dev/null)
-    if [ -n "$LOCKED_BY" ] && [ "$LOCKED_BY" != "$AGENT_NAME" ]; then
-      LOCK_PURPOSE=$(jq -r ".file_locks.\"$FILE_PATH\".purpose // \"\"" "$STATUS_FILE")
-      LOCK_TIME=$(jq -r ".file_locks.\"$FILE_PATH\".locked_at // \"\"" "$STATUS_FILE")
-      echo "[coordinate] ERROR: File '$FILE_PATH' is already locked by '$LOCKED_BY'"
-      echo "[coordinate] Purpose: $LOCK_PURPOSE"
-      echo "[coordinate] Locked at: $LOCK_TIME"
-      echo ""
-      echo "[coordinate] You must coordinate with $LOCKED_BY before editing this file."
-      echo "[coordinate] Check '$STATUS_FILE' agent_notes section for messages."
+    LOCKED_BY=$(jq -r --arg file "$FILE_PATH" '.file_locks[$file].locked_by // ""' "$STATUS_FILE")
+    if [[ -n "$LOCKED_BY" && "$LOCKED_BY" != "$AGENT" ]]; then
+      echo "[coordinate] ERROR: file is locked by $LOCKED_BY: $FILE_PATH" >&2
+      jq -r --arg file "$FILE_PATH" '.file_locks[$file]' "$STATUS_FILE" >&2
       exit 1
     fi
 
-    # Check if file is already claimed by this agent
-    WORKING_ON=$(read_agent_field "$AGENT_NAME" "working_on" | jq -r '. // [] | join(" ")')
-    if echo "$WORKING_ON" | grep -q "$FILE_PATH"; then
-      echo "[coordinate] Warning: '$FILE_PATH' is already claimed by $AGENT_NAME. Updating lock."
+    if is_helper_agent "$AGENT" && is_protected_path "$FILE_PATH" && ! has_codex_decision_for_file "$FILE_PATH"; then
+      echo "[coordinate] ERROR: helper agent cannot claim protected file without Codex decision: $FILE_PATH" >&2
+      echo "[coordinate] Ask Codex to run: coordinate.sh decision codex \"<decision>\" protected-file $FILE_PATH" >&2
+      exit 1
     fi
 
-    # Update status.json
-    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    jq_update "$STATUS_FILE" "
-      .last_updated = \"$TIMESTAMP\"
-      | .agents.\"$AGENT_NAME\".status = \"busy\"
-      | .agents.\"$AGENT_NAME\".current_task = \"$PURPOSE\"
-      | .agents.\"$AGENT_NAME\".last_active = \"$TIMESTAMP\"
-      | .agents.\"$AGENT_NAME\".working_on = (.agents.\"$AGENT_NAME\".working_on + [\"$FILE_PATH\"] | unique)
-      | .file_locks.\"$FILE_PATH\" = {
-          \"locked_by\": \"$AGENT_NAME\",
-          \"locked_at\": \"$TIMESTAMP\",
-          \"purpose\": \"$PURPOSE\",
-          \"status\": \"in_progress\"
+    TS=$(utc_now)
+    jq --arg agent "$AGENT" --arg file "$FILE_PATH" --arg purpose "$PURPOSE" --arg ts "$TS" '
+      .last_updated = $ts
+      | .agents[$agent] = ((.agents[$agent] // {}) + {
+          "status": "busy",
+          "current_task": $purpose,
+          "last_active": $ts,
+          "working_on": (((.agents[$agent].working_on // []) + [$file]) | unique)
+        })
+      | .file_locks[$file] = {
+          "locked_by": $agent,
+          "locked_at": $ts,
+          "purpose": $purpose,
+          "status": "in_progress"
         }
-    "
+    ' "$STATUS_FILE" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
 
-    push_changes "$AGENT_NAME" "coordinate: $AGENT_NAME claimed $FILE_PATH for $PURPOSE"
-    echo "[coordinate] File '$FILE_PATH' claimed successfully."
+    commit_and_push "$AGENT" "coordinate: $AGENT claimed $FILE_PATH"
     ;;
 
   release)
+    AGENT="${2:-}"
     FILE_PATH="${3:-}"
-    if [ -z "$AGENT_NAME" ] || [ -z "$FILE_PATH" ]; then
-      echo "Usage: $0 release <agent-name> <file-path>"
+    if [[ -z "$AGENT" || -z "$FILE_PATH" ]]; then
+      echo "Usage: $0 release <agent> <file-path>" >&2
+      exit 1
+    fi
+    ensure_status_file
+    pull_latest
+    validate_json
+
+    LOCKED_BY=$(jq -r --arg file "$FILE_PATH" '.file_locks[$file].locked_by // ""' "$STATUS_FILE")
+    if [[ -n "$LOCKED_BY" && "$LOCKED_BY" != "$AGENT" && "$AGENT" != "$FINAL_DECISION_AGENT" ]]; then
+      echo "[coordinate] ERROR: only $LOCKED_BY or $FINAL_DECISION_AGENT can release $FILE_PATH" >&2
       exit 1
     fi
 
-    pull_latest
-
-    # Remove file from agent's working_on list and remove lock
-    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    jq_update "$STATUS_FILE" "
-      .last_updated = \"$TIMESTAMP\"
-      | .agents.\"$AGENT_NAME\".working_on = (.agents.\"$AGENT_NAME\".working_on - [\"$FILE_PATH\"])
-      | if (.agents.\"$AGENT_NAME\".working_on | length) == 0 then
-          .agents.\"$AGENT_NAME\".status = \"idle\"
-          | .agents.\"$AGENT_NAME\".current_task = \"\"
+    TS=$(utc_now)
+    jq --arg agent "$AGENT" --arg file "$FILE_PATH" --arg ts "$TS" '
+      .last_updated = $ts
+      | .agents[$agent].last_active = $ts
+      | .agents[$agent].working_on = ((.agents[$agent].working_on // []) - [$file])
+      | if ((.agents[$agent].working_on // []) | length) == 0 then
+          .agents[$agent].status = "idle" | .agents[$agent].current_task = ""
         else . end
-      | .agents.\"$AGENT_NAME\".last_active = \"$TIMESTAMP\"
-      | del(.file_locks.\"$FILE_PATH\")
-    "
+      | del(.file_locks[$file])
+    ' "$STATUS_FILE" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
 
-    push_changes "$AGENT_NAME" "coordinate: $AGENT_NAME released $FILE_PATH"
-    echo "[coordinate] File '$FILE_PATH' released."
+    commit_and_push "$AGENT" "coordinate: $AGENT released $FILE_PATH"
     ;;
 
   push)
-    COMMIT_MSG="${3:-}"
-    if [ -z "$AGENT_NAME" ] || [ -z "$COMMIT_MSG" ]; then
-      echo "Usage: $0 push <agent-name> <commit-message>"
+    AGENT="${2:-}"
+    MESSAGE="${3:-}"
+    if [[ -z "$AGENT" || -z "$MESSAGE" ]]; then
+      echo "Usage: $0 push <agent> <commit-message>" >&2
       exit 1
     fi
-
-    # Update heartbeat before push
-    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    if [ -f "$STATUS_FILE" ]; then
-      jq_update "$STATUS_FILE" "
-        .last_updated = \"$TIMESTAMP\"
-        | .agents.\"$AGENT_NAME\".last_active = \"$TIMESTAMP\"
-      " 2>/dev/null || true
-    fi
-
-    push_changes "$AGENT_NAME" "$COMMIT_MSG"
+    ensure_status_file
+    TS=$(utc_now)
+    jq --arg agent "$AGENT" --arg ts "$TS" '
+      .last_updated = $ts
+      | .agents[$agent] = ((.agents[$agent] // {}) + {"last_active": $ts})
+    ' "$STATUS_FILE" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
+    commit_and_push "$AGENT" "$MESSAGE"
     ;;
 
   heartbeat)
-    if [ -z "$AGENT_NAME" ]; then
-      echo "Usage: $0 heartbeat <agent-name>"
+    AGENT="${2:-}"
+    if [[ -z "$AGENT" ]]; then
+      echo "Usage: $0 heartbeat <agent>" >&2
       exit 1
     fi
-
+    ensure_status_file
     pull_latest
-
-    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    jq_update "$STATUS_FILE" "
-      .last_updated = \"$TIMESTAMP\"
-      | .agents.\"$AGENT_NAME\".last_active = \"$TIMESTAMP\"
-    "
-
-    push_changes "$AGENT_NAME" "coordinate: heartbeat $AGENT_NAME"
-    echo "[coordinate] Heartbeat sent for $AGENT_NAME."
+    TS=$(utc_now)
+    jq --arg agent "$AGENT" --arg ts "$TS" '
+      .last_updated = $ts
+      | .agents[$agent] = ((.agents[$agent] // {}) + {"last_active": $ts})
+    ' "$STATUS_FILE" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
+    commit_and_push "$AGENT" "coordinate: heartbeat $AGENT"
     ;;
 
   share)
+    AGENT="${2:-}"
     FILE_PATH="${3:-}"
-    if [ -z "$AGENT_NAME" ] || [ -z "$FILE_PATH" ]; then
-      echo "Usage: $0 share <agent-name> <file-path>"
+    if [[ -z "$AGENT" || -z "$FILE_PATH" ]]; then
+      echo "Usage: $0 share <agent> <file-path>" >&2
       exit 1
     fi
-
+    ensure_status_file
     pull_latest
-
-    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    jq_update "$STATUS_FILE" "
-      .last_updated = \"$TIMESTAMP\"
-      | .agents.\"$AGENT_NAME\".last_active = \"$TIMESTAMP\"
-      | .shared_files.\"$FILE_PATH\".working_agents = ((.shared_files.\"$FILE_PATH\".working_agents // []) + [\"$AGENT_NAME\"] | unique)
-      | if .shared_files.\"$FILE_PATH\".last_merge == null then
-          .shared_files.\"$FILE_PATH\".last_merge = \"$TIMESTAMP\"
-        else . end
-      | .shared_files.\"$FILE_PATH\".merge_required = false
-    "
-
-    push_changes "$AGENT_NAME" "coordinate: $AGENT_NAME marked $FILE_PATH as shared"
-    echo "[coordinate] File '$FILE_PATH' marked as shared."
+    TS=$(utc_now)
+    jq --arg agent "$AGENT" --arg file "$FILE_PATH" --arg ts "$TS" '
+      .last_updated = $ts
+      | .agents[$agent] = ((.agents[$agent] // {}) + {"last_active": $ts})
+      | .shared_files[$file] = ((.shared_files[$file] // {}) + {
+          "working_agents": (((.shared_files[$file].working_agents // []) + [$agent]) | unique),
+          "merge_required": true,
+          "last_updated": $ts
+        })
+    ' "$STATUS_FILE" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
+    commit_and_push "$AGENT" "coordinate: $AGENT marked $FILE_PATH shared"
     ;;
 
   note)
+    AGENT="${2:-}"
     NOTE="${3:-}"
-    if [ -z "$AGENT_NAME" ] || [ -z "$NOTE" ]; then
-      echo "Usage: $0 note <agent-name> <message>"
+    if [[ -z "$AGENT" || -z "$NOTE" ]]; then
+      echo "Usage: $0 note <agent> <message>" >&2
       exit 1
     fi
-
+    ensure_status_file
     pull_latest
-
-    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    ESCAPED_NOTE=$(echo "$NOTE" | sed 's/"/\\"/g')
-    jq_update "$STATUS_FILE" "
-      .last_updated = \"$TIMESTAMP\"
-      | .agents.\"$AGENT_NAME\".last_active = \"$TIMESTAMP\"
-      | .agent_notes.\"$AGENT_NAME\" = \"[$TIMESTAMP] $ESCAPED_NOTE\"
-    "
-
-    push_changes "$AGENT_NAME" "coordinate: note from $AGENT_NAME"
-    echo "[coordinate] Note left for other agents."
+    TS=$(utc_now)
+    jq --arg agent "$AGENT" --arg note "[$TS] $NOTE" --arg ts "$TS" '
+      .last_updated = $ts
+      | .agents[$agent] = ((.agents[$agent] // {}) + {"last_active": $ts})
+      | .agent_notes[$agent] = $note
+    ' "$STATUS_FILE" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
+    commit_and_push "$AGENT" "coordinate: note from $AGENT"
     ;;
 
-  status)
-    if [ -f "$STATUS_FILE" ]; then
-      echo "=== AI Coordination Status ==="
-      echo ""
-      echo "--- Agents ---"
-      jq -r '.agents | to_entries[] | "\(.key): \(.value.status) - \(.value.current_task // "idle") (last active: \(.value.last_active))"' "$STATUS_FILE" 2>/dev/null || echo "No agents found"
-      echo ""
-      echo "--- File Locks ---"
-      jq -r '.file_locks | to_entries[] | "\(.key) -> locked by: \(.value.locked_by) (\(.value.purpose))"' "$STATUS_FILE" 2>/dev/null || echo "No locks"
-      echo ""
-      echo "--- Shared Files ---"
-      jq -r '.shared_files | to_entries[] | "\(.key) -> agents: \(.value.working_agents | join(", "))"' "$STATUS_FILE" 2>/dev/null || echo "No shared files"
-      echo ""
-      echo "--- Agent Notes ---"
-      jq -r '.agent_notes | to_entries[] | "\(.key): \(.value)"' "$STATUS_FILE" 2>/dev/null || echo "No notes"
-      echo ""
-      echo "--- Pending Merges ---"
-      jq -r '.pending_merges[] | "\(.file): \(.agents | join(" + ")) [\(.status)]"' "$STATUS_FILE" 2>/dev/null || echo "No pending merges"
-    else
-      echo "[coordinate] Status file not found at $STATUS_FILE"
+  block)
+    AGENT="${2:-}"
+    REASON="${3:-}"
+    if [[ -z "$AGENT" || -z "$REASON" ]]; then
+      echo "Usage: $0 block <agent> <reason>" >&2
       exit 1
     fi
+    ensure_status_file
+    pull_latest
+    TS=$(utc_now)
+    jq --arg agent "$AGENT" --arg reason "$REASON" --arg ts "$TS" '
+      .last_updated = $ts
+      | .agents[$agent] = ((.agents[$agent] // {}) + {
+          "status": "blocked",
+          "last_active": $ts
+        })
+      | .blocked_items = ((.blocked_items // []) + [{
+          "created_at": $ts,
+          "agent": $agent,
+          "reason": $reason,
+          "status": "open"
+        }])
+    ' "$STATUS_FILE" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
+    commit_and_push "$AGENT" "coordinate: block recorded by $AGENT"
+    ;;
+
+  decision)
+    AGENT="${2:-}"
+    SUMMARY="${3:-}"
+    SCOPE="${4:-general}"
+    FILES_CSV="${5:-}"
+    if [[ -z "$AGENT" || -z "$SUMMARY" ]]; then
+      echo "Usage: $0 decision <agent> <summary> [scope] [comma-separated-files]" >&2
+      exit 1
+    fi
+    if [[ "$AGENT" != "$FINAL_DECISION_AGENT" ]]; then
+      echo "[coordinate] ERROR: only $FINAL_DECISION_AGENT can record final decisions." >&2
+      exit 1
+    fi
+    ensure_status_file
+    pull_latest
+    TS=$(utc_now)
+    jq --arg agent "$AGENT" --arg summary "$SUMMARY" --arg scope "$SCOPE" --arg files_csv "$FILES_CSV" --arg ts "$TS" '
+      .last_updated = $ts
+      | .agents[$agent] = ((.agents[$agent] // {}) + {"last_active": $ts})
+      | .decision_log = ((.decision_log // []) + [{
+          "id": ("decision-" + ($ts | gsub("[:TZ-]"; ""))),
+          "created_at": $ts,
+          "agent": $agent,
+          "scope": $scope,
+          "summary": $summary,
+          "files": (if $files_csv == "" then [] else ($files_csv | split(",") | map(gsub("^\\s+|\\s+$"; ""))) end)
+        }])
+    ' "$STATUS_FILE" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
+    commit_and_push "$AGENT" "coordinate: Codex decision - $SCOPE"
     ;;
 
   *)
-    echo "[coordinate] Unknown action: $ACTION"
-    echo "Valid actions: claim, release, push, heartbeat, share, note, status"
+    echo "[coordinate] Unknown action: $ACTION" >&2
+    usage
     exit 1
     ;;
 esac

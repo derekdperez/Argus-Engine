@@ -34,7 +34,7 @@ public sealed class EfReconProfileAssignmentService(
             await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
             await ReconOrchestratorSql.EnsureSchemaAsync(db, cancellationToken).ConfigureAwait(false);
             var configuration = await LoadConfigurationAsync(db, request.TargetId, cancellationToken).ConfigureAwait(false);
-            var profileIndex = ResolveProfileIndex(configuration, request.TargetId, subdomainKey, machineKey);
+            var profileIndex = ResolveProfileIndex(configuration, machineKey);
             var generated = ReconProfileFactory.Create(configuration, request.TargetId, subdomainKey, machineKey, profileIndex);
             var assignmentId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
@@ -186,12 +186,10 @@ public sealed class EfReconProfileAssignmentService(
 
     private static int ResolveProfileIndex(
         ReconOrchestratorConfiguration configuration,
-        Guid targetId,
-        string subdomainKey,
         string machineKey)
     {
         var max = Math.Max(1, configuration.ReconProfilesPerSubdomain);
-        var seed = ReconProfileFactory.StableInt($"{targetId:N}|{subdomainKey}|{machineKey}|profile-index");
+        var seed = ReconProfileFactory.StableInt($"{machineKey}|profile-index");
         return Math.Abs(seed % max);
     }
 

@@ -22,13 +22,14 @@ public sealed class GcpDeployOptions
 
     /// <summary>
     /// Fully-qualified image prefix.
-    /// Defaults to "{Region}-docker.pkg.dev/{ProjectId}/{GarRepository}".
-    /// Override only if using a different registry.
+    /// Defaults to "{Region}-docker.pkg.dev/{ProjectId}/{GarRepository}/argus-engine".
+    /// The trailing "/argus-engine" matches deploy.py's GCP_IMAGE_PREFIX default.
+    /// Override only if using a different registry or path.
     /// </summary>
     public string? ImagePrefix { get; set; }
 
     public string ResolvedImagePrefix =>
-        ImagePrefix ?? $"{Region}-docker.pkg.dev/{ProjectId}/{GarRepository}";
+        ImagePrefix ?? $"{Region}-docker.pkg.dev/{ProjectId}/{GarRepository}/argus-engine";
 
     /// <summary>
     /// Docker tag applied to all built images.

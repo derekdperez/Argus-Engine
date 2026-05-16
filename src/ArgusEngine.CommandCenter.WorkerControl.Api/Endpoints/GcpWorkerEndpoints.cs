@@ -32,8 +32,8 @@ public static class GcpWorkerEndpoints
             var results = new List<object>();
             foreach (var slug in DefaultSlugs)
             {
-                logger.LogInformation("Deploying worker {Slug} with min=10, max=50", slug);
-                var result = await gcp.DeployWorkerAsync(slug, 10, 50, ct);
+                logger.LogInformation("Deploying worker {Slug} with min=1, max=2", slug);
+                var result = await gcp.DeployWorkerAsync(slug, 1, 2, ct);
                 results.Add(new { slug, success = result is not null, service = result?.Name, url = result?.Url });
             }
             return Results.Ok(new { results });

@@ -146,7 +146,7 @@ public sealed class GcpCloudRunClient(IHttpClientFactory httpFactory, IConfigura
     private async Task<HttpRequestMessage> CreateRequestAsync(HttpMethod method, string path, object? body = null, CancellationToken ct = default)
     {
         var token = await GetAccessTokenAsync(ct);
-        var url = $"https://us-east1-run.googleapis.com/v2/projects/{ProjectId}/locations/{Region}/{path}";
+        var url = $"https://{Region}-run.googleapis.com/v2/projects/{ProjectId}/locations/{Region}/{path}";
         var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         if (body is not null)
@@ -226,12 +226,23 @@ public sealed class GcpCloudRunClient(IHttpClientFactory httpFactory, IConfigura
         return result;
     }
 
+    private string Cfg(string key, string fallback) => config[key] ?? fallback;
+
     public async Task<GcpWorkerStatus?> DeployWorkerAsync(string slug, int minInstances = 1, int maxInstances = 2, CancellationToken ct = default)
     {
         if (!IsConfigured) return null;
         var serviceName = $"argus-worker-{slug}";
-        var imageTag = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        var hostIp = Cfg("GcpDeploy:HostPublicAddress", Cfg("ARGUS_HOST_PUBLIC_IP", ""));
+        if (string.IsNullOrWhiteSpace(hostIp))
+            return null; // caller should check result and report "HostPublicAddress not configured"
+
+        var imageTag = Cfg("GcpDeploy:ImageTag", "");
+        if (string.IsNullOrWhiteSpace(imageTag))
+            return null; // must have a pre-built image tag to deploy
         var image = $"{Region}-docker.pkg.dev/{ProjectId}/argus-engine/argus-engine/worker-{slug}:{imageTag}";
+
+        var pgPass = Cfg("ConnectionStrings:PostgresPassword", Cfg("ARGUS_POSTGRES_PASSWORD", "argus"));
+        var rmqPass = Cfg("RabbitMq:Password", Cfg("ARGUS_RABBITMQ_PASSWORD", "argus"));
 
         var body = new
         {
@@ -264,13 +275,13 @@ public sealed class GcpCloudRunClient(IHttpClientFactory httpFactory, IConfigura
                                 env = new[]
                                 {
                                     new { name = "PORT", value = "8080" },
-                                    new { name = "ConnectionStrings__Postgres", value = $"Host={config["GcpDeploy:HostPublicAddress"] ?? "34.148.132.67"};Port=5432;Database=argus_engine;Username=argus;Password=argus" },
-                                    new { name = "ConnectionStrings__Redis", value = $"{(config["GcpDeploy:HostPublicAddress"] ?? "34.148.132.67")}:6379" },
-                                    new { name = "RabbitMq__Host", value = config["GcpDeploy:HostPublicAddress"] ?? "34.148.132.67" },
+                                    new { name = "ConnectionStrings__Postgres", value = $"Host={hostIp};Port=5432;Database=argus_engine;Username=argus;Password={pgPass}" },
+                                    new { name = "ConnectionStrings__Redis", value = $"{hostIp}:6379" },
+                                    new { name = "RabbitMq__Host", value = hostIp },
                                     new { name = "RabbitMq__Username", value = "argus" },
-                                    new { name = "RabbitMq__Password", value = "argus" },
+                                    new { name = "RabbitMq__Password", value = rmqPass },
                                     new { name = "RabbitMq__VirtualHost", value = "/" },
-                                    new { name = "RabbitMq__ManagementUrl", value = $"http://{config["GcpDeploy:HostPublicAddress"] ?? "34.148.132.67"}:15672" },
+                                    new { name = "RabbitMq__ManagementUrl", value = $"http://{hostIp}:15672" },
                                     new { name = "Argus__SkipStartupDatabase", value = "true" },
                                     new { name = "ARGUS_SKIP_STARTUP_DATABASE", value = "1" }
                                 },

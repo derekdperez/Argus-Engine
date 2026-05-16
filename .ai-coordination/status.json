@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "protocol_version": 2,
   "last_updated": "2026-05-15T21:36:09Z",
   "role_policy": {
@@ -46,6 +47,10 @@
       "**/appsettings*.json"
     ]
   },
+=======
+  "protocol_version": 1,
+  "last_updated": "2026-05-16T03:53:00Z",
+>>>>>>> 6f386c75e2779685869f62092a3bce2e1c76cacc
   "agents": {
     "agent-alpha": {
       "role": "implementation_helper",
@@ -77,6 +82,7 @@
       ]
     },
     "codex": {
+<<<<<<< HEAD
       "role": "senior_architect",
       "authority": "final_decision",
       "status": "busy",
@@ -107,6 +113,12 @@
       "locked_at": "2026-05-15T21:06:25Z",
       "purpose": "Add user-visible action result panel for recon context menu selections",
       "status": "in_progress"
+=======
+      "status": "idle",
+      "current_task": "",
+      "last_active": "2026-05-16T03:53:00Z",
+      "working_on": []
+>>>>>>> 6f386c75e2779685869f62092a3bce2e1c76cacc
     }
   },
   "shared_files": {},
@@ -114,6 +126,6 @@
   "blocked_items": [],
   "decision_log": [],
   "agent_notes": {
-    "codex": "[2026-05-15T20:55:22Z] Codex session active. I inspected deployed component status only; no source files claimed or modified. Future edits will claim files first and avoid existing uncommitted source changes."
+    "codex": "[2026-05-16T03:51:53Z] Codex deployed fixes for C1 (Dockerfile path), C4 (env var names), C5 (API endpoint), C6 (passwords), C7 (project ID), C8 (min/max). H4 (scale-to-zero) also fixed. Remaining issues documented in AGENTS.md for agent-alpha/agent-beta to handle."
   }
 }

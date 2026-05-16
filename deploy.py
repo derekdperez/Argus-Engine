@@ -1462,11 +1462,14 @@ class ArgusDeployConsole:
         values.setdefault("Argus__SkipStartupDatabase", "true")
         values.setdefault("ARGUS_SKIP_STARTUP_DATABASE", "1")
 
-        temp = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".yaml", delete=False)
-        with temp as out:
+        # Create temp file in a private directory so DB passwords are not world-readable
+        tmp_dir = Path(tempfile.mkdtemp(prefix="argus-gcp-env-"))
+        tmp_dir.chmod(0o700)
+        out_path = tmp_dir / "env.yaml"
+        with open(out_path, "w", encoding="utf-8") as out:
             for key, value in values.items():
                 out.write(f"{key}: {json.dumps(value)}\n")
-        return Path(temp.name)
+        return out_path
 
     def gcp_deploy(self, worker_args: Sequence[str]) -> int:
         ensure = self.gcp_ensure_config()
@@ -1530,7 +1533,10 @@ class ArgusDeployConsole:
                 self.ui.ok(f"Deployed {service} min={min_instances} max={max_instances}")
         finally:
             if env_file.exists() and not self.options.dry_run:
-                env_file.unlink(missing_ok=True)
+                parent = env_file.parent
+                if parent.name.startswith("argus-gcp-env-"):
+                    import shutil
+                    shutil.rmtree(parent, ignore_errors=True)
         return 0
 
     def parse_gcp_scale_specs(self, tokens: Sequence[str]) -> dict[str, tuple[int, int]]:
@@ -1639,6 +1645,13 @@ class ArgusDeployConsole:
             return login
 
         workers = self.gcp_selected_workers(worker_args)
+        self.ui.warn(f"This will permanently delete {len(workers)} Cloud Run service(s):")
+        for w in workers:
+            self.ui.warn(f"  - {self.gcp_service_name(w)} ({w})")
+        if not self.ui.confirm("Are you sure?", default=False, assume_yes=self.options.assume_yes):
+            self.ui.info("Teardown cancelled.")
+            return 0
+
         for worker in workers:
             code = self.runner.run(
                 [

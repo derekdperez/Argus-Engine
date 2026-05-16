@@ -176,10 +176,16 @@ public static class CloudDeployEndpoints
     {
         public void Report(DeployProgressEvent value)
         {
-            // Fire-and-forget write — acceptable for SSE progress events
-            _ = response.WriteAsync(
-                $"data: {System.Text.Json.JsonSerializer.Serialize(value)}\n\n");
-            _ = response.Body.FlushAsync();
+            try
+            {
+                var json = System.Text.Json.JsonSerializer.Serialize(value);
+                var data = $"data: {json}\n\n";
+                ((System.IO.Stream)response.Body).Write(System.Text.Encoding.UTF8.GetBytes(data));
+            }
+            catch
+            {
+                // Client disconnect is expected; ignore write errors
+            }
         }
     }
 }

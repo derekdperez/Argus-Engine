@@ -110,13 +110,13 @@ internal sealed class GcpImageBuilder(
         var dockerfileName = worker == WorkerType.Enumeration
             ? "Dockerfile.worker-enum"
             : "Dockerfile.worker";
-        var dockerfilePath = Path.Combine(_opts.RepoRoot, "deploy", dockerfileName);
+        var dockerfilePath = Path.Combine(_opts.RepoRoot, "deployment", dockerfileName);
 
         if (!File.Exists(dockerfilePath))
         {
             return CloudDeployResult.Fail(
                 $"Dockerfile '{dockerfileName}' not found at {dockerfilePath}. " +
-                $"Ensure deploy/{dockerfileName} exists in the repo.");
+                $"Ensure deployment/{dockerfileName} exists in the repo.");
         }
 
         progress?.Report(new(worker, $"Building image: {imageUri}"));

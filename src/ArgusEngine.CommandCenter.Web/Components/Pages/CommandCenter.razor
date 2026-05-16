@@ -65,6 +65,7 @@
         <button class="@TabClass(CommandTab.Targets)" @onclick="@(() => SelectTabAsync(CommandTab.Targets))">Targets</button>
         <button class="@TabClass(CommandTab.Discovery)" @onclick="@(() => SelectTabAsync(CommandTab.Discovery))">Discovery</button>
         <button class="@TabClass(CommandTab.Workers)" @onclick="@(() => SelectTabAsync(CommandTab.Workers))">Workers</button>
+        <button class="@TabClass(CommandTab.Logs)" @onclick="@(() => SelectTabAsync(CommandTab.Logs))">Logs</button>
     </nav>
 
     <div id="recon-action-results" class="recon-action-collapsed">
@@ -529,6 +530,126 @@
             }
         </section>
     }
+
+    @if (_activeTab == CommandTab.Logs)
+    {
+        <section class="cc-panel">
+            <div class="cc-panel-header">
+                <div>
+                    <h2>Logs</h2>
+                    <p class="cc-muted">Central log repository for infrastructure and application logs.</p>
+                </div>
+                <div class="cc-toolbar">
+                    <button class="cc-btn" @onclick="ReloadLogsAsync" disabled="@_logsLoading">Reload</button>
+                </div>
+            </div>
+
+            <div class="logs-sub-tabs">
+                <button class="@(_logsSubTab == "app" ? "logs-sub-tab-active" : "")" @onclick="@(() => _logsSubTab = "app")">Application Logs</button>
+                <button class="@(_logsSubTab == "worker" ? "logs-sub-tab-active" : "")" @onclick="@(() => _logsSubTab = "worker")">Worker Logs</button>
+            </div>
+
+            @if (_logsSubTab == "app")
+            {
+                <div class="logs-filters">
+                    <select class="cc-input" @bind="_logLevelFilter">
+                        <option value="">All levels</option>
+                        @foreach (var lvl in _logLevels)
+                        {
+                            <option value="@lvl">@lvl</option>
+                        }
+                    </select>
+                    <select class="cc-input" @bind="_logComponentFilter">
+                        <option value="">All components</option>
+                        @foreach (var comp in _logComponents)
+                        {
+                            <option value="@comp">@comp</option>
+                        }
+                    </select>
+                    <input class="cc-input" type="text" placeholder="Search..." @bind="_logSearch" />
+                </div>
+                <ArgusDataGrid TGridItem="JsonElement"
+                               Items="@LogRows.AsQueryable()"
+                               SearchText="@_logSearch"
+                               SearchTextChanged="@((string value) => _logSearch = value)"
+                               SearchPlaceholder="Search logs..."
+                               IsLoading="@_logsLoading"
+                               EmptyText="No log entries found."
+                               PersistKey="command-center-logs"
+                               VirtualizedHeightPixels="500"
+                               ItemKey="@((JsonElement e) => e.GetProperty("id").GetString() ?? "")">
+                    <ChildContent>
+                        <TemplateColumn Title="Time" Context="log" SortBy="@SortLogTime">
+                            <span class="log-time">@FormatTime(Text(log, "timestamp", "Timestamp"))</span>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Level" Context="log" SortBy="@SortLogLevel">
+                            <span class="cc-pill log-level-@Text(log, "logLevel", "LogLevel").ToLower()">@Text(log, "logLevel", "LogLevel")</span>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Component" Context="log" SortBy="@SortLogComponent">@Text(log, "component", "Component")</TemplateColumn>
+                        <TemplateColumn Title="Message" Context="log" Class="wide-col">
+                            <span class="argus-dg-clip" title="@Text(log, "message", "Message")">@Text(log, "message", "Message")</span>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Exception" Context="log">
+                            @if (!string.IsNullOrWhiteSpace(Text(log, "exception", "Exception")))
+                            {
+                                <span class="log-exception" title="@Text(log, "exception", "Exception")">@Truncate(Text(log, "exception", "Exception"), 100)</span>
+                            }
+                        </TemplateColumn>
+                    </ChildContent>
+                </ArgusDataGrid>
+            }
+
+            @if (_logsSubTab == "worker")
+            {
+                <div class="logs-filters">
+                    <select class="cc-input" @bind="_workerLogLevelFilter">
+                        <option value="">All levels</option>
+                        @foreach (var lvl in _logLevels)
+                        {
+                            <option value="@lvl">@lvl</option>
+                        }
+                    </select>
+                    <select class="cc-input" @bind="_workerLogWorkerFilter">
+                        <option value="">All workers</option>
+                        @foreach (var w in _workerComponents)
+                        {
+                            <option value="@w">@w</option>
+                        }
+                    </select>
+                    <input class="cc-input" type="text" placeholder="Search..." @bind="_workerLogSearch" />
+                </div>
+                <ArgusDataGrid TGridItem="JsonElement"
+                               Items="@WorkerLogRows.AsQueryable()"
+                               SearchText="@_workerLogSearch"
+                               SearchTextChanged="@((string value) => _workerLogSearch = value)"
+                               SearchPlaceholder="Search worker logs..."
+                               IsLoading="@_workerLogsLoading"
+                               EmptyText="No worker log entries found."
+                               PersistKey="command-center-worker-logs"
+                               VirtualizedHeightPixels="500"
+                               ItemKey="@((JsonElement e) => e.GetProperty("id").GetString() ?? "")">
+                    <ChildContent>
+                        <TemplateColumn Title="Time" Context="log" SortBy="@SortLogTime">
+                            <span class="log-time">@FormatTime(Text(log, "timestamp", "Timestamp"))</span>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Level" Context="log" SortBy="@SortLogLevel">
+                            <span class="cc-pill log-level-@Text(log, "logLevel", "LogLevel").ToLower()">@Text(log, "logLevel", "LogLevel")</span>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Worker" Context="log" SortBy="@SortLogComponent">@Text(log, "component", "Component")</TemplateColumn>
+                        <TemplateColumn Title="Message" Context="log" Class="wide-col">
+                            <span class="argus-dg-clip" title="@Text(log, "message", "Message")">@Text(log, "message", "Message")</span>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Exception" Context="log">
+                            @if (!string.IsNullOrWhiteSpace(Text(log, "exception", "Exception")))
+                            {
+                                <span class="log-exception" title="@Text(log, "exception", "Exception")">@Truncate(Text(log, "exception", "Exception"), 100)</span>
+                            }
+                        </TemplateColumn>
+                    </ChildContent>
+                </ArgusDataGrid>
+            }
+        </section>
+    }
 </div>
 
 @code {
@@ -599,6 +720,20 @@
     private bool _creatingTarget;
     private bool _targetActionLoading;
     private bool _queueMutationLoading;
+    private bool _logsLoading;
+    private bool _workerLogsLoading;
+    private string _logsSubTab = "app";
+    private string? _logLevelFilter;
+    private string? _logComponentFilter;
+    private string? _logSearch;
+    private string? _workerLogLevelFilter;
+    private string? _workerLogWorkerFilter;
+    private string? _workerLogSearch;
+    private List<JsonElement> _logs = [];
+    private List<JsonElement> _workerLogs = [];
+    private List<string> _logLevels = [];
+    private List<string> _logComponents = [];
+    private List<string> _workerComponents = [];
 
     private bool _loadingAny => _overviewLoading
         || _targetsLoading
@@ -736,6 +871,9 @@
     private static readonly GridSort<JsonElement> SortTechnologyVersion = GridSort<JsonElement>.ByAscending(row => Text(row, "version", "Version"));
     private static readonly GridSort<JsonElement> SortTechnologyEvidence = GridSort<JsonElement>.ByAscending(row => Text(row, "evidence", "Evidence", "source", "Source", "category", "Category"));
     private static readonly GridSort<JsonElement> SortTechnologySeen = GridSort<JsonElement>.ByDescending(row => SortableTime(row, "lastSeenUtc", "LastSeenUtc", "observedAtUtc", "ObservedAtUtc"));
+    private static readonly GridSort<JsonElement> SortLogTime = GridSort<JsonElement>.ByDescending(row => SortableTime(row, "timestamp", "Timestamp"));
+    private static readonly GridSort<JsonElement> SortLogLevel = GridSort<JsonElement>.ByAscending(row => Text(row, "logLevel", "LogLevel"));
+    private static readonly GridSort<JsonElement> SortLogComponent = GridSort<JsonElement>.ByAscending(row => Text(row, "component", "Component"));
 
     private string[] AssetKinds => _assets
         .Select(row => Text(row, "kind", "Kind"))
@@ -815,6 +953,10 @@
             case CommandTab.Workers when _allWorkerRows.Count == 0:
                 await ReloadWorkersAsync().ConfigureAwait(false);
                 break;
+            case CommandTab.Logs when _logs.Count == 0:
+                await ReloadLogsAsync().ConfigureAwait(false);
+                await ReloadWorkerLogsAsync().ConfigureAwait(false);
+                break;
         }
     }
 
@@ -830,6 +972,10 @@
                 break;
             case CommandTab.Workers:
                 await ReloadWorkersAsync().ConfigureAwait(false);
+                break;
+            case CommandTab.Logs:
+                await ReloadLogsAsync().ConfigureAwait(false);
+                await ReloadWorkerLogsAsync().ConfigureAwait(false);
                 break;
         }
 
@@ -1111,6 +1257,63 @@
             await ApplyScaleProviderAsync(kvp.Key);
         }
     }
+
+    private async Task ReloadLogsAsync()
+    {
+        _logsLoading = true;
+        try
+        {
+            var level = string.IsNullOrWhiteSpace(_logLevelFilter) ? "" : $"&level={WebUtility.UrlEncode(_logLevelFilter)}";
+            var component = string.IsNullOrWhiteSpace(_logComponentFilter) ? "" : $"&component={WebUtility.UrlEncode(_logComponentFilter)}";
+            Replace(_logs, await GetArrayAsync($"/api/logs?take=500{level}{component}").ConfigureAwait(false));
+
+            if (_logLevels.Count == 0)
+            {
+                var levels = await GetArrayAsync("/api/logs/levels").ConfigureAwait(false);
+                _logLevels = levels.Select(e => Text(e, "value")).Where(static v => !string.IsNullOrWhiteSpace(v)).ToList();
+            }
+            if (_logComponents.Count == 0)
+            {
+                var components = await GetArrayAsync("/api/logs/components").ConfigureAwait(false);
+                _logComponents = components.Select(e => e.GetString() ?? "").Where(static v => !string.IsNullOrWhiteSpace(v)).ToList();
+            }
+        }
+        finally
+        {
+            _logsLoading = false;
+        }
+    }
+
+    private async Task ReloadWorkerLogsAsync()
+    {
+        _workerLogsLoading = true;
+        try
+        {
+            var level = string.IsNullOrWhiteSpace(_workerLogLevelFilter) ? "" : $"&level={WebUtility.UrlEncode(_workerLogLevelFilter)}";
+            var worker = string.IsNullOrWhiteSpace(_workerLogWorkerFilter) ? "" : $"&worker={WebUtility.UrlEncode(_workerLogWorkerFilter)}";
+            Replace(_workerLogs, await GetArrayAsync($"/api/worker-logs?take=500{level}{worker}").ConfigureAwait(false));
+
+            if (_workerComponents.Count == 0)
+            {
+                var workers = await GetArrayAsync("/api/worker-logs/workers").ConfigureAwait(false);
+                _workerComponents = workers.Select(e => e.GetString() ?? "").Where(static v => !string.IsNullOrWhiteSpace(v)).ToList();
+            }
+        }
+        finally
+        {
+            _workerLogsLoading = false;
+        }
+    }
+
+    private JsonElement[] LogRows => _logs
+        .Where(row => string.IsNullOrWhiteSpace(_logLevelFilter) || string.Equals(Text(row, "logLevel", "LogLevel"), _logLevelFilter, StringComparison.OrdinalIgnoreCase))
+        .Where(row => string.IsNullOrWhiteSpace(_logComponentFilter) || string.Equals(Text(row, "component", "Component"), _logComponentFilter, StringComparison.OrdinalIgnoreCase))
+        .ToArray();
+
+    private JsonElement[] WorkerLogRows => _workerLogs
+        .Where(row => string.IsNullOrWhiteSpace(_workerLogLevelFilter) || string.Equals(Text(row, "logLevel", "LogLevel"), _workerLogLevelFilter, StringComparison.OrdinalIgnoreCase))
+        .Where(row => string.IsNullOrWhiteSpace(_workerLogWorkerFilter) || string.Equals(Text(row, "component", "Component"), _workerLogWorkerFilter, StringComparison.OrdinalIgnoreCase))
+        .ToArray();
 
     private static string TruncateUrl(string? url)
     {
@@ -1597,6 +1800,12 @@
         return value;
     }
 
+    private static string Truncate(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        return value.Length <= maxLength ? value : value[..maxLength] + "...";
+    }
+
     private static string? TryHttpHref(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -1690,7 +1899,8 @@
     {
         Targets,
         Discovery,
-        Workers
+        Workers,
+        Logs
     }
 
     private sealed record GridColumnChoice(string Key, string Label);

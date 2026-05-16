@@ -1,3 +1,4 @@
+using System.Data;
 using ArgusEngine.Application.Orchestration;
 using ArgusEngine.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -62,7 +63,12 @@ public sealed class EfReconProviderRunRecorder(
         {
             await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
             await ReconOrchestratorSql.EnsureSchemaAsync(db, cancellationToken).ConfigureAwait(false);
-            await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            db.Database.AutoTransactionBehavior = AutoTransactionBehavior.Never;
+            var conn = db.Database.GetDbConnection();
+            if (conn.State != ConnectionState.Open)
+                await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            db.Database.UseTransaction(tx);
 
             var normalizedProvider = NormalizeProvider(provider);
             var now = DateTimeOffset.UtcNow;

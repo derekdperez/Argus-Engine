@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ArgusEngine.Application.Assets;
@@ -36,7 +37,11 @@ public sealed class EfAssetGraphService(
         }
 
         db.Database.AutoTransactionBehavior = AutoTransactionBehavior.Never;
-        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open)
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        db.Database.UseTransaction(tx);
 
         var now = message.OccurredAt == default ? DateTimeOffset.UtcNow : message.OccurredAt;
         var inserted = false;
@@ -124,7 +129,11 @@ public sealed class EfAssetGraphService(
         CancellationToken cancellationToken = default)
     {
         db.Database.AutoTransactionBehavior = AutoTransactionBehavior.Never;
-        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open)
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        db.Database.UseTransaction(tx);
         var result = await UpsertRelationshipInsideTransactionAsync(message, cancellationToken).ConfigureAwait(false);
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         return result;

@@ -188,6 +188,8 @@ public static class DependencyInjection
             .Validate(o => o.RequestedRunRetryDelaySeconds is >= 15 and <= 86_400)
             .Validate(o => o.MaxRequestedRunRetries is >= 0 and <= 100)
             .Validate(o => o.MaxHttpWorkersPerSubdomain is >= 1 and <= 128)
+            .Validate(o => o.RequestsPerSecondPerWorker is >= 1 and <= 1_000)
+            .Validate(o => o.MaxConcurrentSubdomainsPerWorker is >= 1 and <= 1_000)
             .Validate(o => o.ReconProfilesPerTarget is >= 1 and <= 128)
             .Validate(o => o.ReconProfilesPerSubdomain is >= 1 and <= 64)
             .Validate(o => o.RequestsPerMinutePerSubdomain is >= 1 and <= 60_000)

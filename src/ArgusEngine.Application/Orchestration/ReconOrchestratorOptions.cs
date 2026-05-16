@@ -23,6 +23,10 @@ public sealed class ReconOrchestratorOptions
 
     public int MaxHttpWorkersPerSubdomain { get; set; } = 1;
 
+    public int RequestsPerSecondPerWorker { get; set; } = 2;
+
+    public int MaxConcurrentSubdomainsPerWorker { get; set; } = 10;
+
     public int ReconProfilesPerTarget { get; set; } = 8;
 
     public int ReconProfilesPerSubdomain { get; set; } = 2;
@@ -72,12 +76,16 @@ public sealed record ReconOrchestratorConfiguration
 
     public int MaxHttpWorkersPerSubdomain { get; init; } = 1;
 
+    public int RequestsPerSecondPerWorker { get; init; } = 2;
+
+    public int MaxConcurrentSubdomainsPerWorker { get; init; } = 10;
+
     public static ReconOrchestratorConfiguration FromOptions(ReconOrchestratorOptions options) =>
         new()
         {
             ReconProfilesPerTarget = Math.Clamp(options.ReconProfilesPerTarget, 1, 128),
             ReconProfilesPerSubdomain = Math.Clamp(options.ReconProfilesPerSubdomain, 1, 64),
-            RequestsPerMinutePerSubdomain = Math.Clamp(options.RequestsPerMinutePerSubdomain, 1, 60_000),
+            RequestsPerMinutePerSubdomain = Math.Clamp(options.RequestsPerSecondPerWorker * 60, 1, 60_000),
             RandomDelayMin = Math.Max(0, options.RandomDelayMin),
             RandomDelayMax = Math.Max(Math.Max(0, options.RandomDelayMin), options.RandomDelayMax),
             RandomDelayEnabled = options.RandomDelayEnabled,
@@ -86,7 +94,9 @@ public sealed record ReconOrchestratorConfiguration
             ReconProfileBrowsers = Clean(options.ReconProfileBrowsers, ["firefox", "chrome", "safari"]),
             ReconProfileOs = Clean(options.ReconProfileOs, ["windows", "ios", "android", "chrome"]),
             ReconProfileHardwareAge = Math.Clamp(options.ReconProfileHardwareAge, 0, 25),
-            MaxHttpWorkersPerSubdomain = Math.Clamp(options.MaxHttpWorkersPerSubdomain, 1, 128)
+            MaxHttpWorkersPerSubdomain = Math.Clamp(options.MaxHttpWorkersPerSubdomain, 1, 128),
+            RequestsPerSecondPerWorker = Math.Clamp(options.RequestsPerSecondPerWorker, 1, 1_000),
+            MaxConcurrentSubdomainsPerWorker = Math.Clamp(options.MaxConcurrentSubdomainsPerWorker, 1, 1_000)
         };
 
     public static ReconOrchestratorConfiguration Sanitize(ReconOrchestratorConfiguration? configuration, ReconOrchestratorOptions fallback)
@@ -97,7 +107,12 @@ public sealed record ReconOrchestratorConfiguration
         {
             ReconProfilesPerTarget = Math.Clamp(source.ReconProfilesPerTarget, 1, 128),
             ReconProfilesPerSubdomain = Math.Clamp(source.ReconProfilesPerSubdomain, 1, 64),
-            RequestsPerMinutePerSubdomain = Math.Clamp(source.RequestsPerMinutePerSubdomain, 1, 60_000),
+            RequestsPerMinutePerSubdomain = Math.Clamp(
+                source.RequestsPerSecondPerWorker > 0
+                    ? source.RequestsPerSecondPerWorker * 60
+                    : source.RequestsPerMinutePerSubdomain,
+                1,
+                60_000),
             RandomDelayMin = Math.Max(0, source.RandomDelayMin),
             RandomDelayMax = Math.Max(Math.Max(0, source.RandomDelayMin), source.RandomDelayMax),
             RandomDelayEnabled = source.RandomDelayEnabled,
@@ -106,7 +121,14 @@ public sealed record ReconOrchestratorConfiguration
             ReconProfileBrowsers = Clean(source.ReconProfileBrowsers, ["firefox", "chrome", "safari"]),
             ReconProfileOs = Clean(source.ReconProfileOs, ["windows", "ios", "android", "chrome"]),
             ReconProfileHardwareAge = Math.Clamp(source.ReconProfileHardwareAge, 0, 25),
-            MaxHttpWorkersPerSubdomain = Math.Clamp(source.MaxHttpWorkersPerSubdomain, 1, 128)
+            MaxHttpWorkersPerSubdomain = Math.Clamp(source.MaxHttpWorkersPerSubdomain, 1, 128),
+            RequestsPerSecondPerWorker = Math.Clamp(
+                source.RequestsPerSecondPerWorker > 0
+                    ? source.RequestsPerSecondPerWorker
+                    : (int)Math.Ceiling(source.RequestsPerMinutePerSubdomain / 60.0),
+                1,
+                1_000),
+            MaxConcurrentSubdomainsPerWorker = Math.Clamp(source.MaxConcurrentSubdomainsPerWorker, 1, 1_000)
         };
     }
 

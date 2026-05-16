@@ -15,6 +15,10 @@ public interface IReconOrchestrator
 
     Task<IReadOnlyList<Guid>> GetActiveTargetIdsAsync(CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<ReconOrchestratorSnapshot>> GetSnapshotsAsync(
+        bool activeOnly = true,
+        CancellationToken cancellationToken = default);
+
     Task<ReconOrchestratorSnapshot?> GetSnapshotAsync(
         Guid targetId,
         CancellationToken cancellationToken = default);

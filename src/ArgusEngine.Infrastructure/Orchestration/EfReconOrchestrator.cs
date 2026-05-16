@@ -87,33 +87,28 @@ public sealed class EfReconOrchestrator(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         await ReconOrchestratorSql.EnsureSchemaAsync(db, cancellationToken).ConfigureAwait(false);
 
-        var rows = await ReconDbCommands.QueryAsync(
+        var rows = await QuerySnapshotsAsync(
             db,
-            """
-            SELECT s.target_id, t."RootDomain", s.status, s.config_json::text AS config_json, s.attached_at_utc, s.updated_at_utc
-            FROM recon_orchestrator_states s
-            JOIN recon_targets t ON t."Id" = s.target_id
-            WHERE s.target_id = @target_id
-            LIMIT 1;
-            """,
+            "WHERE s.target_id = @target_id",
             new Dictionary<string, object?> { ["target_id"] = targetId },
-            reader =>
-            {
-                var json = reader.GetString(reader.GetOrdinal("config_json"));
-                var config = JsonSerializer.Deserialize<ReconOrchestratorConfiguration>(json, JsonOptions)
-                    ?? ReconOrchestratorConfiguration.FromOptions(options.Value);
-
-                return new ReconOrchestratorSnapshot(
-                    reader.GetGuid(reader.GetOrdinal("target_id")),
-                    reader.GetString(reader.GetOrdinal("RootDomain")),
-                    reader.GetString(reader.GetOrdinal("status")),
-                    config,
-                    reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("attached_at_utc")),
-                    reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at_utc")));
-            },
             cancellationToken).ConfigureAwait(false);
 
         return rows.FirstOrDefault();
+    }
+
+    public async Task<IReadOnlyList<ReconOrchestratorSnapshot>> GetSnapshotsAsync(
+        bool activeOnly = true,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        await ReconOrchestratorSql.EnsureSchemaAsync(db, cancellationToken).ConfigureAwait(false);
+
+        return await QuerySnapshotsAsync(
+                db,
+                activeOnly ? "WHERE s.status = 'active'" : "",
+                [],
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<Guid>> GetActiveTargetIdsAsync(CancellationToken cancellationToken = default)

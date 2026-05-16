@@ -32,11 +32,30 @@ public static class TargetEndpoints
     {
         app.MapGet(
             "/api/targets",
-            async (ArgusDbContext db, ILoggerFactory loggerFactory, CancellationToken ct) =>
+            async (ArgusDbContext db, ILoggerFactory loggerFactory, int? take, string? search, string? sort, CancellationToken ct) =>
             {
                 var logger = loggerFactory.CreateLogger("TargetEndpoints");
-                var targets = await db.Targets.AsNoTracking()
-                    .OrderByDescending(t => t.CreatedAtUtc)
+                var limit = Math.Clamp(take ?? 250, 1, 500);
+                var searchLower = string.IsNullOrWhiteSpace(search) ? null : search.ToLowerInvariant();
+
+                var query = db.Targets.AsNoTracking();
+
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    query = query.Where(t => t.RootDomain.ToLowerInvariant().Contains(searchLower!, StringComparison.OrdinalIgnoreCase));
+                }
+
+                query = sort?.ToLowerInvariant() switch
+                {
+                    "rootdomain" or "domain" => query.OrderBy(t => t.RootDomain),
+                    "depth" => query.OrderBy(t => t.GlobalMaxDepth),
+                    "created" or "createdat" => query.OrderByDescending(t => t.CreatedAtUtc),
+                    "assets" => query.OrderByDescending(t => t.CreatedAtUtc),
+                    _ => query.OrderByDescending(t => t.CreatedAtUtc)
+                };
+
+                var targets = await query
+                    .Take(limit)
                     .ToListAsync(ct)
                     .ConfigureAwait(false);
 

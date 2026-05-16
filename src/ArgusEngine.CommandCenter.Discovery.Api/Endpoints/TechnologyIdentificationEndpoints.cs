@@ -78,8 +78,13 @@ public static class TechnologyIdentificationEndpoints
     private static async Task<IResult> QuerySubdomainsAsync(
         ArgusDbContext db,
         Guid? targetId,
+        int? take,
+        string? search,
         CancellationToken ct)
     {
+        var limit = Math.Clamp(take ?? 250, 1, 500);
+        var searchLower = string.IsNullOrWhiteSpace(search) ? null : search.ToLowerInvariant();
+
         var subdomainQuery = db.Assets.AsNoTracking()
             .Where(a => a.Kind == AssetKind.Subdomain && a.LifecycleStatus == AssetLifecycleStatus.Confirmed);
 
@@ -88,8 +93,14 @@ public static class TechnologyIdentificationEndpoints
             subdomainQuery = subdomainQuery.Where(a => a.TargetId == selectedTargetId);
         }
 
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            subdomainQuery = subdomainQuery.Where(a => a.CanonicalKey!.ToLowerInvariant().Contains(searchLower!, StringComparison.OrdinalIgnoreCase) || a.RawValue!.ToLowerInvariant().Contains(searchLower!, StringComparison.OrdinalIgnoreCase));
+        }
+
         var subdomainAssets = await subdomainQuery
             .Select(a => new { a.TargetId, a.Id, a.CanonicalKey, a.RawValue })
+            .Take(limit)
             .ToListAsync(ct)
             .ConfigureAwait(false);
 

@@ -42,6 +42,16 @@ static void MapReconAgentEndpointsLocal(WebApplication app)
 {
     var group = app.MapGroup("/api/recon-agent");
 
+    group.MapGet("/orchestrators", async (
+        IReconOrchestrator orchestrator,
+        CancellationToken cancellationToken) =>
+    {
+        var snapshots = await orchestrator.GetSnapshotsAsync(activeOnly: true, cancellationToken)
+            .ConfigureAwait(false);
+
+        return Results.Ok(snapshots);
+    });
+
     group.MapPost("/targets/{targetId:guid}/attach", async (
         Guid targetId,
         AttachReconAgentRequest request,
@@ -62,6 +72,15 @@ static void MapReconAgentEndpointsLocal(WebApplication app)
             .ConfigureAwait(false);
 
         return Results.Ok(new AttachReconAgentResponse(snapshot, tick));
+    });
+
+    group.MapGet("/targets/{targetId:guid}", async (
+        Guid targetId,
+        IReconOrchestrator orchestrator,
+        CancellationToken cancellationToken) =>
+    {
+        var snapshot = await orchestrator.GetSnapshotAsync(targetId, cancellationToken).ConfigureAwait(false);
+        return snapshot is null ? Results.NotFound() : Results.Ok(snapshot);
     });
 }
 

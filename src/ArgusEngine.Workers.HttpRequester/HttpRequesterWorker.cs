@@ -77,6 +77,9 @@ public sealed class HttpRequesterWorker(
             {
                 var opt = options.Value;
                 var effectiveConcurrency = concurrency.ResolveEffectiveConcurrency(opt.MaxConcurrency);
+                effectiveConcurrency = Math.Min(
+                    effectiveConcurrency,
+                    await LoadReconWorkerConcurrencyLimitAsync(effectiveConcurrency, stoppingToken).ConfigureAwait(false));
 
                 var items = await LeaseWorkAsync(effectiveConcurrency, opt.VisibilityTimeoutSeconds, stoppingToken)
                     .ConfigureAwait(false);
@@ -153,6 +156,60 @@ public sealed class HttpRequesterWorker(
             .ConfigureAwait(false);
 
         return leased;
+    }
+
+    private async Task<int> LoadReconWorkerConcurrencyLimitAsync(
+        int fallback,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+            var configs = await db.Database
+                .SqlQueryRaw<string>(
+                    """
+                    SELECT config_json::text AS "Value"
+                    FROM recon_orchestrator_states
+                    WHERE status = 'active'
+                      AND config_json ? 'maxConcurrentSubdomainsPerWorker';
+                    """)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            var limit = configs
+                .Select(ReadMaxConcurrentSubdomainsPerWorker)
+                .Where(value => value > 0)
+                .DefaultIfEmpty(fallback)
+                .Min();
+
+            return Math.Clamp(limit, 1, Math.Max(1, fallback));
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not load recon orchestrator HTTP concurrency limit; using worker default.");
+            return Math.Max(1, fallback);
+        }
+    }
+
+    private static int ReadMaxConcurrentSubdomainsPerWorker(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return 0;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty("maxConcurrentSubdomainsPerWorker", out var property)
+                && property.TryGetInt32(out var value)
+                ? value
+                : 0;
+        }
+        catch (JsonException)
+        {
+            return 0;
+        }
     }
 
     private async Task ProcessItemAsync(HttpRequestQueueItem item, CancellationToken cancellationToken)

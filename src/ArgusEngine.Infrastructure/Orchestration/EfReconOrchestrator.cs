@@ -1105,6 +1105,43 @@ public sealed class EfReconOrchestrator(
             cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task<IReadOnlyList<ReconOrchestratorSnapshot>> QuerySnapshotsAsync(
+        ArgusDbContext db,
+        string whereSql,
+        Dictionary<string, object?> parameters,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+        SELECT s.target_id, t."RootDomain", s.status, s.config_json::text AS config_json, s.attached_at_utc, s.updated_at_utc
+        FROM recon_orchestrator_states s
+        JOIN recon_targets t ON t."Id" = s.target_id
+        {whereSql}
+        ORDER BY s.updated_at_utc DESC, t."RootDomain" ASC
+        LIMIT 500;
+        """;
+
+        return await ReconDbCommands.QueryAsync(
+            db,
+            sql,
+            parameters,
+            reader =>
+            {
+                var json = reader.GetString(reader.GetOrdinal("config_json"));
+                var config = ReconOrchestratorConfiguration.Sanitize(
+                    JsonSerializer.Deserialize<ReconOrchestratorConfiguration>(json, JsonOptions),
+                    options.Value);
+
+                return new ReconOrchestratorSnapshot(
+                    reader.GetGuid(reader.GetOrdinal("target_id")),
+                    reader.GetString(reader.GetOrdinal("RootDomain")),
+                    reader.GetString(reader.GetOrdinal("status")),
+                    config,
+                    reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("attached_at_utc")),
+                    reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at_utc")));
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task ReleaseClaimAsync(
         ArgusDbContext db,
         Guid targetId,
@@ -1156,6 +1193,9 @@ public sealed class EfReconOrchestrator(
                 targetId = target.Id,
                 rootDomain = target.RootDomain,
                 attachedAtUtc = now,
+                maxHttpWorkersPerSubdomain = config.MaxHttpWorkersPerSubdomain,
+                requestsPerSecondPerWorker = config.RequestsPerSecondPerWorker,
+                maxConcurrentSubdomainsPerWorker = config.MaxConcurrentSubdomainsPerWorker,
                 targetProfiles
             },
             JsonOptions);

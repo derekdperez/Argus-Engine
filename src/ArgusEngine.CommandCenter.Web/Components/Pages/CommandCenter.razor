@@ -24,31 +24,31 @@
         <section class="cc-summary-grid" aria-label="Command Center summary">
             <article class="cc-card">
                 <span>Targets</span>
-                <strong>@FormatNumber(TotalTargets)</strong>
+                <strong>@(_overview is null ? "..." : FormatNumber(TotalTargets))</strong>
             </article>
             <article class="cc-card">
                 <span>Confirmed assets</span>
-                <strong>@FormatNumber(ConfirmedAssets)</strong>
+                <strong>@(_overview is null ? "..." : FormatNumber(ConfirmedAssets))</strong>
             </article>
             <article class="cc-card">
                 <span>HTTP queue</span>
-                <strong>@FormatNumber(_httpQueueCount)</strong>
+                <strong>@(_overview is null ? "..." : FormatNumber(_httpQueueCount))</strong>
             </article>
             <article class="cc-card">
                 <span>High value</span>
-                <strong>@FormatNumber(HighValueCount)</strong>
+                <strong>@(_overview is null ? "..." : FormatNumber(HighValueCount))</strong>
             </article>
             <article class="cc-card">
                 <span>Technologies</span>
-                <strong>@FormatNumber(TechnologyCount)</strong>
+                <strong>@(_overview is null ? "..." : FormatNumber(TechnologyCount))</strong>
             </article>
             <article class="cc-card">
                 <span>Workers</span>
-                <strong>@FormatNumber(WorkerCount)</strong>
+                <strong>@(_overview is null ? "..." : FormatNumber(WorkerCount))</strong>
             </article>
             <article class="cc-card">
                 <span>Events</span>
-                <strong>@FormatNumber(_publishedEvents)</strong>
+                <strong>@(_overview is null ? "..." : FormatNumber(_publishedEvents))</strong>
             </article>
             <article class="cc-card">
                 <span>Version</span>
@@ -872,10 +872,10 @@
         .ToArray();
 
     private long TotalTargets => OverviewLong("totalTargets", "TotalTargets", "targetCount", "TargetCount");
-    private long ConfirmedAssets => OverviewLong("confirmedAssets", "ConfirmedAssets", "assetCount", "AssetCount", "totalAssets", "TotalAssets");
-    private long HttpQueueCount => OverviewLong("httpQueueCount", "HttpQueueCount", "queuedHttpRequests", "QueuedHttpRequests");
-    private long HighValueCount => OverviewLong("highValueCount", "HighValueCount", "highValueFindings", "HighValueFindings");
-    private long TechnologyCount => OverviewLong("technologyCount", "TechnologyCount", "technologies", "Technologies");
+    private long ConfirmedAssets => OverviewLong("totalAssetsConfirmed", "TotalAssetsConfirmed", "confirmedAssets", "ConfirmedAssets", "assetCount", "AssetCount", "totalAssets", "TotalAssets");
+    private long HttpQueueCount => OverviewLong("httpQueueQueuedAssetCount", "HttpQueueQueuedAssetCount", "httpQueueCount", "HttpQueueCount", "queuedHttpRequests", "QueuedHttpRequests");
+    private long HighValueCount => OverviewLong("highValueAssetCount", "HighValueAssetCount", "highValueCount", "HighValueCount", "highValueFindings", "HighValueFindings");
+    private long TechnologyCount => OverviewLong("uniqueTechnologyCount", "UniqueTechnologyCount", "technologyCount", "TechnologyCount", "technologies", "Technologies");
     private long WorkerCount => OverviewLong("workerCount", "WorkerCount", "activeWorkers", "ActiveWorkers");
 
     protected override async Task OnInitializedAsync()

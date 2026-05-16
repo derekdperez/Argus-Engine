@@ -254,19 +254,21 @@ internal static class OperationsApiEndpointExtensions
             return Results.Ok(events);
         }).WithName("OpsRecentEvents");
 
-        app.MapGet("/api/ops/target-enrichment", async (ArgusDbContext db, CancellationToken ct) =>
+        app.MapGet("/api/ops/target-enrichment", async (ArgusDbContext db, int? take, CancellationToken ct) =>
         {
+            var limit = Math.Clamp(take ?? 250, 1, 500);
+
             List<OrchestratorStateRow> orchestratorStates;
             List<ProviderRunRow> providerRuns;
             try
             {
                 orchestratorStates = await db.Database.SqlQuery<OrchestratorStateRow>(
-                    $"""SELECT s.target_id AS TargetId, s.status AS OrchestratorStatus, s.attached_at_utc AS AttachedAtUtc FROM recon_orchestrator_states s""")
+                    $"""SELECT s.target_id AS TargetId, s.status AS OrchestratorStatus, s.attached_at_utc AS AttachedAtUtc FROM recon_orchestrator_states s ORDER BY s.updated_at_utc DESC LIMIT {limit}""")
                     .ToListAsync(ct)
                     .ConfigureAwait(false);
 
                 providerRuns = await db.Database.SqlQuery<ProviderRunRow>(
-                    $"""SELECT target_id AS TargetId, provider, status FROM recon_orchestrator_provider_runs""")
+                    $"""SELECT DISTINCT ON (target_id) target_id AS TargetId, provider, status FROM recon_orchestrator_provider_runs ORDER BY target_id, updated_at_utc DESC LIMIT {limit}""")
                     .ToListAsync(ct)
                     .ConfigureAwait(false);
             }

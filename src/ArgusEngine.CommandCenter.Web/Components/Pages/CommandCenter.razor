@@ -3,6 +3,7 @@
 @page "/commandcenter"
 @rendermode InteractiveServer
 
+@using System.Diagnostics
 @using System.Globalization
 @using System.Net
 @using System.Net.Http.Json
@@ -92,6 +93,21 @@
                 </div>
             </div>
             <div class="cc-two-column">
+                @if (_showDebug)
+                {
+                    <div class="cc-debug">
+                        <span>@TargetRows.Length rows</span>
+                        <span>@((_targetLoadSize / 1024).ToString("N0")) KB</span>
+                        <span>@_targetLoadTime.ToString("F1")s</span>
+                        <span>@_targetRefreshAgo</span>
+                    </div>
+                    <div class="cc-debug">
+                        <span>@SubdomainRows.Length rows</span>
+                        <span>@((_subdomainLoadSize / 1024).ToString("N0")) KB</span>
+                        <span>@_subdomainLoadTime.ToString("F1")s</span>
+                        <span>@_subdomainRefreshAgo</span>
+                    </div>
+                }
                 <ArgusDataGrid TGridItem="JsonElement"
                                Items="@TargetRows.AsQueryable()"
                                RowMatches="@JsonRowMatches"
@@ -108,16 +124,10 @@
                         @ColumnPicker(TargetGridColumns)
                     </ConfigurationTemplate>
                     <ChildContent>
-                        @if (ColumnVisible("targets.select"))
-                        {
-                            <TemplateColumn Title="" Context="target" Class="select-col">
-                                <input type="checkbox" checked="@IsSelectedTarget(target)" @onchange="@(_ => ToggleTarget(target))" />
-                            </TemplateColumn>
-                        }
                         @if (ColumnVisible("targets.root"))
                         {
                             <TemplateColumn Title="Root domain" Context="target" SortBy="@SortTargetRoot" Class="wide-col">
-                                <span data-target-id="@RowKey(target)" class="argus-dg-clip" title="@Text(target, "rootDomain", "RootDomain", "domain", "Domain")">@Display(Text(target, "rootDomain", "RootDomain", "domain", "Domain"))</span>
+                                <span data-target-id="@RowKey(target)" class="argus-dg-clip" title="@Text(target, "rootDomain", "RootDomain", "domain", "Domain")" @onclick="@(() => ToggleTarget(target))" style="cursor:pointer">@Display(Text(target, "rootDomain", "RootDomain", "domain", "Domain"))</span>
                             </TemplateColumn>
                         }
                         @if (ColumnVisible("targets.status"))
@@ -684,6 +694,13 @@
     private string? _highValueSearch;
     private string? _technologySearch;
     private bool _gcpConfigured;
+    private bool _showDebug = true;
+    private long _targetLoadSize;
+    private double _targetLoadTime;
+    private string _targetRefreshAgo = "";
+    private long _subdomainLoadSize;
+    private double _subdomainLoadTime;
+    private string _subdomainRefreshAgo = "";
     private Dictionary<string, TargetEnrichment> _targetEnrichment = new();
     private long _httpQueueCount;
     private long _publishedEvents;
@@ -791,7 +808,6 @@
 
     private static readonly GridColumnChoice[] TargetGridColumns =
     [
-        new("targets.select", "Select"),
         new("targets.root", "Root domain"),
         new("targets.status", "Status"),
         new("targets.depth", "Depth"),
@@ -1049,9 +1065,12 @@
     private async Task ReloadTargetsAsync()
     {
         _targetsLoading = true;
+        var sw = Stopwatch.StartNew();
         try
         {
             var raw = await GetArrayAsync("/api/targets").ConfigureAwait(false);
+            _targetLoadTime = sw.Elapsed.TotalSeconds;
+            _targetLoadSize = raw.Sum(r => r.GetRawText().Length);
             var deduped = raw
                 .GroupBy(t => RowKey(t), StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())

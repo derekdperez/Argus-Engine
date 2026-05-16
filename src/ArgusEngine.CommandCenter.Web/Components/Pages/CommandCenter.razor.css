@@ -201,8 +201,16 @@
 .cc-two-column {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 0.9rem;
-    margin-bottom: 1rem;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+::deep .argus-dg th,
+::deep .argus-dg td {
+    max-width: 15vw;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .cc-pill {

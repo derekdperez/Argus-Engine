@@ -99,10 +99,8 @@
                                IsLoading="@_targetsLoading"
                                EmptyText="No targets found."
                                PersistKey="command-center-targets"
-                               EnableCsvExport="true"
-                               ExportFileName="targets.csv"
                                StickyFirstColumn="true"
-                               VirtualizedHeightPixels="420"
+                               VirtualizedHeightPixels="140"
                                ItemKey="@RowKeyObject">
                     <ConfigurationTemplate>
                         @ColumnPicker(TargetGridColumns)
@@ -199,9 +197,7 @@
                                IsLoading="@_subdomainsLoading"
                                EmptyText="No subdomains found."
                                PersistKey="command-center-subdomains"
-                               EnableCsvExport="true"
-                               ExportFileName="subdomains.csv"
-                               VirtualizedHeightPixels="420"
+                               VirtualizedHeightPixels="140"
                                ItemKey="@RowKeyObject">
                     <ConfigurationTemplate>
                         @ColumnPicker(SubdomainGridColumns)
@@ -234,7 +230,6 @@
             <div class="cc-panel-header">
                 <div>
                     <h2>Assets</h2>
-                    <p class="cc-muted">Recent confirmed assets only. This avoids the previous full-table hydration path.</p>
                 </div>
                 <div class="cc-toolbar">
                     <select class="cc-input" @bind="_assetKindFilter">
@@ -244,7 +239,7 @@
                             <option value="@kind">@kind</option>
                         }
                     </select>
-                    <button class="cc-btn" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">Reload</button>
+                    <button class="cc-btn cc-btn-small" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">Reload</button>
                 </div>
             </div>
             <ArgusDataGrid TGridItem="JsonElement"
@@ -256,9 +251,7 @@
                            IsLoading="@_assetsLoading"
                            EmptyText="No assets match the current filters."
                            PersistKey="command-center-assets"
-                           EnableCsvExport="true"
-                           ExportFileName="assets.csv"
-                           VirtualizedHeightPixels="520"
+                           VirtualizedHeightPixels="620"
                            ItemKey="@RowKeyObject">
                 <ConfigurationTemplate>
                     @ColumnPicker(AssetGridColumns)
@@ -320,9 +313,7 @@
                            IsLoading="@_highValueLoading"
                            EmptyText="No high-value findings match the current filters."
                            PersistKey="command-center-high-value"
-                           EnableCsvExport="true"
-                           ExportFileName="high-value.csv"
-                           VirtualizedHeightPixels="420"
+                           VirtualizedHeightPixels="320"
                            ItemKey="@RowKeyObject">
                 <ConfigurationTemplate>
                     @ColumnPicker(HighValueGridColumns)
@@ -362,9 +353,7 @@
                            IsLoading="@_technologyLoading"
                            EmptyText="No technology observations match the current filters."
                            PersistKey="command-center-technologies"
-                           EnableCsvExport="true"
-                           ExportFileName="technologies.csv"
-                           VirtualizedHeightPixels="420"
+                           VirtualizedHeightPixels="320"
                            ItemKey="@RowKeyObject">
                 <ConfigurationTemplate>
                     @ColumnPicker(TechnologyGridColumns)

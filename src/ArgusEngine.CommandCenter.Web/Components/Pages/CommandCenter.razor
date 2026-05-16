@@ -243,7 +243,6 @@
                             <option value="@kind">@kind</option>
                         }
                     </select>
-                    <button class="cc-btn cc-btn-small" @onclick="ReloadAssetsAsync" disabled="@_assetsLoading">Reload</button>
                 </div>
             </div>
             <ArgusDataGrid TGridItem="JsonElement"
@@ -302,10 +301,6 @@
                 <div>
                     <h2>Discovery</h2>
                     <p class="cc-muted">High-value and technology identification in one workspace.</p>
-                </div>
-                <div class="cc-toolbar">
-                    <button class="cc-btn" @onclick="ReloadHighValueAsync" disabled="@_highValueLoading">Reload high value</button>
-                    <button class="cc-btn" @onclick="ReloadTechnologyAsync" disabled="@_technologyLoading">Reload tech ID</button>
                 </div>
             </div>
             <ArgusDataGrid TGridItem="JsonElement"
@@ -392,11 +387,7 @@
             <div class="cc-panel-header">
                 <div>
                     <h2>Workers</h2>
-                    <p class="cc-muted">All workers grouped by provider. Set min/max per provider and apply.</p>
-                </div>
-                <div class="cc-toolbar">
-                    <button class="cc-btn" @onclick="ReloadWorkersAsync" disabled="@_workersLoading">Reload</button>
-                    <button class="cc-btn" @onclick="ApplyScaleAllAsync" disabled="@_workersLoading">Apply All</button>
+                    <p class="cc-muted">All workers grouped by provider. Set min/max per worker inline.</p>
                 </div>
             </div>
 
@@ -443,7 +434,6 @@
                                                     <span class="ww-provider-controls-row">
                                                         <label>Min <input class="cc-input cc-depth-input" type="number" min="0" max="50" @bind="ps.Min" style="width:50px" /></label>
                                                         <label>Max <input class="cc-input cc-depth-input" type="number" min="0" max="50" @bind="ps.Max" style="width:50px" /></label>
-                                                        <button class="cc-btn cc-btn-small" @onclick="() => ApplyScaleProviderAsync(lastProvider!)">Apply</button>
                                                     </span>
                                                 }
                                             </div>
@@ -471,9 +461,6 @@
                 <div>
                     <h2>RabbitMQ</h2>
                     <p class="cc-muted">Queue depths, consumers, and message rates.</p>
-                </div>
-                <div class="cc-toolbar">
-                    <button class="cc-btn" @onclick="ReloadRabbitMqAsync" disabled="@_rmqLoading">Refresh</button>
                 </div>
             </div>
             @if (_rmqError is not null)
@@ -531,9 +518,6 @@
                 <div>
                     <h2>Logs</h2>
                     <p class="cc-muted">Central log repository for infrastructure and application logs.</p>
-                </div>
-                <div class="cc-toolbar">
-                    <button class="cc-btn" @onclick="ReloadLogsAsync" disabled="@_logsLoading">Reload</button>
                 </div>
             </div>
 
@@ -703,7 +687,6 @@
     private long _rmqTotalMessages;
     private string _rmqVersion = "";
     private string? _rmqError;
-    private bool _rmqLoading;
     private string? _newTargetRootDomain;
     private int _newTargetDepth = 2;
     private bool _overviewLoading;
@@ -1414,7 +1397,6 @@
 
     private async Task ReloadRabbitMqAsync()
     {
-        _rmqLoading = true;
         _rmqError = null;
         try
         {
@@ -1466,10 +1448,6 @@
         catch (Exception ex)
         {
             _rmqError = $"Failed to load RabbitMQ status: {ex.Message}";
-        }
-        finally
-        {
-            _rmqLoading = false;
         }
     }
 

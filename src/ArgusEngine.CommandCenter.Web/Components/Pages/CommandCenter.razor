@@ -67,52 +67,17 @@
         <button class="@TabClass(CommandTab.Workers)" @onclick="@(() => SelectTabAsync(CommandTab.Workers))">Workers</button>
     </nav>
 
-    <section id="recon-action-results" class="recon-action-panel recon-action-collapsed" aria-live="polite">
+    <div id="recon-action-results" class="recon-action-collapsed">
         <div class="recon-action-panel-header">
             <div class="recon-action-summary-area">
-                <span class="recon-action-icon">></span>
-                <span id="recon-action-summary">No actions run yet.</span>
+                <span id="recon-action-summary">Actions</span>
             </div>
             <div class="recon-action-header-btns">
-                <button id="recon-action-expand" type="button" class="cc-btn cc-btn-small" onclick="ReconContextMenu._toggle()">Expand</button>
                 <button id="recon-action-clear" type="button" class="cc-btn cc-btn-small">Clear</button>
             </div>
         </div>
         <div id="recon-action-list" class="recon-action-list"></div>
-    </section>
-
-    @* System events *@
-    @if (_systemEvents.Count > 0)
-    {
-        var sysEvtPanelId = "sys-events-panel";
-        <section id="@sysEvtPanelId" class="recon-action-panel recon-action-collapsed" style="margin-bottom:0.5rem">
-            <div class="recon-action-panel-header" onclick="var p=document.getElementById('@sysEvtPanelId'); p.classList.toggle('recon-action-collapsed'); p.classList.toggle('recon-action-expanded');">
-                <div class="recon-action-summary-area">
-                    <span class="recon-action-icon">></span>
-                    <span>System events</span>
-                    <span style="color:#64748b;font-size:0.72rem">@_systemEvents.Count recent</span>
-                </div>
-            </div>
-            <div class="recon-action-list" style="max-height:180px">
-                @foreach (var evt in _systemEvents.Take(20))
-                {
-                    <div class="recon-action-entry @(string.IsNullOrWhiteSpace(evt.Error) ? "recon-action-success" : "recon-action-error")" style="padding:3px 8px;font-size:0.72rem">
-                        <div style="display:flex;justify-content:space-between">
-                            <span style="color:#94a3b8;font-weight:500">@evt.MessageType.Split('.').LastOrDefault()?.Replace("`","")</span>
-                            <span style="color:#64748b">@FormatTimeShort(evt.OccurredAtUtc)</span>
-                        </div>
-                        <div style="display:flex;gap:8px;color:#64748b">
-                            <span>@evt.Direction</span>
-                            @if (evt.DurationMs is not null)
-                            {
-                                <span>@(evt.DurationMs.Value.ToString("F1"))ms</span>
-                            }
-                        </div>
-                    </div>
-                }
-            </div>
-        </section>
-    }
+    </div>
 
     @if (_activeTab == CommandTab.Targets)
     {

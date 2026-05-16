@@ -108,33 +108,18 @@ window.ReconContextMenu = {
 
     _ensureFeedbackPanel: function () {
         this._panel = document.getElementById('recon-action-results');
+        this._summary = document.getElementById('recon-action-summary');
+        this._list = document.getElementById('recon-action-list');
 
         if (!this._panel) {
-            this._panel = document.createElement('section');
+            this._panel = document.createElement('div');
             this._panel.id = 'recon-action-results';
-            this._panel.className = 'recon-action-panel';
-            this._panel.setAttribute('aria-live', 'polite');
+            this._panel.className = 'recon-action-collapsed';
+            document.body.appendChild(this._panel);
 
             var header = document.createElement('div');
             header.className = 'recon-action-panel-header';
-
-            var titleWrap = document.createElement('div');
-            var title = document.createElement('h2');
-            title.textContent = 'Action results';
-            this._summary = document.createElement('p');
-            this._summary.id = 'recon-action-summary';
-            this._summary.textContent = 'No actions run yet.';
-            titleWrap.appendChild(title);
-            titleWrap.appendChild(this._summary);
-
-            var clear = document.createElement('button');
-            clear.id = 'recon-action-clear';
-            clear.type = 'button';
-            clear.className = 'cc-btn';
-            clear.textContent = 'Clear';
-
-            header.appendChild(titleWrap);
-            header.appendChild(clear);
+            header.innerHTML = '<div class="recon-action-summary-area"><span id="recon-action-summary">Actions</span></div><div class="recon-action-header-btns"><button id="recon-action-clear" type="button" class="cc-btn cc-btn-small">Clear</button></div>';
 
             this._list = document.createElement('div');
             this._list.id = 'recon-action-list';
@@ -142,25 +127,7 @@ window.ReconContextMenu = {
 
             this._panel.appendChild(header);
             this._panel.appendChild(this._list);
-
-            var anchor = document.querySelector('.cc-tabs');
-            if (anchor && anchor.parentNode) {
-                anchor.parentNode.insertBefore(this._panel, anchor.nextSibling);
-            } else {
-                document.body.appendChild(this._panel);
-            }
-        }
-
-        this._summary = document.getElementById('recon-action-summary');
-        this._list = document.getElementById('recon-action-list');
-
-        var header = this._panel ? this._panel.querySelector('.recon-action-panel-header') : null;
-        if (header && header.getAttribute('data-recon-bound') !== 'true') {
-            header.setAttribute('data-recon-bound', 'true');
-            header.addEventListener('click', function (e) {
-                if (e.target.closest('button')) return;
-                ReconContextMenu._toggle();
-            });
+            this._summary = document.getElementById('recon-action-summary');
         }
 
         var clearButton = document.getElementById('recon-action-clear');
@@ -170,6 +137,26 @@ window.ReconContextMenu = {
                 ReconContextMenu._clearResults();
             });
         }
+    },
+
+    _showPanel: function () {
+        var panel = document.getElementById('recon-action-results');
+        if (panel) {
+            panel.classList.remove('recon-action-collapsed');
+            panel.classList.add('recon-action-expanded');
+        }
+        clearTimeout(this._hideTimer);
+    },
+
+    _scheduleHide: function () {
+        clearTimeout(this._hideTimer);
+        this._hideTimer = setTimeout(function () {
+            var panel = document.getElementById('recon-action-results');
+            if (panel) {
+                panel.classList.remove('recon-action-expanded');
+                panel.classList.add('recon-action-collapsed');
+            }
+        }, 5000);
     },
 
     _toggle: function () {
@@ -188,21 +175,21 @@ window.ReconContextMenu = {
             this._list.innerHTML = '';
         }
         if (this._summary) {
-            this._summary.textContent = 'No actions run yet.';
+            this._summary.textContent = 'Actions';
         }
+        clearTimeout(this._hideTimer);
         var panel = document.getElementById('recon-action-results');
-        if (panel && panel.classList.contains('recon-action-expanded')) {
+        if (panel) {
             panel.classList.remove('recon-action-expanded');
             panel.classList.add('recon-action-collapsed');
-            var btn = document.getElementById('recon-action-expand');
-            if (btn) btn.textContent = 'Expand';
         }
     },
 
     _startResult: function (action, targetId, subdomain) {
         this._ensureFeedbackPanel();
+        this._showPanel();
 
-        var entry = document.createElement('article');
+        var entry = document.createElement('div');
         entry.className = 'recon-action-entry recon-action-pending';
 
         var top = document.createElement('div');
@@ -239,14 +226,6 @@ window.ReconContextMenu = {
             }
         }
 
-        var panel = document.getElementById('recon-action-results');
-        if (panel && panel.classList.contains('recon-action-collapsed')) {
-            panel.classList.remove('recon-action-collapsed');
-            panel.classList.add('recon-action-expanded');
-            var btn = document.getElementById('recon-action-expand');
-            if (btn) btn.textContent = 'Collapse';
-        }
-
         if (this._summary) {
             this._summary.textContent = this._actionLabel(action) + ' is processing.';
         }
@@ -267,6 +246,8 @@ window.ReconContextMenu = {
         if (this._summary) {
             this._summary.textContent = message;
         }
+
+        this._scheduleHide();
     },
 
     _action: async function (action) {

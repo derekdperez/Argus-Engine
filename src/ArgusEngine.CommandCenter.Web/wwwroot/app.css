@@ -705,45 +705,57 @@ h1:focus {
     border-radius: 999px;
 }
 
-.recon-action-panel {
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    border-radius: 6px;
-    background: rgba(15, 23, 42, 0.06);
-    margin-bottom: 1rem;
+#recon-action-results {
+    position: fixed;
+    bottom: 60px;
+    right: 16px;
+    width: 360px;
+    max-width: calc(100vw - 32px);
+    z-index: 99998;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 8px;
+    background: #1e293b;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
     overflow: hidden;
+    transition: opacity 0.2s;
+}
+
+#recon-action-results.recon-action-collapsed {
+    opacity: 0;
+    pointer-events: none;
+}
+
+#recon-action-results.recon-action-expanded {
+    opacity: 1;
 }
 
 .recon-action-panel-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 12px;
+    padding: 8px 12px;
     cursor: pointer;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 .recon-action-summary-area {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     color: #94a3b8;
-}
-
-.recon-action-icon {
-    font-size: 0.7rem;
-    transition: transform 0.15s;
 }
 
 .recon-action-header-btns {
     display: flex;
-    gap: 6px;
+    gap: 4px;
 }
 
 .recon-action-list {
     display: grid;
     gap: 4px;
-    padding: 0 12px 8px;
-    max-height: 240px;
+    padding: 6px 12px 8px;
+    max-height: 260px;
     overflow-y: auto;
 }
 
@@ -752,8 +764,65 @@ h1:focus {
     padding: 0;
 }
 
-.recon-action-collapsed .recon-action-icon {
-    transform: rotate(0deg);
+.recon-action-entry {
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    border-left: 3px solid transparent;
+}
+
+.recon-action-entry.recon-action-pending {
+    border-left-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.06);
+}
+
+.recon-action-entry.recon-action-success {
+    border-left-color: #22c55e;
+    background: rgba(34, 197, 94, 0.06);
+}
+
+.recon-action-entry.recon-action-error {
+    border-left-color: #ef4444;
+    background: rgba(239, 68, 68, 0.06);
+}
+
+.recon-action-entry-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.recon-action-entry-top h3 {
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.recon-action-state {
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+
+.recon-action-pending .recon-action-state { color: #f59e0b; }
+.recon-action-success .recon-action-state { color: #22c55e; }
+.recon-action-error .recon-action-state { color: #ef4444; }
+
+.recon-action-meta {
+    font-size: 0.68rem;
+    color: #64748b;
+    margin-bottom: 2px;
+}
+
+.recon-action-detail {
+    font-size: 0.65rem;
+    color: #64748b;
+    white-space: pre-wrap;
+    margin: 0;
+    line-height: 1.3;
+    max-height: 80px;
+    overflow: hidden;
 }
 
 .recon-action-expanded .recon-action-icon {

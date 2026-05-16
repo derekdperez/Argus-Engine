@@ -66,7 +66,7 @@
             <button class="@TabClass(CommandTab.Targets)" @onclick="@(() => SelectTabAsync(CommandTab.Targets))">Targets</button>
             <button class="@TabClass(CommandTab.Discovery)" @onclick="@(() => SelectTabAsync(CommandTab.Discovery))">Discovery</button>
             <button class="@TabClass(CommandTab.Workers)" @onclick="@(() => SelectTabAsync(CommandTab.Workers))">Workers</button>
-            <button class="@TabClass(CommandTab.Logs)" @onclick="@(() => SelectTabAsync(CommandTab.Logs))">Logs</button>
+            <button class="@TabClass(CommandTab.Development)" @onclick="@(() => SelectTabAsync(CommandTab.Development))">Development</button>
         </nav>
     </header>
 
@@ -89,19 +89,11 @@
                 <div>
                     <h2>Targets</h2>
                 </div>
-                @if (_showDebug)
-                {
-                    <div class="cc-debug">
-                        <span>@TargetRows.Length rows</span>
-                        <span>@((_targetLoadSize / 1024).ToString("N0")) KB</span>
-                        <span>@_targetLoadTime.ToString("F1")s</span>
-                        <span>@_targetRefreshAgo</span>
-                    </div>
-                }
             </div>
             <div class="cc-two-column">
-                <ArgusDataGrid TGridItem="JsonElement"
-                               Items="@TargetRows.AsQueryable()"
+                @if (_showDebug) { <div class="cc-debug"><span>@TargetRows.Length rows</span></div> }
+                                <ArgusDataGrid TGridItem="JsonElement"
+                                               Items="@TargetRows.AsQueryable()"
                                RowMatches="@JsonRowMatches"
                                SearchText="@_targetSearch"
                                SearchTextChanged="@((string value) => _targetSearch = value)"
@@ -192,6 +184,7 @@
                     </ChildContent>
                 </ArgusDataGrid>
 
+                @if (_showDebug) { <div class="cc-debug"><span>@SubdomainRows.Length rows</span></div> }
                 <ArgusDataGrid TGridItem="JsonElement"
                                Items="@SubdomainRows.AsQueryable()"
                                RowMatches="@JsonRowMatches"
@@ -245,6 +238,7 @@
                     </select>
                 </div>
             </div>
+            @if (_showDebug) { <div class="cc-debug"><span>@AssetRows.Length rows</span></div> }
             <ArgusDataGrid TGridItem="JsonElement"
                            Items="@AssetRows.AsQueryable()"
                            RowMatches="@JsonRowMatches"
@@ -303,6 +297,7 @@
                     <p class="cc-muted">High-value and technology identification in one workspace.</p>
                 </div>
             </div>
+            @if (_showDebug) { <div class="cc-debug"><span>@HighValueRows.Length rows</span></div> }
             <ArgusDataGrid TGridItem="JsonElement"
                            Items="@HighValueRows.AsQueryable()"
                            RowMatches="@JsonRowMatches"
@@ -343,6 +338,7 @@
                 </ChildContent>
             </ArgusDataGrid>
 
+            @if (_showDebug) { <div class="cc-debug"><span>@TechnologyRows.Length rows</span></div> }
             <ArgusDataGrid TGridItem="JsonElement"
                            Items="@TechnologyRows.AsQueryable()"
                            RowMatches="@JsonRowMatches"
@@ -391,6 +387,7 @@
                 </div>
             </div>
 
+            @if (_showDebug) { <div class="cc-debug"><span>@_allWorkerRows.Count rows</span></div> }
             @if (_allWorkerRows.Count == 0 && !_workersLoading)
             {
                 <p class="cc-muted">No workers found. Check your provider connections.</p>
@@ -518,10 +515,50 @@
         <section class="cc-panel">
             <div class="cc-panel-header">
                 <div>
-                    <h2>Logs</h2>
-                    <p class="cc-muted">Central log repository for infrastructure and application logs.</p>
+                    <h2>Development</h2>
+                    <p class="cc-muted">Storage overview and central logging for debugging.</p>
+                </div>
+                <div class="cc-toolbar">
+                    <button class="cc-btn" @onclick="ReloadLogsAsync" disabled="@_logsLoading">Reload</button>
                 </div>
             </div>
+
+            @if (_storageOverview != null)
+            {
+                <div class="storage-overview">
+                    <h3>Storage Overview</h3>
+                    <div class="storage-summary">
+                        <div class="storage-stat">
+                            <span class="storage-label">Total Assets</span>
+                            <span class="storage-value">@_storageOverview.Value.GetProperty("totalAssets").GetInt64().ToString("N0")</span>
+                        </div>
+                        @foreach (var kind in _storageOverview.Value.GetProperty("byKind").EnumerateArray())
+                        {
+                            <div class="storage-stat">
+                                <span class="storage-label">@kind.GetProperty("kind").GetString()</span>
+                                <span class="storage-value">@kind.GetProperty("count").GetInt64().ToString("N0")</span>
+                            </div>
+                        }
+                    </div>
+                    <h4>Top Domains by Asset Count</h4>
+                    <table class="storage-table">
+                        <thead>
+                            <tr><th>Domain</th><th>Total</th><th>Subdomains</th><th>URLs</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var domain in _storageOverview.Value.GetProperty("topDomains").EnumerateArray().Take(10))
+                            {
+                                <tr>
+                                    <td>@domain.GetProperty("domain").GetString()</td>
+                                    <td>@domain.GetProperty("total").GetInt64()</td>
+                                    <td>@domain.GetProperty("subdomains").GetInt64()</td>
+                                    <td>@domain.GetProperty("urls").GetInt64()</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
 
             <div class="logs-sub-tabs">
                 <button class="@(_logsSubTab == "app" ? "logs-sub-tab-active" : "")" @onclick="@(() => _logsSubTab = "app")">Application Logs</button>
@@ -716,6 +753,7 @@
     private List<string> _logLevels = [];
     private List<string> _logComponents = [];
     private List<string> _workerComponents = [];
+    private JsonElement? _storageOverview;
 
     private bool _loadingAny => _overviewLoading
         || _targetsLoading
@@ -973,9 +1011,10 @@
             case CommandTab.Workers when _allWorkerRows.Count == 0:
                 await ReloadWorkersAsync().ConfigureAwait(false);
                 break;
-            case CommandTab.Logs when _logs.Count == 0:
+            case CommandTab.Development when _logs.Count == 0:
                 await ReloadLogsAsync().ConfigureAwait(false);
                 await ReloadWorkerLogsAsync().ConfigureAwait(false);
+                await ReloadStorageOverviewAsync().ConfigureAwait(false);
                 break;
         }
     }
@@ -994,7 +1033,7 @@
             case CommandTab.Workers:
                 await ReloadWorkersAsync().ConfigureAwait(false);
                 break;
-            case CommandTab.Logs:
+            case CommandTab.Development:
                 await ReloadLogsAsync().ConfigureAwait(false);
                 await ReloadWorkerLogsAsync().ConfigureAwait(false);
                 break;
@@ -1341,6 +1380,54 @@
         {
             _logsLoading = false;
         }
+    }
+
+    private async Task ReloadStorageOverviewAsync()
+    {
+        try
+        {
+            _storageOverview = await GetObjectAsync("/api/ops/storage-overview").ConfigureAwait(false);
+        }
+        catch { }
+    }
+
+    private async Task CreateLogPromptAsync()
+    {
+        if (_logs.Count == 0 && _workerLogs.Count == 0)
+        {
+            await ReloadLogsAsync().ConfigureAwait(false);
+            await ReloadWorkerLogsAsync().ConfigureAwait(false);
+        }
+
+        var allMessages = new List<string>();
+        foreach (var log in _logs)
+        {
+            var msg = Text(log, "message", "Message");
+            var exc = Text(log, "exception", "Exception");
+            if (!string.IsNullOrWhiteSpace(exc))
+                msg += "\nException: " + exc;
+            if (!string.IsNullOrWhiteSpace(msg))
+                allMessages.Add(msg);
+        }
+        foreach (var log in _workerLogs)
+        {
+            var msg = Text(log, "message", "Message");
+            var exc = Text(log, "exception", "Exception");
+            if (!string.IsNullOrWhiteSpace(exc))
+                msg += "\nException: " + exc;
+            if (!string.IsNullOrWhiteSpace(msg))
+                allMessages.Add(msg);
+        }
+
+        var uniqueMessages = allMessages
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var prompt = "Analyze the following error messages from the Argus Engine application and provide fixes for each issue:\n\n" +
+            string.Join("\n---\n", uniqueMessages.Select((m, i) => $"{i + 1}. {m}"));
+
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", prompt).ConfigureAwait(false);
     }
 
     private async Task ReloadWorkerLogsAsync()
@@ -1986,6 +2073,7 @@
         Targets,
         Discovery,
         Workers,
+        Development,
         Logs
     }
 

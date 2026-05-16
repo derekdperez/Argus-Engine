@@ -294,6 +294,59 @@ internal static class OperationsApiEndpointExtensions
             return Results.Ok(enrichment);
         }).WithName("OpsTargetEnrichment");
 
+        app.MapGet("/api/ops/storage-overview", async (ArgusDbContext db, CancellationToken ct) =>
+        {
+            var totalAssets = await db.Assets.LongCountAsync(ct).ConfigureAwait(false);
+
+            var byKind = await db.Assets.AsNoTracking()
+                .GroupBy(a => a.Kind)
+                .Select(g => new { Kind = g.Key.ToString(), Count = g.LongCount() })
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+
+            var byTarget = await db.Assets.AsNoTracking()
+                .GroupBy(a => a.TargetId)
+                .Select(g => new
+                {
+                    TargetId = g.Key,
+                    Count = g.LongCount(),
+                    Subdomains = g.LongCount(a => a.Kind == AssetKind.Subdomain),
+                    Urls = g.LongCount(a => a.Kind == AssetKind.Url)
+                })
+                .OrderByDescending(x => x.Count)
+                .Take(20)
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+
+            var targetIds = byTarget.Select(x => x.TargetId).ToList();
+            var targetRoots = await db.Targets.AsNoTracking()
+                .Where(t => targetIds.Contains(t.Id))
+                .ToDictionaryAsync(t => t.Id, t => t.RootDomain, ct)
+                .ConfigureAwait(false);
+
+            var topDomains = byTarget.Select(x => new
+            {
+                Domain = targetRoots.GetValueOrDefault(x.TargetId, x.TargetId.ToString()),
+                Total = x.Count,
+                Subdomains = x.Subdomains,
+                Urls = x.Urls
+            }).ToList();
+
+            var queueStats = await db.HttpRequestQueue.AsNoTracking()
+                .GroupBy(q => q.State)
+                .Select(g => new { State = g.Key.ToString(), Count = g.LongCount() })
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+
+            return Results.Ok(new
+            {
+                totalAssets,
+                byKind,
+                topDomains,
+                queueStats
+            });
+        }).WithName("StorageOverview");
+
         return app;
     }
 

@@ -1,6 +1,6 @@
 {
   "protocol_version": 1,
-  "last_updated": "2026-05-16T03:51:53Z",
+  "last_updated": "2026-05-16T03:53:00Z",
   "agents": {
     "agent-alpha": {
       "status": "idle",
@@ -26,22 +26,13 @@
       ]
     },
     "codex": {
-      "status": "busy",
-      "current_task": "Review GCP deployment process in deploy.py",
-      "last_active": "2026-05-16T03:51:53Z",
-      "working_on": [
-        "deploy.py"
-      ]
+      "status": "idle",
+      "current_task": "",
+      "last_active": "2026-05-16T03:53:00Z",
+      "working_on": []
     }
   },
-  "file_locks": {
-    "deploy.py": {
-      "locked_by": "codex",
-      "locked_at": "2026-05-16T03:45:43Z",
-      "purpose": "Review GCP deployment process in deploy.py",
-      "status": "in_progress"
-    }
-  },
+  "file_locks": {},
   "shared_files": {},
   "pending_merges": [],
   "agent_notes": {

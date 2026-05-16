@@ -312,7 +312,20 @@ internal sealed class CloudRunWorkerManager : IAsyncDisposable
         yield return Env("RabbitMq__VirtualHost", ParseVhostFromUrl(_opts.RabbitMqPublicUrl));
         yield return Env("CommandCenter__ApiBaseUrl", _opts.CommandCenterApiUrl);
 
-        // Skip DB bootstrap on startup (workers connect to existing DB)
+        // Enumeration worker settings
+        yield return Env("Enumeration__UseSubfinder", "true");
+        yield return Env("Enumeration__SubfinderPath", "/usr/local/bin/subfinder");
+        yield return Env("Enumeration__SubfinderAllSources", "true");
+        yield return Env("Enumeration__SubfinderRecursive", "true");
+        yield return Env("Enumeration__SubfinderTimeoutSeconds", "180");
+        yield return Env("Enumeration__UseAmass", "true");
+        yield return Env("Enumeration__AmassPath", "/usr/local/bin/amass");
+        yield return Env("Enumeration__AmassActive", "true");
+        yield return Env("Enumeration__AmassBruteForce", "true");
+        yield return Env("Enumeration__AmassTimeoutSeconds", "900");
+        yield return Env("Enumeration__UseDnsFallback", "true");
+        yield return Env("Enumeration__DnsFallbackMaxCandidates", "300");
+        yield return Env("Enumeration__SubdomainWordlistPath", "/opt/argus/wordlists/subdomains.txt");
         yield return Env("Argus__SkipStartupDatabase", "true");
         yield return Env("ARGUS_SKIP_STARTUP_DATABASE", "1");
 

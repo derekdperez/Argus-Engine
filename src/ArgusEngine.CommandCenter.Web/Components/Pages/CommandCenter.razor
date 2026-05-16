@@ -66,6 +66,7 @@
         <nav class="cc-tabs" aria-label="Command Center sections">
             <button class="@TabClass(CommandTab.Targets)" @onclick="@(() => SelectTabAsync(CommandTab.Targets))">Targets</button>
             <button class="@TabClass(CommandTab.Discovery)" @onclick="@(() => SelectTabAsync(CommandTab.Discovery))">Discovery</button>
+            <button class="@TabClass(CommandTab.ReconOrchestrator)" @onclick="@(() => SelectTabAsync(CommandTab.ReconOrchestrator))">Recon Orchestrator</button>
             <button class="@TabClass(CommandTab.Workers)" @onclick="@(() => SelectTabAsync(CommandTab.Workers))">Workers</button>
             <button class="@TabClass(CommandTab.Development)" @onclick="@(() => SelectTabAsync(CommandTab.Development))">Development</button>
         </nav>
@@ -383,6 +384,11 @@
         </section>
     }
 
+    @if (_activeTab == CommandTab.ReconOrchestrator)
+    {
+        <ReconOrchestrator />
+    }
+
     @if (_activeTab == CommandTab.Workers)
     {
         <section class="cc-panel">
@@ -515,7 +521,7 @@
         </section>
     }
 
-    @if (_activeTab == CommandTab.Logs)
+    @if (_activeTab == CommandTab.Development)
     {
         <section class="cc-panel">
             <div class="cc-panel-header">
@@ -2085,7 +2091,7 @@
 
     private string TabClass(CommandTab tab)
     {
-        return _activeTab == tab ? "cc-tab-active" : "";
+        return _activeTab == tab ? "cc-tab cc-tab-active" : "cc-tab";
     }
 
     private static string FormatTargetImportResult(TargetBulkImportResult? result)
@@ -2131,9 +2137,9 @@
     {
         Targets,
         Discovery,
+        ReconOrchestrator,
         Workers,
-        Development,
-        Logs
+        Development
     }
 
     private sealed record GridColumnChoice(string Key, string Label);

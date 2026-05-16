@@ -146,10 +146,15 @@
 
 .cc-tabs {
     display: flex;
-    gap: 0.5rem;
+    gap: 0;
     overflow-x: auto;
-    padding: 0.25rem 0 0;
+    align-items: flex-end;
+    padding: 0 0.75rem;
     margin-bottom: 0;
+    border: 1px solid #cbdcf2;
+    border-bottom-color: #94a3b8;
+    border-radius: 0.65rem 0.65rem 0 0;
+    background: #eef2f7;
 }
 
 .cc-tab,
@@ -167,11 +172,41 @@
     cursor: pointer;
 }
 
+.cc-tab {
+    min-height: 2.35rem;
+    margin: 0.45rem 0 -1px;
+    border-color: transparent;
+    border-bottom-color: #94a3b8;
+    border-radius: 0.5rem 0.5rem 0 0;
+    background: transparent;
+    color: #475569;
+    box-shadow: none;
+}
+
+.cc-tab:hover:not(:disabled) {
+    transform: none;
+    border-color: #cbdcf2;
+    border-bottom-color: #94a3b8;
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: none;
+}
+
 .cc-tab-active,
 .cc-btn-primary {
     color: #ffffff;
     background: #2563eb;
     border-color: #2563eb;
+}
+
+.cc-tab-active,
+.cc-tab-active:hover:not(:disabled) {
+    position: relative;
+    z-index: 1;
+    color: #0f172a;
+    background: #ffffff;
+    border-color: #94a3b8;
+    border-bottom-color: #ffffff;
+    box-shadow: none;
 }
 
 .cc-btn-small {

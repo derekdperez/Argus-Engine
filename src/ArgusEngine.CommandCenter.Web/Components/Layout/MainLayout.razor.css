@@ -29,42 +29,12 @@
     z-index: 20;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 1rem;
     padding: 0.75rem clamp(1rem, 2.5vw, 2rem);
     border-bottom: 1px solid rgba(15, 23, 42, 0.09);
     background: rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(14px);
-}
-
-.nav-menu {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-}
-
-.nav-menu .nav-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 2.35rem;
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    color: #334155;
-    border-radius: 0.65rem;
-    background: #fff;
-    padding: 0.45rem 0.9rem;
-    font-size: 0.9rem;
-    font-weight: 750;
-    text-decoration: none;
-}
-
-.nav-menu .nav-button:hover,
-.nav-menu .nav-button.active {
-    color: #fff;
-    background: #2563eb;
-    border-color: transparent;
 }
 
 .main-content {
@@ -177,10 +147,6 @@
     .sidebar {
         align-items: flex-start;
         flex-direction: column;
-    }
-
-    .nav-menu {
-        justify-content: flex-start;
     }
 
     .app-header {

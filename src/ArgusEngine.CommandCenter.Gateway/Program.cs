@@ -228,7 +228,9 @@ static string? SelectClientName(PathString path)
     if (path.StartsWithSegments("/api/admin", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/maintenance", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/diagnostics", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/api/bus", StringComparison.OrdinalIgnoreCase))
+        || path.StartsWithSegments("/api/bus", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/logs", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/worker-logs", StringComparison.OrdinalIgnoreCase))
     {
         return GatewayServiceRoutes.MaintenanceClientName;
     }
@@ -436,7 +438,9 @@ static class GatewayRouteDiagnostics
         "/api/maintenance",
         "/api/diagnostics",
         "/api/ui-preferences",
-        "/api/bus"
+        "/api/bus",
+        "/api/logs",
+        "/api/worker-logs"
     ];
 
     private static readonly string[] UpdatesPrefixes = ["/api/development/components"];

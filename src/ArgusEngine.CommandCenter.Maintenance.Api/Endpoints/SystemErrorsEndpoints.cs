@@ -38,20 +38,21 @@ public static class SystemErrorsEndpoints
                     var rows = await query
                         .OrderByDescending(e => e.Timestamp)
                         .Take(limit)
-                        .Select(e => new SystemErrorDto(
-                            e.Id,
-                            e.Timestamp,
-                            e.Component,
-                            e.MachineName ?? "",
-                            e.LogLevel,
-                            e.Message,
-                            e.Exception ?? "",
-                            e.LoggerName ?? "",
-                            e.MetadataJson ?? ""))
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
 
-                    return Results.Ok(rows);
+                    var dtos = rows.Select(e => new SystemErrorDto(
+                        e.Id,
+                        e.Timestamp,
+                        e.Component,
+                        e.MachineName ?? "",
+                        e.LogLevel,
+                        e.Message,
+                        e.Exception ?? "",
+                        e.LoggerName ?? "",
+                        e.MetadataJson ?? "")).ToList();
+
+                    return Results.Ok(dtos);
                 })
             .WithName("SystemErrors");
 
@@ -113,20 +114,21 @@ public static class SystemErrorsEndpoints
                     var rows = await query
                         .OrderByDescending(e => e.Timestamp)
                         .Take(limit)
-                        .Select(e => new SystemErrorDto(
-                            e.Id,
-                            e.Timestamp,
-                            e.Component,
-                            e.MachineName ?? "",
-                            e.LogLevel,
-                            e.Message,
-                            e.Exception ?? "",
-                            e.LoggerName ?? "",
-                            e.MetadataJson ?? ""))
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
 
-                    return Results.Ok(rows);
+                    var dtos = rows.Select(e => new SystemErrorDto(
+                        e.Id,
+                        e.Timestamp,
+                        e.Component,
+                        e.MachineName ?? "",
+                        e.LogLevel,
+                        e.Message,
+                        e.Exception ?? "",
+                        e.LoggerName ?? "",
+                        e.MetadataJson ?? "")).ToList();
+
+                    return Results.Ok(dtos);
                 })
             .WithName("WorkerLogs");
 

@@ -36,12 +36,7 @@ public sealed class EfAssetGraphService(
             return new AssetUpsertResult(Guid.Empty, Inserted: false, RelationshipInserted: false, RelationshipUpdated: false, "target-missing");
         }
 
-        db.Database.AutoTransactionBehavior = AutoTransactionBehavior.Never;
-        var conn = db.Database.GetDbConnection();
-        if (conn.State != ConnectionState.Open)
-            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        db.Database.UseTransaction(tx);
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         var now = message.OccurredAt == default ? DateTimeOffset.UtcNow : message.OccurredAt;
         var inserted = false;
@@ -128,12 +123,7 @@ public sealed class EfAssetGraphService(
         AssetRelationshipDiscovered message,
         CancellationToken cancellationToken = default)
     {
-        db.Database.AutoTransactionBehavior = AutoTransactionBehavior.Never;
-        var conn = db.Database.GetDbConnection();
-        if (conn.State != ConnectionState.Open)
-            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        db.Database.UseTransaction(tx);
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var result = await UpsertRelationshipInsideTransactionAsync(message, cancellationToken).ConfigureAwait(false);
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         return result;

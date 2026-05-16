@@ -87,7 +87,7 @@ public static class DependencyInjection
         pgConn = ApplyDefaultMaxPoolSize(pgConn, configuration.GetArgusValue("Postgres:MaxPoolSize", 8));
         fileStoreConn = ApplyDefaultMaxPoolSize(fileStoreConn, configuration.GetArgusValue("FileStore:MaxPoolSize", 4));
         var postgresCommandTimeoutSeconds = Math.Clamp(configuration.GetArgusValue("Postgres:CommandTimeoutSeconds", 45), 5, 600);
-        var postgresRetryCount = Math.Clamp(configuration.GetArgusValue("Postgres:RetryCount", 3), 0, 10);
+        var postgresRetryCount = Math.Clamp(configuration.GetArgusValue("Postgres:RetryCount", 0), 0, 10);
         var postgresRetryDelaySeconds = Math.Clamp(configuration.GetArgusValue("Postgres:RetryMaxDelaySeconds", 5), 1, 120);
         var fileStoreCommandTimeoutSeconds = Math.Clamp(configuration.GetArgusValue("FileStore:CommandTimeoutSeconds", 45), 5, 600);
         var fileStoreRetryCount = Math.Clamp(configuration.GetArgusValue("FileStore:RetryCount", 3), 0, 10);

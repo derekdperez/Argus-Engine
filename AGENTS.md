@@ -221,12 +221,44 @@ Routes are defined in `ArgusEngine.CommandCenter.Gateway/Program.cs` — `Select
 - GCP auto-scale from UI needs `GcpDeploy:ProjectId` env var set
 
 ## Working in parallel
-- The `.ai-coordination/` directory stores coordination state between AI instances
-- Check `git log --oneline -5` before starting to see what the other instance did
-- Always `git pull` and `git push` before/after sessions
-- Build: `docker compose -f deployment/docker-compose.yml build <service>`
-- Restart: `docker compose -f deployment/docker-compose.yml up -d <service>`
-- Services: `command-center-web`, `command-center-gateway`, `command-center-worker-control-api`, `command-center-operations-api`
+
+### Agent identities
+
+- **codex**: senior architect / lead implementer / final decision-maker
+- **agent-alpha**: focused implementation helper
+- **agent-beta**: DevOps, scripting, procedures, diagnostics helper
+
+### Protocol
+
+1. `git fetch --all --prune && git pull --rebase --autostash` before any work
+2. Run `bash .ai-coordination/scripts/coordinate.sh status` to check locks and agents
+3. Claim files before editing: `bash .ai-coordination/scripts/coordinate.sh claim <agent-name> <file-path> "<purpose>"`
+4. Do not edit files locked by another agent
+5. Do not overwrite another agent's changes (no reset --hard, clean -fd, push --force)
+6. Push small coherent commits: `bash .ai-coordination/scripts/coordinate.sh push <agent-name> "<area>: <summary>"`
+7. Release files when done: `bash .ai-coordination/scripts/coordinate.sh release <agent-name> <file-path>`
+8. During long work: `bash .ai-coordination/scripts/coordinate.sh heartbeat <agent-name>`
+9. Codex has final authority on architecture, service boundaries, contracts, and conflict resolution
+10. agent-alpha/agent-beta must stop and request a Codex decision before modifying protected files (csproj, contracts, gateway, compose, Program.cs, etc.)
+
+### Protected files (require codex approval for helpers)
+
+- *.sln, *.slnx, *.csproj, Directory.Build.*, Directory.Packages.props
+- src/*Contracts*/**
+- src/ArgusEngine.Domain/**
+- EF migrations or schema-changing persistence files
+- src/ArgusEngine.CommandCenter.Gateway/**
+- cross-service API routing
+- Program.cs, Startup*.cs, service registration extensions
+- deploy.py (topology changes), deployment/docker-compose*.yml, deployment/gcp/**
+- auth, secrets, diagnostics keys, CORS, firewall, IAM, proxy routing
+
+### Merge/conflict rules
+
+- Preserve both agents' work whenever possible
+- If behavior conflicts, helper agents stop and record a blocker: `bash .ai-coordination/scripts/coordinate.sh block <agent-name> "<reason>"`
+- Only Codex may discard another agent's work, with reason recorded in decision log
+- Codex records decisions with: `bash .ai-coordination/scripts/coordinate.sh decision codex "<summary>" <scope> <files>`
 
 ## Debug
 

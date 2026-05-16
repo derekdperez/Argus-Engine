@@ -189,6 +189,45 @@ Routes are defined in `ArgusEngine.CommandCenter.Gateway/Program.cs` — `Select
 | `/hubs/discovery` | command-center-realtime |
 | `/` (default) | command-center-web |
 
+## Latest UI state
+
+### Summary cards (in header)
+- 9 cards: Targets, Assets, HTTP Queue, High Value, Technologies, Workers, Events, Version, Build
+- Halved size, single row at all widths, "Database total" removed
+- Version/build from ops overview API
+
+### Grid changes (ArgusDataGrid)
+- Toolbar: only Search + Configure above each grid
+- Export CSV, top pager, rows dropdown, density removed from top
+- Virtualized/Paged/grouped labels removed
+- Rows dropdown + paginator at bottom
+- Target toolbar: name/depth/create/reload/enum/spider buttons removed
+
+### Context menu (`reconContextMenu.js`)
+- Right-click on target rows: Assign Recon Orchestrator, Enumerate Subdomains, Spider
+- Right-click on subdomain rows: Spider Subdomain
+- Action results panel (collapsible) with toast notifications
+- System events panel below showing last 30 bus journal entries
+
+### Recon agent API
+- `POST /api/recon-agent/targets/{id}/attach` → registers target with recon orchestrator
+- `GET /api/recon-agent/targets/{id}` → get orchestrator snapshot
+- Registered in discovery API Program.cs, routed via gateway
+
+### Known issues
+- `high-value-path-guess_error` queue has ~3871 stuck messages with 0 consumers
+- `buildTime` may show "unknown" if ARGUS_BUILD_TIME_UTC env var not set
+- Azure/AWS workers show as "not configured" (no API integration)
+- GCP auto-scale from UI needs `GcpDeploy:ProjectId` env var set
+
+## Working in parallel
+- The `.ai-coordination/` directory stores coordination state between AI instances
+- Check `git log --oneline -5` before starting to see what the other instance did
+- Always `git pull` and `git push` before/after sessions
+- Build: `docker compose -f deployment/docker-compose.yml build <service>`
+- Restart: `docker compose -f deployment/docker-compose.yml up -d <service>`
+- Services: `command-center-web`, `command-center-gateway`, `command-center-worker-control-api`, `command-center-operations-api`
+
 ## Debug
 
 `./debug.sh` executes commands from `.ai-debug/debug_commands.sh` and writes JSON results to `debug_results.json` (requires python3).

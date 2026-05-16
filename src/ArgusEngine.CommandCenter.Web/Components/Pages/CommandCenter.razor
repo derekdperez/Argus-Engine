@@ -1028,7 +1028,12 @@
         _targetsLoading = true;
         try
         {
-            Replace(_targets, await GetArrayAsync("/api/targets").ConfigureAwait(false));
+            var raw = await GetArrayAsync("/api/targets").ConfigureAwait(false);
+            var deduped = raw
+                .GroupBy(t => RowKey(t), StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+            Replace(_targets, deduped);
             _targetsRefreshedUtc = DateTimeOffset.UtcNow;
             PruneSelection(_selectedTargetIds, _targets);
             await LoadTargetEnrichmentAsync();
@@ -1091,6 +1096,11 @@
         try
         {
             Replace(_subdomains, await GetArrayAsync("/api/technology-identification/subdomains").ConfigureAwait(false));
+            if (_subdomains.Count > 1)
+            {
+                var deduped = _subdomains.GroupBy(s => RowKey(s), StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList();
+                Replace(_subdomains, deduped);
+            }
             _subdomainsRefreshedUtc = DateTimeOffset.UtcNow;
         }
         finally
@@ -1105,6 +1115,11 @@
         try
         {
             Replace(_assets, await GetArrayAsync($"/api/assets?take={AssetTake}").ConfigureAwait(false));
+            if (_assets.Count > 1)
+            {
+                var deduped = _assets.GroupBy(a => RowKey(a), StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList();
+                Replace(_assets, deduped);
+            }
             _assetsRefreshedUtc = DateTimeOffset.UtcNow;
         }
         finally

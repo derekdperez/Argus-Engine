@@ -7,6 +7,8 @@ window.ReconContextMenu = {
     _panel: null,
     _summary: null,
     _list: null,
+    _modal: null,
+    _modalBackdrop: null,
     _targetId: null,
     _subdomainKey: null,
     _rowType: null,
@@ -255,6 +257,16 @@ window.ReconContextMenu = {
         var subdomain = this._subdomainKey;
         this._hide();
 
+        if (action === 'recon') {
+            if (!id) {
+                this._showToast('Action could not start because the selected row did not expose a target id.', true);
+                return;
+            }
+
+            this._showReconModal(id);
+            return;
+        }
+
         var entry = this._startResult(action, id, subdomain);
 
         if (!id) {
@@ -270,15 +282,6 @@ window.ReconContextMenu = {
             var resp;
 
             switch (action) {
-                case 'recon':
-                    resp = await fetch('/api/recon-agent/targets/' + encodeURIComponent(id) + '/attach', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ attachedBy: 'context-menu', configuration: null })
-                    });
-                    await this._recordResponse(entry, resp, 'Recon orchestrator assigned to target.', 'Recon orchestrator assignment failed.');
-                    break;
-
                 case 'enumerate':
                     resp = await fetch('/api/ops/subdomain-enum/restart', {
                         method: 'POST',
@@ -318,6 +321,179 @@ window.ReconContextMenu = {
         }
     },
 
+    _showReconModal: function (targetId) {
+        this._ensureReconModal();
+
+        var targetInput = this._modal.querySelector('[data-recon-field="targetId"]');
+        if (targetInput) targetInput.value = targetId;
+
+        this._modalBackdrop.style.display = 'block';
+        this._modal.style.display = 'block';
+
+        var first = this._modal.querySelector('input[type="number"]');
+        if (first) first.focus();
+    },
+
+    _ensureReconModal: function () {
+        if (this._modal && document.body.contains(this._modal)) {
+            return;
+        }
+
+        this._modalBackdrop = document.createElement('div');
+        this._modalBackdrop.className = 'recon-modal-backdrop';
+        this._modalBackdrop.onclick = function (event) {
+            if (event.target === ReconContextMenu._modalBackdrop) {
+                ReconContextMenu._hideReconModal();
+            }
+        };
+
+        this._modal = document.createElement('div');
+        this._modal.className = 'recon-modal';
+        this._modal.setAttribute('role', 'dialog');
+        this._modal.setAttribute('aria-modal', 'true');
+        this._modal.innerHTML =
+            '<form class="recon-modal-card">' +
+            '<input type="hidden" data-recon-field="targetId" />' +
+            '<div class="recon-modal-header">' +
+            '<div><h2>Assign Recon Orchestrator</h2></div>' +
+            '<button type="button" class="recon-modal-close" aria-label="Close" data-recon-close>x</button>' +
+            '</div>' +
+            '<div class="recon-modal-grid">' +
+            '<label><span>Workers per subdomain</span><input type="number" min="1" max="128" step="1" value="2" data-recon-field="maxHttpWorkersPerSubdomain" /></label>' +
+            '<label><span>Requests / sec / worker</span><input type="number" min="1" max="1000" step="1" value="2" data-recon-field="requestsPerSecondPerWorker" /></label>' +
+            '<label><span>Concurrent subdomains / worker</span><input type="number" min="1" max="1000" step="1" value="10" data-recon-field="maxConcurrentSubdomainsPerWorker" /></label>' +
+            '</div>' +
+            '<div class="recon-modal-actions">' +
+            '<button type="button" class="cc-btn cc-btn-small" data-recon-close>Cancel</button>' +
+            '<button type="submit" class="cc-btn cc-btn-small cc-btn-primary">Start</button>' +
+            '</div>' +
+            '</form>';
+
+        this._modal.querySelectorAll('[data-recon-close]').forEach(function (button) {
+            button.addEventListener('click', function () { ReconContextMenu._hideReconModal(); });
+        });
+
+        this._modal.querySelector('form').addEventListener('submit', function (event) {
+            event.preventDefault();
+            ReconContextMenu._submitReconModal();
+        });
+
+        document.body.appendChild(this._modalBackdrop);
+        document.body.appendChild(this._modal);
+    },
+
+    _hideReconModal: function () {
+        if (this._modal) this._modal.style.display = 'none';
+        if (this._modalBackdrop) this._modalBackdrop.style.display = 'none';
+    },
+
+    _submitReconModal: async function () {
+        var targetId = this._modal.querySelector('[data-recon-field="targetId"]').value;
+        var maxHttpWorkersPerSubdomain = this._readModalNumber('maxHttpWorkersPerSubdomain', 2, 1, 128);
+        var requestsPerSecondPerWorker = this._readModalNumber('requestsPerSecondPerWorker', 2, 1, 1000);
+        var maxConcurrentSubdomainsPerWorker = this._readModalNumber('maxConcurrentSubdomainsPerWorker', 10, 1, 1000);
+
+        var configuration = {
+            maxHttpWorkersPerSubdomain: maxHttpWorkersPerSubdomain,
+            reconProfilesPerSubdomain: maxHttpWorkersPerSubdomain,
+            reconProfilesPerTarget: Math.max(8, maxHttpWorkersPerSubdomain * 4),
+            requestsPerSecondPerWorker: requestsPerSecondPerWorker,
+            requestsPerMinutePerSubdomain: requestsPerSecondPerWorker * 60,
+            maxConcurrentSubdomainsPerWorker: maxConcurrentSubdomainsPerWorker
+        };
+
+        this._hideReconModal();
+        await this._attachReconOrchestrator(targetId, configuration);
+    },
+
+    _readModalNumber: function (field, fallback, min, max) {
+        var input = this._modal.querySelector('[data-recon-field="' + field + '"]');
+        var value = input ? Number(input.value) : fallback;
+        if (!Number.isFinite(value)) value = fallback;
+        return Math.max(min, Math.min(max, Math.round(value)));
+    },
+
+    _attachReconOrchestrator: async function (id, configuration) {
+        var entry = this._startResult('recon', id, null);
+        this._showToast('Starting recon orchestrator...', false);
+
+        try {
+            var resp = await fetch('/api/recon-agent/targets/' + encodeURIComponent(id) + '/attach', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ attachedBy: 'context-menu', configuration: configuration })
+            });
+
+            var result = await this._readResponse(resp);
+            var detail = this._formatResponse(resp, result);
+            if (!resp.ok) {
+                var failure = 'Recon orchestrator assignment failed. HTTP ' + resp.status + ' ' + (resp.statusText || '').trim();
+                this._finishResult(entry, true, failure, detail);
+                this._showToast('Recon orchestrator assignment failed.', true);
+                return;
+            }
+
+            var workerDetail = await this._ensureReconWorkers(configuration);
+            var message = workerDetail.ok
+                ? 'Recon orchestrator assigned and workers started.'
+                : 'Recon orchestrator assigned, but worker start needs attention.';
+            this._finishResult(entry, !workerDetail.ok, message, detail + '\n' + workerDetail.detail);
+            this._showToast(message, !workerDetail.ok);
+        } catch (ex) {
+            var errorMessage = 'Request error: ' + ex.message;
+            this._finishResult(entry, true, errorMessage, '');
+            this._showToast(errorMessage, true);
+        }
+    },
+
+    _ensureReconWorkers: async function (configuration) {
+        var desired = {
+            'worker-enum': 1,
+            'worker-spider': Math.max(1, configuration.maxHttpWorkersPerSubdomain || 1),
+            'worker-http-requester': Math.max(1, configuration.maxConcurrentSubdomainsPerWorker || 1)
+        };
+        var running = await this._readRunningWorkerCounts();
+        var lines = [];
+        var ok = true;
+
+        for (var serviceName in desired) {
+            if (!Object.prototype.hasOwnProperty.call(desired, serviceName)) continue;
+
+            var desiredCount = Math.max(desired[serviceName], running[serviceName] || 0);
+            var scaleResp = await fetch('/api/workers/' + encodeURIComponent(serviceName) + '/docker-scale', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ desiredCount: desiredCount })
+            });
+            var scaleResult = await this._readResponse(scaleResp);
+            var scaleSummary = this._summarizePayload(scaleResult.data || {}) || scaleResult.text || ('HTTP ' + scaleResp.status);
+            lines.push(serviceName + ': ' + scaleSummary);
+            if (!scaleResp.ok) ok = false;
+        }
+
+        return {
+            ok: ok,
+            detail: lines.length ? 'Worker start:\n' + lines.join('\n') : 'Worker start: no response.'
+        };
+    },
+
+    _readRunningWorkerCounts: async function () {
+        var counts = {};
+        try {
+            var resp = await fetch('/api/workers/docker-status', { headers: { 'Accept': 'application/json' } });
+            if (!resp.ok) return counts;
+            var data = await resp.json();
+            var services = data.services || data.Services || [];
+            services.forEach(function (svc) {
+                var name = svc.serviceName || svc.ServiceName;
+                var running = svc.runningCount ?? svc.RunningCount ?? 0;
+                if (name) counts[name] = running;
+            });
+        } catch {
+        }
+        return counts;
+    },
+
     _recordResponse: async function (entry, resp, successMessage, failureMessage, partialKey) {
         var result = await this._readResponse(resp);
         var detail = this._formatResponse(resp, result);
@@ -330,8 +506,8 @@ window.ReconContextMenu = {
         }
 
         var partialFailure = false;
-        if (partialKey && result) {
-            var val = result[partialKey];
+        if (partialKey && result && result.data) {
+            var val = result.data[partialKey];
             partialFailure = val === false || val === 'false';
         }
 

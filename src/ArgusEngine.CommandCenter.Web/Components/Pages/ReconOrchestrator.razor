@@ -1,0 +1,121 @@
+@page "/recon-orchestrator"
+@rendermode InteractiveServer
+@using System.Net.Http.Json
+
+@inject HttpClient Http
+
+<PageTitle>Recon Orchestrator - Argus Engine</PageTitle>
+
+<section class="recon-orchestrator-page">
+    <header class="recon-orchestrator-header">
+        <div>
+            <h1>Recon Orchestrator</h1>
+        </div>
+        <button type="button" class="btn small" @onclick="LoadAsync" disabled="@_loading">
+            @(_loading ? "Refreshing..." : "Refresh")
+        </button>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="recon-orchestrator-alert">@_error</div>
+    }
+
+    <ArgusDataGrid TGridItem="ReconOrchestratorRow"
+                   Items="@_rows.AsQueryable()"
+                   RowMatches="@RowMatches"
+                   SearchText="@_search"
+                   SearchTextChanged="@((string value) => _search = value)"
+                   SearchPlaceholder="Search orchestrators..."
+                   IsLoading="@_loading"
+                   EmptyText="No active recon orchestrators."
+                   PersistKey="recon-orchestrator-active"
+                   VirtualizedHeightPixels="620"
+                   ItemKey="@((ReconOrchestratorRow row) => row.TargetId)">
+        <ChildContent>
+            <PropertyColumn Title="Target" Property="@(row => row.RootDomain)" Sortable="true" Class="wide-col" />
+            <PropertyColumn Title="Status" Property="@(row => row.Status)" Sortable="true" />
+            <PropertyColumn Title="Workers/subdomain" Property="@(row => row.MaxHttpWorkersPerSubdomain)" Sortable="true" />
+            <PropertyColumn Title="Req/sec/worker" Property="@(row => row.RequestsPerSecondPerWorker)" Sortable="true" />
+            <PropertyColumn Title="Concurrent subdomains" Property="@(row => row.MaxConcurrentSubdomainsPerWorker)" Sortable="true" />
+            <TemplateColumn Title="Attached" Context="row" SortBy="@SortAttached">
+                @AppTimeFormat.Format(row.AttachedAtUtc)
+            </TemplateColumn>
+            <TemplateColumn Title="Updated" Context="row" SortBy="@SortUpdated">
+                @AppTimeFormat.Format(row.UpdatedAtUtc)
+            </TemplateColumn>
+        </ChildContent>
+    </ArgusDataGrid>
+</section>
+
+@code {
+    private readonly List<ReconOrchestratorRow> _rows = [];
+    private bool _loading;
+    private string? _error;
+    private string? _search;
+
+    private static readonly GridSort<ReconOrchestratorRow> SortAttached =
+        GridSort<ReconOrchestratorRow>.ByDescending(row => row.AttachedAtUtc);
+
+    private static readonly GridSort<ReconOrchestratorRow> SortUpdated =
+        GridSort<ReconOrchestratorRow>.ByDescending(row => row.UpdatedAtUtc);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var rows = await Http.GetFromJsonAsync<List<ReconOrchestratorRow>>("/api/recon-agent/orchestrators")
+                .ConfigureAwait(false);
+            _rows.Clear();
+            if (rows is not null)
+            {
+                _rows.AddRange(rows.OrderBy(row => row.RootDomain, StringComparer.OrdinalIgnoreCase));
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load recon orchestrators. {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static bool RowMatches(ReconOrchestratorRow row, string search)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            return true;
+        }
+
+        return row.RootDomain.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || row.Status.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || row.TargetId.ToString().Contains(search, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class ReconOrchestratorRow
+    {
+        public Guid TargetId { get; set; }
+        public string RootDomain { get; set; } = "";
+        public string Status { get; set; } = "";
+        public ReconOrchestratorConfigurationDto Configuration { get; set; } = new();
+        public DateTimeOffset AttachedAtUtc { get; set; }
+        public DateTimeOffset UpdatedAtUtc { get; set; }
+        public int MaxHttpWorkersPerSubdomain => Configuration.MaxHttpWorkersPerSubdomain;
+        public int RequestsPerSecondPerWorker => Configuration.RequestsPerSecondPerWorker;
+        public int MaxConcurrentSubdomainsPerWorker => Configuration.MaxConcurrentSubdomainsPerWorker;
+    }
+
+    private sealed class ReconOrchestratorConfigurationDto
+    {
+        public int MaxHttpWorkersPerSubdomain { get; set; }
+        public int RequestsPerSecondPerWorker { get; set; }
+        public int MaxConcurrentSubdomainsPerWorker { get; set; }
+    }
+}

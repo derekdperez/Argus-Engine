@@ -13,6 +13,9 @@
         </a>
 
         <nav class="nav-menu" aria-label="Primary navigation">
+            <a class="nav-button @(IsActive("") ? "active" : "")" href="/">Command Center</a>
+            <a class="nav-button @(IsActive("recon-orchestrator") ? "active" : "")" href="/recon-orchestrator">Recon Orchestrator</a>
+            <a class="nav-button @(IsActive("status") ? "active" : "")" href="/status">Status</a>
         </nav>
     </aside>
 
@@ -21,6 +24,16 @@
     </main>
 </div>
 
+@code {
+    private bool IsActive(string path)
+    {
+        var current = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/');
+        return string.IsNullOrWhiteSpace(path)
+            ? current is "" or "ops" or "commandcenter"
+            : string.Equals(current, path, StringComparison.OrdinalIgnoreCase);
+    }
+}
+
 <div id="blazor-error-ui">
     An unhandled error has occurred.
 
@@ -28,5 +41,4 @@
 
     <a class="dismiss">x</a>
 </div>
-
 

@@ -76,7 +76,7 @@ public sealed record ReconOrchestratorConfiguration
 
     public int MaxHttpWorkersPerSubdomain { get; init; } = 1;
 
-    public int RequestsPerSecondPerWorker { get; init; } = 2;
+    public int RequestsPerSecondPerWorker { get; init; }
 
     public int MaxConcurrentSubdomainsPerWorker { get; init; } = 10;
 

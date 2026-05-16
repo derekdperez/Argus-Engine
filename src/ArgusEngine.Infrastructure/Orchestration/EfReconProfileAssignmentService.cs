@@ -173,7 +173,7 @@ public sealed class EfReconProfileAssignmentService(
                 var config = JsonSerializer.Deserialize<ReconOrchestratorConfiguration>(json, JsonOptions);
                 if (config is not null)
                 {
-                    return config;
+                    return ReconOrchestratorConfiguration.Sanitize(config, options.Value);
                 }
             }
             catch (JsonException)

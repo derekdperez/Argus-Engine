@@ -948,6 +948,80 @@ h1:focus {
     cursor: default;
 }
 
+.recon-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    display: none;
+    background: rgba(15, 23, 42, 0.42);
+}
+
+.recon-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10002;
+    display: none;
+    pointer-events: none;
+}
+
+.recon-modal-card {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: min(34rem, calc(100vw - 2rem));
+    transform: translate(-50%, -50%);
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 0.75rem;
+    background: #fff;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+    pointer-events: auto;
+}
+
+.recon-modal-header,
+.recon-modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.recon-modal-header h2 {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+.recon-modal-close {
+    min-height: 1.8rem;
+    width: 1.8rem;
+    padding: 0;
+    border-radius: 999px;
+}
+
+.recon-modal-grid {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.recon-modal-grid label {
+    display: grid;
+    gap: 0.3rem;
+    color: #334155;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.recon-modal-grid input {
+    min-height: 2.25rem;
+    padding: 0.35rem 0.55rem;
+}
+
+.recon-modal-actions {
+    justify-content: flex-end;
+}
+
 .ww-provider-controls {
     display: flex;
     flex-wrap: wrap;

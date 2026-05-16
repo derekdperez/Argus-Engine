@@ -1,0 +1,33 @@
+.recon-orchestrator-page {
+    display: grid;
+    gap: 1rem;
+    padding: clamp(1rem, 2.5vw, 2rem);
+}
+
+.recon-orchestrator-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.recon-orchestrator-header h1 {
+    margin: 0;
+    font-size: 1.75rem;
+    letter-spacing: 0;
+}
+
+.recon-orchestrator-alert {
+    border: 1px solid rgba(220, 38, 38, 0.22);
+    border-radius: 0.65rem;
+    padding: 0.75rem 0.9rem;
+    background: #fff7f7;
+    color: #991b1b;
+}
+
+@media (max-width: 760px) {
+    .recon-orchestrator-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

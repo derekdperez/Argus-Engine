@@ -110,9 +110,6 @@ public partial class ArgusDataGrid<TGridItem> : IAsyncDisposable
     [Parameter(CaptureUnmatchedValues = true)]
     public Dictionary<string, object>? AdditionalAttributes { get; set; }
 
-    /// <summary>When true, shows the number of rows after search and column filtering.</summary>
-    [Parameter] public bool ShowRowCount { get; set; } = true;
-
     [Parameter] public EventCallback RefreshRequested { get; set; }
 
     [Parameter] public string RefreshButtonText { get; set; } = "Refresh";

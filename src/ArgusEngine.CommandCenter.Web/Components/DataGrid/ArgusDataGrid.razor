@@ -126,19 +126,4 @@
         </div>
     }
 
-    @if (CanPage)
-    {
-        <div class="argus-dg-bottom-bar">
-            <span class="argus-dg-rowcount muted small">
-                @if (_visibleRowCount == _totalRowCount)
-                {
-                    <span>@_visibleRowCount.ToString("N0") rows</span>
-                }
-                else
-                {
-                    <span>@_visibleRowCount.ToString("N0") of @_totalRowCount.ToString("N0") rows</span>
-                }
-            </span>
-        </div>
-    }
 </div>

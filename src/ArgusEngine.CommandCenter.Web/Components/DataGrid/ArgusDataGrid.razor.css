@@ -11,15 +11,6 @@
     min-width: 0;
 }
 
-.argus-dg-rowcount {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    flex-wrap: wrap;
-    margin: 0 0 0.45rem;
-    font-size: 12px;
-}
-
 .argus-dg-mode,
 .argus-dg-badge {
     display: inline-flex;

@@ -7,6 +7,7 @@
 @using System.Globalization
 @using System.Net
 @using System.Net.Http.Json
+@using System.IO
 @using System.Text.Json
 @using Microsoft.JSInterop
 @using ArgusEngine.CommandCenter.Realtime
@@ -89,9 +90,18 @@
                 <div>
                     <h2>Targets</h2>
                 </div>
+                <div class="cc-toolbar">
+                    <label for="target-import-file" class="@($"cc-btn cc-btn-small cc-file-button{(_importingTargets ? " disabled" : "")}")">
+                        @(_importingTargets ? "Importing..." : "Import")
+                    </label>
+                    <InputFile id="target-import-file"
+                               class="cc-file-input"
+                               OnChange="ImportTargetsAsync"
+                               accept=".txt,.csv,text/plain"
+                               disabled="@_importingTargets" />
+                </div>
             </div>
             <div class="cc-two-column">
-                @if (_showDebug) { <div class="cc-debug"><span>@TargetRows.Length rows</span></div> }
                                 <ArgusDataGrid TGridItem="JsonElement"
                                                Items="@TargetRows.AsQueryable()"
                                RowMatches="@JsonRowMatches"
@@ -184,7 +194,6 @@
                     </ChildContent>
                 </ArgusDataGrid>
 
-                @if (_showDebug) { <div class="cc-debug"><span>@SubdomainRows.Length rows</span></div> }
                 <ArgusDataGrid TGridItem="JsonElement"
                                Items="@SubdomainRows.AsQueryable()"
                                RowMatches="@JsonRowMatches"
@@ -238,7 +247,6 @@
                     </select>
                 </div>
             </div>
-            @if (_showDebug) { <div class="cc-debug"><span>@AssetRows.Length rows</span></div> }
             <ArgusDataGrid TGridItem="JsonElement"
                            Items="@AssetRows.AsQueryable()"
                            RowMatches="@JsonRowMatches"
@@ -297,7 +305,6 @@
                     <p class="cc-muted">High-value and technology identification in one workspace.</p>
                 </div>
             </div>
-            @if (_showDebug) { <div class="cc-debug"><span>@HighValueRows.Length rows</span></div> }
             <ArgusDataGrid TGridItem="JsonElement"
                            Items="@HighValueRows.AsQueryable()"
                            RowMatches="@JsonRowMatches"
@@ -338,7 +345,6 @@
                 </ChildContent>
             </ArgusDataGrid>
 
-            @if (_showDebug) { <div class="cc-debug"><span>@TechnologyRows.Length rows</span></div> }
             <ArgusDataGrid TGridItem="JsonElement"
                            Items="@TechnologyRows.AsQueryable()"
                            RowMatches="@JsonRowMatches"
@@ -387,7 +393,6 @@
                 </div>
             </div>
 
-            @if (_showDebug) { <div class="cc-debug"><span>@_allWorkerRows.Count rows</span></div> }
             @if (_allWorkerRows.Count == 0 && !_workersLoading)
             {
                 <p class="cc-muted">No workers found. Check your provider connections.</p>
@@ -675,6 +680,8 @@
     private const int HighValueTake = 200;
     private const int TechnologyTake = 250;
     private const int WorkerTake = 250;
+    private const long MaxTargetImportBytes = 5 * 1024 * 1024;
+    private const int TargetImportDepth = 12;
 
     private readonly CancellationTokenSource _disposeCts = new();
     private JsonElement? _overview;
@@ -709,7 +716,6 @@
     private string? _highValueSearch;
     private string? _technologySearch;
     private bool _gcpConfigured;
-    private bool _showDebug = true;
     private long _targetLoadSize;
     private double _targetLoadTime;
     private string _targetRefreshAgo = "";
@@ -737,6 +743,7 @@
     private bool _technologyLoading;
     private bool _workersLoading;
     private bool _creatingTarget;
+    private bool _importingTargets;
     private bool _targetActionLoading;
     private bool _queueMutationLoading;
     private bool _logsLoading;
@@ -764,6 +771,7 @@
         || _technologyLoading
         || _workersLoading
         || _creatingTarget
+        || _importingTargets
         || _targetActionLoading
         || _queueMutationLoading;
 
@@ -1584,6 +1592,46 @@
         }
     }
 
+    private async Task ImportTargetsAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        _importingTargets = true;
+        ClearError();
+        _statusMessage = $"Importing {file.Name}...";
+
+        try
+        {
+            await using var stream = file.OpenReadStream(MaxTargetImportBytes, _disposeCts.Token);
+            using var form = new MultipartFormDataContent();
+            using var fileContent = new StreamContent(stream);
+
+            form.Add(fileContent, "file", file.Name);
+            form.Add(new StringContent(TargetImportDepth.ToString(CultureInfo.InvariantCulture)), "globalMaxDepth");
+
+            using var response = await Http.PostAsync("/api/targets/bulk", form, _disposeCts.Token).ConfigureAwait(false);
+            await EnsureSuccessAsync(response, "import targets").ConfigureAwait(false);
+
+            var result = await response.Content
+                .ReadFromJsonAsync<TargetBulkImportResult>(cancellationToken: _disposeCts.Token)
+                .ConfigureAwait(false);
+
+            _statusMessage = FormatTargetImportResult(result);
+            await Task.WhenAll(ReloadTargetsAsync(), ReloadOverviewAsync(showLoading: false)).ConfigureAwait(false);
+        }
+        catch (IOException ex) when (file.Size > MaxTargetImportBytes)
+        {
+            SetError(ex, $"Target import file is too large. Maximum size is {MaxTargetImportBytes / 1024 / 1024:N0} MB.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            SetError(ex, "Failed to import targets.");
+        }
+        finally
+        {
+            _importingTargets = false;
+        }
+    }
+
 
     private Task EnumerateSelectedTargetsAsync()
     {
@@ -2040,6 +2088,17 @@
         return _activeTab == tab ? "cc-tab-active" : "";
     }
 
+    private static string FormatTargetImportResult(TargetBulkImportResult? result)
+    {
+        if (result is null)
+        {
+            return "Targets imported.";
+        }
+
+        var skipped = result.SkippedAlreadyExist + result.SkippedEmptyOrInvalid + result.SkippedDuplicateInBatch;
+        return $"Imported {result.Created:N0} target(s). Skipped {skipped:N0}.";
+    }
+
     private void SetError(Exception ex, string message)
     {
         Logger.LogWarning(ex, "{Message}", message);
@@ -2078,4 +2137,12 @@
     }
 
     private sealed record GridColumnChoice(string Key, string Label);
+
+    private sealed class TargetBulkImportResult
+    {
+        public int Created { get; set; }
+        public int SkippedAlreadyExist { get; set; }
+        public int SkippedEmptyOrInvalid { get; set; }
+        public int SkippedDuplicateInBatch { get; set; }
+    }
 }

@@ -202,7 +202,20 @@ public sealed class GcpCloudRunClient(IHttpClientFactory httpFactory, IConfigura
                         ready = routesReady && configsReady;
                     }
 
-                    result.Add(new GcpWorkerStatus(name, url ?? "", ready ? "active" : "inactive", minInstances, maxInstances) { Id = uid });
+                    // Count traffic targets (revisions serving traffic)
+                    var trafficCount = 0;
+                    if (s.TryGetProperty("traffic", out var traffic) && traffic.ValueKind == JsonValueKind.Array)
+                    {
+                        trafficCount = traffic.EnumerateArray().Count(t =>
+                            t.TryGetProperty("type", out var tt) && tt.GetString() == "TRAFFIC_TARGET_ALLOCATION_TYPE_TRAFFIC_SPLIT");
+                    }
+
+                    result.Add(new GcpWorkerStatus(name, url ?? "", ready ? "active" : "inactive", minInstances, maxInstances)
+                    {
+                        Id = uid,
+                        RunningInstances = ready ? Math.Max(1, minInstances) : 0,
+                        TrafficCount = trafficCount
+                    });
                 }
             }
         }
@@ -333,4 +346,6 @@ public sealed class GcpCloudRunClient(IHttpClientFactory httpFactory, IConfigura
 public sealed record GcpWorkerStatus(string Name, string Url, string Status, int MinInstances, int MaxInstances)
 {
     public string Id { get; init; } = Name;
+    public int RunningInstances { get; init; }
+    public int TrafficCount { get; init; }
 }

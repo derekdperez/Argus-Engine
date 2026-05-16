@@ -404,6 +404,7 @@
                                 <th class="ww-col-provider">Provider</th>
                                 <th class="ww-col-name">Worker</th>
                                 <th class="ww-col-status">Status</th>
+                                <th class="ww-col-running" title="Running instances">Run</th>
                                 <th class="ww-col-min">Min</th>
                                 <th class="ww-col-max">Max</th>
                                 <th class="ww-col-url">URL</th>
@@ -444,6 +445,7 @@
                                     <td class="ww-col-provider">@row.Provider</td>
                                     <td class="ww-col-name">@row.Name</td>
                                     <td class="ww-col-status"><span class="cc-pill">@row.Status</span></td>
+                                    <td class="ww-col-running">@row.RunningInstances</td>
                                     <td class="ww-col-min"><input class="cc-input cc-depth-input" type="number" min="0" max="50" value="@row.MinInstances" @onchange="async args => await ScaleSingleWorkerAsync(row, int.TryParse(args.Value?.ToString(), out var v) ? v : 0, row.MaxInstances)" style="width:50px;min-height:unset;padding:2px 6px" /></td>
                                     <td class="ww-col-max"><input class="cc-input cc-depth-input" type="number" min="0" max="50" value="@row.MaxInstances" @onchange="async args => await ScaleSingleWorkerAsync(row, row.MinInstances, int.TryParse(args.Value?.ToString(), out var v) ? v : 0)" style="width:50px;min-height:unset;padding:2px 6px" /></td>
                                     <td class="ww-col-url">@if (!string.IsNullOrWhiteSpace(row.Url)) { <a href="@row.Url" target="_blank" rel="noopener noreferrer">@TruncateUrl(row.Url)</a> }</td>
@@ -759,7 +761,11 @@
 
     private List<WorkerRow> _allWorkerRows = [];
 
-    private sealed record WorkerRow(string Provider, string Name, string Status, int MinInstances, int MaxInstances, string? Url);
+    private sealed record WorkerRow(string Provider, string Name, string Status, int MinInstances, int MaxInstances, string? Url)
+    {
+        public int RunningInstances { get; init; }
+        public int TrafficCount { get; init; }
+    }
 
     private sealed class ProviderScale
     {
@@ -1236,7 +1242,14 @@
                         var min = Int(gw, "minInstances", "MinInstances");
                         var max = Int(gw, "maxInstances", "MaxInstances");
                         var url = Text(gw, "url", "Url");
-                        rows.Add(new WorkerRow("Google", name, status, min, max, url));
+                        var running = Int(gw, "runningInstances", "RunningInstances");
+                        var traffic = Int(gw, "trafficCount", "TrafficCount");
+                        var wr = new WorkerRow("Google", name, status, min, max, url)
+                        {
+                            RunningInstances = running,
+                            TrafficCount = traffic
+                        };
+                        rows.Add(wr);
                     }
                 }
             }

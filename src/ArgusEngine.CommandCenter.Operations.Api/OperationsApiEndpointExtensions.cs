@@ -132,6 +132,8 @@ internal static class OperationsApiEndpointExtensions
                             .Distinct()
                             .LongCountAsync(ct)
                             .ConfigureAwait(false);
+                        var componentVersion = Environment.GetEnvironmentVariable("ARGUS_COMPONENT_VERSION") ?? "unknown";
+                        var buildTime = Environment.GetEnvironmentVariable("ARGUS_BUILD_TIME_UTC") ?? "unknown";
                         return Results.Ok(
                             new OpsOverviewDto(
                                 totalTargets,
@@ -158,7 +160,9 @@ internal static class OperationsApiEndpointExtensions
                                 storage.InlineHttpBytes,
                                 storage.EventJournalBytes,
                                 storage.TotalBytes,
-                                workerCount));
+                                workerCount,
+                                componentVersion,
+                                buildTime));
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
@@ -228,6 +232,69 @@ internal static class OperationsApiEndpointExtensions
             .WithName("OperationsApiDockerRuntimeStatus")
             .WithTags("Operations");
 
+        app.MapGet("/api/ops/recent-events", async (ArgusDbContext db, CancellationToken ct) =>
+        {
+            var events = await db.BusJournal.AsNoTracking()
+                .OrderByDescending(e => e.OccurredAtUtc)
+                .Take(30)
+                .Select(e => new
+                {
+                    e.Id,
+                    e.Direction,
+                    e.MessageType,
+                    e.OccurredAtUtc,
+                    e.HostName,
+                    e.Status,
+                    e.DurationMs,
+                    e.Error
+                })
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+
+            return Results.Ok(events);
+        }).WithName("OpsRecentEvents");
+
+        app.MapGet("/api/ops/target-enrichment", async (ArgusDbContext db, CancellationToken ct) =>
+        {
+            List<OrchestratorStateRow> orchestratorStates;
+            List<ProviderRunRow> providerRuns;
+            try
+            {
+                orchestratorStates = await db.Database.SqlQuery<OrchestratorStateRow>(
+                    $"""SELECT s.target_id AS TargetId, s.status AS OrchestratorStatus, s.attached_at_utc AS AttachedAtUtc FROM recon_orchestrator_states s""")
+                    .ToListAsync(ct)
+                    .ConfigureAwait(false);
+
+                providerRuns = await db.Database.SqlQuery<ProviderRunRow>(
+                    $"""SELECT target_id AS TargetId, provider, status FROM recon_orchestrator_provider_runs""")
+                    .ToListAsync(ct)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                return Results.Ok(Array.Empty<object>());
+            }
+
+            var enrichment = orchestratorStates.Select(o =>
+            {
+                var runs = providerRuns.Where(r => r.TargetId == o.TargetId).ToList();
+                var hasEnumeration = runs.Any(r => r.Provider is "subfinder" or "amass" && r.Status == "completed");
+                var hasSpider = runs.Any(r => r.Provider is "spider" && r.Status == "completed");
+                return new
+                {
+                    targetId = o.TargetId,
+                    orchestratorStatus = o.OrchestratorStatus,
+                    hasSubdomainsEnumerated = hasEnumeration,
+                    hasBeenSpidered = hasSpider
+                };
+            }).ToList();
+
+            return Results.Ok(enrichment);
+        }).WithName("OpsTargetEnrichment");
+
         return app;
     }
+
+    private sealed record OrchestratorStateRow(Guid TargetId, string OrchestratorStatus, DateTimeOffset AttachedAtUtc);
+    private sealed record ProviderRunRow(Guid TargetId, string Provider, string Status);
 }

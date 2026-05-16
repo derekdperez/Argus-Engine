@@ -71,7 +71,9 @@ public sealed record OpsOverviewDto(
     long InlineHttpStorageBytes,
     long EventJournalStorageBytes,
     long TotalTrackedStorageBytes,
-    long WorkerCount);
+    long WorkerCount,
+    string ComponentVersion,
+    string BuildTime);
 
 public sealed record OpsSnapshotDto(
     IReadOnlyList<WorkerSwitchDto> Workers,

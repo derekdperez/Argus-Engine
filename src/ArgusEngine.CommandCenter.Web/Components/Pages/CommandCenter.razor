@@ -17,40 +17,49 @@
 
 <div class="cc-page">
     <header class="cc-hero">
-        <div>
+        <div class="cc-hero-top">
             <h1>Command Center</h1>
-        </div>
-        <div class="cc-status-bar">
             <StatusDashboard Http="Http" />
         </div>
+        <section class="cc-summary-grid" aria-label="Command Center summary">
+            <article class="cc-card">
+                <span>Targets</span>
+                <strong>@FormatNumber(TotalTargets)</strong>
+            </article>
+            <article class="cc-card">
+                <span>Confirmed assets</span>
+                <strong>@FormatNumber(ConfirmedAssets)</strong>
+            </article>
+            <article class="cc-card">
+                <span>HTTP queue</span>
+                <strong>@FormatNumber(_httpQueueCount)</strong>
+            </article>
+            <article class="cc-card">
+                <span>High value</span>
+                <strong>@FormatNumber(HighValueCount)</strong>
+            </article>
+            <article class="cc-card">
+                <span>Technologies</span>
+                <strong>@FormatNumber(TechnologyCount)</strong>
+            </article>
+            <article class="cc-card">
+                <span>Workers</span>
+                <strong>@FormatNumber(WorkerCount)</strong>
+            </article>
+            <article class="cc-card">
+                <span>Events</span>
+                <strong>@FormatNumber(_publishedEvents)</strong>
+            </article>
+            <article class="cc-card">
+                <span>Version</span>
+                <strong>@_appVersion</strong>
+            </article>
+            <article class="cc-card">
+                <span>Build</span>
+                <strong>@_buildTime</strong>
+            </article>
+        </section>
     </header>
-
-    <section class="cc-summary-grid" aria-label="Command Center summary">
-        <article class="cc-card">
-            <span>Targets</span>
-            <strong>@FormatNumber(TotalTargets)</strong>
-        </article>
-        <article class="cc-card">
-            <span>Confirmed assets</span>
-            <strong>@FormatNumber(ConfirmedAssets)</strong>
-        </article>
-        <article class="cc-card">
-            <span>HTTP queue</span>
-            <strong>@FormatNumber(HttpQueueCount)</strong>
-        </article>
-        <article class="cc-card">
-            <span>High value</span>
-            <strong>@FormatNumber(HighValueCount)</strong>
-        </article>
-        <article class="cc-card">
-            <span>Technologies</span>
-            <strong>@FormatNumber(TechnologyCount)</strong>
-        </article>
-        <article class="cc-card">
-            <span>Workers</span>
-            <strong>@FormatNumber(WorkerCount)</strong>
-        </article>
-    </section>
 
     <nav class="cc-tabs" aria-label="Command Center sections">
         <button class="@TabClass(CommandTab.Targets)" @onclick="@(() => SelectTabAsync(CommandTab.Targets))">Targets</button>
@@ -72,26 +81,46 @@
         <div id="recon-action-list" class="recon-action-list"></div>
     </section>
 
+    @* System events *@
+    @if (_systemEvents.Count > 0)
+    {
+        var sysEvtPanelId = "sys-events-panel";
+        <section id="@sysEvtPanelId" class="recon-action-panel recon-action-collapsed" style="margin-bottom:0.5rem">
+            <div class="recon-action-panel-header" onclick="var p=document.getElementById('@sysEvtPanelId'); p.classList.toggle('recon-action-collapsed'); p.classList.toggle('recon-action-expanded');">
+                <div class="recon-action-summary-area">
+                    <span class="recon-action-icon">></span>
+                    <span>System events</span>
+                    <span style="color:#64748b;font-size:0.72rem">@_systemEvents.Count recent</span>
+                </div>
+            </div>
+            <div class="recon-action-list" style="max-height:180px">
+                @foreach (var evt in _systemEvents.Take(20))
+                {
+                    <div class="recon-action-entry @(string.IsNullOrWhiteSpace(evt.Error) ? "recon-action-success" : "recon-action-error")" style="padding:3px 8px;font-size:0.72rem">
+                        <div style="display:flex;justify-content:space-between">
+                            <span style="color:#94a3b8;font-weight:500">@evt.MessageType.Split('.').LastOrDefault()?.Replace("`","")</span>
+                            <span style="color:#64748b">@FormatTimeShort(evt.OccurredAtUtc)</span>
+                        </div>
+                        <div style="display:flex;gap:8px;color:#64748b">
+                            <span>@evt.Direction</span>
+                            @if (evt.DurationMs is not null)
+                            {
+                                <span>@(evt.DurationMs.Value.ToString("F1"))ms</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
     @if (_activeTab == CommandTab.Targets)
     {
         <section class="cc-panel">
             <div class="cc-panel-header">
                 <div>
                     <h2>Targets</h2>
-                    <p class="cc-muted">Loaded in a bounded request. Use the search box to filter only the loaded window.</p>
-                </div>
-                <div class="cc-toolbar">
-                    <input class="cc-input" placeholder="example.com" @bind="_newTargetRootDomain" @bind:event="oninput" />
-                    <label class="cc-inline-label">
-                        Depth
-                        <input class="cc-input cc-depth-input" type="number" min="0" max="10" @bind="_newTargetDepth" />
-                    </label>
-                    <button class="cc-btn cc-btn-primary" @onclick="CreateTargetAsync" disabled="@(!CanCreateTarget || _creatingTarget)">
-                        @(_creatingTarget ? "Creating..." : "Create")
-                    </button>
-                    <button class="cc-btn" @onclick="ReloadTargetsAsync" disabled="@_targetsLoading">Reload</button>
-                    <button class="cc-btn" @onclick="EnumerateSelectedTargetsAsync" disabled="@(!_selectedTargetIds.Any() || _targetActionLoading)">Enumerate selected</button>
-                    <button class="cc-btn" @onclick="SpiderSelectedTargetsAsync" disabled="@(!_selectedTargetIds.Any() || _targetActionLoading)">Spider selected</button>
+                    <p class="cc-muted">Manage targets and monitor reconnaissance progress.</p>
                 </div>
             </div>
             <div class="cc-two-column">
@@ -138,6 +167,59 @@
                         @if (ColumnVisible("targets.created"))
                         {
                             <TemplateColumn Title="Created" Context="target" SortBy="@SortTargetCreated">@FormatTime(Text(target, "createdAtUtc", "CreatedAtUtc", "createdAt", "CreatedAt"))</TemplateColumn>
+                        }
+                        @if (ColumnVisible("targets.subdomainCount"))
+                        {
+                            <TemplateColumn Title="Subdomains" Context="target" SortBy="@SortTargetSubdomainCount">@Display(Text(target, "subdomainCount", "SubdomainCount"))</TemplateColumn>
+                        }
+                        @if (ColumnVisible("targets.assetCount"))
+                        {
+                            <TemplateColumn Title="Assets" Context="target" SortBy="@SortTargetAssetCount">@Display(Text(target, "confirmedAssetCount", "ConfirmedAssetCount", "assetCount", "AssetCount"))</TemplateColumn>
+                        }
+                        @if (ColumnVisible("targets.orchestrator"))
+                        {
+                            <TemplateColumn Title="Orchestrator" Context="target">
+                                @{
+                                    var tid = RowKey(target);
+                                    var enr = tid is not null && _targetEnrichment.TryGetValue(tid, out var e) ? e : null;
+                                }
+                                @if (enr is not null)
+                                {
+                                    <span class="cc-pill">@enr.OrchestratorStatus</span>
+                                }
+                            </TemplateColumn>
+                        }
+                        @if (ColumnVisible("targets.enumerated"))
+                        {
+                            <TemplateColumn Title="Enumerated" Context="target">
+                                @{
+                                    var eid = RowKey(target);
+                                    var eenr = eid is not null && _targetEnrichment.TryGetValue(eid, out var ee) ? ee : null;
+                                }
+                                @if (eenr?.HasSubdomainsEnumerated == true) { <span style="color:#22c55e">Yes</span> }
+                                else { <span style="color:#64748b">No</span> }
+                            </TemplateColumn>
+                        }
+                        @if (ColumnVisible("targets.spidered"))
+                        {
+                            <TemplateColumn Title="Spidered" Context="target">
+                                @{
+                                    var sid = RowKey(target);
+                                    var senr = sid is not null && _targetEnrichment.TryGetValue(sid, out var se) ? se : null;
+                                }
+                                @if (senr?.HasBeenSpidered == true) { <span style="color:#22c55e">Yes</span> }
+                                else { <span style="color:#64748b">No</span> }
+                            </TemplateColumn>
+                        }
+                        @if (ColumnVisible("targets.controls"))
+                        {
+                            <TemplateColumn Title="Controls" Context="target">
+                                @{
+                                    var ctlId = RowKey(target);
+                                }
+                                <button class="cc-btn cc-btn-small" @onclick="() => EnumerateTargetAsync(ctlId)">En</button>
+                                <button class="cc-btn cc-btn-small" @onclick="() => SpiderTargetAsync(ctlId)">Sp</button>
+                            </TemplateColumn>
                         }
                     </ChildContent>
                 </ArgusDataGrid>
@@ -351,35 +433,14 @@
             <div class="cc-panel-header">
                 <div>
                     <h2>Workers</h2>
-                    <p class="cc-muted">All workers across all providers. Provider-level autoscale controls at the top.</p>
+                    <p class="cc-muted">All workers grouped by provider. Set min/max per provider and apply.</p>
                 </div>
                 <div class="cc-toolbar">
                     <button class="cc-btn" @onclick="ReloadWorkersAsync" disabled="@_workersLoading">Reload</button>
-                    <button class="cc-btn" @onclick="ApplyScaleAllAsync" disabled="@_workersLoading">Apply Scale All</button>
+                    <button class="cc-btn" @onclick="ApplyScaleAllAsync" disabled="@_workersLoading">Apply All</button>
                 </div>
             </div>
 
-            @* Provider autoscale controls *@
-            <div class="ww-provider-controls">
-                @foreach (var kvp in _providerSettings)
-                {
-                    var prov = kvp.Key;
-                    var ps = kvp.Value;
-                    <div class="ww-provider-card">
-                        <div class="ww-provider-header">
-                            <span class="ww-provider-name">@prov</span>
-                            <span class="ww-provider-count">@_allWorkerRows.Count(r => r.Provider == prov) workers</span>
-                        </div>
-                        <div class="ww-provider-controls-row">
-                            <label>Min <input class="cc-input cc-depth-input" type="number" min="0" max="50" @bind="ps.Min" /></label>
-                            <label>Max <input class="cc-input cc-depth-input" type="number" min="0" max="50" @bind="ps.Max" /></label>
-                            <button class="cc-btn cc-btn-small" @onclick="() => ApplyScaleProviderAsync(prov)">Apply</button>
-                        </div>
-                    </div>
-                }
-            </div>
-
-            @* Unified worker grid *@
             @if (_allWorkerRows.Count == 0 && !_workersLoading)
             {
                 <p class="cc-muted">No workers found. Check your provider connections.</p>
@@ -404,14 +465,29 @@
                             }
                             @foreach (var row in _allWorkerRows)
                             {
-                                @* Group header *@
+                                @* Group header with provider controls *@
                                 @if (row.Provider != lastProvider)
                                 {
                                     lastProvider = row.Provider;
+                                    var ps = _providerSettings.GetValueOrDefault(lastProvider);
+                                    var workerCount = _allWorkerRows.Count(r => r.Provider == lastProvider);
                                     <tr class="ww-group-header">
                                         <td colspan="6">
-                                            <span class="ww-group-dot" style="background:@(row.Provider switch { "Google" => "#4285F4", "Local" => "#22c55e", "AWS" => "#FF9900", "Azure" => "#0078D4", _ => "#94a3b8" })"></span>
-                                            @row.Provider
+                                            <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
+                                                <span>
+                                                    <span class="ww-group-dot" style="background:@(row.Provider switch { "Google" => "#4285F4", "Local" => "#22c55e", "AWS" => "#FF9900", "Azure" => "#0078D4", _ => "#94a3b8" })"></span>
+                                                    @row.Provider
+                                                    <span style="color:#64748b;font-weight:400;font-size:0.72rem;margin-left:6px;text-transform:none">@workerCount workers</span>
+                                                </span>
+                                                @if (ps is not null)
+                                                {
+                                                    <span class="ww-provider-controls-row">
+                                                        <label>Min <input class="cc-input cc-depth-input" type="number" min="0" max="50" @bind="ps.Min" style="width:50px" /></label>
+                                                        <label>Max <input class="cc-input cc-depth-input" type="number" min="0" max="50" @bind="ps.Max" style="width:50px" /></label>
+                                                        <button class="cc-btn cc-btn-small" @onclick="() => ApplyScaleProviderAsync(lastProvider!)">Apply</button>
+                                                    </span>
+                                                }
+                                            </div>
                                         </td>
                                     </tr>
                                 }
@@ -531,6 +607,13 @@
     private string? _highValueSearch;
     private string? _technologySearch;
     private bool _gcpConfigured;
+    private Dictionary<string, TargetEnrichment> _targetEnrichment = new();
+    private long _httpQueueCount;
+    private long _publishedEvents;
+    private List<SystemEvent> _systemEvents = [];
+    private long _lastEventId;
+    private string _appVersion = "";
+    private string _buildTime = "";
     private List<RmqQueueInfo> _rmqQueues = [];
     private Dictionary<string, List<string>> _rmqConsumerTags = new();
     private int _rmqConsumerGroups;
@@ -621,8 +704,16 @@
         new("targets.root", "Root domain"),
         new("targets.status", "Status"),
         new("targets.depth", "Depth"),
+        new("targets.subdomainCount", "Subdomains"),
+        new("targets.assetCount", "Assets"),
+        new("targets.orchestrator", "Orchestrator"),
+        new("targets.enumerated", "Enumerated"),
+        new("targets.spidered", "Spidered"),
+        new("targets.controls", "Controls"),
         new("targets.created", "Created")
     ];
+
+    private sealed record TargetEnrichment(string OrchestratorStatus, bool HasSubdomainsEnumerated, bool HasBeenSpidered);
 
     private static readonly GridColumnChoice[] SubdomainGridColumns =
     [
@@ -661,6 +752,8 @@
     private static readonly GridSort<JsonElement> SortTargetStatus = GridSort<JsonElement>.ByAscending(row => Text(row, "status", "Status", "state", "State"));
     private static readonly GridSort<JsonElement> SortTargetDepth = GridSort<JsonElement>.ByAscending(row => Long(row, "globalMaxDepth", "GlobalMaxDepth", "maxDepth", "MaxDepth"));
     private static readonly GridSort<JsonElement> SortTargetCreated = GridSort<JsonElement>.ByDescending(row => SortableTime(row, "createdAtUtc", "CreatedAtUtc", "createdAt", "CreatedAt"));
+    private static readonly GridSort<JsonElement> SortTargetSubdomainCount = GridSort<JsonElement>.ByDescending(row => Long(row, "subdomainCount", "SubdomainCount"));
+    private static readonly GridSort<JsonElement> SortTargetAssetCount = GridSort<JsonElement>.ByDescending(row => Long(row, "confirmedAssetCount", "ConfirmedAssetCount", "assetCount", "AssetCount"));
     private static readonly GridSort<JsonElement> SortSubdomainTarget = GridSort<JsonElement>.ByAscending(row => Text(row, "rootDomain", "RootDomain", "target", "Target"));
     private static readonly GridSort<JsonElement> SortSubdomainName = GridSort<JsonElement>.ByAscending(row => Text(row, "subdomain", "Subdomain", "canonicalKey", "CanonicalKey", "rawValue", "RawValue"));
     private static readonly GridSort<JsonElement> SortSubdomainTechnologyCount = GridSort<JsonElement>.ByAscending(row => Long(row, "technologyCount", "TechnologyCount"));
@@ -775,7 +868,9 @@
                 break;
         }
 
-        await ReloadOverviewAsync(showLoading: false).ConfigureAwait(false);
+        await Task.WhenAll(
+            ReloadOverviewAsync(showLoading: false),
+            LoadSystemEventsAsync()).ConfigureAwait(false);
     }
 
     private async Task RefreshEverythingAsync()
@@ -785,7 +880,8 @@
             ReloadTargetsAsync(),
             ReloadSubdomainsAsync(),
             ReloadAssetsAsync(),
-            ReloadWorkersAsync()).ConfigureAwait(false);
+            ReloadWorkersAsync(),
+            LoadSystemEventsAsync()).ConfigureAwait(false);
     }
 
     private async Task ReloadOverviewAsync(bool showLoading = true)
@@ -798,6 +894,14 @@
         try
         {
             _overview = await GetObjectAsync("/api/ops/overview").ConfigureAwait(false);
+            if (_overview.HasValue)
+            {
+                _httpQueueCount = Long(_overview.Value, "httpQueueQueuedAssetCount", "httpQueueCount");
+                _publishedEvents = Long(_overview.Value, "publishedEventCount", "PublishedEventCount");
+                _appVersion = Text(_overview.Value, "componentVersion", "ComponentVersion") ?? "?";
+                _buildTime = Text(_overview.Value, "buildTime", "BuildTime") ?? "?";
+                if (_buildTime.Length > 19) _buildTime = _buildTime[..19].Replace("T", " ");
+            }
         }
         finally
         {
@@ -816,11 +920,58 @@
             Replace(_targets, await GetArrayAsync("/api/targets").ConfigureAwait(false));
             _targetsRefreshedUtc = DateTimeOffset.UtcNow;
             PruneSelection(_selectedTargetIds, _targets);
+            await LoadTargetEnrichmentAsync();
         }
         finally
         {
             _targetsLoading = false;
         }
+    }
+
+    private async Task LoadTargetEnrichmentAsync()
+    {
+        try
+        {
+            var enrichment = await Http.GetFromJsonAsync<List<JsonElement>>("/api/ops/target-enrichment");
+            if (enrichment is null) return;
+            _targetEnrichment = enrichment
+                .Select(e =>
+                {
+                    var id = Text(e, "targetId", "TargetId") ?? "";
+                    var status = Text(e, "orchestratorStatus", "OrchestratorStatus") ?? "none";
+                    var enumerated = Text(e, "hasSubdomainsEnumerated", "HasSubdomainsEnumerated") == "True";
+                    var spidered = Text(e, "hasBeenSpidered", "HasBeenSpidered") == "True";
+                    return new { id, status, enumerated, spidered };
+                })
+                .Where(x => !string.IsNullOrWhiteSpace(x.id))
+                .ToDictionary(x => x.id, x => new TargetEnrichment(x.status, x.enumerated, x.spidered));
+        }
+        catch
+        {
+            _targetEnrichment = new();
+        }
+    }
+
+    private async Task EnumerateTargetAsync(string targetId)
+    {
+        if (string.IsNullOrWhiteSpace(targetId)) return;
+        try
+        {
+            await Http.PostAsJsonAsync("/api/ops/subdomain-enum/restart",
+                new { targetIds = new[] { targetId }, allTargets = false });
+        }
+        catch { }
+    }
+
+    private async Task SpiderTargetAsync(string targetId)
+    {
+        if (string.IsNullOrWhiteSpace(targetId)) return;
+        try
+        {
+            await Http.PostAsJsonAsync("/api/ops/spider/restart",
+                new { targetIds = new[] { targetId }, allTargets = false });
+        }
+        catch { }
     }
 
     private async Task ReloadSubdomainsAsync()
@@ -1002,7 +1153,27 @@
         return url.Length > 60 ? url[..60] + "..." : url;
     }
 
+    private static string FormatTimeShort(DateTimeOffset? value) =>
+        value is null ? "-" : value.Value.ToLocalTime().ToString("HH:mm:ss");
+
+    private async Task LoadSystemEventsAsync()
+    {
+        try
+        {
+            var events = await Http.GetFromJsonAsync<List<SystemEvent>>("/api/ops/recent-events");
+            if (events is not null)
+            {
+                _systemEvents = events;
+                if (events.Count > 0)
+                    _lastEventId = events[0].Id;
+            }
+        }
+        catch { }
+    }
+
     private sealed record RmqQueueInfo(string Name, long Messages, long Ready, long Unacked, int Consumers);
+
+    private sealed record SystemEvent(long Id, string Direction, string MessageType, DateTimeOffset OccurredAtUtc, string HostName, string? Status, double? DurationMs, string? Error);
 
     private async Task ReloadRabbitMqAsync()
     {

@@ -33,7 +33,7 @@ public static class OpsEndpoints
 
         app.MapGet(
             "/api/ops/overview",
-            async (ArgusDbContext db, IDbContextFactory<FileStoreDbContext> fileStoreFactory, CancellationToken ct) =>
+            async (ArgusDbContext db, IDbContextFactory<FileStoreDbContext> fileStoreFactory, IConfiguration configuration, CancellationToken ct) =>
             {
                 var explicitTargetCount = await db.Targets.AsNoTracking()
                     .LongCountAsync(ct)
@@ -173,6 +173,13 @@ public static class OpsEndpoints
                     .LongCountAsync(ct)
                     .ConfigureAwait(false);
 
+                var componentVersion = Environment.GetEnvironmentVariable("ARGUS_COMPONENT_VERSION")
+                    ?? configuration["ARGUS_COMPONENT_VERSION"]
+                    ?? "unknown";
+                var buildTime = Environment.GetEnvironmentVariable("ARGUS_BUILD_TIME_UTC")
+                    ?? configuration["ARGUS_BUILD_TIME_UTC"]
+                    ?? "unknown";
+
                 return Results.Ok(
                     new OpsOverviewDto(
                         totalTargets,
@@ -199,7 +206,9 @@ public static class OpsEndpoints
                         storage.InlineHttpBytes,
                         storage.EventJournalBytes,
                         storage.TotalBytes,
-                        workerCount));
+                        workerCount,
+                        componentVersion,
+                        buildTime));
             })
             .WithName("OpsOverview");
 

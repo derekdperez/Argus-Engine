@@ -795,6 +795,8 @@
         ["Azure"] = new(0, 2),
     };
 
+    private readonly HashSet<string> _enabledProviders = new(StringComparer.OrdinalIgnoreCase) { "Google" };
+
     private static readonly GridColumnChoice[] TargetGridColumns =
     [
         new("targets.root", "Root domain"),
@@ -1273,7 +1275,7 @@
             rows.Add(new WorkerRow("Azure", "worker-highvalue", "not configured", 0, 0, null));
             rows.Add(new WorkerRow("Azure", "worker-techid", "not configured", 0, 0, null));
 
-            _allWorkerRows = rows;
+            _allWorkerRows = rows.Where(r => _enabledProviders.Contains(r.Provider)).ToList();
             _workersRefreshedUtc = DateTimeOffset.UtcNow;
         }
         finally
@@ -1318,7 +1320,7 @@
             if (_logLevels.Count == 0)
             {
                 var levels = await GetArrayAsync("/api/logs/levels").ConfigureAwait(false);
-                _logLevels = levels.Select(e => Text(e, "value")).Where(static v => !string.IsNullOrWhiteSpace(v)).ToList();
+                _logLevels = levels.Select(e => e.GetString() ?? "").Where(static v => !string.IsNullOrWhiteSpace(v)).ToList();
             }
             if (_logComponents.Count == 0)
             {

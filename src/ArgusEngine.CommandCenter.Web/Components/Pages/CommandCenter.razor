@@ -454,8 +454,8 @@
                                     <td class="ww-col-provider">@row.Provider</td>
                                     <td class="ww-col-name">@row.Name</td>
                                     <td class="ww-col-status"><span class="cc-pill">@row.Status</span></td>
-                                    <td class="ww-col-min">@row.MinInstances</td>
-                                    <td class="ww-col-max">@row.MaxInstances</td>
+                                    <td class="ww-col-min"><input class="cc-input cc-depth-input" type="number" min="0" max="50" value="@row.MinInstances" @onchange="async args => await ScaleSingleWorkerAsync(row, int.TryParse(args.Value?.ToString(), out var v) ? v : 0, row.MaxInstances)" style="width:50px;min-height:unset;padding:2px 6px" /></td>
+                                    <td class="ww-col-max"><input class="cc-input cc-depth-input" type="number" min="0" max="50" value="@row.MaxInstances" @onchange="async args => await ScaleSingleWorkerAsync(row, row.MinInstances, int.TryParse(args.Value?.ToString(), out var v) ? v : 0)" style="width:50px;min-height:unset;padding:2px 6px" /></td>
                                     <td class="ww-col-url">@if (!string.IsNullOrWhiteSpace(row.Url)) { <a href="@row.Url" target="_blank" rel="noopener noreferrer">@TruncateUrl(row.Url)</a> }</td>
                                 </tr>
                             }
@@ -885,7 +885,7 @@
     private long HttpQueueCount => OverviewLong("httpQueueQueuedAssetCount", "HttpQueueQueuedAssetCount", "httpQueueCount", "HttpQueueCount", "queuedHttpRequests", "QueuedHttpRequests");
     private long HighValueCount => OverviewLong("highValueAssetCount", "HighValueAssetCount", "highValueCount", "HighValueCount", "highValueFindings", "HighValueFindings");
     private long TechnologyCount => OverviewLong("uniqueTechnologyCount", "UniqueTechnologyCount", "technologyCount", "TechnologyCount", "technologies", "Technologies");
-    private long WorkerCount => OverviewLong("workerCount", "WorkerCount", "activeWorkers", "ActiveWorkers");
+    private long WorkerCount => _allWorkerRows.Count;
 
     protected override async Task OnInitializedAsync()
     {
@@ -1298,6 +1298,19 @@
             }
             catch { }
         }
+    }
+
+    private async Task ScaleSingleWorkerAsync(WorkerRow row, int min, int max)
+    {
+        if (row.Provider != "Google" || !_gcpConfigured) return;
+        var slug = row.Name.Replace("argus-worker-", "");
+        try
+        {
+            await Http.PutAsJsonAsync("/api/gcp-workers/scale",
+                new { minInstances = min, maxInstances = max, workers = new[] { slug } });
+            await ReloadWorkersAsync();
+        }
+        catch { }
     }
 
     private async Task ApplyScaleAllAsync()
